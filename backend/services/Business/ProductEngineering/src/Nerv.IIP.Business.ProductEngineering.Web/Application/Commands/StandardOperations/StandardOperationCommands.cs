@@ -129,7 +129,11 @@ public sealed class ArchiveStandardOperationCommandHandler(IStandardOperationRep
     {
         var operation = await repository.GetByCodeAsync(request.OrganizationId, request.EnvironmentId, request.OperationCode, cancellationToken)
             ?? throw new KnownException($"Standard operation '{request.OperationCode}' was not found.");
-        operation.Archive(request.Reason);
+        ProductEngineeringReleaseValidation.AsKnownException(() =>
+        {
+            operation.Archive(request.Reason);
+            return operation;
+        });
     }
 }
 

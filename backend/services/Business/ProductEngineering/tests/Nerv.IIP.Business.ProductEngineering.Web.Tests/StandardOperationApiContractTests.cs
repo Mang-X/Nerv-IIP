@@ -166,6 +166,27 @@ public sealed class StandardOperationApiContractTests
             CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Archive_standard_operation_returns_known_exception_when_already_archived()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var operation = StandardOperation.Create("org-001", "env-dev", "OP-PACK", "包装", "WC-PACK-01", 0, 12, "PACK", true, false, false, null);
+        operation.Archive("not used");
+        dbContext.StandardOperations.Add(operation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ArchiveStandardOperationCommandHandler(new StandardOperationRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveStandardOperationCommand("org-001", "env-dev", "OP-PACK", "duplicate archive"),
+            CancellationToken.None));
+
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+        Assert.Contains("Archived standard operation", exception.Message, StringComparison.Ordinal);
+    }
+
     private static CreateStandardOperationCommand NewCreateCommand(string operationCode)
     {
         return new CreateStandardOperationCommand(
