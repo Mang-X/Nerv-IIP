@@ -7,11 +7,13 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
@@ -59,6 +61,8 @@ public sealed class MasterDataSchemaConventionTests
             typeof(Team),
             typeof(TeamMember),
             typeof(PersonnelSkill),
+            typeof(ProductCategory),
+            typeof(Skill),
             typeof(UnitOfMeasure),
             typeof(UomConversion),
             typeof(Site),

@@ -70,6 +70,103 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Master_data_product_category_and_skill_catalog_facades_use_internal_service_token()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var listCategories = await client.GetAsync("/api/business-console/v1/master-data/product-categories?organizationId=org-001&environmentId=env-dev&enabled=true&search=fin&parentCode=ROOT&skip=1&take=20");
+        var getCategory = await client.GetAsync("/api/business-console/v1/master-data/product-categories/CAT-FG?organizationId=org-001&environmentId=env-dev");
+        var createCategory = await client.PostAsJsonAsync("/api/business-console/v1/master-data/product-categories", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "CAT-FG",
+            categoryName = "Finished Goods",
+            parentCode = "ROOT",
+            description = "Finished goods category",
+        });
+        var updateCategory = await client.PutAsJsonAsync("/api/business-console/v1/master-data/product-categories/CAT-FG", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "IGNORED",
+            categoryName = "Finished Goods Updated",
+            parentCode = "ROOT",
+            description = "Updated",
+        });
+        var archiveCategory = await client.PostAsJsonAsync("/api/business-console/v1/master-data/product-categories/CAT-FG/archive", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "IGNORED",
+            reason = "obsolete",
+        });
+
+        var listSkills = await client.GetAsync("/api/business-console/v1/master-data/skills?organizationId=org-001&environmentId=env-dev&enabled=true&search=weld&groupName=Manufacturing&skip=2&take=30");
+        var getSkill = await client.GetAsync("/api/business-console/v1/master-data/skills/SK-WELD?organizationId=org-001&environmentId=env-dev");
+        var createSkill = await client.PostAsJsonAsync("/api/business-console/v1/master-data/skills", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "SK-WELD",
+            skillName = "Welding",
+            groupName = "Manufacturing",
+            requiresCertification = true,
+            validityMonths = 24,
+            description = "Welding qualification",
+        });
+        var updateSkill = await client.PutAsJsonAsync("/api/business-console/v1/master-data/skills/SK-WELD", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "IGNORED",
+            skillName = "Advanced Welding",
+            groupName = "Manufacturing",
+            requiresCertification = true,
+            validityMonths = 36,
+            description = "Advanced qualification",
+        });
+        var archiveSkill = await client.PostAsJsonAsync("/api/business-console/v1/master-data/skills/SK-WELD/archive", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "IGNORED",
+            reason = "obsolete",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, listCategories.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, getCategory.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, createCategory.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateCategory.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archiveCategory.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, listSkills.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, getSkill.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, createSkill.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateSkill.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archiveSkill.StatusCode);
+        Assert.Equal("internal-test-token", masterData.LastInternalToken);
+        Assert.Equal(new BusinessConsoleListProductCategoriesRequest("org-001", "env-dev", true, "fin", "ROOT", 1, 20), masterData.LastProductCategoryListRequest);
+        Assert.Equal(new BusinessConsoleProductCategoryRequest("CAT-FG", "org-001", "env-dev"), masterData.LastProductCategoryRequest);
+        Assert.Equal("CAT-FG", masterData.LastCreateProductCategoryRequest!.CategoryCode);
+        Assert.Equal("CAT-FG", masterData.LastUpdateProductCategoryRequest!.CategoryCode);
+        Assert.Equal("CAT-FG", masterData.LastArchiveProductCategoryRequest!.CategoryCode);
+        Assert.Equal(new BusinessConsoleListSkillsRequest("org-001", "env-dev", true, "weld", "Manufacturing", 2, 30), masterData.LastSkillListRequest);
+        Assert.Equal(new BusinessConsoleSkillRequest("SK-WELD", "org-001", "env-dev"), masterData.LastSkillRequest);
+        Assert.Equal("SK-WELD", masterData.LastCreateSkillRequest!.SkillCode);
+        Assert.Equal("SK-WELD", masterData.LastUpdateSkillRequest!.SkillCode);
+        Assert.Equal("SK-WELD", masterData.LastArchiveSkillRequest!.SkillCode);
+    }
+
+    [Fact]
     public async Task Master_data_resource_lifecycle_facade_uses_internal_service_token()
     {
         var masterData = new RecordingMasterDataClient();
@@ -333,6 +430,62 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Skip: 5, Take: 20), quality.LastNcrListRequest);
+    }
+
+    [Fact]
+    public async Task Quality_reason_catalog_facade_uses_internal_service_token_for_downstream_business_service()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/quality/reason-codes?organizationId=org-001&environmentId=env-dev&enabled=true&search=scr&groupName=Appearance&skip=3&take=15");
+        var detail = await client.GetAsync("/api/business-console/v1/quality/reason-codes/QR-SCRATCH?organizationId=org-001&environmentId=env-dev");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/quality/reason-codes", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+            reasonName = "Scratch",
+            groupName = "Appearance",
+            severity = "minor",
+            defaultDisposition = "rework",
+        });
+        var update = await client.PutAsJsonAsync("/api/business-console/v1/quality/reason-codes/QR-SCRATCH", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "IGNORED",
+            reasonName = "Deep scratch",
+            groupName = "Appearance",
+            severity = "major",
+            defaultDisposition = "scrap",
+        });
+        var archive = await client.PostAsJsonAsync("/api/business-console/v1/quality/reason-codes/QR-SCRATCH/archive", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "IGNORED",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, archive.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQualityReasonListRequest("org-001", "env-dev", true, "scr", "Appearance", 3, 15), quality.LastQualityReasonListRequest);
+        Assert.Equal(new BusinessConsoleQualityReasonRequest("QR-SCRATCH", "org-001", "env-dev"), quality.LastQualityReasonRequest);
+        Assert.Equal("QR-SCRATCH", quality.LastCreateQualityReasonRequest!.ReasonCode);
+        Assert.Equal("QR-SCRATCH", quality.LastUpdateQualityReasonRequest!.ReasonCode);
+        Assert.Equal("QR-SCRATCH", quality.LastArchiveQualityReasonRequest!.ReasonCode);
     }
 
     [Fact]
@@ -3417,6 +3570,26 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public List<BusinessConsoleSetMasterDataResourceEnabledRequest> SetResourceEnabledRequests { get; } = [];
 
+    public BusinessConsoleListProductCategoriesRequest? LastProductCategoryListRequest { get; private set; }
+
+    public BusinessConsoleProductCategoryRequest? LastProductCategoryRequest { get; private set; }
+
+    public BusinessConsoleCreateProductCategoryRequest? LastCreateProductCategoryRequest { get; private set; }
+
+    public BusinessConsoleUpdateProductCategoryRequest? LastUpdateProductCategoryRequest { get; private set; }
+
+    public BusinessConsoleArchiveProductCategoryRequest? LastArchiveProductCategoryRequest { get; private set; }
+
+    public BusinessConsoleListSkillsRequest? LastSkillListRequest { get; private set; }
+
+    public BusinessConsoleSkillRequest? LastSkillRequest { get; private set; }
+
+    public BusinessConsoleCreateSkillRequest? LastCreateSkillRequest { get; private set; }
+
+    public BusinessConsoleUpdateSkillRequest? LastUpdateSkillRequest { get; private set; }
+
+    public BusinessConsoleArchiveSkillRequest? LastArchiveSkillRequest { get; private set; }
+
     public int CreateResourceCallCount { get; private set; }
 
     public string? LastCreateResourcePath { get; private set; }
@@ -3511,6 +3684,112 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleResourceItem("sku", request.Code ?? "SKU-GENERATED", request.Name, true, "v1"));
+    }
+
+    public Task<BusinessConsoleProductCategoryListResponse> ListProductCategoriesAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductCategoriesRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductCategoryListRequest = request;
+        return Task.FromResult(new BusinessConsoleProductCategoryListResponse(
+            [ProductCategoryItem(request.ParentCode ?? "CAT-001")],
+            1));
+    }
+
+    public Task<BusinessConsoleProductCategoryItem> GetProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleProductCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastProductCategoryRequest = request;
+        return Task.FromResult(ProductCategoryItem(categoryCode));
+    }
+
+    public Task<BusinessConsoleResourceItem> CreateProductCategoryAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastCreateProductCategoryRequest = request;
+        return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/product-categories", "product-category", request.CategoryCode, request.CategoryName);
+    }
+
+    public Task<BusinessConsoleProductCategoryItem> UpdateProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleUpdateProductCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateProductCategoryRequest = request;
+        return Task.FromResult(ProductCategoryItem(categoryCode, request.CategoryName, request.ParentCode, request.Description));
+    }
+
+    public Task<BusinessConsoleProductCategoryItem> ArchiveProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleArchiveProductCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastArchiveProductCategoryRequest = request;
+        return Task.FromResult(ProductCategoryItem(categoryCode, enabled: false));
+    }
+
+    public Task<BusinessConsoleSkillListResponse> ListSkillsAsync(
+        string internalBearerToken,
+        BusinessConsoleListSkillsRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSkillListRequest = request;
+        return Task.FromResult(new BusinessConsoleSkillListResponse([SkillItem("SK-WELD")], 1));
+    }
+
+    public Task<BusinessConsoleSkillItem> GetSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleSkillRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastSkillRequest = request;
+        return Task.FromResult(SkillItem(skillCode));
+    }
+
+    public Task<BusinessConsoleResourceItem> CreateSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSkillRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastCreateSkillRequest = request;
+        return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/skills", "skill", request.SkillCode, request.SkillName);
+    }
+
+    public Task<BusinessConsoleSkillItem> UpdateSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleUpdateSkillRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateSkillRequest = request;
+        return Task.FromResult(SkillItem(skillCode, request.SkillName, request.GroupName, request.RequiresCertification, request.ValidityMonths, request.Description));
+    }
+
+    public Task<BusinessConsoleSkillItem> ArchiveSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleArchiveSkillRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastArchiveSkillRequest = request;
+        return Task.FromResult(SkillItem(skillCode, enabled: false));
     }
 
     public Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
@@ -3727,6 +4006,24 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
             new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
 
+    private static BusinessConsoleProductCategoryItem ProductCategoryItem(
+        string categoryCode,
+        string categoryName = "Finished Goods",
+        string? parentCode = null,
+        string? description = "Finished goods category",
+        bool enabled = true) =>
+        new(categoryCode, categoryName, parentCode, parentCode is null ? categoryCode : $"{parentCode}/{categoryCode}", description, enabled, "v1");
+
+    private static BusinessConsoleSkillItem SkillItem(
+        string skillCode,
+        string skillName = "Welding",
+        string groupName = "Manufacturing",
+        bool requiresCertification = true,
+        int? validityMonths = 24,
+        string? description = "Welding qualification",
+        bool enabled = true) =>
+        new(skillCode, skillName, groupName, requiresCertification, validityMonths, description, enabled, "v1");
+
     private static BusinessConsoleMasterDataResourceDetail ResourceDetail(
         string resourceType,
         string code,
@@ -3815,6 +4112,16 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
 
+    public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
+
+    public BusinessConsoleQualityReasonRequest? LastQualityReasonRequest { get; private set; }
+
+    public BusinessConsoleCreateQualityReasonRequest? LastCreateQualityReasonRequest { get; private set; }
+
+    public BusinessConsoleUpdateQualityReasonRequest? LastUpdateQualityReasonRequest { get; private set; }
+
+    public BusinessConsoleArchiveQualityReasonRequest? LastArchiveQualityReasonRequest { get; private set; }
+
     public int? NcrTotal { get; init; }
 
     public Task<BusinessConsoleQualityListResponse> ListInspectionPlansAsync(
@@ -3859,6 +4166,59 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
             NcrTotal ?? 1));
     }
 
+    public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityReasonListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastQualityReasonListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityReasonListResponse([QualityReasonItem("QR-SCRATCH")], 1));
+    }
+
+    public Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleQualityReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastQualityReasonRequest = request;
+        return Task.FromResult(QualityReasonItem(reasonCode));
+    }
+
+    public Task<BusinessConsoleQualityReasonItem> CreateQualityReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateQualityReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateQualityReasonRequest = request;
+        return Task.FromResult(QualityReasonItem(request.ReasonCode, request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition));
+    }
+
+    public Task<BusinessConsoleQualityReasonItem> UpdateQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateQualityReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateQualityReasonRequest = request;
+        return Task.FromResult(QualityReasonItem(reasonCode, request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition));
+    }
+
+    public Task<BusinessConsoleQualityReasonItem> ArchiveQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleArchiveQualityReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastArchiveQualityReasonRequest = request;
+        return Task.FromResult(QualityReasonItem(reasonCode, enabled: false));
+    }
+
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
         string internalBearerToken,
         string ncrId,
@@ -3872,6 +4232,15 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         BusinessConsoleNcrCloseRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+
+    private static BusinessConsoleQualityReasonItem QualityReasonItem(
+        string reasonCode,
+        string reasonName = "Scratch",
+        string groupName = "Appearance",
+        string severity = "minor",
+        string? defaultDisposition = "rework",
+        bool enabled = true) =>
+        new(reasonCode, reasonName, groupName, severity, defaultDisposition, enabled, "v1");
 }
 
 internal sealed class RecordingProductEngineeringClient : IBusinessProductEngineeringClient

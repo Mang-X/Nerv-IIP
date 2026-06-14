@@ -379,6 +379,66 @@ public sealed class BusinessGatewayAuthorizationTests
             },
             siteCode = "SITE-01",
         },
+        "/api/business-console/v1/master-data/product-categories/CAT-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "CAT-001",
+            categoryName = "Finished Goods",
+            parentCode = (string?)null,
+            description = "Finished goods category",
+        },
+        "/api/business-console/v1/master-data/product-categories/CAT-001/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "CAT-001",
+            reason = "obsolete",
+        },
+        "/api/business-console/v1/master-data/skills/SK-WELD" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "SK-WELD",
+            skillName = "Welding",
+            groupName = "Manufacturing",
+            requiresCertification = true,
+            validityMonths = 24,
+            description = "Welding qualification",
+        },
+        "/api/business-console/v1/master-data/skills/SK-WELD/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "SK-WELD",
+            reason = "obsolete",
+        },
+        "/api/business-console/v1/quality/reason-codes" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+            reasonName = "Scratch",
+            groupName = "Appearance",
+            severity = "minor",
+            defaultDisposition = "rework",
+        },
+        "/api/business-console/v1/quality/reason-codes/QR-SCRATCH" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+            reasonName = "Deep scratch",
+            groupName = "Appearance",
+            severity = "major",
+            defaultDisposition = "scrap",
+        },
+        "/api/business-console/v1/quality/reason-codes/QR-SCRATCH/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+        },
         "/api/business-console/v1/master-data/teams/T-001/members" => new
         {
             organizationId = "org-001",
@@ -571,6 +631,16 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Delete, "/api/business-console/v1/master-data/teams/T-001/members/user-001", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/product-categories", BusinessGatewayPermissions.MasterDataProductsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/product-categories/CAT-001", BusinessGatewayPermissions.MasterDataProductsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/product-categories", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/master-data/product-categories/CAT-001", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/product-categories/CAT-001/archive", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skills", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skills/SK-WELD", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skills", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/master-data/skills/SK-WELD", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skills/SK-WELD/archive", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/business-partners", BusinessGatewayPermissions.MasterDataPartnersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/units-of-measure", BusinessGatewayPermissions.MasterDataProductsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/uom-conversions", BusinessGatewayPermissions.MasterDataProductsManage);
@@ -595,6 +665,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH/archive", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/disposition", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/close", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsManage);

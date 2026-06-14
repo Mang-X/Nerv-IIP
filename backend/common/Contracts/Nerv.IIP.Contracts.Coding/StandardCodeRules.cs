@@ -33,6 +33,8 @@ public static class StandardCodeRules
         Document("routing", "Routing", "RTG"),
         Document("engineering-change", "Engineering change", "ECO"),
         Material(),
+        SimpleResource("product-category", "Product category", "PCAT", 4, separator: "-"),
+        SimpleResource("skill", "Skill", "SK", 4, separator: "-"),
         SimpleResource("unit-of-measure", "Unit of measure", "UOM", 4, separator: "-"),
         SimpleResource("site", "Site", "ST", 3),
         SimpleResource("workshop", "Workshop", "WS", 3),

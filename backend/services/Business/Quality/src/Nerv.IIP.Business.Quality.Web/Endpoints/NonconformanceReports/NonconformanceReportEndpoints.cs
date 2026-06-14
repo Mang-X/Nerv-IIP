@@ -50,6 +50,9 @@ public abstract class QualityEndpoint<TRequest, TResponse> : Endpoint<TRequest, 
             case "POST":
                 Post(contract.Route);
                 break;
+            case "PUT":
+                Put(contract.Route);
+                break;
             default:
                 throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by Quality endpoints.");
         }

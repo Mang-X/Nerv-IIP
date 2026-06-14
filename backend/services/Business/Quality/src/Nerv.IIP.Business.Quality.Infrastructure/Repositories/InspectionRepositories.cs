@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 
 namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 
@@ -25,3 +26,19 @@ public interface IInspectionRecordRepository : IRepository<InspectionRecord, Ins
 
 public sealed class InspectionRecordRepository(ApplicationDbContext context)
     : RepositoryBase<InspectionRecord, InspectionRecordId, ApplicationDbContext>(context), IInspectionRecordRepository;
+
+public interface IQualityReasonRepository : IRepository<QualityReason, QualityReasonId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default);
+}
+
+public sealed class QualityReasonRepository(ApplicationDbContext context)
+    : RepositoryBase<QualityReason, QualityReasonId, ApplicationDbContext>(context), IQualityReasonRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.QualityReasons.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.ReasonCode == reasonCode,
+            cancellationToken);
+    }
+}

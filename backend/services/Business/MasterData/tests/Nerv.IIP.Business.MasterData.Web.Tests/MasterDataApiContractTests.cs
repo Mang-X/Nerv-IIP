@@ -8,7 +8,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
@@ -43,6 +45,12 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(CreateWorkCenterEndpoint))]
     [InlineData(typeof(RegisterDeviceAssetEndpoint))]
     [InlineData(typeof(CreateReferenceDataCodeEndpoint))]
+    [InlineData(typeof(CreateProductCategoryEndpoint))]
+    [InlineData(typeof(UpdateProductCategoryEndpoint))]
+    [InlineData(typeof(ArchiveProductCategoryEndpoint))]
+    [InlineData(typeof(CreateSkillEndpoint))]
+    [InlineData(typeof(UpdateSkillEndpoint))]
+    [InlineData(typeof(ArchiveSkillEndpoint))]
     [InlineData(typeof(UpdateMasterDataResourceEndpoint))]
     [InlineData(typeof(DisableMasterDataResourceEndpoint))]
     [InlineData(typeof(EnableMasterDataResourceEndpoint))]
@@ -87,7 +95,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(30, contracts.Count);
+        Assert.Equal(40, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -95,9 +103,56 @@ public sealed class MasterDataApiContractTests
             Assert.Matches("^[a-z][A-Za-z0-9]*$", contract.OperationId);
             Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
             Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
-            Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PATCH", "DELETE" });
+            Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
             Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
         });
+    }
+
+    [Fact]
+    public void MasterData_catalog_endpoints_expose_product_category_and_skill_routes()
+    {
+        var contracts = MasterDataEndpointContracts.All.ToArray();
+
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/product-categories"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsRead
+            && x.OperationId == "listBusinessMasterDataProductCategories");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsRead
+            && x.OperationId == "getBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/product-categories"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "createBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "updateBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}/archive"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "archiveBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/skills"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+            && x.OperationId == "listBusinessMasterDataSkills");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+            && x.OperationId == "getBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/skills"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "createBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "updateBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}/archive"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "archiveBusinessMasterDataSkill");
     }
 
     [Fact]
@@ -169,6 +224,100 @@ public sealed class MasterDataApiContractTests
             Assert.True(reference.Active);
             Assert.Equal("Scratch", reference.DisplayName);
         });
+    }
+
+    [Fact]
+    public async Task Product_category_catalog_commands_list_detail_update_and_archive_tree_nodes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = new ProductCategoryRepository(dbContext);
+        var create = new CreateProductCategoryCommandHandler(repository, new MasterDataCodingService());
+
+        var root = await create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG", "Finished Goods", null, "Sellable output"),
+            CancellationToken.None);
+        await create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products", "CAT-FG", "Pump family"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListProductCategoriesQueryHandler(dbContext).Handle(
+            new ListProductCategoriesQuery("org-001", "env-dev", Enabled: true, Search: "pump", ParentCode: "CAT-FG", Skip: 0, Take: 10),
+            CancellationToken.None);
+        var child = Assert.Single(list.Items);
+
+        Assert.Equal("product-category", root.ResourceType);
+        Assert.Equal("CAT-FG-PUMP", child.CategoryCode);
+        Assert.Equal("CAT-FG", child.ParentCode);
+        Assert.Equal("CAT-FG/CAT-FG-PUMP", child.Path);
+
+        var updated = await new UpdateProductCategoryCommandHandler(dbContext).Handle(
+            new UpdateProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products Updated", null, "Top level family"),
+            CancellationToken.None);
+
+        Assert.Null(updated.ParentCode);
+        Assert.Equal("Pump Products Updated", updated.CategoryName);
+
+        var archived = await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "retired"),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Product_category_rejects_cycle_when_parent_is_descendant()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.AddRange(
+            ProductCategory.Create("org-001", "env-dev", "CAT-ROOT", "Root", null, null),
+            ProductCategory.Create("org-001", "env-dev", "CAT-CHILD", "Child", "CAT-ROOT", null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new UpdateProductCategoryCommandHandler(dbContext).Handle(
+            new UpdateProductCategoryCommand("org-001", "env-dev", "CAT-ROOT", "Root", "CAT-CHILD", null),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Skill_catalog_commands_list_detail_update_and_archive_certification_rules()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateSkillCommandHandler(new SkillRepository(dbContext), new MasterDataCodingService());
+
+        var created = await create.Handle(
+            new CreateSkillCommand("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, "Welding certificate"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListSkillsQueryHandler(dbContext).Handle(
+            new ListSkillsQuery("org-001", "env-dev", Enabled: true, Search: "weld", GroupName: "Manufacturing", Skip: 0, Take: 10),
+            CancellationToken.None);
+        var item = Assert.Single(list.Items);
+
+        Assert.Equal("skill", created.ResourceType);
+        Assert.Equal("SK-WELD", item.SkillCode);
+        Assert.True(item.RequiresCertification);
+        Assert.Equal(24, item.ValidityMonths);
+
+        var updated = await new UpdateSkillCommandHandler(dbContext).Handle(
+            new UpdateSkillCommand("org-001", "env-dev", "SK-WELD", "Advanced Welding", "Manufacturing", true, 36, "Advanced certificate"),
+            CancellationToken.None);
+
+        Assert.Equal("Advanced Welding", updated.SkillName);
+        Assert.Equal(36, updated.ValidityMonths);
+
+        var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", "retired"),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
     }
 
     [Fact]

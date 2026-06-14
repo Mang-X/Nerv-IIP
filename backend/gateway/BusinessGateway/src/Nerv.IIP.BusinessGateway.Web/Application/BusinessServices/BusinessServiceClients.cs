@@ -37,6 +37,62 @@ public interface IBusinessMasterDataClient
         BusinessConsoleCreateSkuRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleProductCategoryListResponse> ListProductCategoriesAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductCategoriesRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleProductCategoryItem> GetProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleProductCategoryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateProductCategoryAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductCategoryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleProductCategoryItem> UpdateProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleUpdateProductCategoryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleProductCategoryItem> ArchiveProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleArchiveProductCategoryRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSkillListResponse> ListSkillsAsync(
+        string internalBearerToken,
+        BusinessConsoleListSkillsRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSkillItem> GetSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleSkillRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleResourceItem> CreateSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSkillRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSkillItem> UpdateSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleUpdateSkillRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleSkillItem> ArchiveSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleArchiveSkillRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
         string internalBearerToken,
         BusinessConsoleCreateBusinessPartnerRequest request,
@@ -195,6 +251,34 @@ public interface IBusinessQualityClient
     Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityReasonListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleQualityReasonRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityReasonItem> CreateQualityReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateQualityReasonRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityReasonItem> UpdateQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateQualityReasonRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleQualityReasonItem> ArchiveQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleArchiveQualityReasonRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
@@ -1550,6 +1634,126 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
             request,
             cancellationToken);
 
+    public Task<BusinessConsoleProductCategoryListResponse> ListProductCategoriesAsync(
+        string internalBearerToken,
+        BusinessConsoleListProductCategoriesRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleProductCategoryListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/product-categories?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("enabled", request.Enabled),
+                ("search", request.Search),
+                ("parentCode", request.ParentCode),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleProductCategoryItem> GetProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleProductCategoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleProductCategoryItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            ProductCategoryPath(categoryCode) + "?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateProductCategoryAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateProductCategoryRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/product-categories", request, cancellationToken);
+
+    public Task<BusinessConsoleProductCategoryItem> UpdateProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleUpdateProductCategoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleProductCategoryItem>(
+            internalBearerToken,
+            HttpMethod.Put,
+            ProductCategoryPath(categoryCode),
+            request with { CategoryCode = categoryCode },
+            cancellationToken);
+
+    public Task<BusinessConsoleProductCategoryItem> ArchiveProductCategoryAsync(
+        string internalBearerToken,
+        string categoryCode,
+        BusinessConsoleArchiveProductCategoryRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleProductCategoryItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            ProductCategoryPath(categoryCode) + "/archive",
+            request with { CategoryCode = categoryCode },
+            cancellationToken);
+
+    public Task<BusinessConsoleSkillListResponse> ListSkillsAsync(
+        string internalBearerToken,
+        BusinessConsoleListSkillsRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSkillListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/master-data/skills?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("enabled", request.Enabled),
+                ("search", request.Search),
+                ("groupName", request.GroupName),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleSkillItem> GetSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleSkillRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSkillItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            SkillPath(skillCode) + "?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleResourceItem> CreateSkillAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateSkillRequest request,
+        CancellationToken cancellationToken) =>
+        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/skills", request, cancellationToken);
+
+    public Task<BusinessConsoleSkillItem> UpdateSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleUpdateSkillRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSkillItem>(
+            internalBearerToken,
+            HttpMethod.Put,
+            SkillPath(skillCode),
+            request with { SkillCode = skillCode },
+            cancellationToken);
+
+    public Task<BusinessConsoleSkillItem> ArchiveSkillAsync(
+        string internalBearerToken,
+        string skillCode,
+        BusinessConsoleArchiveSkillRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleSkillItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            SkillPath(skillCode) + "/archive",
+            request with { SkillCode = skillCode },
+            cancellationToken);
+
     public Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
         string internalBearerToken,
         BusinessConsoleCreateBusinessPartnerRequest request,
@@ -1746,6 +1950,12 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     private static string ResourcePath(string resourceType, string code) =>
         $"/api/business/v1/master-data/resources/{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}";
 
+    private static string ProductCategoryPath(string categoryCode) =>
+        $"/api/business/v1/master-data/product-categories/{Uri.EscapeDataString(categoryCode)}";
+
+    private static string SkillPath(string skillCode) =>
+        $"/api/business/v1/master-data/skills/{Uri.EscapeDataString(skillCode)}";
+
     private static string CodeRulePath(string ruleKey) =>
         $"/api/business/v1/master-data/code-rules/{Uri.EscapeDataString(ruleKey)}";
 
@@ -1898,6 +2108,73 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             response.Total);
     }
 
+    public Task<BusinessConsoleQualityReasonListResponse> ListQualityReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityReasonListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/reason-codes?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("enabled", request.Enabled),
+                ("search", request.Search),
+                ("groupName", request.GroupName),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityReasonItem> GetQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleQualityReasonRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonItem>(
+            internalBearerToken,
+            HttpMethod.Get,
+            QualityReasonPath(reasonCode) + "?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityReasonItem> CreateQualityReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateQualityReasonRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/quality/reason-codes",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityReasonItem> UpdateQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateQualityReasonRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonItem>(
+            internalBearerToken,
+            HttpMethod.Put,
+            QualityReasonPath(reasonCode),
+            request with { ReasonCode = reasonCode },
+            cancellationToken);
+
+    public Task<BusinessConsoleQualityReasonItem> ArchiveQualityReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleArchiveQualityReasonRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleQualityReasonItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            QualityReasonPath(reasonCode) + "/archive",
+            request with { ReasonCode = reasonCode },
+            cancellationToken);
+
     public Task<BusinessConsoleAcceptedResponse> SubmitNcrDispositionAsync(
         string internalBearerToken,
         string ncrId,
@@ -1965,6 +2242,9 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.DefectReason,
             item.BatchNo,
             item.SerialNo);
+
+    private static string QualityReasonPath(string reasonCode) =>
+        $"/api/business/v1/quality/reason-codes/{Uri.EscapeDataString(reasonCode)}";
 
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items,

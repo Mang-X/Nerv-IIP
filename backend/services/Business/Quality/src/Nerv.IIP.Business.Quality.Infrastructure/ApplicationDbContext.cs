@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Quality.Infrastructure;
@@ -13,6 +14,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<NonconformanceReport> NonconformanceReports => Set<NonconformanceReport>();
     public DbSet<InspectionPlan> InspectionPlans => Set<InspectionPlan>();
     public DbSet<InspectionRecord> InspectionRecords => Set<InspectionRecord>();
+    public DbSet<QualityReason> QualityReasons => Set<QualityReason>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
