@@ -35,6 +35,16 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/resources/{resourceType}/{code}/enable", "post", "enableBusinessConsoleMasterDataResource");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skus", "get", "listBusinessConsoleSkus");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skus", "post", "createBusinessConsoleSku");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories", "get", "listBusinessConsoleProductCategories");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}", "get", "getBusinessConsoleProductCategory");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories", "post", "createBusinessConsoleProductCategory");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}", "put", "updateBusinessConsoleProductCategory");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/product-categories/{categoryCode}/archive", "post", "archiveBusinessConsoleProductCategory");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/skills", "get", "listBusinessConsoleSkills");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}", "get", "getBusinessConsoleSkill");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/skills", "post", "createBusinessConsoleSkill");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}", "put", "updateBusinessConsoleSkill");
+        AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}/archive", "post", "archiveBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/business-partners", "post", "createBusinessConsoleBusinessPartner");
         AssertOperationId(paths, "/api/business-console/v1/master-data/units-of-measure", "post", "createBusinessConsoleUnitOfMeasure");
         AssertOperationId(paths, "/api/business-console/v1/master-data/uom-conversions", "post", "createBusinessConsoleUomConversion");
@@ -66,6 +76,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-plans", "get", "listBusinessConsoleQualityInspectionPlans");
         AssertOperationId(paths, "/api/business-console/v1/quality/inspection-records", "post", "createBusinessConsoleQualityInspectionRecord");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs", "get", "listBusinessConsoleQualityNcrs");
+        AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "get", "listBusinessConsoleQualityReasonCodes");
+        AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "get", "getBusinessConsoleQualityReasonCode");
+        AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes", "post", "createBusinessConsoleQualityReasonCode");
+        AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}", "put", "updateBusinessConsoleQualityReasonCode");
+        AssertOperationId(paths, "/api/business-console/v1/quality/reason-codes/{reasonCode}/archive", "post", "archiveBusinessConsoleQualityReasonCode");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/disposition", "post", "submitBusinessConsoleQualityNcrDisposition");
         AssertOperationId(paths, "/api/business-console/v1/quality/ncrs/{ncrId}/close", "post", "closeBusinessConsoleQualityNcr");
         AssertOperationId(paths, "/api/business-console/v1/engineering/documents", "post", "registerBusinessConsoleEngineeringDocument");

@@ -33,6 +33,9 @@ public abstract class MasterDataEndpoint<TRequest, TResponse> : Endpoint<TReques
             case "POST":
                 Post(contract.Route);
                 break;
+            case "PUT":
+                Put(contract.Route);
+                break;
             case "PATCH":
                 Patch(contract.Route);
                 break;
@@ -930,6 +933,84 @@ public sealed record CreateReferenceDataCodeRequest(
     string Code,
     string Name);
 
+public sealed record ListProductCategoriesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    string? ParentCode = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record ProductCategoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string CategoryCode);
+
+public sealed record CreateProductCategoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? CategoryCode,
+    string CategoryName,
+    string? ParentCode,
+    string? Description,
+    string? IdempotencyKey = null);
+
+public sealed record UpdateProductCategoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string CategoryCode,
+    string CategoryName,
+    string? ParentCode,
+    string? Description);
+
+public sealed record ArchiveProductCategoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string CategoryCode,
+    string Reason = "");
+
+public sealed record ListSkillsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    string? GroupName = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record SkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string SkillCode);
+
+public sealed record CreateSkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkillCode,
+    string SkillName,
+    string GroupName,
+    bool RequiresCertification,
+    int? ValidityMonths,
+    string? Description,
+    string? IdempotencyKey = null);
+
+public sealed record UpdateSkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string SkillCode,
+    string SkillName,
+    string GroupName,
+    bool RequiresCertification,
+    int? ValidityMonths,
+    string? Description);
+
+public sealed record ArchiveSkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string SkillCode,
+    string Reason = "");
+
 public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
     : MasterDataEndpoint<CreateReferenceDataCodeRequest, ResponseData<MasterDataResourceResponse>>
 {
@@ -948,6 +1029,186 @@ public sealed class CreateReferenceDataCodeEndpoint(ISender sender)
             req.Code,
             req.Name), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListProductCategoriesEndpoint(ISender sender)
+    : MasterDataEndpoint<ListProductCategoriesRequest, ResponseData<ProductCategoryListResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListProductCategoriesEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListProductCategoriesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListProductCategoriesQuery(req.OrganizationId, req.EnvironmentId, req.Enabled, req.Search, req.ParentCode, req.Skip, req.Take),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetProductCategoryEndpoint(ISender sender)
+    : MasterDataEndpoint<ProductCategoryRequest, ResponseData<ProductCategoryItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<GetProductCategoryEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ProductCategoryRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetProductCategoryQuery(req.OrganizationId, req.EnvironmentId, req.CategoryCode), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateProductCategoryEndpoint(ISender sender)
+    : MasterDataEndpoint<CreateProductCategoryRequest, ResponseData<MasterDataResourceResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<CreateProductCategoryEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(CreateProductCategoryRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(
+            new CreateProductCategoryCommand(req.OrganizationId, req.EnvironmentId, req.CategoryCode, req.CategoryName, req.ParentCode, req.Description, req.IdempotencyKey),
+            ct);
+        await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UpdateProductCategoryEndpoint(ISender sender)
+    : MasterDataEndpoint<UpdateProductCategoryRequest, ResponseData<ProductCategoryItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<UpdateProductCategoryEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(UpdateProductCategoryRequest req, CancellationToken ct)
+    {
+        var categoryCode = Route<string>("categoryCode") ?? req.CategoryCode;
+        var response = await sender.Send(
+            new UpdateProductCategoryCommand(req.OrganizationId, req.EnvironmentId, categoryCode, req.CategoryName, req.ParentCode, req.Description),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ArchiveProductCategoryEndpoint(ISender sender)
+    : MasterDataEndpoint<ArchiveProductCategoryRequest, ResponseData<ProductCategoryItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ArchiveProductCategoryEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ArchiveProductCategoryRequest req, CancellationToken ct)
+    {
+        var categoryCode = Route<string>("categoryCode") ?? req.CategoryCode;
+        var response = await sender.Send(
+            new ArchiveProductCategoryCommand(req.OrganizationId, req.EnvironmentId, categoryCode, req.Reason),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListSkillsEndpoint(ISender sender)
+    : MasterDataEndpoint<ListSkillsRequest, ResponseData<SkillListResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ListSkillsEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ListSkillsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new ListSkillsQuery(req.OrganizationId, req.EnvironmentId, req.Enabled, req.Search, req.GroupName, req.Skip, req.Take),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetSkillEndpoint(ISender sender)
+    : MasterDataEndpoint<SkillRequest, ResponseData<SkillItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<GetSkillEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(SkillRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetSkillQuery(req.OrganizationId, req.EnvironmentId, req.SkillCode), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateSkillEndpoint(ISender sender)
+    : MasterDataEndpoint<CreateSkillRequest, ResponseData<MasterDataResourceResponse>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<CreateSkillEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(CreateSkillRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(
+            new CreateSkillCommand(req.OrganizationId, req.EnvironmentId, req.SkillCode, req.SkillName, req.GroupName, req.RequiresCertification, req.ValidityMonths, req.Description, req.IdempotencyKey),
+            ct);
+        await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UpdateSkillEndpoint(ISender sender)
+    : MasterDataEndpoint<UpdateSkillRequest, ResponseData<SkillItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<UpdateSkillEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(UpdateSkillRequest req, CancellationToken ct)
+    {
+        var skillCode = Route<string>("skillCode") ?? req.SkillCode;
+        var response = await sender.Send(
+            new UpdateSkillCommand(req.OrganizationId, req.EnvironmentId, skillCode, req.SkillName, req.GroupName, req.RequiresCertification, req.ValidityMonths, req.Description),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ArchiveSkillEndpoint(ISender sender)
+    : MasterDataEndpoint<ArchiveSkillRequest, ResponseData<SkillItem>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<ArchiveSkillEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(ArchiveSkillRequest req, CancellationToken ct)
+    {
+        var skillCode = Route<string>("skillCode") ?? req.SkillCode;
+        var response = await sender.Send(
+            new ArchiveSkillCommand(req.OrganizationId, req.EnvironmentId, skillCode, req.Reason),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -1122,6 +1383,16 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateWorkCenterEndpoint), "POST", "/api/business/v1/master-data/work-centers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkCenter"),
         new(typeof(RegisterDeviceAssetEndpoint), "POST", "/api/business/v1/master-data/device-assets", BusinessPermissionCodes.MasterDataResourcesManage, "registerBusinessMasterDataDeviceAsset"),
         new(typeof(CreateReferenceDataCodeEndpoint), "POST", "/api/business/v1/master-data/reference-data", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataReferenceDataCode"),
+        new(typeof(ListProductCategoriesEndpoint), "GET", "/api/business/v1/master-data/product-categories", BusinessPermissionCodes.MasterDataProductsRead, "listBusinessMasterDataProductCategories"),
+        new(typeof(GetProductCategoryEndpoint), "GET", "/api/business/v1/master-data/product-categories/{categoryCode}", BusinessPermissionCodes.MasterDataProductsRead, "getBusinessMasterDataProductCategory"),
+        new(typeof(CreateProductCategoryEndpoint), "POST", "/api/business/v1/master-data/product-categories", BusinessPermissionCodes.MasterDataProductsManage, "createBusinessMasterDataProductCategory"),
+        new(typeof(UpdateProductCategoryEndpoint), "PUT", "/api/business/v1/master-data/product-categories/{categoryCode}", BusinessPermissionCodes.MasterDataProductsManage, "updateBusinessMasterDataProductCategory"),
+        new(typeof(ArchiveProductCategoryEndpoint), "POST", "/api/business/v1/master-data/product-categories/{categoryCode}/archive", BusinessPermissionCodes.MasterDataProductsManage, "archiveBusinessMasterDataProductCategory"),
+        new(typeof(ListSkillsEndpoint), "GET", "/api/business/v1/master-data/skills", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataSkills"),
+        new(typeof(GetSkillEndpoint), "GET", "/api/business/v1/master-data/skills/{skillCode}", BusinessPermissionCodes.MasterDataResourcesRead, "getBusinessMasterDataSkill"),
+        new(typeof(CreateSkillEndpoint), "POST", "/api/business/v1/master-data/skills", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataSkill"),
+        new(typeof(UpdateSkillEndpoint), "PUT", "/api/business/v1/master-data/skills/{skillCode}", BusinessPermissionCodes.MasterDataResourcesManage, "updateBusinessMasterDataSkill"),
+        new(typeof(ArchiveSkillEndpoint), "POST", "/api/business/v1/master-data/skills/{skillCode}/archive", BusinessPermissionCodes.MasterDataResourcesManage, "archiveBusinessMasterDataSkill"),
         new(typeof(ListCodeRulesEndpoint), "GET", "/api/business/v1/master-data/code-rules", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataCodeRules"),
         new(typeof(GetCodeRuleDetailEndpoint), "GET", "/api/business/v1/master-data/code-rules/{ruleKey}", BusinessPermissionCodes.MasterDataResourcesRead, "getBusinessMasterDataCodeRule"),
         new(typeof(CreateCodeRuleVersionEndpoint), "POST", "/api/business/v1/master-data/code-rules/{ruleKey}/versions", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataCodeRuleVersion"),
