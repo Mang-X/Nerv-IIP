@@ -32,11 +32,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
   Spinner,
   StatusBadge,
 } from '@nerv-iip/ui'
@@ -488,15 +483,15 @@ async function submitForm() {
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="rules.length" />
 
     <!-- 查看 Sheet 抽屉 -->
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="w-full sm:max-w-4xl">
-        <SheetHeader>
-          <SheetTitle>编码规则 · 明细</SheetTitle>
-          <SheetDescription>
+    <Dialog v-model:open="viewOpen">
+      <DialogContent class="sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>编码规则 · 明细</DialogTitle>
+          <DialogDescription>
             {{ viewTarget ? `${viewTarget.ruleKey} · ${viewTarget.displayName ?? ''}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
-        <div v-if="viewTarget" class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-2">
+          </DialogDescription>
+        </DialogHeader>
+        <div v-if="viewTarget" class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">规则键</span>
@@ -599,8 +594,8 @@ async function submitForm() {
             </p>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
 
     <!-- 新建版本 Dialog -->
     <Dialog v-model:open="formOpen">
