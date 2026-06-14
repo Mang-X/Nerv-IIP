@@ -489,14 +489,14 @@ async function submitForm() {
 
     <!-- 查看 Sheet 抽屉 -->
     <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
+      <SheetContent class="w-full sm:max-w-4xl">
         <SheetHeader>
           <SheetTitle>编码规则 · 明细</SheetTitle>
           <SheetDescription>
             {{ viewTarget ? `${viewTarget.ruleKey} · ${viewTarget.displayName ?? ''}` : '' }}
           </SheetDescription>
         </SheetHeader>
-        <div v-if="viewTarget" class="grid gap-4 px-4 py-2">
+        <div v-if="viewTarget" class="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">规则键</span>
@@ -526,7 +526,7 @@ async function submitForm() {
 
           <div>
             <FormSectionTitle>段定义</FormSectionTitle>
-            <div v-if="viewSegments.length" class="mt-2 overflow-hidden rounded-md border">
+            <div v-if="viewSegments.length" class="mt-2 overflow-x-auto rounded-md border">
               <table class="w-full text-sm">
                 <thead class="bg-muted/40 text-muted-foreground">
                   <tr>
@@ -570,7 +570,7 @@ async function submitForm() {
             <p v-else-if="versionsError" class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
               {{ versionsError }}
             </p>
-            <div v-else-if="versions.length" class="mt-2 overflow-hidden rounded-md border">
+            <div v-else-if="versions.length" class="mt-2 overflow-x-auto rounded-md border">
               <table class="w-full text-sm">
                 <thead class="bg-muted/40 text-muted-foreground">
                   <tr>
