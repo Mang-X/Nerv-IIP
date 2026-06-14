@@ -39,8 +39,15 @@ public sealed class BusinessConsoleCreateQualityReasonRequestValidator : Validat
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DefaultDisposition).MaximumLength(100);
+        RuleFor(x => x.Severity)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(QualityReasonCatalogValidation.IsSupportedSeverity)
+            .WithMessage(QualityReasonCatalogValidation.SeverityMessage);
+        RuleFor(x => x.DefaultDisposition)
+            .MaximumLength(100)
+            .Must(QualityReasonCatalogValidation.IsSupportedDefaultDisposition)
+            .WithMessage(QualityReasonCatalogValidation.DefaultDispositionMessage);
     }
 }
 
@@ -53,8 +60,51 @@ public sealed class BusinessConsoleUpdateQualityReasonRequestValidator : Validat
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DefaultDisposition).MaximumLength(100);
+        RuleFor(x => x.Severity)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(QualityReasonCatalogValidation.IsSupportedSeverity)
+            .WithMessage(QualityReasonCatalogValidation.SeverityMessage);
+        RuleFor(x => x.DefaultDisposition)
+            .MaximumLength(100)
+            .Must(QualityReasonCatalogValidation.IsSupportedDefaultDisposition)
+            .WithMessage(QualityReasonCatalogValidation.DefaultDispositionMessage);
+    }
+}
+
+internal static class QualityReasonCatalogValidation
+{
+    private static readonly HashSet<string> Severities =
+    [
+        "minor",
+        "major",
+        "critical",
+    ];
+
+    private static readonly HashSet<string> DefaultDispositions =
+    [
+        "rework",
+        "scrap",
+        "return-to-supplier",
+        "conditional-release",
+    ];
+
+    public const string SeverityMessage = "Severity must be one of: minor, major, critical.";
+    public const string DefaultDispositionMessage = "DefaultDisposition must be one of: rework, scrap, return-to-supplier, conditional-release, or omitted.";
+
+    public static bool IsSupportedSeverity(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && Severities.Contains(value.Trim().ToLowerInvariant());
+    }
+
+    public static bool IsSupportedDefaultDisposition(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        return DefaultDispositions.Contains(value.Trim().ToLowerInvariant());
     }
 }
 

@@ -56,6 +56,17 @@ public sealed class QualityReason : Entity<QualityReasonId>, IAggregateRoot
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
+    public static bool IsSupportedSeverity(string? value)
+    {
+        return !string.IsNullOrWhiteSpace(value) && Severities.Contains(value.Trim().ToLowerInvariant());
+    }
+
+    public static bool IsSupportedDefaultDisposition(string? value)
+    {
+        var normalized = Optional(value)?.ToLowerInvariant();
+        return normalized is null || DefaultDispositions.Contains(normalized);
+    }
+
     public static QualityReason Create(
         string organizationId,
         string environmentId,

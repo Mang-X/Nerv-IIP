@@ -138,6 +138,22 @@ public sealed class QualityEndpointContractTests
         Assert.False(archived.Enabled);
     }
 
+    [Fact]
+    public void Quality_reason_command_validators_reject_unsupported_catalog_values()
+    {
+        var create = new CreateQualityReasonCommandValidator().Validate(
+            new CreateQualityReasonCommand("org-001", "env-dev", "QR-BAD", "Bad reason", "Appearance", "low", "use-as-is"));
+        var update = new UpdateQualityReasonCommandValidator().Validate(
+            new UpdateQualityReasonCommand("org-001", "env-dev", "QR-BAD", "Bad reason", "Appearance", "high", "accept"));
+
+        Assert.False(create.IsValid);
+        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.Severity));
+        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.DefaultDisposition));
+        Assert.False(update.IsValid);
+        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.Severity));
+        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.DefaultDisposition));
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

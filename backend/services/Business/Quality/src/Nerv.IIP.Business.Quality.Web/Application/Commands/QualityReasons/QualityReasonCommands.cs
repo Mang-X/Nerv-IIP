@@ -37,8 +37,15 @@ public sealed class CreateQualityReasonCommandValidator : AbstractValidator<Crea
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DefaultDisposition).MaximumLength(100);
+        RuleFor(x => x.Severity)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(QualityReason.IsSupportedSeverity)
+            .WithMessage(QualityReasonValidationMessages.Severity);
+        RuleFor(x => x.DefaultDisposition)
+            .MaximumLength(100)
+            .Must(QualityReason.IsSupportedDefaultDisposition)
+            .WithMessage(QualityReasonValidationMessages.DefaultDisposition);
     }
 }
 
@@ -51,9 +58,22 @@ public sealed class UpdateQualityReasonCommandValidator : AbstractValidator<Upda
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DefaultDisposition).MaximumLength(100);
+        RuleFor(x => x.Severity)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(QualityReason.IsSupportedSeverity)
+            .WithMessage(QualityReasonValidationMessages.Severity);
+        RuleFor(x => x.DefaultDisposition)
+            .MaximumLength(100)
+            .Must(QualityReason.IsSupportedDefaultDisposition)
+            .WithMessage(QualityReasonValidationMessages.DefaultDisposition);
     }
+}
+
+internal static class QualityReasonValidationMessages
+{
+    public const string Severity = "Severity must be one of: minor, major, critical.";
+    public const string DefaultDisposition = "DefaultDisposition must be one of: rework, scrap, return-to-supplier, conditional-release, or omitted.";
 }
 
 public sealed class ArchiveQualityReasonCommandValidator : AbstractValidator<ArchiveQualityReasonCommand>

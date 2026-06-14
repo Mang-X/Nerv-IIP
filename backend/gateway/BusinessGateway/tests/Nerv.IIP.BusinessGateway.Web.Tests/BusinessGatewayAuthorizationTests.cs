@@ -235,6 +235,39 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Theory]
+    [InlineData("POST", "/api/business-console/v1/quality/reason-codes", "low", "rework")]
+    [InlineData("PUT", "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", "major", "use-as-is")]
+    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_before_permission_check(
+        string method,
+        string path,
+        string severity,
+        string defaultDisposition)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reasonCode = "QR-SCRATCH",
+                reasonName = "Scratch",
+                groupName = "Appearance",
+                severity,
+                defaultDisposition,
+            }),
+        };
+
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Theory]
     [MemberData(nameof(BusinessConsoleRoutes))]
     public async Task Business_console_routes_return_forbidden_when_iam_denies_permission(
         HttpMethod method,
