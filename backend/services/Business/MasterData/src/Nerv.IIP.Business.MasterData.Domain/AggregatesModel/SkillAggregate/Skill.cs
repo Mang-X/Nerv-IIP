@@ -109,9 +109,7 @@ public sealed class Skill : Entity<SkillId>, IAggregateRoot
     {
         if (!requiresCertification)
         {
-            return validityMonths.HasValue && validityMonths.Value <= 0
-                ? throw new ArgumentOutOfRangeException(nameof(validityMonths), "Validity months must be positive.")
-                : validityMonths;
+            return null;
         }
 
         if (!validityMonths.HasValue)

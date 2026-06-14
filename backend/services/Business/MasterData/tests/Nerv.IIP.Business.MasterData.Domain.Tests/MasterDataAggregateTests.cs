@@ -293,4 +293,17 @@ public sealed class MasterDataAggregateTests
         Assert.Throws<ArgumentException>(() => Skill.Create("org-001", "env-dev", "SK-BAD", "Bad", "Manufacturing", true, null, null));
         Assert.Throws<ArgumentOutOfRangeException>(() => skill.Update("Advanced Welding", "Manufacturing", true, 0, null));
     }
+
+    [Fact]
+    public void Skill_catalog_clears_validity_when_certification_is_not_required()
+    {
+        var skill = Skill.Create("org-001", "env-dev", "SK-PACK", "Packing", "Manufacturing", false, 24, null);
+
+        Assert.False(skill.RequiresCertification);
+        Assert.Null(skill.ValidityMonths);
+
+        skill.Update("Packing", "Manufacturing", false, 36, null);
+
+        Assert.Null(skill.ValidityMonths);
+    }
 }

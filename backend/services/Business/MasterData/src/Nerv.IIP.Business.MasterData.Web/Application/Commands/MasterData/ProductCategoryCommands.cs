@@ -29,6 +29,7 @@ public sealed record ArchiveProductCategoryCommand(
     string Reason) : ICommand<ProductCategoryItem>;
 
 public sealed class CreateProductCategoryCommandHandler(
+    ApplicationDbContext dbContext,
     IProductCategoryRepository repository,
     MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateProductCategoryCommand, MasterDataResourceResult>
@@ -53,6 +54,14 @@ public sealed class CreateProductCategoryCommandHandler(
         {
             throw new KnownException($"Product category '{allocation.Code}' already exists.");
         }
+
+        await ProductCategoryTreeValidator.EnsureParentDoesNotCreateCycleAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            allocation.Code,
+            request.ParentCode,
+            cancellationToken);
 
         var category = ProductCategory.Create(
             request.OrganizationId,
@@ -116,13 +125,21 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             request.EnvironmentId,
             request.CategoryCode,
             cancellationToken);
-        category.Disable(request.Reason);
+        category.Disable(MasterDataArchiveReason.Normalize(request.Reason));
         var categories = await ListProductCategoriesQueryHandler.LoadCategoriesAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             cancellationToken);
         return ListProductCategoriesQueryHandler.ToItem(category, categories);
+    }
+}
+
+internal static class MasterDataArchiveReason
+{
+    public static string Normalize(string reason)
+    {
+        return string.IsNullOrWhiteSpace(reason) ? "archived" : reason.Trim();
     }
 }
 

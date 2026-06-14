@@ -107,7 +107,7 @@ public sealed class ArchiveSkillCommandHandler(ApplicationDbContext dbContext)
             request.EnvironmentId,
             request.SkillCode,
             cancellationToken);
-        skill.Disable(request.Reason);
+        skill.Disable(MasterDataArchiveReason.Normalize(request.Reason));
         return ListSkillsQueryHandler.ToItem(skill);
     }
 }

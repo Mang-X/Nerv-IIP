@@ -233,11 +233,12 @@ public sealed class MasterDataApiContractTests
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var repository = new ProductCategoryRepository(dbContext);
-        var create = new CreateProductCategoryCommandHandler(repository, new MasterDataCodingService());
+        var create = new CreateProductCategoryCommandHandler(dbContext, repository, new MasterDataCodingService());
 
         var root = await create.Handle(
             new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG", "Finished Goods", null, "Sellable output"),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await create.Handle(
             new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products", "CAT-FG", "Pump family"),
             CancellationToken.None);
@@ -284,6 +285,37 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Product_category_create_rejects_missing_parent()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateProductCategoryCommandHandler(dbContext, new ProductCategoryRepository(dbContext), new MasterDataCodingService());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-ORPHAN", "Orphan", "CAT-MISSING", null),
+            CancellationToken.None));
+
+        Assert.Contains("Parent product category 'CAT-MISSING' was not found.", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Product_category_archive_uses_default_reason_when_request_reason_is_blank()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.Add(ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var archived = await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", " "),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
     public async Task Skill_catalog_commands_list_detail_update_and_archive_certification_rules()
     {
         await using var provider = CreateInMemoryProvider();
@@ -315,6 +347,22 @@ public sealed class MasterDataApiContractTests
 
         var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
             new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", "retired"),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Skill_archive_uses_default_reason_when_request_reason_is_blank()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", ""),
             CancellationToken.None);
 
         Assert.False(archived.Enabled);

@@ -62,4 +62,23 @@ public sealed class QualityReasonTests
         Assert.Null(reason.DefaultDisposition);
         Assert.Throws<ArgumentException>(() => reason.Update("Missing part", "Assembly", "critical", "use-as-is"));
     }
+
+    [Fact]
+    public void Quality_reason_cannot_be_updated_after_archive()
+    {
+        var reason = QualityReason.Create(
+            "org-001",
+            "env-dev",
+            "QR-SURFACE",
+            "Surface scratch",
+            "Appearance",
+            "minor",
+            "rework",
+            true);
+
+        reason.SetEnabled(false);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            reason.Update("Deep scratch", "Appearance", "major", "scrap"));
+    }
 }

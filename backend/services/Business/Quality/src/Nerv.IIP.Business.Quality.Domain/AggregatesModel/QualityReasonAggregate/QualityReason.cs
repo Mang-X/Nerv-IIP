@@ -82,11 +82,20 @@ public sealed class QualityReason : Entity<QualityReasonId>, IAggregateRoot
 
     public void Update(string reasonName, string groupName, string severity, string? defaultDisposition)
     {
+        EnsureEnabled();
         ReasonName = Required(reasonName);
         GroupName = Required(groupName);
         Severity = Supported(severity, Severities, nameof(severity));
         DefaultDisposition = OptionalSupported(defaultDisposition, DefaultDispositions, nameof(defaultDisposition));
         UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private void EnsureEnabled()
+    {
+        if (!Enabled)
+        {
+            throw new InvalidOperationException("Archived quality reason cannot be changed.");
+        }
     }
 
     public void SetEnabled(bool enabled)
