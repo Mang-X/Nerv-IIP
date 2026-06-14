@@ -63,6 +63,14 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   },
 }))
 
+// 产品分类已升为主数据（#400）：electronic → 电子料。
+vi.mock('@/composables/usePromotedCatalogs', () => ({
+  useProductCategories: () => ({
+    categories: shallowRef([{ categoryCode: 'electronic', categoryName: '电子料', enabled: true }]),
+    categoriesPending: shallowRef(false),
+  }),
+}))
+
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
   toast: { success: stub.toastSuccess, error: stub.toastError },
@@ -140,7 +148,7 @@ describe('master-data skus page', () => {
     await flushPromises()
 
     const codeSets = stub.resourcesCalls.filter((c) => c.resourceType === 'reference-data').map((c) => c.codeSet)
-    for (const cs of ['product-category', 'material-type', 'batch-tracking-policy', 'serial-tracking-policy', 'shelf-life-policy', 'storage-condition', 'barcode-rule', 'compliance-tag']) {
+    for (const cs of ['material-type', 'batch-tracking-policy', 'serial-tracking-policy', 'shelf-life-policy', 'storage-condition', 'barcode-rule', 'compliance-tag']) {
       expect(codeSets).toContain(cs)
     }
   })

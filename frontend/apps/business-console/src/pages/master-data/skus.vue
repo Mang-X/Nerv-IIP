@@ -8,6 +8,7 @@ import {
   useBusinessSkus,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
+import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -45,7 +46,6 @@ import {
   BATCH_TRACKING_OPTIONS,
   COMPLIANCE_TAG_OPTIONS,
   MATERIAL_TYPE_OPTIONS,
-  PRODUCT_CATEGORY_OPTIONS,
   SERIAL_TRACKING_OPTIONS,
   SHELF_LIFE_OPTIONS,
   STORAGE_CONDITION_OPTIONS,
@@ -69,8 +69,8 @@ const skuActions = useMasterDataResourceActions('sku')
 
 // 字典化下拉「实时拉取 + 常量兜底」：每个 codeSet 一个 resources 查询，服务端按 codeSet 过滤；
 // 后端某些 codeSet 可能仍空，届时由对应常量兜底，保证表单始终可用、可选。
-const { resources: productCategoryResources, resourcesPending: productCategoryPending }
-  = useBusinessMasterDataResources('reference-data', { codeSet: 'product-category' })
+// 产品分类已升为主数据（#400），从产品分类主数据取，不再走数据字典。
+const { categories: productCategories, categoriesPending: productCategoryPending } = useProductCategories()
 const { resources: materialTypeResources, resourcesPending: materialTypePending }
   = useBusinessMasterDataResources('reference-data', { codeSet: 'material-type' })
 const { resources: batchPolicyResources, resourcesPending: batchPolicyPending }
@@ -151,7 +151,12 @@ const createForm = reactive<CreateSkuForm>({
 // 字典选项「实时优先、英文名用常量中文覆盖、整体为空回退常量」——见 mergeReferenceOptions。
 const referenceOptions = mergeReferenceOptions
 
-const productCategoryOptions = computed(() => referenceOptions(productCategoryResources.value, PRODUCT_CATEGORY_OPTIONS))
+// 产品分类选项来自分类主数据：value=categoryCode，label=分类名（带编码）。
+const productCategoryOptions = computed(() =>
+  productCategories.value
+    .filter((c) => c.enabled !== false && (c.categoryCode ?? '').trim().length > 0)
+    .map((c) => ({ value: c.categoryCode as string, label: `${c.categoryName ?? c.categoryCode} · ${c.categoryCode}` })),
+)
 const materialTypeOptions = computed(() => referenceOptions(materialTypeResources.value, MATERIAL_TYPE_OPTIONS))
 const batchPolicyOptions = computed(() => referenceOptions(batchPolicyResources.value, BATCH_TRACKING_OPTIONS))
 const serialPolicyOptions = computed(() => referenceOptions(serialPolicyResources.value, SERIAL_TRACKING_OPTIONS))

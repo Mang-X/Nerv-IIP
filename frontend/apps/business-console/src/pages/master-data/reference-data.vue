@@ -47,7 +47,7 @@ interface CodeSetMeta {
 }
 const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'material-type', label: '物料类型', kind: 'system-enum' },
-  { codeSet: 'product-category', label: '产品/物料分类', kind: 'platform-preset' },
+  // 产品/物料分类已升为分类树主数据（#400，见 /master-data/product-categories），从数据字典迁出。
   { codeSet: 'uom-dimension', label: '计量量纲', kind: 'system-enum' },
   { codeSet: 'batch-tracking-policy', label: '批次策略', kind: 'system-enum' },
   { codeSet: 'serial-tracking-policy', label: '序列策略', kind: 'system-enum' },
@@ -55,10 +55,9 @@ const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'storage-condition', label: '仓储条件', kind: 'platform-preset' },
   { codeSet: 'barcode-rule', label: '条码规则', kind: 'platform-preset' },
   { codeSet: 'partner-type', label: '伙伴角色', kind: 'system-enum' },
-  { codeSet: 'skill', label: '技能', kind: 'factory-custom' },
+  // 技能已升为技能目录主数据（#402，见 /master-data/skill-catalog），从数据字典迁出。
   { codeSet: 'skill-level', label: '技能等级', kind: 'system-enum' },
-  // 标准工序已升为产品工程主数据（#397，见 /engineering/standard-operations），从数据字典迁出。
-  { codeSet: 'quality-reason', label: '质量原因', kind: 'factory-custom' },
+  // 标准工序（#397）/ 质量原因（#401，见 /quality/reason-codes）已升为主数据，从数据字典迁出。
   { codeSet: 'compliance-tag', label: '合规标签', kind: 'platform-preset' },
   { codeSet: 'device-status', label: '设备状态', kind: 'system-enum' },
   { codeSet: 'line-type', label: '产线类型', kind: 'system-enum' },

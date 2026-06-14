@@ -4,11 +4,11 @@ import type {
   BusinessConsolePersonnelSkillMatrixRow,
 } from '@nerv-iip/api-client'
 import {
-  useBusinessMasterDataResources,
   usePersonnelSkillAssignment,
   usePersonnelSkillMatrix,
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
+import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -51,8 +51,8 @@ definePage({ meta: { requiresAuth: true, title: '人员技能' } })
 // 人员技能：矩阵（工人 × 技能，一屏可读「谁会什么、到期没」）+ 登记 Dialog（录入/更新某工人某技能等级）。
 const matrix = usePersonnelSkillMatrix()
 const skillAssignment = usePersonnelSkillAssignment()
-// 技能目录字典（codeSet=skill，工厂在「数据字典 › 技能」维护）：登记选技能 + 矩阵列头解析中文名。
-const skillDict = useBusinessMasterDataResources('reference-data', { codeSet: 'skill' })
+// 技能目录已升为主数据（#402，「基础数据 › 技能目录」）：登记选技能 + 矩阵列头解析中文名。
+const { skills: skillCatalog, refresh: refreshSkillCatalog } = useSkillCatalog()
 // 工人目录（IAM 用户）：把行 userId 解析成工人姓名（工号 · 部门）。
 const workerDir = useBusinessWorkers()
 
@@ -82,17 +82,17 @@ const workerMeta = (userId: string | undefined): string => {
   const parts = [worker.employeeNo, worker.department].filter((v) => Boolean(v && String(v).trim()))
   return parts.join(' · ')
 }
-// skillCode → 技能中文名（技能字典 displayName；查不到回退编码本身，不暴露 # / 裸编码占位）。
+// skillCode → 技能中文名（技能目录 skillName；查不到回退编码本身，不暴露裸编码占位）。
 const skillName = (skillCode: string): string => {
-  const dict = skillDict.resources.value.find((s) => s.code === skillCode)
-  return dict?.displayName?.trim() || skillCode
+  const def = skillCatalog.value.find((s) => s.skillCode === skillCode)
+  return def?.skillName?.trim() || skillCode
 }
 
-// 登记用技能下拉选项：取 skill 字典的启用码值（空时由 codex 注册 / 工厂在数据字典维护后自动填充）。
+// 登记用技能下拉选项：取技能目录的启用项。
 const skillOptions = computed(() =>
-  skillDict.resources.value
-    .filter((s) => s.active !== false && (s.code ?? '').trim().length > 0)
-    .map((s) => ({ value: (s.code ?? '').trim(), label: s.displayName?.trim() || (s.code ?? '').trim() })),
+  skillCatalog.value
+    .filter((s) => s.enabled !== false && (s.skillCode ?? '').trim().length > 0)
+    .map((s) => ({ value: (s.skillCode ?? '').trim(), label: s.skillName?.trim() || (s.skillCode ?? '').trim() })),
 )
 
 // ── 矩阵行/格 ────────────────────────────────────────────────
@@ -169,7 +169,7 @@ const hasDimensions = computed(
 
 function refreshAll() {
   void matrix.refresh()
-  void skillDict.refreshResources()
+  void refreshSkillCatalog()
 }
 
 // ── 登记 Dialog ─────────────────────────────────────────────
@@ -379,7 +379,7 @@ async function submitSkill() {
                   <SelectItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{ s.label }}</SelectItem>
                 </SelectContent>
               </Select>
-              <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「数据字典 › 技能」里维护技能项。</p>
+              <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「基础数据 › 技能目录」里维护技能项。</p>
             </Field>
             <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
               <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>

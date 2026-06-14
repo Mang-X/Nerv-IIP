@@ -77,6 +77,18 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   usePersonnelSkillAssignment: () => stubSkillAssignment(),
 }))
 
+// 技能目录主数据（#402）：SKILL-A → 焊接技能、SKILL-WELD → 电焊。
+vi.mock('@/composables/usePromotedCatalogs', () => ({
+  useSkillCatalog: () => ({
+    skills: computed(() => [
+      { skillCode: 'SKILL-A', skillName: '焊接技能', enabled: true },
+      { skillCode: 'SKILL-WELD', skillName: '电焊', enabled: true },
+    ]),
+    skillsPending: shallowRef(false),
+    refresh: vi.fn(),
+  }),
+}))
+
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
   toast: { success: stub.toastSuccess, error: stub.toastError },
