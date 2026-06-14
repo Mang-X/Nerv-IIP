@@ -14,6 +14,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -170,8 +171,13 @@ try
                 return ncrContract.OperationId;
             }
 
-            return QualityInspectionEndpointContracts.TryGet(ctx.EndpointType, out var inspectionContract)
-                ? inspectionContract.OperationId
+            if (QualityInspectionEndpointContracts.TryGet(ctx.EndpointType, out var inspectionContract))
+            {
+                return inspectionContract.OperationId;
+            }
+
+            return QualityReasonEndpointContracts.TryGet(ctx.EndpointType, out var reasonContract)
+                ? reasonContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
         };
     }).UseSwaggerGen();

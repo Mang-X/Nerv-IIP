@@ -82,6 +82,268 @@ public sealed class CreateBusinessConsoleSkuEndpoint(
         masterData.CreateSkuAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/product-categories")]
+[BusinessGatewayOperationId("listBusinessConsoleProductCategories")]
+public sealed class ListBusinessConsoleProductCategoriesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListProductCategoriesRequest, BusinessConsoleProductCategoryListResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataProductsRead)
+{
+    protected override string OrganizationId(BusinessConsoleListProductCategoriesRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListProductCategoriesRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleProductCategoryListResponse> ForwardAsync(
+        BusinessConsoleListProductCategoriesRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListProductCategoriesAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/product-categories/{categoryCode}")]
+[BusinessGatewayOperationId("getBusinessConsoleProductCategory")]
+public sealed class GetBusinessConsoleProductCategoryEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleProductCategoryRequest, BusinessConsoleProductCategoryItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataProductsRead)
+{
+    protected override string OrganizationId(BusinessConsoleProductCategoryRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleProductCategoryRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleProductCategoryRequest request) => "product-category";
+
+    protected override string? ResourceId(BusinessConsoleProductCategoryRequest request) => Route<string>("categoryCode") ?? request.CategoryCode;
+
+    protected override Task<BusinessConsoleProductCategoryItem> ForwardAsync(
+        BusinessConsoleProductCategoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var categoryCode = Route<string>("categoryCode") ?? request.CategoryCode;
+        return masterData.GetProductCategoryAsync(tokenProvider.BearerToken, categoryCode, request with { CategoryCode = categoryCode }, cancellationToken);
+    }
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/product-categories")]
+[BusinessGatewayOperationId("createBusinessConsoleProductCategory")]
+public sealed class CreateBusinessConsoleProductCategoryEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateProductCategoryRequest, BusinessConsoleResourceItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataProductsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateProductCategoryRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateProductCategoryRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+        BusinessConsoleCreateProductCategoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.CreateProductCategoryAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpPut("/api/business-console/v1/master-data/product-categories/{categoryCode}")]
+[BusinessGatewayOperationId("updateBusinessConsoleProductCategory")]
+public sealed class UpdateBusinessConsoleProductCategoryEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateProductCategoryRequest, BusinessConsoleProductCategoryItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataProductsManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateProductCategoryRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateProductCategoryRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleUpdateProductCategoryRequest request) => "product-category";
+
+    protected override string? ResourceId(BusinessConsoleUpdateProductCategoryRequest request) => Route<string>("categoryCode") ?? request.CategoryCode;
+
+    protected override Task<BusinessConsoleProductCategoryItem> ForwardAsync(
+        BusinessConsoleUpdateProductCategoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var categoryCode = Route<string>("categoryCode") ?? request.CategoryCode;
+        return masterData.UpdateProductCategoryAsync(tokenProvider.BearerToken, categoryCode, request with { CategoryCode = categoryCode }, cancellationToken);
+    }
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/product-categories/{categoryCode}/archive")]
+[BusinessGatewayOperationId("archiveBusinessConsoleProductCategory")]
+public sealed class ArchiveBusinessConsoleProductCategoryEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleArchiveProductCategoryRequest, BusinessConsoleProductCategoryItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataProductsManage)
+{
+    protected override string OrganizationId(BusinessConsoleArchiveProductCategoryRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleArchiveProductCategoryRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleArchiveProductCategoryRequest request) => "product-category";
+
+    protected override string? ResourceId(BusinessConsoleArchiveProductCategoryRequest request) => Route<string>("categoryCode") ?? request.CategoryCode;
+
+    protected override Task<BusinessConsoleProductCategoryItem> ForwardAsync(
+        BusinessConsoleArchiveProductCategoryRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var categoryCode = Route<string>("categoryCode") ?? request.CategoryCode;
+        return masterData.ArchiveProductCategoryAsync(tokenProvider.BearerToken, categoryCode, request with { CategoryCode = categoryCode }, cancellationToken);
+    }
+}
+
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/skills")]
+[BusinessGatewayOperationId("listBusinessConsoleSkills")]
+public sealed class ListBusinessConsoleSkillsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListSkillsRequest, BusinessConsoleSkillListResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsoleListSkillsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListSkillsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleSkillListResponse> ForwardAsync(
+        BusinessConsoleListSkillsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListSkillsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/skills/{skillCode}")]
+[BusinessGatewayOperationId("getBusinessConsoleSkill")]
+public sealed class GetBusinessConsoleSkillEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleSkillRequest, BusinessConsoleSkillItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsoleSkillRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleSkillRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleSkillRequest request) => "skill";
+
+    protected override string? ResourceId(BusinessConsoleSkillRequest request) => Route<string>("skillCode") ?? request.SkillCode;
+
+    protected override Task<BusinessConsoleSkillItem> ForwardAsync(
+        BusinessConsoleSkillRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var skillCode = Route<string>("skillCode") ?? request.SkillCode;
+        return masterData.GetSkillAsync(tokenProvider.BearerToken, skillCode, request with { SkillCode = skillCode }, cancellationToken);
+    }
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/skills")]
+[BusinessGatewayOperationId("createBusinessConsoleSkill")]
+public sealed class CreateBusinessConsoleSkillEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateSkillRequest, BusinessConsoleResourceItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateSkillRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateSkillRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+        BusinessConsoleCreateSkillRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.CreateSkillAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpPut("/api/business-console/v1/master-data/skills/{skillCode}")]
+[BusinessGatewayOperationId("updateBusinessConsoleSkill")]
+public sealed class UpdateBusinessConsoleSkillEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateSkillRequest, BusinessConsoleSkillItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateSkillRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateSkillRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleUpdateSkillRequest request) => "skill";
+
+    protected override string? ResourceId(BusinessConsoleUpdateSkillRequest request) => Route<string>("skillCode") ?? request.SkillCode;
+
+    protected override Task<BusinessConsoleSkillItem> ForwardAsync(
+        BusinessConsoleUpdateSkillRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var skillCode = Route<string>("skillCode") ?? request.SkillCode;
+        return masterData.UpdateSkillAsync(tokenProvider.BearerToken, skillCode, request with { SkillCode = skillCode }, cancellationToken);
+    }
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/skills/{skillCode}/archive")]
+[BusinessGatewayOperationId("archiveBusinessConsoleSkill")]
+public sealed class ArchiveBusinessConsoleSkillEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleArchiveSkillRequest, BusinessConsoleSkillItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleArchiveSkillRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleArchiveSkillRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleArchiveSkillRequest request) => "skill";
+
+    protected override string? ResourceId(BusinessConsoleArchiveSkillRequest request) => Route<string>("skillCode") ?? request.SkillCode;
+
+    protected override Task<BusinessConsoleSkillItem> ForwardAsync(
+        BusinessConsoleArchiveSkillRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var skillCode = Route<string>("skillCode") ?? request.SkillCode;
+        return masterData.ArchiveSkillAsync(tokenProvider.BearerToken, skillCode, request with { SkillCode = skillCode }, cancellationToken);
+    }
+}
+
 public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<BusinessConsoleCreateSkuRequest>
 {
     public BusinessConsoleCreateSkuRequestValidator()
@@ -98,6 +360,130 @@ public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<Busines
         RuleFor(x => x.ShelfLifePolicyCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.StorageConditionCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DefaultBarcodeRuleCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleListProductCategoriesRequestValidator : Validator<BusinessConsoleListProductCategoriesRequest>
+{
+    public BusinessConsoleListProductCategoriesRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Search).MaximumLength(200);
+        RuleFor(x => x.ParentCode).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleProductCategoryRequestValidator : Validator<BusinessConsoleProductCategoryRequest>
+{
+    public BusinessConsoleProductCategoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CategoryCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateProductCategoryRequestValidator : Validator<BusinessConsoleCreateProductCategoryRequest>
+{
+    public BusinessConsoleCreateProductCategoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CategoryCode).MaximumLength(100);
+        RuleFor(x => x.CategoryName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ParentCode).MaximumLength(100);
+        RuleFor(x => x.Description).MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleUpdateProductCategoryRequestValidator : Validator<BusinessConsoleUpdateProductCategoryRequest>
+{
+    public BusinessConsoleUpdateProductCategoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CategoryCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CategoryName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ParentCode).MaximumLength(100);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleArchiveProductCategoryRequestValidator : Validator<BusinessConsoleArchiveProductCategoryRequest>
+{
+    public BusinessConsoleArchiveProductCategoryRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CategoryCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleListSkillsRequestValidator : Validator<BusinessConsoleListSkillsRequest>
+{
+    public BusinessConsoleListSkillsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Search).MaximumLength(200);
+        RuleFor(x => x.GroupName).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleSkillRequestValidator : Validator<BusinessConsoleSkillRequest>
+{
+    public BusinessConsoleSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleCreateSkillRequestValidator : Validator<BusinessConsoleCreateSkillRequest>
+{
+    public BusinessConsoleCreateSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).MaximumLength(100);
+        RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ValidityMonths).GreaterThan(0).When(x => x.ValidityMonths.HasValue);
+        RuleFor(x => x.Description).MaximumLength(500);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleUpdateSkillRequestValidator : Validator<BusinessConsoleUpdateSkillRequest>
+{
+    public BusinessConsoleUpdateSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillName).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ValidityMonths).GreaterThan(0).When(x => x.ValidityMonths.HasValue);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleArchiveSkillRequestValidator : Validator<BusinessConsoleArchiveSkillRequest>
+{
+    public BusinessConsoleArchiveSkillRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).MaximumLength(500);
     }
 }
 

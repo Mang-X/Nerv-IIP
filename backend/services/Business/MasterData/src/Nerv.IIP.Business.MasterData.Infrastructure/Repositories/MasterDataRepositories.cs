@@ -3,11 +3,13 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
@@ -211,6 +213,38 @@ public sealed class PersonnelSkillRepository(ApplicationDbContext context)
             x.UserId == userId &&
             x.SkillCode == skillCode &&
             x.EffectiveFrom == effectiveFrom,
+            cancellationToken);
+    }
+}
+
+public interface IProductCategoryRepository : IRepository<ProductCategory, ProductCategoryId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string categoryCode, CancellationToken cancellationToken = default);
+}
+
+public sealed class ProductCategoryRepository(ApplicationDbContext context)
+    : RepositoryBase<ProductCategory, ProductCategoryId, ApplicationDbContext>(context), IProductCategoryRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string categoryCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.ProductCategories.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.CategoryCode == categoryCode,
+            cancellationToken);
+    }
+}
+
+public interface ISkillRepository : IRepository<Skill, SkillId>
+{
+    Task<bool> ExistsAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default);
+}
+
+public sealed class SkillRepository(ApplicationDbContext context)
+    : RepositoryBase<Skill, SkillId, ApplicationDbContext>(context), ISkillRepository
+{
+    public async Task<bool> ExistsAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Skills.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SkillCode == skillCode,
             cancellationToken);
     }
 }

@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -23,6 +24,7 @@ public sealed class QualitySchemaConventionTests
             typeof(InspectionPlanCharacteristic),
             typeof(InspectionRecord),
             typeof(InspectionResultLine),
+            typeof(QualityReason),
         };
 
         var failures = new List<string>();
@@ -45,6 +47,9 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<InspectionRecord>(
             fixture.DbContext,
             [nameof(InspectionRecord.OrganizationId), nameof(InspectionRecord.EnvironmentId), nameof(InspectionRecord.Result)]);
+        AssertEntityHasIndex<QualityReason>(
+            fixture.DbContext,
+            [nameof(QualityReason.OrganizationId), nameof(QualityReason.EnvironmentId), nameof(QualityReason.GroupName), nameof(QualityReason.Enabled)]);
     }
 
     private static SchemaFixture CreateFixture()

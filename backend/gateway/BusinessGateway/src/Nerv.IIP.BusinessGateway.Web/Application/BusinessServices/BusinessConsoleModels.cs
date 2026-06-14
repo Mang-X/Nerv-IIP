@@ -72,6 +72,111 @@ public sealed record BusinessConsoleListSkusRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleListProductCategoriesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    string? ParentCode = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleProductCategoryRequest(
+    [property: RouteParam] string CategoryCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleCreateProductCategoryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? CategoryCode,
+    string CategoryName,
+    string? ParentCode,
+    string? Description,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleUpdateProductCategoryRequest(
+    [property: RouteParam] string CategoryCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string CategoryName,
+    string? ParentCode,
+    string? Description);
+
+public sealed record BusinessConsoleArchiveProductCategoryRequest(
+    [property: RouteParam] string CategoryCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason = "");
+
+public sealed record BusinessConsoleProductCategoryItem(
+    string CategoryCode,
+    string CategoryName,
+    string? ParentCode,
+    string Path,
+    string? Description,
+    bool Enabled,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleProductCategoryListResponse(
+    IReadOnlyCollection<BusinessConsoleProductCategoryItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleListSkillsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    string? GroupName = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleSkillRequest(
+    [property: RouteParam] string SkillCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleCreateSkillRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkillCode,
+    string SkillName,
+    string GroupName,
+    bool RequiresCertification,
+    int? ValidityMonths,
+    string? Description,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleUpdateSkillRequest(
+    [property: RouteParam] string SkillCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string SkillName,
+    string GroupName,
+    bool RequiresCertification,
+    int? ValidityMonths,
+    string? Description);
+
+public sealed record BusinessConsoleArchiveSkillRequest(
+    [property: RouteParam] string SkillCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string Reason = "");
+
+public sealed record BusinessConsoleSkillItem(
+    string SkillCode,
+    string SkillName,
+    string GroupName,
+    bool RequiresCertification,
+    int? ValidityMonths,
+    string? Description,
+    bool Enabled,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleSkillListResponse(
+    IReadOnlyCollection<BusinessConsoleSkillItem> Items,
+    int Total);
+
 public sealed record BusinessConsoleListWorkshopsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -753,6 +858,56 @@ public sealed record BusinessConsoleQualityItem(
 
 public sealed record BusinessConsoleQualityListResponse(
     IReadOnlyCollection<BusinessConsoleQualityItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleQualityReasonListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool? Enabled = null,
+    string? Search = null,
+    string? GroupName = null,
+    int Skip = 0,
+    int Take = 100);
+
+public sealed record BusinessConsoleQualityReasonRequest(
+    [property: RouteParam] string ReasonCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleCreateQualityReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string ReasonName,
+    string GroupName,
+    string Severity,
+    string? DefaultDisposition);
+
+public sealed record BusinessConsoleUpdateQualityReasonRequest(
+    [property: RouteParam] string ReasonCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReasonName,
+    string GroupName,
+    string Severity,
+    string? DefaultDisposition);
+
+public sealed record BusinessConsoleArchiveQualityReasonRequest(
+    [property: RouteParam] string ReasonCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
+public sealed record BusinessConsoleQualityReasonItem(
+    string ReasonCode,
+    string ReasonName,
+    string GroupName,
+    string Severity,
+    string? DefaultDisposition,
+    bool Enabled,
+    string SnapshotVersion);
+
+public sealed record BusinessConsoleQualityReasonListResponse(
+    IReadOnlyCollection<BusinessConsoleQualityReasonItem> Items,
     int Total);
 
 public sealed record BusinessConsoleCreateInspectionRecordRequest(

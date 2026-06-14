@@ -2,11 +2,13 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
@@ -255,5 +257,53 @@ public sealed class MasterDataAggregateTests
         Assert.True(member.Disabled);
         Assert.False(member.IsEffectiveOn(new DateOnly(2026, 7, 1)));
         Assert.Throws<InvalidOperationException>(() => member.Remove("again"));
+    }
+
+    [Fact]
+    public void Product_category_is_a_hierarchical_master_data_catalog()
+    {
+        var root = ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, "Sellable output");
+        var child = ProductCategory.Create("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products", root.CategoryCode, "Pump family");
+
+        Assert.Equal("CAT-FG", root.CategoryCode);
+        Assert.Null(root.ParentCode);
+        Assert.Equal("CAT-FG", child.ParentCode);
+
+        child.Update("Pump Products", null, "Promoted to top-level");
+
+        Assert.Null(child.ParentCode);
+        Assert.Equal("Promoted to top-level", child.Description);
+        Assert.Throws<ArgumentException>(() => child.Update("Pump Products", child.CategoryCode, "self parent"));
+    }
+
+    [Fact]
+    public void Skill_catalog_captures_group_and_certification_validity()
+    {
+        var skill = Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, "Welding certificate");
+
+        Assert.Equal("SK-WELD", skill.SkillCode);
+        Assert.Equal("Manufacturing", skill.GroupName);
+        Assert.True(skill.RequiresCertification);
+        Assert.Equal(24, skill.ValidityMonths);
+
+        skill.Update("Advanced Welding", "Manufacturing", true, 36, "Advanced certificate");
+
+        Assert.Equal("Advanced Welding", skill.SkillName);
+        Assert.Equal(36, skill.ValidityMonths);
+        Assert.Throws<ArgumentException>(() => Skill.Create("org-001", "env-dev", "SK-BAD", "Bad", "Manufacturing", true, null, null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => skill.Update("Advanced Welding", "Manufacturing", true, 0, null));
+    }
+
+    [Fact]
+    public void Skill_catalog_clears_validity_when_certification_is_not_required()
+    {
+        var skill = Skill.Create("org-001", "env-dev", "SK-PACK", "Packing", "Manufacturing", false, 24, null);
+
+        Assert.False(skill.RequiresCertification);
+        Assert.Null(skill.ValidityMonths);
+
+        skill.Update("Packing", "Manufacturing", false, 36, null);
+
+        Assert.Null(skill.ValidityMonths);
     }
 }
