@@ -17,7 +17,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Button,
-  Checkbox,
   DataTable,
   DataTablePagination,
   Dialog,
@@ -51,7 +50,6 @@ definePage({ meta: { requiresAuth: true, title: '原因码目录' } })
 const {
   archiveReason,
   archivePending,
-  backendReady,
   createReason,
   createPending,
   filters,
@@ -111,51 +109,53 @@ const columns: DataTableColumn<QualityReasonItem>[] = [
 
 // ── 新建 / 编辑表单 ─────────────────────────────────────────────
 interface QualityReasonForm {
+  reasonCode: string
   reasonName: string
   groupName: string
   severity: string
   defaultDisposition: string
-  enabled: boolean
 }
 
 function blankForm(): QualityReasonForm {
   return {
+    reasonCode: '',
     reasonName: '',
     groupName: '',
     severity: '',
     defaultDisposition: '',
-    enabled: true,
   }
 }
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
-// null = 新建，否则为正在编辑原因的记录标识。
-const editingId = shallowRef<string | null>(null)
+// null = 新建，否则为正在编辑原因的 reasonCode（编码即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
 const form = reactive<QualityReasonForm>(blankForm())
 
+const codeValid = computed(() => !!editingCode.value || form.reasonCode.trim().length > 0)
 const nameValid = computed(() => form.reasonName.trim().length > 0)
-const canSubmit = computed(() => nameValid.value)
+const groupValid = computed(() => form.groupName.trim().length > 0)
+const severityValid = computed(() => form.severity.trim().length > 0)
+const canSubmit = computed(() =>
+  codeValid.value && nameValid.value && groupValid.value && severityValid.value,
+)
 
 function openCreate() {
-  editingId.value = null
   editingCode.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
 }
 function openEdit(row: QualityReasonItem) {
-  if (!row.id) return
-  editingId.value = row.id
-  editingCode.value = row.reasonCode ?? null
+  if (!row.reasonCode) return
+  editingCode.value = row.reasonCode
   showErrors.value = false
   Object.assign(form, {
+    reasonCode: row.reasonCode ?? '',
     reasonName: row.reasonName ?? '',
     groupName: row.groupName ?? '',
     severity: row.severity ?? '',
     defaultDisposition: row.defaultDisposition ?? '',
-    enabled: row.enabled ?? true,
   })
   formOpen.value = true
 }
@@ -165,30 +165,30 @@ async function submitForm() {
     showErrors.value = true
     return
   }
-  const payload = {
+  const shared = {
     reasonName: form.reasonName.trim(),
-    groupName: form.groupName.trim() || null,
-    severity: form.severity || null,
+    groupName: form.groupName.trim(),
+    severity: form.severity,
     defaultDisposition: form.defaultDisposition.trim() || null,
-    enabled: form.enabled,
   }
   try {
-    if (editingId.value) {
-      await updateReason(editingId.value, payload)
-      notifySuccess(`原因「${payload.reasonName}」已更新。`)
+    if (editingCode.value) {
+      await updateReason(editingCode.value, shared)
+      notifySuccess(`原因「${shared.reasonName}」已更新。`)
     }
     else {
       const body: CreateQualityReasonRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        ...payload,
+        reasonCode: form.reasonCode.trim(),
+        ...shared,
       }
       await createReason(body)
-      notifySuccess(`已创建质量原因「${payload.reasonName}」。`)
+      notifySuccess(`已创建质量原因「${shared.reasonName}」。`)
     }
     showErrors.value = false
     formOpen.value = false
-    editingId.value = null
+    editingCode.value = null
   }
   catch (error) {
     notifyError(error)
@@ -199,15 +199,15 @@ async function submitForm() {
 const archiveOpen = shallowRef(false)
 const archiveTarget = shallowRef<QualityReasonItem | null>(null)
 function openArchive(row: QualityReasonItem) {
-  if (!row.id) return
+  if (!row.reasonCode) return
   archiveTarget.value = row
   archiveOpen.value = true
 }
 async function confirmArchive() {
   const target = archiveTarget.value
-  if (!target?.id) return
+  if (!target?.reasonCode) return
   try {
-    await archiveReason(target.id, '不再使用')
+    await archiveReason(target.reasonCode)
     notifySuccess(`原因「${target.reasonName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
@@ -239,33 +239,39 @@ async function confirmArchive() {
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{{ editingId ? '编辑质量原因' : '新建质量原因' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</DialogTitle>
               <DialogDescription>
                 质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 / 不合格品记录引用。带 * 为必填项。
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写原因（已标红）。
+                请填写带 * 的必填项（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                <Field :data-invalid="showErrors && !codeValid">
+                  <FieldLabel for="reason-code">原因编码 <span class="text-destructive">*</span></FieldLabel>
+                  <Input
+                    v-if="!editingCode"
+                    id="reason-code"
+                    v-model="form.reasonCode"
+                    placeholder="例如：DEF-SCRATCH"
+                  />
+                  <Input v-else :model-value="editingCode" readonly disabled />
+                  <FieldDescription>{{ editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
+                </Field>
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="reason-name">原因 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="reason-name" v-model="form.reasonName" placeholder="例如：尺寸超差" />
                 </Field>
-                <Field v-if="editingCode">
-                  <FieldLabel>编码</FieldLabel>
-                  <Input :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成，不可更改。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="reason-group">原因组</FieldLabel>
+                <Field :data-invalid="showErrors && !groupValid">
+                  <FieldLabel for="reason-group">原因组 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="reason-group" v-model="form.groupName" placeholder="例如：外观缺陷" />
                 </Field>
-                <Field>
-                  <FieldLabel for="reason-severity">严重度</FieldLabel>
+                <Field :data-invalid="showErrors && !severityValid">
+                  <FieldLabel for="reason-severity">严重度 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="form.severity">
                     <SelectTrigger id="reason-severity"><SelectValue placeholder="选择严重度" /></SelectTrigger>
                     <SelectContent>
@@ -281,20 +287,13 @@ async function confirmArchive() {
                   <FieldLabel for="reason-disposition">默认处置</FieldLabel>
                   <Input id="reason-disposition" v-model="form.defaultDisposition" placeholder="例如：返工 / 报废 / 让步接收" />
                 </Field>
-                <Field class="self-start">
-                  <FieldLabel>启用</FieldLabel>
-                  <label for="reason-enabled" class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm">
-                    <span>停用后不可在检验 / 不合格品记录中引用</span>
-                    <Checkbox id="reason-enabled" v-model:checked="form.enabled" />
-                  </label>
-                </Field>
               </FieldGroup>
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
                 <Button type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingId ? '保存修改' : '创建原因' }}
+                  {{ editingCode ? '保存修改' : '创建原因' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -303,14 +302,6 @@ async function confirmArchive() {
       </template>
     </PageHeader>
 
-    <p
-      v-if="!backendReady"
-      class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-      role="status"
-    >
-      页面建设中：质量原因目录正在后端实现（#397）。当前为 IA / 表单预览，列表为空、保存暂不可用；后端交付后此处显示真实原因码（按原因组归类）。
-    </p>
-
     <Toolbar v-model:search="search" search-placeholder="按原因或编码筛选" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
@@ -318,9 +309,9 @@ async function confirmArchive() {
     <DataTable
       :columns="columns"
       :rows="reasons"
-      row-key="id"
+      row-key="reasonCode"
       :loading="reasonsPending"
-      empty-message="原因码目录为空。后端 #397 交付后，在此按原因组维护质量原因（供检验/不合格品引用）。"
+      empty-message="原因码目录为空。新建可复用质量原因（按原因组归类、预设严重度与默认处置），供检验 / 不合格品记录引用。"
     >
       <template #cell-groupName="{ row }">
         <span v-if="row.groupName">{{ row.groupName }}</span>

@@ -46,7 +46,6 @@ definePage({ meta: { requiresAuth: true, title: '技能目录' } })
 const {
   archiveSkill,
   archivePending,
-  backendReady,
   createSkill,
   createPending,
   filters,
@@ -93,7 +92,6 @@ interface SkillCatalogForm {
   requiresCertification: boolean
   validityMonths: string
   description: string
-  enabled: boolean
 }
 
 function blankForm(): SkillCatalogForm {
@@ -103,14 +101,12 @@ function blankForm(): SkillCatalogForm {
     requiresCertification: false,
     validityMonths: '',
     description: '',
-    enabled: true,
   }
 }
 
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
-// null = 新建，否则为正在编辑技能的记录标识。
-const editingId = shallowRef<string | null>(null)
+// null = 新建，否则为正在编辑技能的 skillCode（编码即身份，编辑态只读）。
 const editingCode = shallowRef<string | null>(null)
 const form = reactive<SkillCatalogForm>(blankForm())
 
@@ -123,20 +119,19 @@ function parseNumber(value: string): number | undefined {
 const validityMonths = computed(() => parseNumber(form.validityMonths))
 
 const nameValid = computed(() => form.skillName.trim().length > 0)
+const groupValid = computed(() => form.groupName.trim().length > 0)
 const validityValid = computed(() => form.validityMonths.trim() === '' || (validityMonths.value != null && validityMonths.value >= 0))
-const canSubmit = computed(() => nameValid.value && validityValid.value)
+const canSubmit = computed(() => nameValid.value && groupValid.value && validityValid.value)
 
 function openCreate() {
-  editingId.value = null
   editingCode.value = null
   Object.assign(form, blankForm())
   showErrors.value = false
   formOpen.value = true
 }
 function openEdit(row: SkillCatalogItem) {
-  if (!row.id) return
-  editingId.value = row.id
-  editingCode.value = row.skillCode ?? null
+  if (!row.skillCode) return
+  editingCode.value = row.skillCode
   showErrors.value = false
   Object.assign(form, {
     skillName: row.skillName ?? '',
@@ -144,7 +139,6 @@ function openEdit(row: SkillCatalogItem) {
     requiresCertification: row.requiresCertification ?? false,
     validityMonths: row.validityMonths == null ? '' : String(row.validityMonths),
     description: row.description ?? '',
-    enabled: row.enabled ?? true,
   })
   formOpen.value = true
 }
@@ -154,31 +148,30 @@ async function submitForm() {
     showErrors.value = true
     return
   }
-  const payload = {
+  const shared = {
     skillName: form.skillName.trim(),
-    groupName: form.groupName.trim() || null,
+    groupName: form.groupName.trim(),
     requiresCertification: form.requiresCertification,
     validityMonths: validityMonths.value ?? null,
     description: form.description.trim() || null,
-    enabled: form.enabled,
   }
   try {
-    if (editingId.value) {
-      await updateSkill(editingId.value, payload)
-      notifySuccess(`技能「${payload.skillName}」已更新。`)
+    if (editingCode.value) {
+      await updateSkill(editingCode.value, shared)
+      notifySuccess(`技能「${shared.skillName}」已更新。`)
     }
     else {
       const body: CreateSkillCatalogRequest = {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
-        ...payload,
+        ...shared,
       }
       await createSkill(body)
-      notifySuccess(`已创建技能「${payload.skillName}」。`)
+      notifySuccess(`已创建技能「${shared.skillName}」。`)
     }
     showErrors.value = false
     formOpen.value = false
-    editingId.value = null
+    editingCode.value = null
   }
   catch (error) {
     notifyError(error)
@@ -189,15 +182,15 @@ async function submitForm() {
 const archiveOpen = shallowRef(false)
 const archiveTarget = shallowRef<SkillCatalogItem | null>(null)
 function openArchive(row: SkillCatalogItem) {
-  if (!row.id) return
+  if (!row.skillCode) return
   archiveTarget.value = row
   archiveOpen.value = true
 }
 async function confirmArchive() {
   const target = archiveTarget.value
-  if (!target?.id) return
+  if (!target?.skillCode) return
   try {
-    await archiveSkill(target.id, '不再使用')
+    await archiveSkill(target.skillCode, '不再使用')
     notifySuccess(`技能「${target.skillName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null
@@ -229,14 +222,14 @@ async function confirmArchive() {
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{{ editingId ? '编辑技能' : '新建技能' }}</DialogTitle>
+              <DialogTitle>{{ editingCode ? '编辑技能' : '新建技能' }}</DialogTitle>
               <DialogDescription>
                 技能目录维护技能定义（技能组 + 证书有效期），是可复用的基础数据；与「人员技能」矩阵（人员-技能登记）是两件事。带 * 为必填项。
               </DialogDescription>
             </DialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写技能名，并确保证书有效期为非负数（已标红）。
+                请填写技能名与技能组，并确保证书有效期为非负数（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
@@ -248,10 +241,10 @@ async function confirmArchive() {
                 <Field v-if="editingCode">
                   <FieldLabel>编码</FieldLabel>
                   <Input :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成，不可更改。</FieldDescription>
+                  <FieldDescription>编码由系统自动生成。</FieldDescription>
                 </Field>
-                <Field>
-                  <FieldLabel for="skill-group">技能组</FieldLabel>
+                <Field :data-invalid="showErrors && !groupValid">
+                  <FieldLabel for="skill-group">技能组 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
                 </Field>
               </FieldGroup>
@@ -278,20 +271,13 @@ async function confirmArchive() {
                   <FieldLabel for="skill-desc">说明</FieldLabel>
                   <Input id="skill-desc" v-model="form.description" placeholder="可选，技能用途或评定标准" />
                 </Field>
-                <Field class="self-start">
-                  <FieldLabel>启用</FieldLabel>
-                  <label for="skill-enabled" class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm">
-                    <span>停用后不可在人员技能中登记</span>
-                    <Checkbox id="skill-enabled" v-model:checked="form.enabled" />
-                  </label>
-                </Field>
               </FieldGroup>
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
                 <Button type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
-                  {{ editingId ? '保存修改' : '创建技能' }}
+                  {{ editingCode ? '保存修改' : '创建技能' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -300,14 +286,6 @@ async function confirmArchive() {
       </template>
     </PageHeader>
 
-    <p
-      v-if="!backendReady"
-      class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-      role="status"
-    >
-      页面建设中：技能目录正在后端实现（#397）。当前为 IA / 表单预览，列表为空、保存暂不可用。本页维护技能定义（分组 + 证书有效期），与「人员技能」矩阵（人员-技能登记）是两件事。
-    </p>
-
     <Toolbar v-model:search="search" search-placeholder="按技能名或编码筛选" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
@@ -315,9 +293,9 @@ async function confirmArchive() {
     <DataTable
       :columns="columns"
       :rows="skills"
-      row-key="id"
+      row-key="skillCode"
       :loading="skillsPending"
-      empty-message="技能目录为空。后端 #397 交付后，在此维护技能定义（技能组 + 证书有效期）。"
+      empty-message="技能目录为空。在此维护技能定义（技能组 + 证书有效期），人员技能登记即可选用。"
     >
       <template #cell-groupName="{ row }">
         <span>{{ row.groupName || '—' }}</span>
@@ -328,7 +306,7 @@ async function confirmArchive() {
           :label="row.validityMonths != null ? `需证书 · ${row.validityMonths}个月` : '需证书'"
           tone="warning"
         />
-        <span v-else class="text-muted-foreground">免证 —</span>
+        <span v-else class="text-muted-foreground">免证</span>
       </template>
       <template #cell-status="{ row }">
         <StatusBadge
