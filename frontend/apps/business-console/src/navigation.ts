@@ -138,7 +138,6 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       label: '报工与完工',
       items: [
         { title: '报工记录', to: { path: '/mes/production-reports' } },
-        { title: '报工与完工汇总', to: { path: '/mes/reports' } },
         { title: '完工入库', to: { path: '/mes/receipts' } },
       ],
     },
