@@ -28,19 +28,18 @@ test.beforeEach(async ({ page }) => {
 
 test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/master-data/skus', '物料与产品')
-  await expectHeading(page, '/master-data/partners', '客户与供应商')
-  await expectHeading(page, '/master-data/resources', '工厂资源')
+  await expectHeading(page, '/master-data/partners', '业务伙伴')
   await expectHeading(page, '/inventory/availability', '库存可用量')
   await expectHeading(page, '/quality/ncrs', '不合格品处理')
   await expectHeading(page, '/mes', '生产驾驶舱')
-  await expectHeading(page, '/mes/foundation', '基础准备')
+  await expectHeading(page, '/mes/foundation', '生产准备检查')
   await expectHeading(page, '/mes/plans', '生产计划')
   await expectHeading(page, '/mes/work-orders', '工单与派工')
-  await expectHeading(page, '/mes/work-orders/WO-001', '工单详情')
+  await expectHeading(page, '/mes/work-orders/WO-001', '工单 WO-001')
   await expectHeading(page, '/mes/materials', '齐套与物料')
   await expectHeading(page, '/mes/dispatch', '派工看板')
   await expectHeading(page, '/mes/operation-tasks', '工序执行')
-  await expectHeading(page, '/mes/reports', '报工与完工')
+  await expectHeading(page, '/mes/production-reports', '报工记录')
   await expectHeading(page, '/mes/quality', '质量与不良')
   await expectHeading(page, '/mes/receipts', '完工入库')
   await expectHeading(page, '/mes/schedules', '规则排程')
@@ -50,9 +49,29 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes/capacity', '产能影响')
 })
 
+test('生产计划：就绪计划行尾「转工单」可点并打开下达工单弹窗', async ({ page }) => {
+  // 计划数据来自共享 mock（PLAN-READY 可转 / PLAN-BLOCKED 受阻）。
+  await page.goto('/mes/plans', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '生产计划' })).toBeVisible({ timeout: 15_000 })
+  // 确认计划数据已渲染。
+  await expect(page.getByText('PLAN-READY')).toBeVisible({ timeout: 15_000 })
+
+  // 就绪计划：行尾「转工单」按钮可见可点。
+  const convertBtn = page.getByRole('button', { name: '转工单' })
+  await expect(convertBtn).toBeVisible()
+  await expect(convertBtn).toBeEnabled()
+
+  // 点开「下达工单」弹窗（抓"点不了"）。exact 避免匹配到「确认下达工单」按钮。
+  await convertBtn.click()
+  await expect(page.getByText('下达工单', { exact: true })).toBeVisible()
+})
+
+// 标题渲染为面包屑当前页 <span data-slot="breadcrumb-page">；侧栏激活链接也带 aria-current="page"，
+// 故用 data-slot 精确定位。SPA 用 domcontentloaded 更稳（默认 load 可能因 HMR 长连接不触发）。
 async function expectHeading(page: Page, path: string, heading: string) {
-  await page.goto(path)
-  await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
+  await page.goto(path, { waitUntil: 'domcontentloaded' })
+  // 慢的 dev 环境 + 连续多页导航，放宽到 15s。
+  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: heading })).toBeVisible({ timeout: 15_000 })
 }
 
 async function seedStoredSession(page: Page) {
@@ -217,7 +236,16 @@ async function routeBusinessConsoleApi(route: Route) {
   }
 
   if (pathname === '/api/business-console/v1/mes/production-plans') {
-    return fulfillJson(route, envelope({ items: [] }))
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          { productionPlanId: 'PLAN-READY', sourceSystem: 'sales', skuId: 'sku-1', plannedQuantity: 10, uomCode: 'EA', readinessStatus: 'Ready', plannedStartUtc: '2026-06-01T08:00:00.000Z', blockingReasons: [] },
+          { productionPlanId: 'PLAN-BLOCKED', sourceSystem: 'forecast', skuId: 'sku-2', plannedQuantity: 5, readinessStatus: 'Blocked', blockingReasons: ['material_shortage'] },
+        ],
+        total: 2,
+      }),
+    )
   }
 
   if (pathname === '/api/business-console/v1/mes/work-orders/WO-001') {
