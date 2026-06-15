@@ -40,7 +40,7 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string OrganizationId,
     string EnvironmentId,
     string DeviceAssetId,
-    string PlanCode,
+    string? PlanCode,
     string Interval,
     DateOnly StartsOn,
     string Owner,

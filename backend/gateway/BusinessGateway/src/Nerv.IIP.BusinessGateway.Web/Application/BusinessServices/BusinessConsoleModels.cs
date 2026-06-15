@@ -877,7 +877,7 @@ public sealed record BusinessConsoleQualityReasonRequest(
 public sealed record BusinessConsoleCreateQualityReasonRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ReasonCode,
+    string? ReasonCode,
     string ReasonName,
     string GroupName,
     string Severity,
@@ -1195,7 +1195,7 @@ public sealed record BusinessConsoleStandardOperationItem(
 public sealed record BusinessConsoleCreateStandardOperationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string OperationCode,
+    string? OperationCode,
     string OperationName,
     string DefaultWorkCenterCode,
     int StandardSetupMinutes,

@@ -85,14 +85,18 @@ Source:
 3. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionPlanEntityTypeConfiguration.cs`
 4. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/InspectionRecordEntityTypeConfiguration.cs`
 5. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/EntityConfigurations/QualityReasonEntityTypeConfiguration.cs`
-6. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260522092605_InitialQualityNcrSchema.cs`
-7. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260523034736_AddQualityInspectionFacts.cs`
-8. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260614032327_AddQualityReasonCatalog.cs`
+6. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Coding/CodeEntityTypeConfigurations.cs`
+7. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260522092605_InitialQualityNcrSchema.cs`
+8. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260523034736_AddQualityInspectionFacts.cs`
+9. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260614032327_AddQualityReasonCatalog.cs`
+10. `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Infrastructure/Migrations/20260615020533_AddQualityCodingTables.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `nonconformance_reports` | business | Quality 拥有的不合格品报告，记录来源、不良数量、处置方案、审批链和关闭所需外部执行引用。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + ncr_code` 是业务唯一键；`source_type + source_document_id` 保留来源检验、报工或退货单据引用；`source_inspection_record_id` 可关联打开 NCR 的检验记录；`rework_work_order_id`、`scrap_movement_id`、`return_document_id` 只记录下游执行结果 ID。 | 唯一索引保护 NCR 编号；`organization_id + environment_id + status` 支持待处置列表；来源索引用于从检验/报工/退货追踪 NCR；`source_inspection_record_id` 索引用于从检验记录反查 NCR。 | 创建后从 `open` 进入 `disposition-in-progress`，关闭为 `closed`；关闭后不再修改处置；Quality 不直接改 MES/Inventory/ERP/WMS 数据。 |
 | `quality_reasons` | business | 质量原因/不良代码目录，按分组维护原因码、严重度和默认 NCR 处置建议。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + reason_code` 是业务唯一键；`group_name`、`severity` 和 `default_disposition` 描述原因分类和处置默认值；`enabled` 控制是否可选。 | 唯一索引保护原因 code；`organization_id + environment_id + group_name + enabled` 支持按分组列可用原因；`enabled` 支持活跃目录扫描。 | 聚合创建后保留；归档使用 `enabled=false` 软停用；历史检验/NCR 继续保留原因快照或 code 引用。 |
+| `code_counters` | business | Quality service-local 编码计数器，用于质量原因等普通创建请求自动分配业务 code。 | `organization_id + environment_id + rule_key + site_code + reset_key` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编码规则范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `code_idempotency_keys` | business | Quality 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `inspection_plans` | business | Quality inspection plan 版本和适用性事实，定义收货、工序、终检、维修或客退场景的检验要求。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`category`、`sku_code`、`partner_id`、`work_center_id`、`device_asset_id` 和 `document_type` 描述适用范围；`supersedes_plan_id` 指向上一版本。 | 唯一索引保护计划编码；`organization_id + environment_id + category + status` 支持按类别和状态查询；`organization_id + environment_id + status` 支持仅按状态过滤。 | 从 `draft` 创建，激活后进入 `active`；新版本会把旧版本标记为 `superseded`；激活后不再修改执行特性。 |
 | `inspection_plan_characteristics` | business | 检验计划特性和抽样规则，记录每个计划版本要检查的项目。 | `id` 为 Guid v7 强类型 ID；`inspection_plan_id` 归属计划；`characteristic_code` 是计划内稳定特性编码；`method`、`severity`、`is_required` 和 `sampling_rule` 描述检查规则。 | `inspection_plan_id + characteristic_code` 唯一，防止同一计划版本内重复特性编码。 | 随所属检验计划创建和级联删除；计划激活后不再新增或变更执行特性。 |
 | `inspection_records` | business | 检验执行记录和最终结果事实，保留来源单据、被检 SKU、数量、批次/序列号和处置引用。 | `id` 为 Guid v7 强类型 ID；`inspection_plan_id` 可选指向执行的计划版本；`source_type + source_service + source_document_id` 保留来源业务单据；`result` 为 `passed`、`rejected` 或 `conditional-release`；`nonconformance_report_id` 记录由该检验打开的 NCR。 | `organization_id + environment_id + source_service + source_document_id` 支持按来源追踪；`organization_id + environment_id + source_type + result` 支持场景+结果查询；`organization_id + environment_id + result` 支持仅按结果过滤。 | 创建即形成最终检验结果并发出 passed/rejected 集成事件；非 passed 结果必须保留处置原因；通过 `OpenNcrFromInspection` 最多关联一个 NCR。 |
@@ -411,12 +415,16 @@ Source:
 5. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260601032417_AddMaintenancePlanRuntimeWindow.cs`
 6. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260601083444_AddMaintenanceRuntimeWindowQueryIndex.cs`
 7. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260609061021_AddMaintenanceConsumerInboxIdempotency.cs`
+8. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Coding/CodeEntityTypeConfigurations.cs`
+9. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260615020603_AddMaintenanceCodingTables.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `maintenance_work_orders` | business | 维修工单、报警引用、设备不可用和完工事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_alarm_id` 防止同一报警重复开单；`device_asset_id` 引用 MasterData 设备。 | source alarm 唯一索引用于报警幂等；状态/设备字段支撑维修看板查询。 | 手工或报警创建；完成后保留停机和备件引用事实。 |
 | `maintenance_work_order_spare_part_lines` | business | 维修工单备件需求行，只记录需求和用量事实，不维护库存余额。 | `id` 为 Guid v7 强类型 ID；`maintenance_work_order_id` 归属工单；`sku_code`、`quantity`、`uom_code` 描述备件。 | 工单外键索引用于加载备件行。 | 生命周期随维修工单推进并保留历史。 |
 | `maintenance_plans` | business | 预防性维护计划、保养周期和可选 runtime availability 维护窗口事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on`、`owner`、`window_start_utc` 和 `window_end_utc` 描述计划与维护窗口。 | 计划编码唯一索引用于防重复；设备与窗口字段支撑 availability 查询。 | 创建后作为计划事实保留；窗口边界必须成对提供并按 UTC 保存；后续版本化/暂停策略由后续切片补齐。 |
+| `code_counters` | business | Maintenance service-local 编码计数器，用于保养计划等普通创建请求自动分配业务 code。 | `organization_id + environment_id + rule_key + site_code + reset_key` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编码规则范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
+| `code_idempotency_keys` | business | Maintenance 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `maintenance_inspections` | business | 点检记录，可关联维护计划或维修工单。 | `id` 为 Guid v7 强类型 ID；`maintenance_plan_id`、`maintenance_work_order_id` 是业务引用；`inspector`、`result` 和 `inspected_at_utc` 保存执行事实。 | 计划/工单引用支持追溯点检记录。 | 点检写入后不可覆盖历史，只通过新记录表达新检查。 |
 | `downtime_reasons` | business | 维护域拥有的停机原因代码表。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + reason_code` 是业务唯一键。 | 原因码唯一索引防重复。 | 作为归因基础数据保留；删除/失效策略后续补齐。 |
 | `processed_integration_events` | system | Maintenance 业务 inbox，记录报警自动开单消费者已经执行业务副作用的事件。 | `consumer_name + event_id` 是唯一消费边界；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |

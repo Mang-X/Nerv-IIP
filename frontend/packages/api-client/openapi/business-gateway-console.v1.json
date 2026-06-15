@@ -20356,7 +20356,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "reasonCode",
           "reasonName",
           "groupName",
           "severity"
@@ -20378,7 +20377,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "reasonName": {
             "type": "string",
@@ -21620,7 +21619,6 @@
         "required": [
           "organizationId",
           "environmentId",
-          "operationCode",
           "operationName",
           "defaultWorkCenterCode",
           "controlKey"
@@ -21642,7 +21640,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "operationName": {
             "type": "string",
@@ -28185,7 +28183,6 @@
           "organizationId",
           "environmentId",
           "deviceAssetId",
-          "planCode",
           "interval",
           "owner"
         ],
@@ -28212,7 +28209,7 @@
             "type": "string",
             "maxLength": 100,
             "minLength": 0,
-            "nullable": false
+            "nullable": true
           },
           "interval": {
             "type": "string",

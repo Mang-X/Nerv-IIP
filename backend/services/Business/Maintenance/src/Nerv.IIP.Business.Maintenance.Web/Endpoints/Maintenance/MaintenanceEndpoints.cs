@@ -57,7 +57,7 @@ public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
     string EnvironmentId,
     string DeviceAssetId,
-    string PlanCode,
+    string? PlanCode,
     string Interval,
     DateOnly StartsOn,
     string Owner,

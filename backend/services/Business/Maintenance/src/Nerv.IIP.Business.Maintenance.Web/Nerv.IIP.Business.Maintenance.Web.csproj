@@ -38,6 +38,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\common\Coding\Nerv.IIP.Coding\Nerv.IIP.Coding.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Coding\Nerv.IIP.Contracts.Coding.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />

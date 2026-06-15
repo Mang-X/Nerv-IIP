@@ -343,7 +343,7 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.PlanCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PlanCode).MaximumLength(100);
         RuleFor(x => x.Interval).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WindowEndUtc)

@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\common\Coding\Nerv.IIP.Coding\Nerv.IIP.Coding.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Quality.Domain\Nerv.IIP.Business.Quality.Domain.csproj" />
   </ItemGroup>
 

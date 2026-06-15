@@ -855,7 +855,7 @@ public sealed class BusinessConsoleCreateStandardOperationRequestValidator : Val
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationCode).MaximumLength(100);
         RuleFor(x => x.OperationName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.DefaultWorkCenterCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.StandardSetupMinutes).GreaterThanOrEqualTo(0);

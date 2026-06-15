@@ -452,7 +452,6 @@ public sealed class BusinessGatewayProxyTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            reasonCode = "QR-SCRATCH",
             reasonName = "Scratch",
             groupName = "Appearance",
             severity = "minor",
@@ -483,7 +482,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(new BusinessConsoleQualityReasonListRequest("org-001", "env-dev", true, "scr", "Appearance", 3, 15), quality.LastQualityReasonListRequest);
         Assert.Equal(new BusinessConsoleQualityReasonRequest("QR-SCRATCH", "org-001", "env-dev"), quality.LastQualityReasonRequest);
-        Assert.Equal("QR-SCRATCH", quality.LastCreateQualityReasonRequest!.ReasonCode);
+        Assert.Null(quality.LastCreateQualityReasonRequest!.ReasonCode);
         Assert.Equal("QR-SCRATCH", quality.LastUpdateQualityReasonRequest!.ReasonCode);
         Assert.Equal("QR-SCRATCH", quality.LastArchiveQualityReasonRequest!.ReasonCode);
     }
@@ -765,7 +764,6 @@ public sealed class BusinessGatewayProxyTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            operationCode = "OP-001",
             operationName = "Assembly",
             defaultWorkCenterCode = "WC-001",
             standardSetupMinutes = 5,
@@ -803,7 +801,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
         Assert.Equal("internal-test-token", engineering.LastInternalToken);
-        Assert.Equal("OP-001", engineering.LastCreateStandardOperationRequest!.OperationCode);
+        Assert.Null(engineering.LastCreateStandardOperationRequest!.OperationCode);
         Assert.Equal("OP-ROUTE", engineering.LastUpdateStandardOperationRequest!.OperationCode);
         Assert.Equal("OP-ARCHIVE", engineering.LastArchiveStandardOperationRequest!.OperationCode);
     }
@@ -4194,7 +4192,7 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
     {
         LastInternalToken = internalBearerToken;
         LastCreateQualityReasonRequest = request;
-        return Task.FromResult(QualityReasonItem(request.ReasonCode, request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition));
+        return Task.FromResult(QualityReasonItem(request.ReasonCode ?? "QR-0001", request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition));
     }
 
     public Task<BusinessConsoleQualityReasonItem> UpdateQualityReasonAsync(
@@ -4455,7 +4453,7 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         LastCreateStandardOperationRequest = request;
-        return Task.FromResult(new BusinessConsoleStandardOperationResponse(request.OperationCode));
+        return Task.FromResult(new BusinessConsoleStandardOperationResponse(request.OperationCode ?? "OP-0001"));
     }
 
     public Task<BusinessConsoleStandardOperationResponse> UpdateStandardOperationAsync(

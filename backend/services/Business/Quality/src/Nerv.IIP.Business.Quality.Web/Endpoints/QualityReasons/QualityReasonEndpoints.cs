@@ -23,7 +23,7 @@ public sealed record GetQualityReasonRequest(
 public sealed record CreateQualityReasonRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ReasonCode,
+    string? ReasonCode,
     string ReasonName,
     string GroupName,
     string Severity,

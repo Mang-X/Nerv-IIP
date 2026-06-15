@@ -5,6 +5,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperat
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.StandardOperations;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries.StandardOperations;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
@@ -81,6 +82,25 @@ public sealed class StandardOperationApiContractTests
             CancellationToken.None));
 
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_standard_operation_allocates_code_when_omitted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateStandardOperationCommandHandler(
+            new StandardOperationRepository(dbContext),
+            new ProductEngineeringCodingService());
+
+        var created = await handler.Handle(
+            NewCreateCommand(null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.StartsWith("OP-", created.OperationCode, StringComparison.Ordinal);
+        Assert.True(await dbContext.StandardOperations.AnyAsync(x => x.OperationCode == created.OperationCode));
     }
 
     [Fact]
@@ -187,7 +207,7 @@ public sealed class StandardOperationApiContractTests
         Assert.Contains("Archived standard operation", exception.Message, StringComparison.Ordinal);
     }
 
-    private static CreateStandardOperationCommand NewCreateCommand(string operationCode)
+    private static CreateStandardOperationCommand NewCreateCommand(string? operationCode)
     {
         return new CreateStandardOperationCommand(
             "org-001",

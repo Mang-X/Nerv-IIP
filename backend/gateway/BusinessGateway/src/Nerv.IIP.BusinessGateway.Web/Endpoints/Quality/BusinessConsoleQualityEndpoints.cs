@@ -26,7 +26,7 @@ public sealed class BusinessConsoleQualityReasonRequestValidator : Validator<Bus
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).MaximumLength(100);
     }
 }
 
@@ -36,7 +36,7 @@ public sealed class BusinessConsoleCreateQualityReasonRequestValidator : Validat
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).MaximumLength(100);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Severity)

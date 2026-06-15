@@ -265,6 +265,30 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Maintenance_plan_create_allocates_code_when_omitted()
+    {
+        await using var dbContext = CreateDbContext();
+        var handler = new CreateMaintenancePlanCommandHandler(dbContext, new MaintenanceCodingService());
+
+        var id = await handler.Handle(
+            new CreateMaintenancePlanCommand(
+                "org-001",
+                "env-dev",
+                "DEV-CNC-01",
+                null,
+                "P7D",
+                new DateOnly(2026, 6, 1),
+                "maintenance",
+                null,
+                null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var plan = await dbContext.MaintenancePlans.SingleAsync(x => x.Id == id);
+        Assert.StartsWith("PM-", plan.PlanCode, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Maintenance_plan_runtime_windows_are_normalized_to_utc()
     {
         await using var dbContext = CreateDbContext();

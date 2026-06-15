@@ -77,7 +77,7 @@ public sealed record StandardOperationResponse(string OperationCode);
 public sealed record CreateStandardOperationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string OperationCode,
+    string? OperationCode,
     string OperationName,
     string DefaultWorkCenterCode,
     int StandardSetupMinutes,

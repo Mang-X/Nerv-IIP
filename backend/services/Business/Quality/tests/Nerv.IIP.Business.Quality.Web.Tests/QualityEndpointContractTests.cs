@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -136,6 +137,25 @@ public sealed class QualityEndpointContractTests
             CancellationToken.None);
 
         Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Quality_reason_create_allocates_code_when_omitted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateQualityReasonCommandHandler(
+            new QualityReasonRepository(dbContext),
+            new QualityCodingService());
+
+        var created = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.StartsWith("QR-", created.ReasonCode, StringComparison.Ordinal);
+        Assert.True(await dbContext.QualityReasons.AnyAsync(x => x.ReasonCode == created.ReasonCode));
     }
 
     [Fact]
