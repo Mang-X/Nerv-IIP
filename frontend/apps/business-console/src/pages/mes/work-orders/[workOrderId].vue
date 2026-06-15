@@ -33,7 +33,7 @@ const {
 watch(
   () => (route.params as Record<string, string | string[] | undefined>).workOrderId,
   (value) => {
-    filters.workOrderId = Array.isArray(value) ? value[0] ?? 'WO-001' : value ?? 'WO-001'
+    filters.workOrderId = (Array.isArray(value) ? value[0] : value) ?? ''
   },
   { immediate: true },
 )

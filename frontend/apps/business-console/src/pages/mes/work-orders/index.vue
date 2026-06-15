@@ -119,11 +119,11 @@ const demandEntries = [
 const rushForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  skuId: 'FG-SAD-FRT-001',
+  skuId: '',
   productionVersionId: '',
   quantity: '1',
   dueUtc: toLocalDateTimeInput(new Date(Date.now() + 86_400_000)),
-  workCenterId: 'WC-001',
+  workCenterId: '',
   operationTaskId: '',
   operationSequence: '10',
   durationMinutes: '60',
@@ -235,22 +235,6 @@ watch([page, pageSize], () => {
   filters.skip = (page.value - 1) * pageSizeNumber.value
   filters.take = pageSizeNumber.value
 }, { immediate: true })
-
-watch(
-  () => rushForm.skuId,
-  (skuId) => {
-    if (skuId === 'FG-SAD-RR-001') {
-      rushForm.productionVersionId = 'PV-RR-2026-B'
-      rushForm.workCenterId = rushForm.workCenterId || 'WC-OIL-FILL'
-      return
-    }
-    if (skuId === 'FG-SAD-FRT-001') {
-      rushForm.productionVersionId = 'PV-FRT-2026-A'
-      rushForm.workCenterId = rushForm.workCenterId || 'WC-TUBE-WELD'
-    }
-  },
-  { immediate: true },
-)
 
 watch(
   () => route.query,
