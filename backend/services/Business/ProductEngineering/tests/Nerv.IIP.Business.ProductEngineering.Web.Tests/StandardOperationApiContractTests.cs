@@ -5,6 +5,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperat
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.StandardOperations;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries.StandardOperations;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
@@ -81,6 +82,49 @@ public sealed class StandardOperationApiContractTests
             CancellationToken.None));
 
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_standard_operation_allocates_code_when_omitted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateStandardOperationCommandHandler(
+            new StandardOperationRepository(dbContext),
+            new ProductEngineeringCodingService());
+
+        var created = await handler.Handle(
+            NewCreateCommand(null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.StartsWith("OP-", created.OperationCode, StringComparison.Ordinal);
+        Assert.True(await dbContext.StandardOperations.AnyAsync(x => x.OperationCode == created.OperationCode));
+    }
+
+    [Fact]
+    public async Task Create_standard_operation_replays_same_code_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateStandardOperationCommandHandler(
+            new StandardOperationRepository(dbContext),
+            new ProductEngineeringCodingService());
+
+        var first = await handler.Handle(
+            NewCreateCommand(null, "std-op-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await handler.Handle(
+            NewCreateCommand(null, "std-op-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.OperationCode, replay.OperationCode);
+        Assert.Equal(1, await dbContext.StandardOperations.CountAsync());
     }
 
     [Fact]
@@ -187,7 +231,7 @@ public sealed class StandardOperationApiContractTests
         Assert.Contains("Archived standard operation", exception.Message, StringComparison.Ordinal);
     }
 
-    private static CreateStandardOperationCommand NewCreateCommand(string operationCode)
+    private static CreateStandardOperationCommand NewCreateCommand(string? operationCode, string? idempotencyKey = null)
     {
         return new CreateStandardOperationCommand(
             "org-001",
@@ -201,7 +245,8 @@ public sealed class StandardOperationApiContractTests
             true,
             false,
             false,
-            null);
+            null,
+            idempotencyKey);
     }
 
     private static ServiceProvider CreateInMemoryProvider()

@@ -171,12 +171,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             organizationId = "org-001",
             environmentId = "env-dev",
             deviceAssetId = "DEV-PRESS-01",
-            planCode = "PM-PRESS",
             interval = "P7D",
             startsOn = "2026-06-01",
             owner = "maintenance",
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T16:00:00Z",
+            idempotencyKey = "maintenance-plan-create-001",
         });
         var inspectionResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/inspections", new
         {
@@ -193,7 +193,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, inspectionResponse.StatusCode);
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
-        Assert.Equal("PM-PRESS", maintenance.LastCreatePlanRequest.GetProperty("planCode").GetString());
+        Assert.True(maintenance.LastCreatePlanRequest.TryGetProperty("planCode", out var planCode));
+        Assert.Equal(JsonValueKind.Null, planCode.ValueKind);
+        Assert.Equal("maintenance-plan-create-001", maintenance.LastCreatePlanRequest.GetProperty("idempotencyKey").GetString());
         Assert.Equal(
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
             maintenance.LastCreatePlanRequest.GetProperty("windowStartUtc").GetDateTimeOffset());

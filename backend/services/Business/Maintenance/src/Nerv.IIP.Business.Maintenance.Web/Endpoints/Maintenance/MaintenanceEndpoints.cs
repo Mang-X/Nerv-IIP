@@ -57,12 +57,13 @@ public sealed record CreateMaintenancePlanRequest(
     string OrganizationId,
     string EnvironmentId,
     string DeviceAssetId,
-    string PlanCode,
+    string? PlanCode,
     string Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
-    DateTimeOffset? WindowEndUtc);
+    DateTimeOffset? WindowEndUtc,
+    string? IdempotencyKey = null);
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
@@ -153,7 +154,7 @@ public sealed class CreateMaintenancePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenancePlanRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc), ct);
+        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc, req.IdempotencyKey), ct);
         await Send.OkAsync(new CreateMaintenancePlanResponse(id).AsResponseData(), cancellation: ct);
     }
 }

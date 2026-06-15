@@ -975,11 +975,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityReasonRequest = {
     organizationId: string;
     environmentId: string;
-    reasonCode: string;
+    reasonCode?: string | null;
     reasonName: string;
     groupName: string;
     severity: string;
     defaultDisposition?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateQualityReasonRequest = {
@@ -1329,7 +1330,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStandardOperationRequest = {
     organizationId: string;
     environmentId: string;
-    operationCode: string;
+    operationCode?: string | null;
     operationName: string;
     defaultWorkCenterCode: string;
     standardSetupMinutes?: number;
@@ -1339,6 +1340,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     requiresQualityInspection?: boolean;
     isOutsourced?: boolean;
     description?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateStandardOperationRequest = {
@@ -3055,12 +3057,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     organizationId: string;
     environmentId: string;
     deviceAssetId: string;
-    planCode: string;
+    planCode?: string | null;
     interval: string;
     startsOn?: string;
     owner: string;
     windowStartUtc?: string | null;
     windowEndUtc?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse = NetCorePalExtensionsDtoResponseData & {

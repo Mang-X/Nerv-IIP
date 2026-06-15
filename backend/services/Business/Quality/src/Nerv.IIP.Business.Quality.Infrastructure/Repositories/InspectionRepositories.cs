@@ -30,6 +30,8 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
 public interface IQualityReasonRepository : IRepository<QualityReason, QualityReasonId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default);
+
+    Task<QualityReason?> GetByCodeAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default);
 }
 
 public sealed class QualityReasonRepository(ApplicationDbContext context)
@@ -38,6 +40,13 @@ public sealed class QualityReasonRepository(ApplicationDbContext context)
     public async Task<bool> ExistsAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default)
     {
         return await DbContext.QualityReasons.AnyAsync(
+            x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.ReasonCode == reasonCode,
+            cancellationToken);
+    }
+
+    public async Task<QualityReason?> GetByCodeAsync(string organizationId, string environmentId, string reasonCode, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.QualityReasons.SingleOrDefaultAsync(
             x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.ReasonCode == reasonCode,
             cancellationToken);
     }

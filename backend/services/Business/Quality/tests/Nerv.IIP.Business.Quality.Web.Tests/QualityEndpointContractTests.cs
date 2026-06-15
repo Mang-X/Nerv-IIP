@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -139,6 +140,50 @@ public sealed class QualityEndpointContractTests
     }
 
     [Fact]
+    public async Task Quality_reason_create_allocates_code_when_omitted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateQualityReasonCommandHandler(
+            new QualityReasonRepository(dbContext),
+            new QualityCodingService());
+
+        var created = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.StartsWith("QR-", created.ReasonCode, StringComparison.Ordinal);
+        Assert.True(await dbContext.QualityReasons.AnyAsync(x => x.ReasonCode == created.ReasonCode));
+    }
+
+    [Fact]
+    public async Task Quality_reason_create_replays_same_reason_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateQualityReasonCommandHandler(
+            new QualityReasonRepository(dbContext),
+            new QualityCodingService());
+
+        var first = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework", "quality-reason-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework", "quality-reason-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.ReasonCode, replay.ReasonCode);
+        Assert.Equal(first.ReasonName, replay.ReasonName);
+        Assert.Equal(1, await dbContext.QualityReasons.CountAsync());
+    }
+
+    [Fact]
     public void Quality_reason_command_validators_reject_unsupported_catalog_values()
     {
         var create = new CreateQualityReasonCommandValidator().Validate(
@@ -146,12 +191,15 @@ public sealed class QualityEndpointContractTests
         var update = new UpdateQualityReasonCommandValidator().Validate(
             new UpdateQualityReasonCommand("org-001", "env-dev", "QR-BAD", "Bad reason", "Appearance", "high", "accept"));
 
+        const string severityMessage = "Severity must be one of: minor, major, critical.";
+        const string defaultDispositionMessage = "DefaultDisposition must be one of: rework, scrap, return-to-supplier, conditional-release, or omitted.";
+
         Assert.False(create.IsValid);
-        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.Severity));
-        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.DefaultDisposition));
+        Assert.Contains(create.Errors, x => x.ErrorMessage == severityMessage);
+        Assert.Contains(create.Errors, x => x.ErrorMessage == defaultDispositionMessage);
         Assert.False(update.IsValid);
-        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.Severity));
-        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.DefaultDisposition));
+        Assert.Contains(update.Errors, x => x.ErrorMessage == severityMessage);
+        Assert.Contains(update.Errors, x => x.ErrorMessage == defaultDispositionMessage);
     }
 
     private static ServiceProvider CreateInMemoryProvider()

@@ -40,12 +40,13 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string OrganizationId,
     string EnvironmentId,
     string DeviceAssetId,
-    string PlanCode,
+    string? PlanCode,
     string Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
-    DateTimeOffset? WindowEndUtc);
+    DateTimeOffset? WindowEndUtc,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateMaintenancePlanResponse(string PlanId);
 

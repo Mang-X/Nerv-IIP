@@ -877,11 +877,12 @@ public sealed record BusinessConsoleQualityReasonRequest(
 public sealed record BusinessConsoleCreateQualityReasonRequest(
     string OrganizationId,
     string EnvironmentId,
-    string ReasonCode,
+    string? ReasonCode,
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition);
+    string? DefaultDisposition,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleUpdateQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -1195,7 +1196,7 @@ public sealed record BusinessConsoleStandardOperationItem(
 public sealed record BusinessConsoleCreateStandardOperationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string OperationCode,
+    string? OperationCode,
     string OperationName,
     string DefaultWorkCenterCode,
     int StandardSetupMinutes,
@@ -1204,7 +1205,8 @@ public sealed record BusinessConsoleCreateStandardOperationRequest(
     bool RequiresReporting,
     bool RequiresQualityInspection,
     bool IsOutsourced,
-    string? Description);
+    string? Description,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleUpdateStandardOperationRequest(
     string OrganizationId,

@@ -224,6 +224,11 @@ CodeRuleSegment
 | ruleKey | 对象 | 段构成（初版） | 示例 |
 |---|---|---|---|
 | `material` | 物料/SKU（如与 `sku` 合并见实现评审） | `field(materialType→upper,maxLen=3)` `const(-)` `seq(5,none)` | `RAW-00001` |
+| `product-category` | 产品分类 | `const(PCAT)` `const(-)` `seq(4,none)` | `PCAT-0001` |
+| `skill` | 技能目录 | `const(SK)` `const(-)` `seq(4,none)` | `SK-0001` |
+| `standard-operation` | 标准工序 | `const(OP)` `const(-)` `seq(4,none)` | `OP-0001` |
+| `quality-reason` | 质量原因 | `const(QR)` `const(-)` `seq(4,none)` | `QR-0001` |
+| `maintenance-plan` | 保养计划 | `const(PM)` `const(-)` `seq(4,none)` | `PM-0001` |
 | `unit-of-measure` | 计量单位 | `const(UOM)` `const(-)` `seq(4,none)` | `UOM-0001` |
 | `site` | 站点/工厂 | `const(ST)` `seq(3,none)` | `ST001` |
 | `workshop` | 车间 | `const(WS)` `seq(3,none)` | `WS001` |
@@ -232,7 +237,9 @@ CodeRuleSegment
 | `work-center` | 工作中心 | `const(WC)` `seq(4,none)` | `WC0001` |
 | `device-asset` | 设备资产 | `const(EQ)` `seq(5,none)` | `EQ00001` |
 | `business-partner` | 业务伙伴 | `field(partnerType→upper,maxLen=4)` `const(-)` `seq(5,none)` | `CUST-00001` |
-| `team-member` | 人员 | `const(EMP)` `seq(5,none)` | `EMP00001` |
+| `department` | 部门 | `const(DEPT)` `const(-)` `seq(4,none)` | `DEPT-0001` |
+| `team` | 班组 | `const(TEAM)` `const(-)` `seq(4,none)` | `TEAM-0001` |
+| `work-calendar` | 工作日历 | `const(CAL)` `const(-)` `seq(4,none)` | `CAL-0001` |
 | `reference-data-code` | 字典码（仅工厂自定义 CodeSet，系统枚举不生成） | 评审确定（多数字典 code 是受控语义，**默认不自动生成**） | — |
 
 > 主数据具体类型清单以 MasterData 现有资源枚举为准（实施计划会逐一列全并标注「自动生成 / 保持受控不生成」）。系统枚举类 CodeSet 的 code 是语义键，**不纳入**自动生成。
