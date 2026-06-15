@@ -1,10 +1,15 @@
+using System.Net;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -94,6 +99,144 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Picking_task_reserves_inventory_and_outbound_completion_carries_reservation_id()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
+            CancellationToken.None);
+
+        Assert.Single(inventory.Requests);
+        var reserveRequest = inventory.Requests.Single();
+        Assert.Equal("OUT-001", reserveRequest.SourceDocumentId);
+        Assert.Equal("LINE-001", reserveRequest.SourceDocumentLineId);
+        Assert.Equal("LOC-A-01", reserveRequest.LocationCode);
+        Assert.Equal(4m, reserveRequest.Quantity);
+        Assert.DoesNotContain("TASK-OUT-001", reserveRequest.IdempotencyKey, StringComparison.Ordinal);
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal(result.RequestId, movementRequest.Id);
+        Assert.Equal("res-001", movementRequest.InventoryReservationId);
+    }
+
+    [Fact]
+    public async Task Picking_task_does_not_reserve_inventory_when_wms_validation_fails()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 5m),
+            CancellationToken.None));
+
+        Assert.Empty(inventory.Requests);
+    }
+
+    [Fact]
+    public async Task Picking_task_does_not_reserve_inventory_when_outbound_is_closed()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None));
+
+        Assert.Empty(inventory.Requests);
+    }
+
+    [Fact]
+    public async Task Picking_task_does_not_reserve_inventory_when_outbound_line_is_missing()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+
+        await Assert.ThrowsAsync<KnownException>(() => new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-MISSING", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None));
+
+        Assert.Empty(inventory.Requests);
+    }
+
+    [Fact]
+    public async Task Reservation_client_preserves_inventory_business_rejection_message()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(
+            """{"data":null,"success":false,"message":"Reservation quantity exceeds available stock.","code":400}"""))
+        {
+            BaseAddress = new Uri("http://inventory.test"),
+        };
+        var client = new HttpWmsInventoryReservationClient(httpClient, new TestInternalServiceTokenProvider());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => client.ReserveAsync(
+            new WmsInventoryReservationRequest(
+                "org-001",
+                "env-dev",
+                "wms",
+                "OUT-001",
+                "LINE-001",
+                "idem-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                null,
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                4m),
+            CancellationToken.None));
+
+        Assert.Contains("exceeds available stock", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Complete_count_execution_creates_pending_count_adjustment_request()
     {
         await using var dbContext = CreateContext();
@@ -120,5 +263,34 @@ public sealed class WmsInventoryBoundaryTests
             .UseInMemoryDatabase($"wms-boundary-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed class FakeWmsInventoryReservationClient(string reservationId) : IWmsInventoryReservationClient
+    {
+        public List<WmsInventoryReservationRequest> Requests { get; } = [];
+
+        public Task<WmsInventoryReservationResult> ReserveAsync(
+            WmsInventoryReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new WmsInventoryReservationResult(reservationId, request.Quantity, 0m));
+        }
+    }
+
+    private sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider
+    {
+        public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class StubHttpMessageHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            });
+        }
     }
 }

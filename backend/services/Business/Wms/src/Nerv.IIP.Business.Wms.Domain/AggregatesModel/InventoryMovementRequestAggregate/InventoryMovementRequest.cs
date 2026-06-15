@@ -8,8 +8,6 @@ public enum InventoryMovementRequestStatus
 {
     Pending = 0,
     Posted = 1,
-    // Reserved for a future Inventory posting-failed integration event. Current failures stay Pending
-    // and are diagnosed through CAP retry plus the service-local persistent DLQ.
     Failed = 2,
 }
 
@@ -35,7 +33,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string qualityStatus,
         string ownerType,
         string? ownerId,
-        decimal quantity)
+        decimal quantity,
+        string? inventoryReservationId)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -53,6 +52,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         OwnerType = WmsText.Required(ownerType, nameof(ownerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(ownerId);
         Quantity = WmsText.NonZero(quantity, nameof(quantity));
+        InventoryReservationId = WmsText.Optional(inventoryReservationId);
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
@@ -73,6 +73,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public string? InventoryReservationId { get; private set; }
     /// <summary>
     /// Signed movement quantity sent to Inventory. Inbound increases stock, outbound decreases stock,
     /// and count-adjustment uses the counted-minus-expected variance.
@@ -101,7 +102,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string qualityStatus,
         string ownerType,
         string? ownerId,
-        decimal quantity)
+        decimal quantity,
+        string? inventoryReservationId = null)
     {
         return new InventoryMovementRequest(
             organizationId,
@@ -119,7 +121,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             qualityStatus,
             ownerType,
             ownerId,
-            quantity);
+            quantity,
+            inventoryReservationId);
     }
 
     public void MarkPosted(string inventoryMovementId)
@@ -146,8 +149,22 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     // leaves requests Pending when Inventory handling fails and relies on CAP retry/DLQ/replay.
     public void MarkFailed(string failureCode, string failureMessage)
     {
-        FailureCode = WmsText.Required(failureCode, nameof(failureCode));
-        FailureMessage = WmsText.Required(failureMessage, nameof(failureMessage));
+        if (Status == InventoryMovementRequestStatus.Posted)
+        {
+            return;
+        }
+
+        var requiredFailureCode = WmsText.Required(failureCode, nameof(failureCode));
+        var requiredFailureMessage = WmsText.Required(failureMessage, nameof(failureMessage));
+        if (Status == InventoryMovementRequestStatus.Failed
+            && FailureCode == requiredFailureCode
+            && FailureMessage == requiredFailureMessage)
+        {
+            return;
+        }
+
+        FailureCode = requiredFailureCode;
+        FailureMessage = requiredFailureMessage;
         Status = InventoryMovementRequestStatus.Failed;
     }
 }

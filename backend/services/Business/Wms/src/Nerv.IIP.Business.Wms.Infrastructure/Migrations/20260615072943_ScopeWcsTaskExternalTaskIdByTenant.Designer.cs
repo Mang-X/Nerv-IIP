@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260615072943_ScopeWcsTaskExternalTaskIdByTenant")]
+    partial class ScopeWcsTaskExternalTaskIdByTenant
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -331,12 +334,6 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("inventory_movement_id")
                         .HasComment("Public Inventory movement id returned after posting.");
 
-                    b.Property<string>("InventoryReservationId")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("inventory_reservation_id")
-                        .HasComment("Optional Inventory reservation id used to allocate outbound stock.");
-
                     b.Property<string>("LocationCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -547,12 +544,6 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Outbound order line id.");
-
-                    b.Property<string>("InventoryReservationId")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("inventory_reservation_id")
-                        .HasComment("Public Inventory reservation id allocated for this outbound line.");
 
                     b.Property<string>("LineNo")
                         .IsRequired()

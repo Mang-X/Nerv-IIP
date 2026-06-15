@@ -40,6 +40,7 @@ public sealed class IntegrationEventEnvelopeContractTests
             typeof(AuditRecordedIntegrationEvent),
             typeof(InventoryMovementRequestedIntegrationEvent),
             typeof(StockMovementPostedIntegrationEvent),
+            typeof(StockMovementPostingFailedIntegrationEvent),
             typeof(StockCountVarianceConfirmedIntegrationEvent),
             typeof(StockAvailabilityChangedIntegrationEvent),
             typeof(AssetUnavailableIntegrationEvent),

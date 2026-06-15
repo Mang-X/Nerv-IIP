@@ -651,9 +651,10 @@ public sealed class InventoryEndpointContractTests
 
         using var secondScope = provider.CreateScope();
         var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
             new PostStockMovementCommandHandler(secondDbContext).Handle(NewPostMovementCommand("idem-in-001", 6m), CancellationToken.None));
 
+        Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, exception.FailureCode);
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 

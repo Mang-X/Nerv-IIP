@@ -54,6 +54,29 @@ public sealed class WmsStockMovementPostedConsumerTests
         Assert.Null(persistedRequest.InventoryMovementId);
     }
 
+    [Fact]
+    public async Task Stock_movement_posting_failed_consumer_marks_matching_wms_request_failed()
+    {
+        var databaseName = $"wms-stock-movement-failed-{Guid.NewGuid():N}";
+        await using var dbContext = CreateContext(databaseName);
+        var request = PendingRequest();
+        dbContext.InventoryMovementRequests.Add(request);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed(
+            new CommandExecutingSender(databaseName),
+            new InMemoryIntegrationEventDeadLetterStore());
+        var integrationEvent = CreateFailedEvent("NEGATIVE_ON_HAND");
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        await using var assertionContext = CreateContext(databaseName);
+        var persistedRequest = await assertionContext.InventoryMovementRequests.SingleAsync(CancellationToken.None);
+        Assert.Equal(InventoryMovementRequestStatus.Failed, persistedRequest.Status);
+        Assert.Equal("NEGATIVE_ON_HAND", persistedRequest.FailureCode);
+        Assert.Contains("negative", persistedRequest.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static InventoryMovementRequest PendingRequest()
     {
         return InventoryMovementRequest.Create(
@@ -113,6 +136,41 @@ public sealed class WmsStockMovementPostedConsumerTests
                 null));
     }
 
+    private static StockMovementPostingFailedIntegrationEvent CreateFailedEvent(string failureCode)
+    {
+        return new StockMovementPostingFailedIntegrationEvent(
+            "evt-failed-001",
+            InventoryIntegrationEventTypes.StockMovementPostingFailed,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            InventoryIntegrationEventSources.BusinessInventory,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:business-inventory",
+            "inventory:stock-movement-posting-failed:org-001:env-dev:wms:IN-001:idem-in-001",
+            new StockMovementPostingFailedPayload(
+                "inbound",
+                "wms",
+                "IN-001",
+                "LINE-001",
+                "idem-in-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                5m,
+                failureCode,
+                "Stock movement would make on-hand quantity negative.",
+                DateTimeOffset.UtcNow));
+    }
+
     private static ApplicationDbContext CreateContext(string databaseName)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -130,6 +188,14 @@ public sealed class WmsStockMovementPostedConsumerTests
             {
                 await using var dbContext = CreateContext(databaseName);
                 await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(command, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
+            if (request is MarkInventoryMovementRequestFailedCommand failedCommand)
+            {
+                await using var dbContext = CreateContext(databaseName);
+                await new MarkInventoryMovementRequestFailedCommandHandler(dbContext).Handle(failedCommand, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return;
             }

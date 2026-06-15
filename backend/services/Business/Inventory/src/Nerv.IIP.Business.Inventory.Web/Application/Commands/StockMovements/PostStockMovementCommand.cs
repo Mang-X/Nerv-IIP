@@ -88,7 +88,9 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         {
             if (!existingMovement.HasSamePayload(movement))
             {
-                throw new KnownException("Stock movement idempotency key conflicts with an existing movement payload.");
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.IdempotencyConflict,
+                    "Stock movement idempotency key conflicts with an existing movement payload.");
             }
 
             var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
@@ -103,15 +105,35 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         {
             if (request.Quantity > 0)
             {
-                throw new KnownException("Only outbound movements can allocate an existing stock reservation.");
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.ReservationAllocationRejected,
+                    "Only outbound movements can allocate an existing stock reservation.");
             }
 
             var reservation = await dbContext.StockReservations.SingleOrDefaultAsync(x => x.Id == request.ReservationId, cancellationToken)
-                ?? throw new KnownException($"Stock reservation '{request.ReservationId}' was not found.");
-            ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
+                ?? throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.ReservationNotFound,
+                    $"Stock reservation '{request.ReservationId}' was not found.");
+            try
+            {
+                ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw InventoryPostingRejectedException.FromDomain(exception);
+            }
         }
 
-        var applied = ledger.ApplyMovement(movement);
+        StockMovement applied;
+        try
+        {
+            applied = ledger.ApplyMovement(movement);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw InventoryPostingRejectedException.FromDomain(exception);
+        }
+
         if (ReferenceEquals(applied, movement))
         {
             dbContext.StockMovements.Add(movement);
