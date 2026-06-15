@@ -1,7 +1,9 @@
 using Nerv.IIP.Business.BarcodeLabel.Domain;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.DomainEvents;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 
@@ -42,9 +44,17 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         CreatedAtUtc = DateTimeOffset.UtcNow;
         CompletedAtUtc = CreatedAtUtc;
 
+        var labelValues = LabelValueInputs.Parse(labelValuesJson);
         for (var sequence = 1; sequence <= requestedQuantity; sequence++)
         {
-            Items.Add(LabelPrintItem.Create(sequence, rule.GenerateValue(SourceDocumentType, SourceDocumentId, sequence), null));
+            var item = rule.BarcodeType.StartsWith("gs1-", StringComparison.Ordinal)
+                ? LabelPrintItem.CreateSerialized(sequence, rule.GenerateGs1Value(SourceDocumentType, labelValues.LotNo, labelValues.SerialPrefix, sequence), null)
+                : LabelPrintItem.Create(sequence, rule.GenerateValue(SourceDocumentType, SourceDocumentId, sequence), null);
+            Items.Add(item);
+            if (!string.IsNullOrWhiteSpace(item.SerialNumber))
+            {
+                EpcisEvents.Add(EpcisEvent.Commissioning(OrganizationId, EnvironmentId, item, SourceDocumentType, SourceDocumentId));
+            }
         }
 
         this.AddDomainEvent(new LabelPrintBatchCreatedDomainEvent(this));
@@ -64,6 +74,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public List<LabelPrintItem> Items { get; private set; } = [];
+    public List<EpcisEvent> EpcisEvents { get; private set; } = [];
 
     public static LabelPrintBatch Create(
         string organizationId,
@@ -107,12 +118,16 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     {
     }
 
-    private LabelPrintItem(int sequenceNo, string labelValue, string? fileId)
+    private LabelPrintItem(int sequenceNo, string labelValue, string? fileId, string? gtin, string? lotNo, string? serialNumber, string? epcUri)
     {
         Id = new LabelPrintItemId(Guid.CreateVersion7());
         SequenceNo = sequenceNo;
         LabelValue = BarcodeLabelText.Required(labelValue, nameof(labelValue));
         FileId = BarcodeLabelText.Optional(fileId);
+        Gtin = BarcodeLabelText.Optional(gtin);
+        LotNo = BarcodeLabelText.Optional(lotNo);
+        SerialNumber = BarcodeLabelText.Optional(serialNumber);
+        EpcUri = BarcodeLabelText.Optional(epcUri);
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -120,10 +135,37 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     public int SequenceNo { get; private set; }
     public string LabelValue { get; private set; } = string.Empty;
     public string? FileId { get; private set; }
+    public string? Gtin { get; private set; }
+    public string? LotNo { get; private set; }
+    public string? SerialNumber { get; private set; }
+    public string? EpcUri { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     internal static LabelPrintItem Create(int sequenceNo, string labelValue, string? fileId)
     {
-        return new LabelPrintItem(sequenceNo, labelValue, fileId);
+        return new LabelPrintItem(sequenceNo, labelValue, fileId, null, null, null, null);
+    }
+
+    internal static LabelPrintItem CreateSerialized(int sequenceNo, Gs1BarcodeValue value, string? fileId)
+    {
+        return new LabelPrintItem(sequenceNo, value.ToAiString(), fileId, value.Gtin, value.LotNo, value.SerialNumber, value.EpcUri);
+    }
+}
+
+internal sealed record LabelValueInputs(string LotNo, string SerialPrefix)
+{
+    public static LabelValueInputs Parse(string labelValuesJson)
+    {
+        using var document = JsonDocument.Parse(BarcodeLabelText.Required(labelValuesJson, nameof(labelValuesJson)));
+        var root = document.RootElement;
+        var lotNo = root.TryGetProperty("lotNo", out var lotElement)
+            ? lotElement.GetString()
+            : null;
+        var serialPrefix = root.TryGetProperty("serialPrefix", out var serialElement)
+            ? serialElement.GetString()
+            : null;
+        return new LabelValueInputs(
+            BarcodeLabelText.Required(lotNo ?? "LOT", "lotNo"),
+            BarcodeLabelText.Required(serialPrefix ?? "SN-", "serialPrefix"));
     }
 }

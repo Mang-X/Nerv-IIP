@@ -9,6 +9,57 @@ namespace Nerv.IIP.Business.BarcodeLabel.Domain.Tests;
 public sealed class BarcodeLabelAggregateTests
 {
     [Fact]
+    public void Gs1_parser_extracts_gtin_lot_serial_and_quantity()
+    {
+        var parsed = Gs1ApplicationIdentifierParser.Parse("(01)09506000134352(10)LOT-A(21)SN-0001(30)2");
+
+        Assert.Equal("09506000134352", parsed.Gtin);
+        Assert.Equal("LOT-A", parsed.LotNo);
+        Assert.Equal("SN-0001", parsed.SerialNumber);
+        Assert.Equal(2, parsed.Quantity);
+        Assert.Equal("urn:epc:id:sgtin:0950600.013435.SN-0001", parsed.EpcUri);
+    }
+
+    [Fact]
+    public void Gs1_mod10_generates_expected_gtin_check_digit()
+    {
+        Assert.Equal("09506000134352", Gs1BarcodeValue.AppendMod10CheckDigit("0950600013435"));
+    }
+
+    [Fact]
+    public void Gs1_print_batch_persists_serialized_label_fields_and_commissioning_events()
+    {
+        var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active");
+
+        var batch = LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            "wms.inbound",
+            "ASN-001",
+            "idem-print-gs1-001",
+            """{"skuCode":"SKU-FG-1000","lotNo":"LOT-A","serialPrefix":"SN-"}""",
+            2);
+
+        Assert.Equal(["SN-0001", "SN-0002"], batch.Items.Select(x => x.SerialNumber!).ToArray());
+        Assert.All(batch.Items, item =>
+        {
+            Assert.Equal("09506000134352", item.Gtin);
+            Assert.Equal("LOT-A", item.LotNo);
+            Assert.StartsWith("(01)09506000134352(10)LOT-A(21)SN-", item.LabelValue, StringComparison.Ordinal);
+            Assert.StartsWith("urn:epc:id:sgtin:", item.EpcUri, StringComparison.Ordinal);
+        });
+        Assert.Equal(2, batch.EpcisEvents.Count);
+        Assert.All(batch.EpcisEvents, epcisEvent =>
+        {
+            Assert.Equal("commissioning", epcisEvent.EventType);
+            Assert.Equal("ADD", epcisEvent.Action);
+            Assert.Equal("commissioning", epcisEvent.BusinessStep);
+        });
+    }
+
+    [Fact]
     public void Barcode_rule_creation_rejects_blank_prefix()
     {
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -139,6 +190,65 @@ public sealed class BarcodeLabelAggregateTests
         Assert.False(scan.HasSameIdempotencyPayload(conflict));
         Assert.Throws<InvalidOperationException>(() => scan.EnsureSameIdempotencyPayload(conflict));
         Assert.IsType<LabelScannedDomainEvent>(scan.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void Accepted_gs1_inventory_scan_parses_traceability_fields_and_object_event()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
+            "inventory.receipt",
+            "ASN-001",
+            "idem-scan-gs1-001",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            2);
+
+        Assert.Equal("09506000134352", scan.Gtin);
+        Assert.Equal("LOT-A", scan.LotNo);
+        Assert.Equal("SN-0001", scan.SerialNumber);
+        Assert.Equal(2, scan.Quantity);
+        Assert.Equal("inventory-movement-requested", scan.BusinessAction);
+        Assert.NotNull(scan.DownstreamEventId);
+        var epcisEvent = Assert.Single(scan.EpcisEvents);
+        Assert.Equal("objectEvent", epcisEvent.EventType);
+        Assert.Equal("OBSERVE", epcisEvent.Action);
+        Assert.Equal("inventory.receipt", epcisEvent.BusinessStep);
+    }
+
+    [Fact]
+    public void Accepted_scan_rejects_unsupported_business_workflow()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A(21)SN-0001",
+            "mes.report",
+            "WO-001",
+            "idem-scan-gs1-002",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "LINE-01",
+            "qualified",
+            "owned",
+            null,
+            1));
+
+        Assert.Contains("SourceWorkflow", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

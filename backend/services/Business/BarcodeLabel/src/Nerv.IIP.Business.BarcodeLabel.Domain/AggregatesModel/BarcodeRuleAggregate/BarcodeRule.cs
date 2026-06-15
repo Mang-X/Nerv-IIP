@@ -6,7 +6,7 @@ public partial record BarcodeRuleId : IGuidStronglyTypedId;
 
 public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SupportedTypes = ["code128", "qr", "datamatrix"];
+    private static readonly HashSet<string> SupportedTypes = ["code128", "qr", "datamatrix", "gs1-128", "gs1-datamatrix"];
 
     private static readonly HashSet<string> SupportedStatuses = ["active", "inactive"];
 
@@ -112,5 +112,32 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
         }
 
         return value;
+    }
+
+    public Gs1BarcodeValue GenerateGs1Value(string sourceDocumentType, string lotNo, string serialPrefix, int sequence)
+    {
+        if (!BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only GS1 barcode rules can generate GS1 values.");
+        }
+
+        if (ChecksumRule != "gs1-mod10")
+        {
+            throw new InvalidOperationException("GS1 barcode rules require gs1-mod10 checksum.");
+        }
+
+        var sourceType = BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant();
+        if (!AllowedSourceDocumentTypes.Contains(sourceType, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"Source document type '{sourceDocumentType}' is not allowed by barcode rule '{RuleCode}'.");
+        }
+
+        if (sequence <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sequence), "Sequence must be positive.");
+        }
+
+        var serialNumber = $"{BarcodeLabelText.Required(serialPrefix, nameof(serialPrefix))}{sequence:D4}";
+        return Gs1BarcodeValue.Create(Prefix, lotNo, serialNumber);
     }
 }

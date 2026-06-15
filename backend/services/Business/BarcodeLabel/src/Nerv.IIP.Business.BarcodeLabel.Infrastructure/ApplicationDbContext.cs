@@ -5,6 +5,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure;
@@ -21,6 +22,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<LabelPrintItem> LabelPrintItems => Set<LabelPrintItem>();
 
     public DbSet<ScanRecord> ScanRecords => Set<ScanRecord>();
+
+    public DbSet<EpcisEvent> EpcisEvents => Set<EpcisEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

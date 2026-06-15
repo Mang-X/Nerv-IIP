@@ -12,7 +12,15 @@ public sealed record RecordScanCommand(
     string SourceDocumentId,
     string IdempotencyKey,
     string Result,
-    string? RejectionReason) : ICommand<ScanRecordId>;
+    string? RejectionReason,
+    string? SkuCode,
+    string? UomCode,
+    string? SiteCode,
+    string? LocationCode,
+    string? QualityStatus,
+    string? OwnerType,
+    string? OwnerId,
+    decimal? Quantity) : ICommand<ScanRecordId>;
 
 public sealed class RecordScanCommandValidator : AbstractValidator<RecordScanCommand>
 {
@@ -27,6 +35,24 @@ public sealed class RecordScanCommandValidator : AbstractValidator<RecordScanCom
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.Result).NotEmpty().MaximumLength(30);
         RuleFor(x => x.RejectionReason).MaximumLength(500);
+        RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.UomCode).MaximumLength(50);
+        RuleFor(x => x.SiteCode).MaximumLength(100);
+        RuleFor(x => x.LocationCode).MaximumLength(100);
+        RuleFor(x => x.QualityStatus).MaximumLength(100);
+        RuleFor(x => x.OwnerType).MaximumLength(100);
+        RuleFor(x => x.OwnerId).MaximumLength(150);
+        When(x => string.Equals(x.Result, "accepted", StringComparison.OrdinalIgnoreCase)
+            && x.SourceWorkflow.StartsWith("inventory.", StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+            RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.QualityStatus).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.OwnerType).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.Quantity).NotNull().GreaterThan(0);
+        });
     }
 }
 
@@ -44,7 +70,15 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             request.SourceDocumentId,
             request.IdempotencyKey,
             request.Result,
-            request.RejectionReason);
+            request.RejectionReason,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.QualityStatus,
+            request.OwnerType,
+            request.OwnerId,
+            request.Quantity);
 
         var existing = await dbContext.ScanRecords.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
