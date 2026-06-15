@@ -6,10 +6,12 @@ import type {
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import {
   Button,
   DataTable,
+  DatePicker,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -66,6 +68,57 @@ const {
   suggestionsError,
   suggestionsPending,
 } = useBusinessPlanning()
+
+// 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
+const { skus } = useBusinessSkus()
+const { resources: sites } = useBusinessMasterDataResources('site')
+const { resources: units } = useBusinessMasterDataResources('unit-of-measure')
+
+const skuNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const sku of skus.value) {
+    if (sku.code) map.set(sku.code, sku.displayName ?? sku.code)
+  }
+  return map
+})
+const siteNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const site of sites.value) {
+    if (site.code) map.set(site.code, site.displayName ?? site.code)
+  }
+  return map
+})
+function skuLabel(code?: string | null) {
+  if (!code) return '—'
+  return skuNameByCode.value.get(code) ?? code
+}
+function siteLabel(code?: string | null) {
+  if (!code) return '—'
+  return siteNameByCode.value.get(code) ?? code
+}
+
+const skuOptions = computed(() =>
+  skus.value
+    .filter((s) => s.code)
+    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
+)
+const siteOptions = computed(() =>
+  sites.value
+    .filter((s) => s.code)
+    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
+)
+const uomOptions = computed(() =>
+  units.value
+    .filter((u) => u.code)
+    .map((u) => ({ value: u.code as string, label: `${u.displayName ?? u.code} · ${u.code}` })),
+)
+
+const canSubmitDemand = computed(() =>
+  !!demandForm.skuCode?.trim()
+  && !!demandForm.siteCode?.trim()
+  && !!demandForm.uomCode?.trim()
+  && (demandForm.quantity ?? 0) > 0,
+)
 
 const errorMessage = computed(() =>
   [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError, acceptSuggestionError]
@@ -198,12 +251,12 @@ function formatSource(value?: string | null) {
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
             <FieldGroup class="grid gap-3 sm:grid-cols-2">
               <Field>
-                <FieldLabel for="mrp-start">开始日期</FieldLabel>
-                <Input id="mrp-start" v-model="runRequest.horizonStart" type="date" />
+                <FieldLabel>开始日期</FieldLabel>
+                <DatePicker v-model="runRequest.horizonStart" placeholder="选择开始日期" class="w-full" />
               </Field>
               <Field>
-                <FieldLabel for="mrp-end">结束日期</FieldLabel>
-                <Input id="mrp-end" v-model="runRequest.horizonEnd" type="date" />
+                <FieldLabel>结束日期</FieldLabel>
+                <DatePicker v-model="runRequest.horizonEnd" placeholder="选择结束日期" class="w-full" />
               </Field>
             </FieldGroup>
             <DialogFooter>
@@ -246,28 +299,43 @@ function formatSource(value?: string | null) {
               </Field>
               <Field>
                 <FieldLabel for="demand-sku">SKU</FieldLabel>
-                <Input id="demand-sku" v-model="demandForm.skuCode" />
+                <Select v-model="demandForm.skuCode">
+                  <SelectTrigger id="demand-sku"><SelectValue placeholder="选择 SKU" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field>
                 <FieldLabel for="demand-site">工厂</FieldLabel>
-                <Input id="demand-site" v-model="demandForm.siteCode" />
+                <Select v-model="demandForm.siteCode">
+                  <SelectTrigger id="demand-site"><SelectValue placeholder="选择工厂" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field>
                 <FieldLabel for="demand-uom">单位</FieldLabel>
-                <Input id="demand-uom" v-model="demandForm.uomCode" />
+                <Select v-model="demandForm.uomCode">
+                  <SelectTrigger id="demand-uom"><SelectValue placeholder="选择单位" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+                  </SelectContent>
+                </Select>
               </Field>
               <Field>
                 <FieldLabel for="demand-qty">数量</FieldLabel>
                 <Input id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
               </Field>
               <Field>
-                <FieldLabel for="demand-due">需求日期</FieldLabel>
-                <Input id="demand-due" v-model="demandForm.dueDate" type="date" />
+                <FieldLabel>需求日期</FieldLabel>
+                <DatePicker v-model="demandForm.dueDate" placeholder="选择需求日期" class="w-full" />
               </Field>
             </FieldGroup>
             <DialogFooter>
               <Button type="button" variant="outline" @click="demandOpen = false">取消</Button>
-              <Button type="submit" :disabled="createDemandPending">
+              <Button type="submit" :disabled="createDemandPending || !canSubmitDemand">
                 <Spinner v-if="createDemandPending" aria-hidden="true" />
                 保存需求
               </Button>
@@ -286,6 +354,10 @@ function formatSource(value?: string | null) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
+  <p class="text-sm text-muted-foreground">
+    计划流程：① 录入需求 → ② 运行 MRP 生成建议 → ③ 评审并接受建议下达
+  </p>
+
   <Tabs default-value="demands">
     <TabsList>
       <TabsTrigger value="demands">需求池 ({{ demands.length }})</TabsTrigger>
@@ -296,6 +368,18 @@ function formatSource(value?: string | null) {
     <TabsContent value="demands">
       <DataTable :columns="demandColumns" :rows="demands" row-key="demandSourceId" :loading="demandsPending" empty-message="当前范围没有计划需求。">
         <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
+        <template #cell-skuCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ skuLabel(row.skuCode) }}</span>
+            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
+          </div>
+        </template>
+        <template #cell-siteCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ siteLabel(row.siteCode) }}</span>
+            <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{ row.siteCode }}</span>
+          </div>
+        </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
       </DataTable>
@@ -324,7 +408,18 @@ function formatSource(value?: string | null) {
           :loading="peggingPending"
           empty-message="选择一条 MRP 运行查看需求与物料来源。"
         >
-          <template #cell-componentSkuCode="{ row }">{{ row.componentSkuCode ?? '-' }}</template>
+          <template #cell-parentSkuCode="{ row }">
+            <div class="flex flex-col gap-0.5">
+              <span>{{ skuLabel(row.parentSkuCode) }}</span>
+              <span v-if="row.parentSkuCode" class="text-xs text-muted-foreground">{{ row.parentSkuCode }}</span>
+            </div>
+          </template>
+          <template #cell-componentSkuCode="{ row }">
+            <div class="flex flex-col gap-0.5">
+              <span>{{ skuLabel(row.componentSkuCode) }}</span>
+              <span v-if="row.componentSkuCode" class="text-xs text-muted-foreground">{{ row.componentSkuCode }}</span>
+            </div>
+          </template>
           <template #cell-quantity="{ row }"><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template>
           <template #cell-engineeringRef="{ row }">{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '-' }}</template>
         </DataTable>
@@ -342,6 +437,12 @@ function formatSource(value?: string | null) {
       </div>
       <DataTable :columns="suggestionColumns" :rows="suggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
         <template #cell-suggestionType="{ row }">{{ suggestionTypeLabel(row.suggestionType) }}</template>
+        <template #cell-skuCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ skuLabel(row.skuCode) }}</span>
+            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
+          </div>
+        </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
         <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
