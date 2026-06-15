@@ -306,14 +306,15 @@ Source:
 2. `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Migrations/20260523103025_InitialBusinessApprovalSchema.cs`
 4. `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Migrations/20260608080210_AddApprovalDelegationsAndApprovalPaging.cs`
+5. `backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Infrastructure/Migrations/20260615075007_Issue417ApprovalWorkflowGaps.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `approval_templates` | business | 业务审批模板，按业务单据类型定义审批链。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + template_code` 是业务唯一键。 | template code 唯一索引防重复；业务单据类型/状态索引用于选择 active 模板。 | 模板激活后供新审批链复制步骤；历史模板保留。 |
-| `approval_template_steps` | business | 模板中的有序审批步骤定义。 | `id` 为 Guid v7 强类型 ID；`approval_template_id` 归属模板；`step_no` 为模板内顺序。 | template + step no 唯一，防止步骤顺序重复。 | 随模板维护；运行链启动后会复制为 runtime steps。 |
+| `approval_template_steps` | business | 模板中的有序审批步骤定义，支持同 step no 的会签/或签和简单条件路由。 | `id` 为 Guid v7 强类型 ID；`approval_template_id` 归属模板；`step_no` 为模板内顺序；`completion_policy` 为 `all`/`any`；`condition_expression` 当前支持空、`documentType=<value>`、`sourceService=<value>`。 | template + step no + approver 唯一，防止同一模板步骤重复配置。 | 随模板维护；运行链启动后会复制为 runtime steps。 |
 | `approval_chains` | business | 运行中的业务审批链实例，绑定来源服务和来源单据。 | `id` 为 Guid v7 强类型 ID；记录 chain id、source service、source document id、status。 | 来源单据索引用于业务反查；状态索引用于待审批列表。 | 从 pending 进入 approved/rejected/returned 等状态；不替代 Ops 运维审批。 |
-| `approval_steps` | business | 运行审批链中的步骤快照。 | `id` 为 Guid v7 强类型 ID；`approval_chain_id` 归属链；`step_no` 为链内顺序。 | chain + step no 唯一，支持按链加载步骤。 | 随链创建并被审批动作推进。 |
-| `approval_decisions` | business | append-only 审批决定事实，记录审批人、动作、意见和时间。 | `id` 为 Guid v7 强类型 ID；`approval_chain_id` 和 `step_no` 绑定决策位置。 | chain/step/time 索引用于审计时间线。 | 决策只追加不物理删除，作为审批审计事实。 |
+| `approval_steps` | business | 运行审批链中的步骤快照，保存会签/或签策略、条件结果和超时通知状态。 | `id` 为 Guid v7 强类型 ID；`approval_chain_id` 归属链；`step_no` 为链内顺序；`overdue_notified_at_utc` 标记已发超时事件。 | chain + step no + approver 唯一，支持按链加载步骤和并行组推进。 | 随链创建并被审批动作推进；内部 `checkOverdueApprovalSteps` endpoint 使用服务端时钟标记超时并发事件，不自动改派。 |
+| `approval_decisions` | business | append-only 审批决定事实，记录审批人、代理审批来源、动作、意见和时间。 | `id` 为 Guid v7 强类型 ID；`approval_chain_id` 和 `step_no` 绑定决策位置；`on_behalf_of_actor_type/ref` 记录被代理审批人。 | chain + step + actor + on-behalf 唯一索引使用 nulls-not-distinct，区分本人审批和不同被代理人的代理审批；chain/step/time 索引用于审计时间线。 | 决策只追加不物理删除，作为审批审计事实；StepResolved 事件幂等键包含代理来源字段。 |
 | `approval_delegations` | business | 审批授权委托事实，记录委托人与被委托人、单据类型范围和有效期。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id` 隔离租户；actor ref 字段保存公开身份引用。 | status + delegate actor 用于委托设置列表；delegator + document type 用于反查委托来源。 | 创建后为 active，可撤销为 revoked；不物理删除，作为授权委托审计事实。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -666,7 +667,7 @@ Known gaps:
 | BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、物料需求快照、领料/线边接收、报工、报工物料批次消耗、不良记录、完工入库请求、排产结果、工作中心不可用窗口、设备映射、班次交接、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging、计划建议和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项、扫码记录、GS1 序列化字段和 EPCIS 最小追溯事件 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤、审批决定和审批委托 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤、审批决定、审批委托、会签/或签策略、简单条件路由、超时通知标记和代理审批审计字段 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | WMS | `wms` | Implemented | Yes | Yes | No | 已有入库、出库、仓库任务、盘点执行、WCS 任务和库存移动请求元数据 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |

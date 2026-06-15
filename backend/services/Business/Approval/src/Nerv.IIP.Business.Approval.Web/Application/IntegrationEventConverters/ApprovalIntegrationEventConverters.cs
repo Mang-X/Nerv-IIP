@@ -51,14 +51,57 @@ public sealed class ApprovalStepResolvedIntegrationEventConverter
             chain.OrganizationId,
             chain.EnvironmentId,
             $"{decision.ActorType}:{decision.ActorRef}",
-            EventIds.Idempotency("step-resolved", chain.OrganizationId, chain.EnvironmentId, chain.Id.ToString(), decision.StepNo.ToString(), decision.ActorType, decision.ActorRef),
+            EventIds.Idempotency(
+                "step-resolved",
+                chain.OrganizationId,
+                chain.EnvironmentId,
+                chain.Id.ToString(),
+                decision.StepNo.ToString(),
+                decision.ActorType,
+                decision.ActorRef,
+                decision.OnBehalfOfActorType ?? "_",
+                decision.OnBehalfOfActorRef ?? "_"),
             new ApprovalStepResolvedPayload(
                 chain.Id.ToString(),
                 decision.StepNo,
                 decision.ActorType,
                 decision.ActorRef,
+                decision.OnBehalfOfActorType,
+                decision.OnBehalfOfActorRef,
                 decision.Decision,
                 decision.Comment,
+                ApprovalIntegrationEventConverterHelpers.ToPayload(chain.DocumentReference)));
+    }
+}
+
+public sealed class ApprovalStepOverdueIntegrationEventConverter
+    : IIntegrationEventConverter<ApprovalStepOverdueDomainEvent, ApprovalStepOverdueIntegrationEvent>
+{
+    public ApprovalStepOverdueIntegrationEvent Convert(ApprovalStepOverdueDomainEvent domainEvent)
+    {
+        var chain = domainEvent.Chain;
+        var step = domainEvent.Step;
+        return new ApprovalStepOverdueIntegrationEvent(
+            EventIds.New(),
+            ApprovalIntegrationEventTypes.StepOverdue,
+            ApprovalIntegrationEventVersions.V1,
+            domainEvent.MarkedAtUtc,
+            ApprovalIntegrationEventSources.BusinessApproval,
+            chain.Id.ToString(),
+            step.Id.ToString(),
+            chain.OrganizationId,
+            chain.EnvironmentId,
+            $"system:{ApprovalIntegrationEventSources.BusinessApproval}",
+            EventIds.Idempotency("step-overdue", chain.OrganizationId, chain.EnvironmentId, chain.Id.ToString(), step.StepNo.ToString(), step.ApproverType, step.ApproverRef),
+            new ApprovalStepOverduePayload(
+                chain.Id.ToString(),
+                step.Id.ToString(),
+                step.StepNo,
+                step.StepName,
+                step.ApproverType,
+                step.ApproverRef,
+                step.DueAtUtc!.Value,
+                domainEvent.MarkedAtUtc,
                 ApprovalIntegrationEventConverterHelpers.ToPayload(chain.DocumentReference)));
     }
 }
@@ -125,6 +168,8 @@ internal static class ApprovalIntegrationEventConverterHelpers
                 result,
                 decision.ActorType,
                 decision.ActorRef,
+                decision.OnBehalfOfActorType,
+                decision.OnBehalfOfActorRef,
                 ToPayload(chain.DocumentReference)));
     }
 }

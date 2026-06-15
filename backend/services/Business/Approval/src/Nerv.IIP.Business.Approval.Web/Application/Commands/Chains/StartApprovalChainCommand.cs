@@ -44,14 +44,23 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                 && x.DocumentType == request.DocumentType,
                 cancellationToken)
             ?? throw new KnownException("Approval template was not found.");
-        var chain = ApprovalChain.Start(
-            template,
-            new ApprovalDocumentReference(
-                request.SourceService,
-                request.DocumentType,
-                request.DocumentId,
-                request.DocumentLineId),
-            request.StartedBy);
+        ApprovalChain chain;
+        try
+        {
+            chain = ApprovalChain.Start(
+                template,
+                new ApprovalDocumentReference(
+                    request.SourceService,
+                    request.DocumentType,
+                    request.DocumentId,
+                    request.DocumentLineId),
+                request.StartedBy);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
         dbContext.ApprovalChains.Add(chain);
         return chain.Id;
     }

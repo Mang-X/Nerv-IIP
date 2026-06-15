@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
 
@@ -19,7 +20,9 @@ public sealed record ApprovalTemplateStepInput(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string? CompletionPolicy = null,
+    string? ConditionExpression = null);
 
 public sealed class CreateOrUpdateApprovalTemplateCommandValidator : AbstractValidator<CreateOrUpdateApprovalTemplateCommand>
 {
@@ -36,6 +39,11 @@ public sealed class CreateOrUpdateApprovalTemplateCommandValidator : AbstractVal
             step.RuleFor(x => x.StepNo).GreaterThan(0);
             step.RuleFor(x => x.StepName).NotEmpty().MaximumLength(100);
             step.RuleFor(x => x.ParallelGroupKey).OptionalApprovalCode(100);
+            step.RuleFor(x => x.CompletionPolicy).Must(x => string.IsNullOrWhiteSpace(x) || x is "all" or "any").WithMessage("CompletionPolicy must be all or any.");
+            step.RuleFor(x => x.ConditionExpression)
+                .MaximumLength(200)
+                .Must(ApprovalConditionMatcher.IsValid)
+                .WithMessage("ConditionExpression must be empty or use supported key=value syntax: documentType=<value> or sourceService=<value>.");
             step.RuleFor(x => x.ApproverType).RequiredApprovalCode(50);
             step.RuleFor(x => x.ApproverRef).RequiredApprovalCode(150);
             step.RuleFor(x => x.DueInHours).GreaterThan(0).When(x => x.DueInHours.HasValue);
@@ -55,7 +63,9 @@ public sealed class CreateOrUpdateApprovalTemplateCommandHandler(ApplicationDbCo
                 x.ParallelGroupKey,
                 x.ApproverType,
                 x.ApproverRef,
-                x.DueInHours))
+                x.DueInHours,
+                x.CompletionPolicy ?? ApprovalCompletionPolicies.All,
+                x.ConditionExpression))
             .ToArray();
         var template = await dbContext.ApprovalTemplates
             .Include(x => x.Steps)

@@ -46,6 +46,7 @@ public sealed class IntegrationEventEnvelopeContractTests
             typeof(StockAvailabilityChangedIntegrationEvent),
             typeof(ApprovalStartedIntegrationEvent),
             typeof(ApprovalStepResolvedIntegrationEvent),
+            typeof(ApprovalStepOverdueIntegrationEvent),
             typeof(ApprovalCompletedIntegrationEvent),
             typeof(AssetUnavailableIntegrationEvent),
             typeof(AssetRestoredIntegrationEvent),

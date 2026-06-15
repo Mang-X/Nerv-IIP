@@ -465,6 +465,8 @@ public sealed class ErpBusinessGapClosureTests
                 ApprovalResults.Approved,
                 "user",
                 "u-manager",
+                null,
+                null,
                 new ApprovalDocumentReferencePayload("business-erp", "purchase-order", purchaseOrderNo, null)));
     }
 
