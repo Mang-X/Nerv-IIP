@@ -56,13 +56,50 @@ public sealed class PlanningInputAdapterTests
             CancellationToken.None);
 
         Assert.Equal("product-engineering-http:2", snapshot.ProductionEngineeringSnapshotSource);
-        Assert.Equal("inventory-http:2", snapshot.InventorySnapshotSource);
+        Assert.Equal("inventory-http:2;scheduled-receipts:none", snapshot.InventorySnapshotSource);
         Assert.Contains(snapshot.ProductionVersions, x => x.ParentSkuCode == "SKU-FG-1000" && x.ProductionVersionReference == "PV-REAL-001");
+        Assert.Contains(snapshot.ProductionVersions, x => x.ParentSkuCode == "SKU-FG-1000" && x.LotSizeMin == 10m && x.LotSizeMax == 50m);
         Assert.Contains(snapshot.BomComponents, x => x.ParentSkuCode == "SKU-FG-1000" && x.ComponentSkuCode == "SKU-RM-1000" && x.QuantityPerParent == 3m);
         Assert.Contains(snapshot.Availability, x => x.SkuCode == "SKU-FG-1000" && x.AvailableQuantity == 2m);
         Assert.Contains(snapshot.Availability, x => x.SkuCode == "SKU-RM-1000" && x.AvailableQuantity == 5m);
-        Assert.Equal(["SKU-FG-1000"], engineering.RequestedParentSkuCodes);
+        Assert.Empty(snapshot.ScheduledReceipts);
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], engineering.RequestedParentSkuCodes);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_adds_erp_open_purchase_order_lines_as_scheduled_receipts()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var erp = new FakePlanningErpScheduledReceiptClient();
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            erp);
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        var receipt = Assert.Single(snapshot.ScheduledReceipts);
+        Assert.Equal("SKU-RM-1000", receipt.SkuCode);
+        Assert.Equal("pcs", receipt.UomCode);
+        Assert.Equal("SITE-01", receipt.SiteCode);
+        Assert.Equal(7m, receipt.Quantity);
+        Assert.Equal("erp", receipt.SourceSystem);
+        Assert.Equal("purchase-order", receipt.SourceDocumentType);
+        Assert.Equal("PO-1000:10", receipt.SourceDocumentId);
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], erp.RequestedSkuCodes);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
@@ -75,22 +112,24 @@ public sealed class PlanningInputAdapterTests
 
     private sealed class FakePlanningProductEngineeringClient : IPlanningProductEngineeringSnapshotClient
     {
-        public IReadOnlyCollection<string> RequestedParentSkuCodes { get; private set; } = [];
+        private readonly List<string> requestedParentSkuCodes = [];
+
+        public IReadOnlyCollection<string> RequestedParentSkuCodes => requestedParentSkuCodes;
 
         public Task<PlanningProductEngineeringSnapshot> GetSnapshotAsync(
             string internalBearerToken,
             PlanningProductEngineeringSnapshotRequest request,
             CancellationToken cancellationToken)
         {
-            RequestedParentSkuCodes = request.ParentSkuCodes;
+            requestedParentSkuCodes.AddRange(request.ParentSkuCodes);
             return Task.FromResult(new PlanningProductEngineeringSnapshot(
                 "product-engineering-http:2",
-                [
-                    new ProductionVersionSnapshot("SKU-FG-1000", "PV-REAL-001", "MBOM-REAL-001", "ROUTING-REAL-001"),
-                ],
-                [
-                    new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m),
-                ]));
+                request.ParentSkuCodes.Contains("SKU-FG-1000", StringComparer.OrdinalIgnoreCase)
+                    ? [new ProductionVersionSnapshot("SKU-FG-1000", "PV-REAL-001", "MBOM-REAL-001", "ROUTING-REAL-001", 10m, 50m, null)]
+                    : [],
+                request.ParentSkuCodes.Contains("SKU-FG-1000", StringComparer.OrdinalIgnoreCase)
+                    ? [new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m)]
+                    : []));
         }
     }
 
@@ -109,6 +148,24 @@ public sealed class PlanningInputAdapterTests
                 [
                     new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 2m),
                     new InventoryAvailabilitySnapshot("SKU-RM-1000", "pcs", "SITE-01", 5m),
+                ]));
+        }
+    }
+
+    private sealed class FakePlanningErpScheduledReceiptClient : IPlanningScheduledReceiptSnapshotClient
+    {
+        public IReadOnlyCollection<string> RequestedSkuCodes { get; private set; } = [];
+
+        public Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+            string internalBearerToken,
+            PlanningScheduledReceiptSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            RequestedSkuCodes = request.Items.Select(x => x.SkuCode).ToArray();
+            return Task.FromResult(new PlanningScheduledReceiptSnapshot(
+                "erp-purchase-orders:1",
+                [
+                    new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 7m, new DateOnly(2026, 5, 30), "erp", "purchase-order", "PO-1000:10"),
                 ]));
         }
     }

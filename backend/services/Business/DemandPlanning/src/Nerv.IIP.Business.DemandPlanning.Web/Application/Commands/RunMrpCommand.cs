@@ -49,7 +49,9 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
             snapshot.Demands,
             snapshot.Availability,
             snapshot.ProductionVersions,
-            snapshot.BomComponents));
+            snapshot.BomComponents,
+            snapshot.ScheduledReceipts,
+            snapshot.PlanningParameters));
 
         foreach (var calculatedSuggestion in calculated)
         {
@@ -63,6 +65,7 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
                 calculatedSuggestion.SiteCode,
                 calculatedSuggestion.Quantity,
                 calculatedSuggestion.RequiredDate,
+                calculatedSuggestion.ReleaseDate,
                 calculatedSuggestion.ReasonCode);
             foreach (var link in calculatedSuggestion.PeggingLinks)
             {
