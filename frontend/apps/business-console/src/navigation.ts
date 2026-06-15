@@ -129,7 +129,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     {
       label: '执行与齐套',
       items: [
-        { title: '齐套与物料', to: { path: '/mes/materials' } },
+        { title: '领料与齐套', to: { path: '/mes/materials' } },
         { title: '工序执行', to: { path: '/mes/operation-tasks' } },
         { title: '在制跟踪', to: { path: '/mes/wip' } },
       ],

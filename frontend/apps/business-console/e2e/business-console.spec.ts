@@ -36,7 +36,7 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes/plans', '生产计划')
   await expectHeading(page, '/mes/work-orders', '工单与派工')
   await expectHeading(page, '/mes/work-orders/WO-001', '工单 WO-001')
-  await expectHeading(page, '/mes/materials', '齐套与物料')
+  await expectHeading(page, '/mes/materials', '领料与齐套')
   await expectHeading(page, '/mes/dispatch', '派工看板')
   await expectHeading(page, '/mes/operation-tasks', '工序执行')
   await expectHeading(page, '/mes/production-reports', '报工记录')
@@ -78,6 +78,17 @@ test('工单与派工：工单队列渲染、创建急单弹窗可开', async ({
   await page.getByRole('button', { name: '创建急单' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByText('急单用于生产插单和临时补单')).toBeVisible()
+})
+
+test('领料与齐套：领料申请渲染收料进度与「查看出库」闭环链接', async ({ page }) => {
+  // 领料申请数据来自共享 mock（MIR-001，已收 4 / 应领 10，关联 WMS-OUT-001）。
+  await page.goto('/mes/materials', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '领料与齐套' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('MIR-001')).toBeVisible({ timeout: 15_000 })
+  // 收料进度可读（已收 4）。
+  await expect(page.getByText(/已收\s*4/)).toBeVisible()
+  // 领料闭环：出库单「查看出库」可点、跳 WMS（不显 GUID）。
+  await expect(page.getByRole('link', { name: '查看出库' })).toHaveAttribute('href', /\/wms\/outbound/)
 })
 
 async function expectHeading(page: Page, path: string, heading: string) {
@@ -315,7 +326,15 @@ async function routeBusinessConsoleApi(route: Route) {
   }
 
   if (pathname === '/api/business-console/v1/mes/material-issue-requests') {
-    return fulfillJson(route, envelope({ items: [] }))
+    return fulfillJson(
+      route,
+      envelope({
+        items: [
+          { requestId: 'MIR-001', workOrderId: 'WO-001', materialId: 'mat-1', requestedQuantity: 10, receivedQuantity: 4, status: 'PartiallyReceived', wmsRequestId: 'WMS-OUT-001', requestedAtUtc: '2026-06-01T08:00:00.000Z' },
+        ],
+        total: 1,
+      }),
+    )
   }
 
   if (pathname === '/api/business-console/v1/mes/dispatch-tasks') {
