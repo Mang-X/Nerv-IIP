@@ -198,6 +198,31 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Oee_endpoint_counts_standby_as_available_but_not_productive_running_time()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-E10", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-e10-001");
+        await PostSampleAsync(client, "DEV-OEE-E10", "standby", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-e10-002");
+
+        using var oeeResponse = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-E10&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        var oeeBody = await oeeResponse.Content.ReadAsStringAsync();
+        var availability = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/DEV-OEE-E10/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T09:00:00Z&windowEndUtc=2026-06-01T10:00:00Z&freshnessMaxAgeMinutes=120",
+            EquipmentRuntimeJson.Options);
+
+        Assert.Equal(HttpStatusCode.OK, oeeResponse.StatusCode);
+        using var document = JsonDocument.Parse(oeeBody);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+        Assert.NotNull(availability?.Data);
+        Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
+    }
+
+    [Fact]
     public async Task Oee_endpoint_marks_performance_quality_estimated_when_state_facts_are_missing()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();

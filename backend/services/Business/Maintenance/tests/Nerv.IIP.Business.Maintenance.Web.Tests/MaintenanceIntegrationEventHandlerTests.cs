@@ -48,6 +48,28 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Equal(IntegrationEventDeadLetterStatus.Pending, deadLetter.Status);
     }
 
+    [Fact]
+    public async Task Alarm_cleared_consumer_marks_matching_open_work_order_without_completing_it()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var sender = new CommandOnlySender(dbContext);
+        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var clearedHandler = new MarkWorkOrderAlarmClearedHandler(sender, dbContext, deadLetterStore);
+        var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+
+        await raisedHandler.HandleAsync(CreateAlarmRaisedEvent(), CancellationToken.None);
+        await clearedHandler.HandleAsync(CreateAlarmClearedEvent(clearedAtUtc), CancellationToken.None);
+        await clearedHandler.HandleAsync(CreateAlarmClearedEvent(clearedAtUtc), CancellationToken.None);
+
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.True(workOrder.AlarmCleared);
+        Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Equal(1, sender.ClearAlarmCommandCount);
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -79,9 +101,35 @@ public sealed class MaintenanceIntegrationEventHandlerTests
                 "alarm-001"));
     }
 
+    private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(DateTimeOffset clearedAtUtc, int eventVersion = 1)
+    {
+        var raisedAtUtc = clearedAtUtc.AddHours(-1);
+        return new AlarmClearedIntegrationEvent(
+            "evt-alarm-clear-001",
+            "industrialTelemetry.AlarmCleared",
+            eventVersion,
+            clearedAtUtc,
+            "industrialTelemetry",
+            "corr-alarm-001",
+            "alarm-event-001",
+            "org-001",
+            "env-dev",
+            "system:industrial-telemetry",
+            "industrialTelemetry:alarm-cleared:org-001:env-dev:alarm-001",
+            new AlarmClearedPayload(
+                "alarm-event-001",
+                "DEV-CNC-01",
+                "OVER_TEMP",
+                "critical",
+                raisedAtUtc,
+                clearedAtUtc,
+                "alarm-001"));
+    }
+
     private sealed class CommandOnlySender(ApplicationDbContext dbContext) : ISender
     {
         public int CreateWorkOrderCommandCount { get; private set; }
+        public int ClearAlarmCommandCount { get; private set; }
 
         public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
         {
@@ -100,9 +148,20 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest
         {
-            _ = request;
-            _ = cancellationToken;
-            throw new NotSupportedException("Only request/response commands are supported by this test sender.");
+            if (request is MarkMaintenanceWorkOrderAlarmClearedCommand clearCommand)
+            {
+                return SendClearAsync(clearCommand, cancellationToken);
+            }
+
+            throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");
+        }
+
+        private async Task SendClearAsync(MarkMaintenanceWorkOrderAlarmClearedCommand command, CancellationToken cancellationToken)
+        {
+            ClearAlarmCommandCount++;
+            var handler = new MarkMaintenanceWorkOrderAlarmClearedCommandHandler(dbContext);
+            await handler.Handle(command, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
         public Task<object?> Send(object request, CancellationToken cancellationToken = default)

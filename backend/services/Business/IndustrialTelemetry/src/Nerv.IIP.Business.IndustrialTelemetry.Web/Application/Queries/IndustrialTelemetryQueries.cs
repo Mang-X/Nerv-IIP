@@ -187,12 +187,10 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryOeeQuery, OeeResponse>
 {
-    private static readonly HashSet<string> RunningStates = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ProductiveStates = new(StringComparer.OrdinalIgnoreCase)
     {
-        "available",
-        "ready",
         "running",
-        "standby",
+        "productive",
     };
 
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
@@ -276,7 +274,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
     private static bool IsRunningState(string state)
     {
-        return RunningStates.Contains(state);
+        return ProductiveStates.Contains(state);
     }
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);

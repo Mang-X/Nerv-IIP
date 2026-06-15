@@ -134,6 +134,76 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
     }
 }
 
+public sealed record QueryAssetReliabilityQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<AssetReliabilityResponse>;
+
+public sealed record AssetReliabilityResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int FailureCount,
+    int RepairCount,
+    decimal MtbfHours,
+    decimal MttrMinutes);
+
+public sealed class QueryAssetReliabilityQueryValidator : AbstractValidator<QueryAssetReliabilityQuery>
+{
+    public QueryAssetReliabilityQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryAssetReliabilityQuery, AssetReliabilityResponse>
+{
+    public async Task<AssetReliabilityResponse> Handle(QueryAssetReliabilityQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var faultOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.SourceAlarmId != null)
+            .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
+            .Select(x => new ReliabilityWorkOrderProjection(x.OpenedAtUtc, x.CompletedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        var completedDurations = faultOrders
+            .Where(x => x.CompletedAtUtc is not null && x.CompletedAtUtc > x.OpenedAtUtc)
+            .Select(x => (decimal)(x.CompletedAtUtc!.Value - x.OpenedAtUtc).TotalMinutes)
+            .ToArray();
+        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
+        var failureCount = faultOrders.Length;
+        var repairCount = completedDurations.Length;
+        var mtbfHours = failureCount == 0 ? 0m : windowHours / failureCount;
+        var mttrMinutes = repairCount == 0 ? 0m : completedDurations.Sum() / repairCount;
+
+        return new AssetReliabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            failureCount,
+            repairCount,
+            Math.Round(mtbfHours, 6),
+            Math.Round(mttrMinutes, 6));
+    }
+}
+
+internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? CompletedAtUtc);
+
 public sealed record GetMaintenanceAssetAvailabilityWindowsQuery(
     string OrganizationId,
     string EnvironmentId,
