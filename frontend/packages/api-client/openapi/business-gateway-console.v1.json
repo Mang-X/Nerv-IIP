@@ -19729,6 +19729,24 @@
           "sourceReference": {
             "type": "string",
             "nullable": true
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredSkillCodes": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredToolingIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

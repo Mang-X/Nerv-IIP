@@ -780,6 +780,9 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     materialReadyUtc?: string | null;
     qualityBlockReason?: string | null;
     sourceReference?: string | null;
+    setupMinutes?: number;
+    requiredSkillCodes?: Array<string> | null;
+    requiredToolingIds?: Array<string> | null;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';

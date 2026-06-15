@@ -5,7 +5,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -208,8 +208,8 @@ public sealed class SchedulingIntegrationEventTests
                 GanttItems: [])));
     }
 
-    private static void AssertSchedulingEnvelope<TPayload>(
-        SchedulingIntegrationEvent<TPayload> integrationEvent,
+    private static void AssertSchedulingEnvelope(
+        IIntegrationEventEnvelope integrationEvent,
         string expectedEventType)
     {
         Assert.Equal(expectedEventType, integrationEvent.EventType);

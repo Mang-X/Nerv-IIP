@@ -24,12 +24,17 @@ public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<Prev
     }
 }
 
-public sealed class PreviewSchedulePlanCommandHandler(FiniteCapacityScheduler scheduler, TimeProvider timeProvider)
+public sealed class PreviewSchedulePlanCommandHandler(
+    FiniteCapacityScheduler scheduler,
+    TimeProvider timeProvider,
+    ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider)
     : ICommandHandler<PreviewSchedulePlanCommand, SchedulePlanContract>
 {
-    public Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
+    public async Task<SchedulePlanContract> Handle(PreviewSchedulePlanCommand request, CancellationToken cancellationToken)
     {
-        var plan = scheduler.Schedule(request.Problem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
-        return Task.FromResult(SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview));
+        var availability = await equipmentAvailabilityProvider.QueryAsync(request.Problem, cancellationToken);
+        var schedulingProblem = EquipmentAvailabilitySchedulingAdapter.Apply(request.Problem, availability);
+        var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
+        return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
     }
 }

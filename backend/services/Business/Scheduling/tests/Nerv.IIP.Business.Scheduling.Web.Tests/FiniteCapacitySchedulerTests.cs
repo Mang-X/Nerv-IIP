@@ -401,6 +401,73 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_inserts_setup_time_before_next_operation_on_same_resource()
+    {
+        var problem = CreateSingleOperationProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "WO-SNAPSHOT-001-OP20",
+            OperationSequence = 20,
+            PredecessorOperationIds = ["WO-SNAPSHOT-001-OP10"],
+            SetupMinutes = 15
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-setup-gap-001", GeneratedAtUtc);
+
+        var first = Assignment(plan, "WO-SNAPSHOT-001-OP10");
+        var second = Assignment(plan, "WO-SNAPSHOT-001-OP20");
+        Assert.Equal(first.EndUtc.AddMinutes(15), second.StartUtc);
+        Assert.Equal(second.StartUtc.AddMinutes(60), second.EndUtc);
+    }
+
+    [Fact]
+    public void Schedule_requires_declared_skill_and_tooling_codes_on_selected_resource()
+    {
+        var problem = CreateSingleOperationProblem();
+        var operation = problem.Orders.Single().Operations.Single() with
+        {
+            RequiredSkillCodes = ["skill.welder"],
+            RequiredToolingIds = ["fixture.a"]
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [operation]
+                }
+            ],
+            Resources =
+            [
+                problem.Resources.Single() with
+                {
+                    CapabilityCodes = ["CAP-SNAPSHOT", "skill.welder"]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-skill-tooling-001", GeneratedAtUtc);
+
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.NoEligibleResource);
+    }
+
+    [Fact]
     public void Schedule_reports_outside_horizon_when_shift_can_fit_but_horizon_cannot()
     {
         var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);

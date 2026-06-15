@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Contracts.Scheduling;
 
@@ -50,7 +51,10 @@ public sealed record SchedulingOperationContract(
     ScheduleSplitPolicyContract SplitPolicy,
     DateTimeOffset? MaterialReadyUtc,
     string? QualityBlockReason,
-    string? SourceReference);
+    string? SourceReference,
+    int SetupMinutes = 0,
+    IReadOnlyCollection<string>? RequiredSkillCodes = null,
+    IReadOnlyCollection<string>? RequiredToolingIds = null);
 
 public sealed record SchedulingResourceContract(
     string ResourceId,
@@ -168,6 +172,89 @@ public sealed record GanttScheduleItemContract(
     SchedulePlanStatusContract Status,
     bool HasConflict,
     ScheduleConflictReasonCodeContract? ConflictReasonCode);
+
+public static class SchedulingIntegrationEventTypes
+{
+    public const string SchedulePlanGenerated = "scheduling.SchedulePlanGenerated";
+    public const string ScheduleConflictDetected = "scheduling.ScheduleConflictDetected";
+    public const string SchedulePlanReleased = "scheduling.SchedulePlanReleased";
+}
+
+public static class SchedulingIntegrationEventVersions
+{
+    public const int V1 = 1;
+}
+
+public static class SchedulingIntegrationEventSources
+{
+    public const string BusinessScheduling = "business-scheduling";
+}
+
+public sealed record SchedulingIntegrationEvent<TPayload>(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    TPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SchedulePlanReleasedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SchedulePlanLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SchedulePlanLifecyclePayload(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    string PlanStatus,
+    IReadOnlyCollection<SchedulePlanAffectedOperationPayload> AffectedOperations);
+
+public sealed record ScheduleConflictDetectedPayload(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    string PlanStatus,
+    string ConflictId,
+    string ConflictReasonCode,
+    string ConflictSeverity,
+    string WorkOrderId,
+    string OperationId,
+    string ResourceId);
+
+public sealed record SchedulePlanAffectedOperationPayload(
+    string WorkOrderId,
+    string OperationId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
 
 public enum ScheduleSplitPolicyContract
 {

@@ -46,6 +46,12 @@ internal static class SchedulingProblemNormalizer
                                 .ToArray(),
                             EligibleResourceIds = y.EligibleResourceIds
                                 .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredSkillCodes = (y.RequiredSkillCodes ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredToolingIds = (y.RequiredToolingIds ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
                                 .ToArray()
                         })
                         .ToArray()
@@ -179,6 +185,13 @@ internal static class SchedulingProblemNormalizer
                 {
                     throw new ArgumentException(
                         $"DurationMinutes must be greater than zero for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
+                        nameof(problem));
+                }
+
+                if (operation.SetupMinutes < 0)
+                {
+                    throw new ArgumentException(
+                        $"SetupMinutes cannot be negative for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
                         nameof(problem));
                 }
             }
@@ -573,9 +586,10 @@ file sealed class SchedulerState
     private IEnumerable<SchedulingResourceContract> EligibleResources(OperationWorkItem item)
     {
         var eligibleIds = item.Operation.EligibleResourceIds.ToHashSet(StringComparer.Ordinal);
+        var requiredCodes = RequiredCapabilityCodes(item.Operation).ToArray();
         return resources.Values
             .Where(resource => eligibleIds.Contains(resource.ResourceId))
-            .Where(resource => resource.CapabilityCodes.Contains(item.Operation.RequiredCapabilityCode, StringComparer.Ordinal))
+            .Where(resource => requiredCodes.All(code => resource.CapabilityCodes.Contains(code, StringComparer.Ordinal)))
             .OrderBy(resource => resource.ResourceId == item.Operation.PrimaryResourceId ? 0 : 1)
             .ThenBy(resource => resource.SortKey, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceId, StringComparer.Ordinal);
@@ -640,6 +654,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
+        var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in calendar.ShiftWindows
                      .OrderBy(x => x.StartUtc)
                      .ThenBy(x => x.EndUtc)
@@ -650,6 +665,13 @@ file sealed class SchedulerState
 
             while (candidate + duration <= latestEnd)
             {
+                var setupAdjustedCandidate = ApplySetupGap(resource, candidate, setup);
+                if (setupAdjustedCandidate > candidate)
+                {
+                    candidate = setupAdjustedCandidate;
+                    continue;
+                }
+
                 var end = candidate + duration;
                 var blockingEnd = BlockingEnd(resource, resourceQualityBlocks, candidate, end);
                 if (blockingEnd is null)
@@ -662,6 +684,45 @@ file sealed class SchedulerState
         }
 
         return null;
+    }
+
+    private DateTimeOffset ApplySetupGap(
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate,
+        TimeSpan setup)
+    {
+        if (setup <= TimeSpan.Zero)
+        {
+            return candidate;
+        }
+
+        var previousEnd = assignments
+            .Where(x => x.ResourceId == resource.ResourceId)
+            .Where(x => x.EndUtc <= candidate)
+            .Select(x => (DateTimeOffset?)x.EndUtc)
+            .Max();
+        if (!previousEnd.HasValue)
+        {
+            return candidate;
+        }
+
+        var setupComplete = previousEnd.Value + setup;
+        return candidate < setupComplete ? setupComplete : candidate;
+    }
+
+    private static IEnumerable<string> RequiredCapabilityCodes(SchedulingOperationContract operation)
+    {
+        yield return operation.RequiredCapabilityCode;
+
+        foreach (var skillCode in operation.RequiredSkillCodes ?? [])
+        {
+            yield return skillCode;
+        }
+
+        foreach (var toolingId in operation.RequiredToolingIds ?? [])
+        {
+            yield return toolingId;
+        }
     }
 
     private DateTimeOffset? BlockingEnd(

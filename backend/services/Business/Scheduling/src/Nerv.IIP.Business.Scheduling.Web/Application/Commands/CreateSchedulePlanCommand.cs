@@ -32,7 +32,8 @@ public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<Creat
 public sealed class CreateSchedulePlanCommandHandler(
     ApplicationDbContext dbContext,
     FiniteCapacityScheduler scheduler,
-    TimeProvider timeProvider) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
+    TimeProvider timeProvider,
+    ISchedulingEquipmentAvailabilityProvider equipmentAvailabilityProvider) : ICommandHandler<CreateSchedulePlanCommand, SchedulePlanContract>
 {
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
@@ -66,7 +67,9 @@ public sealed class CreateSchedulePlanCommandHandler(
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
-        var preview = scheduler.Schedule(request.Problem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
+        var availability = await equipmentAvailabilityProvider.QueryAsync(request.Problem, cancellationToken);
+        var schedulingProblem = EquipmentAvailabilitySchedulingAdapter.Apply(request.Problem, availability);
+        var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
         var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             request.Problem.ProblemId,
