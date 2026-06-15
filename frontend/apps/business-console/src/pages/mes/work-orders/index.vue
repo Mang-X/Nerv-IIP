@@ -29,8 +29,6 @@ import {
   Input,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -109,13 +107,6 @@ const statusOptions = [
   { label: '已关闭', value: 'Closed' },
   { label: '阻塞', value: 'Blocked' },
 ]
-const demandEntries = [
-  { title: '正常订单', description: '销售订单进入计划池', action: '去生产计划', path: '/mes/plans?source=sales' },
-  { title: '备货生产', description: '主生产计划确认后下达', action: '查看计划来源', path: '/mes/plans?source=stock' },
-  { title: '安全库存补充', description: '库存水位触发补货', action: '处理补货计划', path: '/mes/plans?source=safety' },
-  { title: '急单插单', description: '临时插单或返工补单', action: '创建急单', path: '' },
-]
-
 const rushForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
@@ -161,26 +152,13 @@ const skuOptions = computed(() => toResourceOptions(skus.value))
 
 const visibleWorkOrders = computed(() => workOrders.value)
 
-const openOrderCount = computed(
+// 本页可见工单中需现场跟进的（未关闭）与受阻待排除的计数，用于队列上方提示这一页里有几单要盯。
+const openOnPage = computed(
   () => visibleWorkOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
 )
-const blockedOrderCount = computed(
+const blockedOnPage = computed(
   () => visibleWorkOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
 )
-const readyOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => ['ready', 'released'].includes((order.status ?? '').toLowerCase())).length,
-)
-const runningOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => ['running', 'inprogress', 'started'].includes((order.status ?? '').toLowerCase())).length,
-)
-const operationCount = computed(() =>
-  visibleWorkOrders.value.reduce((total, order) => total + (order.operationTasks?.length ?? 0), 0),
-)
-const dispatchLanes = computed(() => [
-  { title: '待派工', value: readyOrderCount.value, description: '已具备下达或开工条件，优先确认工作中心与班次。', tone: 'border-primary/20 bg-primary/5' },
-  { title: '执行中', value: runningOrderCount.value, description: '现场已经开始生产，关注报工、质量和停机异常。', tone: 'border-brand/30 bg-brand/5' },
-  { title: '受阻', value: blockedOrderCount.value, description: '先处理物料、质量、设备或准备检查问题。', tone: blockedOrderCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-success/30 bg-success/5' },
-])
 
 const canCreateRush = computed(
   () =>
@@ -260,14 +238,6 @@ const columns: DataTableColumn<Row>[] = [
 
 function rowKey(order: Row) {
   return order.workOrderId ?? `${order.skuId ?? 'wo'}-${order.dueUtc ?? ''}`
-}
-
-function openDemandEntry(path: string) {
-  if (!path) {
-    rushSheetOpen.value = true
-    return
-  }
-  void router.push(path)
 }
 
 function useWorkOrder(order: Row) {
@@ -416,36 +386,10 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-4 py-3">
-      <span class="text-sm font-semibold text-foreground">工单来源</span>
-      <button
-        v-for="entry in demandEntries"
-        :key="entry.title"
-        class="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:border-primary/50 hover:bg-muted/40"
-        type="button"
-        @click="openDemandEntry(entry.path)"
-      >
-        <span class="font-medium text-foreground">{{ entry.title }}</span>
-        <span class="text-muted-foreground">{{ entry.description }}</span>
-        <span class="font-medium text-primary">{{ entry.action }}</span>
-      </button>
-    </div>
-
-    <div class="grid gap-3 lg:grid-cols-3">
-      <div v-for="lane in dispatchLanes" :key="lane.title" class="grid gap-3 rounded-lg border p-4" :class="lane.tone">
-        <div class="flex items-center justify-between">
-          <p class="text-sm font-semibold text-foreground">{{ lane.title }}</p>
-          <span class="text-2xl font-semibold tabular-nums">{{ lane.value }}</span>
-        </div>
-        <p class="text-sm leading-6 text-muted-foreground">{{ lane.description }}</p>
-      </div>
-    </div>
-
-    <SectionCards :columns="3">
-      <SectionCard description="工单数" :value="workOrdersTotal" hint="后端分页总数" />
-      <SectionCard description="未关闭工单" :value="openOrderCount" hint="仍需现场跟进" />
-      <SectionCard description="工序任务" :value="operationCount" hint="工单下可见任务" />
-    </SectionCards>
+    <p class="text-sm text-muted-foreground">
+      生产计划下达成的工单在这里<span class="font-medium text-foreground">排产派工、跟踪执行</span>。先用状态/工作中心筛出要盯的工单，再从行内
+      <span class="font-medium text-foreground">报工、查齐套、看工序</span>；临时插单或返工补单点右上角<span class="font-medium text-foreground">「创建急单」</span>。
+    </p>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
@@ -470,6 +414,11 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
+    <p v-if="!workOrdersPending && visibleWorkOrders.length" class="text-sm text-muted-foreground" aria-live="polite">
+      本页 <span class="font-medium text-foreground">{{ openOnPage }}</span> 单未关闭待跟进<template v-if="blockedOnPage">，其中
+        <span class="font-medium text-destructive">{{ blockedOnPage }}</span> 单受阻，先排除阻塞再派工</template>。
+    </p>
+
     <DataTable
       v-model:sort="sort"
       :columns="columns"
@@ -479,6 +428,7 @@ function isNonEmpty(value: string) {
       :loading="workOrdersPending"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
     >
+      <!-- TODO(#420): facade 暂只回 skuId(GUID)，无 skuCode/skuName 可解析；不硬显 GUID 当人读物料标识，仅以占位提示。 -->
       <template #cell-workOrderId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -486,16 +436,17 @@ function isNonEmpty(value: string) {
           class="flex flex-col gap-0.5 text-left"
         >
           <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="text-xs text-muted-foreground">物料名称待接入</span>
         </RouterLink>
         <div v-else class="flex flex-col gap-0.5">
           <span class="font-medium text-muted-foreground">无编号</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="text-xs text-muted-foreground">物料名称待接入</span>
         </div>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
+      <!-- TODO(#420): task.workCenterId 为后端 GUID，facade 暂不回工作中心名称；不硬显 GUID，工序行只列「序号 · 状态」。 -->
       <template #cell-operationCount="{ row }">
         <div class="grid gap-1">
           <span
@@ -503,7 +454,7 @@ function isNonEmpty(value: string) {
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
             class="text-xs text-muted-foreground"
           >
-            {{ task.operationSequence ?? '无' }} / {{ task.workCenterId ?? '无' }} / {{ formatStatus(task.status) }}
+            工序 {{ task.operationSequence ?? '—' }} · {{ formatStatus(task.status) }}
           </span>
           <span v-if="!(row.operationTasks?.length)" class="text-xs text-muted-foreground">暂无工序任务</span>
         </div>
