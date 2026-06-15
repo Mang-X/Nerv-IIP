@@ -1,9 +1,13 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 
 public partial record ProductionReportMaterialConsumptionId : IGuidStronglyTypedId;
 
 public sealed class ProductionReportMaterialConsumption : Entity<ProductionReportMaterialConsumptionId>, IAggregateRoot
 {
+    public const string UnspecifiedUomCode = "UNSPECIFIED";
+
     private ProductionReportMaterialConsumption()
     {
     }
@@ -16,6 +20,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string operationTaskId,
         string materialId,
         string materialLotId,
+        string uomCode,
         decimal consumedQuantity,
         string materialIssueRequestNo)
     {
@@ -26,6 +31,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = DomainGuard.Required(materialLotId, nameof(materialLotId));
+        UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         ConsumedQuantity = DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
         MaterialIssueRequestNo = DomainGuard.Required(materialIssueRequestNo, nameof(materialIssueRequestNo));
     }
@@ -37,6 +43,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
     public string OperationTaskId { get; private set; } = string.Empty;
     public string MaterialId { get; private set; } = string.Empty;
     public string MaterialLotId { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = string.Empty;
     public decimal ConsumedQuantity { get; private set; }
     public string MaterialIssueRequestNo { get; private set; } = string.Empty;
 
@@ -48,10 +55,11 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string operationTaskId,
         string materialId,
         string materialLotId,
+        string uomCode,
         decimal consumedQuantity,
         string materialIssueRequestNo)
     {
-        return new ProductionReportMaterialConsumption(
+        var consumption = new ProductionReportMaterialConsumption(
             organizationId,
             environmentId,
             reportNo,
@@ -59,7 +67,32 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
             operationTaskId,
             materialId,
             materialLotId,
+            uomCode,
             consumedQuantity,
             materialIssueRequestNo);
+        consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
+        return consumption;
     }
+
+    public static ProductionReportMaterialConsumption Record(
+        string organizationId,
+        string environmentId,
+        string reportNo,
+        string workOrderId,
+        string operationTaskId,
+        string materialId,
+        string materialLotId,
+        decimal consumedQuantity,
+        string materialIssueRequestNo) =>
+        Record(
+            organizationId,
+            environmentId,
+            reportNo,
+            workOrderId,
+            operationTaskId,
+            materialId,
+            materialLotId,
+            UnspecifiedUomCode,
+            consumedQuantity,
+            materialIssueRequestNo);
 }

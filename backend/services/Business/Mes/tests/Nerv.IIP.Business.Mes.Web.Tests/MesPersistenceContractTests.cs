@@ -258,7 +258,7 @@ public sealed class MesPersistenceContractTests
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var createHandler = new CreateMaterialIssueRequestCommandHandler(dbContext);
             var response = await createHandler.Handle(
-                new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-MAT-001", "OP-MAT-10", "MAT-OIL", 4m, now.AddMinutes(5), "issue-001"),
+                new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-MAT-001", "OP-MAT-10", "MAT-OIL", "L", 4m, now.AddMinutes(5), "issue-001"),
                 CancellationToken.None);
 
             await dbContext.SaveChangesAsync();

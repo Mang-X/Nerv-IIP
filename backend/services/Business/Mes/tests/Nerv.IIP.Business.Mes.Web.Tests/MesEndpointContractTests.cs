@@ -245,6 +245,7 @@ public sealed class MesEndpointContractTests
             ]);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordProductionReportCommandHandler(dbContext).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 8m, 1m, false, dueUtc),
             CancellationToken.None);
@@ -727,7 +728,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(expectedQualityItem.ReferenceId, qualityItem.QualityItemId);
         Assert.Equal("Defect", qualityItem.SourceType);
         Assert.Equal("OP-20", qualityItem.SourceDocumentId);
-        Assert.Equal("Open", qualityItem.Status);
+        Assert.Equal("NcrRequested", qualityItem.Status);
         Assert.Equal("DEF-MIX", qualityItem.DefectCode);
         Assert.Null(qualityItem.NcrId);
         Assert.Equal(3, handovers.Total);

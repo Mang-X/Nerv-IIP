@@ -21,6 +21,7 @@ public static class InventoryIntegrationEventSources
     public const string BusinessInventory = "business-inventory";
     public const string BusinessWms = "business-wms";
     public const string BusinessErp = "business-erp";
+    public const string BusinessMes = "business-mes";
 }
 
 public sealed record InventoryMovementRequestedIntegrationEvent(

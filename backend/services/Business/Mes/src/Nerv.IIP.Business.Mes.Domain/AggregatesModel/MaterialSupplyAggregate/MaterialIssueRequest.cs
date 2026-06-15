@@ -1,9 +1,12 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 
 public partial record MaterialIssueRequestId : IGuidStronglyTypedId;
 
 public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggregateRoot
 {
+    public const string UnspecifiedUomCode = "UNSPECIFIED";
     public const string RequestedStatus = "Requested";
     public const string PartiallyReceivedStatus = "PartiallyReceived";
     public const string ReceivedStatus = "Received";
@@ -19,6 +22,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string workOrderId,
         string? operationTaskId,
         string materialId,
+        string uomCode,
         decimal requestedQuantity,
         DateTimeOffset requestedAtUtc)
     {
@@ -28,6 +32,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
+        UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         RequestedQuantity = DomainGuard.Positive(requestedQuantity, nameof(requestedQuantity));
         ReceivedQuantity = 0m;
         Status = RequestedStatus;
@@ -40,6 +45,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string WorkOrderId { get; private set; } = string.Empty;
     public string? OperationTaskId { get; private set; }
     public string MaterialId { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = string.Empty;
     public string? MaterialLotId { get; private set; }
     public decimal RequestedQuantity { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
@@ -54,19 +60,43 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string workOrderId,
         string? operationTaskId,
         string materialId,
+        string uomCode,
         decimal requestedQuantity,
         DateTimeOffset requestedAtUtc)
     {
-        return new MaterialIssueRequest(
+        var request = new MaterialIssueRequest(
             organizationId,
             environmentId,
             requestNo,
             workOrderId,
             operationTaskId,
             materialId,
+            uomCode,
             requestedQuantity,
             requestedAtUtc);
+        request.AddDomainEvent(new MaterialIssueRequestedDomainEvent(request));
+        return request;
     }
+
+    public static MaterialIssueRequest Create(
+        string organizationId,
+        string environmentId,
+        string requestNo,
+        string workOrderId,
+        string? operationTaskId,
+        string materialId,
+        decimal requestedQuantity,
+        DateTimeOffset requestedAtUtc) =>
+        Create(
+            organizationId,
+            environmentId,
+            requestNo,
+            workOrderId,
+            operationTaskId,
+            materialId,
+            UnspecifiedUomCode,
+            requestedQuantity,
+            requestedAtUtc);
 
     public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, decimal? receivedQuantity = null, string? materialLotId = null)
     {

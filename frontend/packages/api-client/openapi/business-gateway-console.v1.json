@@ -23953,6 +23953,9 @@
           "materialId": {
             "type": "string"
           },
+          "uomCode": {
+            "type": "string"
+          },
           "quantity": {
             "type": "number",
             "format": "decimal",
@@ -24022,6 +24025,9 @@
             "nullable": true
           },
           "materialId": {
+            "type": "string"
+          },
+          "uomCode": {
             "type": "string"
           },
           "materialLotId": {
@@ -24478,6 +24484,26 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput"
             }
+          },
+          "reworkQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapReasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "defectRecordNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24662,6 +24688,23 @@
           "requestedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "postedInventoryMovementId": {
+            "type": "string",
+            "nullable": true
+          },
+          "postedAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -24727,6 +24770,14 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "producedLotNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "serialNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
