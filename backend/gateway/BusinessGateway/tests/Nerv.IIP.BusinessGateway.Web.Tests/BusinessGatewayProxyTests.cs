@@ -456,6 +456,7 @@ public sealed class BusinessGatewayProxyTests
             groupName = "Appearance",
             severity = "minor",
             defaultDisposition = "rework",
+            idempotencyKey = "quality-reason-create-001",
         });
         var update = await client.PutAsJsonAsync("/api/business-console/v1/quality/reason-codes/QR-SCRATCH", new
         {
@@ -483,6 +484,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleQualityReasonListRequest("org-001", "env-dev", true, "scr", "Appearance", 3, 15), quality.LastQualityReasonListRequest);
         Assert.Equal(new BusinessConsoleQualityReasonRequest("QR-SCRATCH", "org-001", "env-dev"), quality.LastQualityReasonRequest);
         Assert.Null(quality.LastCreateQualityReasonRequest!.ReasonCode);
+        Assert.Equal("quality-reason-create-001", quality.LastCreateQualityReasonRequest.IdempotencyKey);
         Assert.Equal("QR-SCRATCH", quality.LastUpdateQualityReasonRequest!.ReasonCode);
         Assert.Equal("QR-SCRATCH", quality.LastArchiveQualityReasonRequest!.ReasonCode);
     }
@@ -773,6 +775,7 @@ public sealed class BusinessGatewayProxyTests
             requiresQualityInspection = false,
             isOutsourced = false,
             description = "Assembly operation",
+            idempotencyKey = "std-op-create-001",
         });
         var updateResponse = await client.PutAsJsonAsync("/api/business-console/v1/engineering/standard-operations/OP-ROUTE", new
         {
@@ -802,6 +805,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
         Assert.Equal("internal-test-token", engineering.LastInternalToken);
         Assert.Null(engineering.LastCreateStandardOperationRequest!.OperationCode);
+        Assert.Equal("std-op-create-001", engineering.LastCreateStandardOperationRequest.IdempotencyKey);
         Assert.Equal("OP-ROUTE", engineering.LastUpdateStandardOperationRequest!.OperationCode);
         Assert.Equal("OP-ARCHIVE", engineering.LastArchiveStandardOperationRequest!.OperationCode);
     }

@@ -20402,6 +20402,12 @@
             "maxLength": 100,
             "minLength": 0,
             "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -21681,6 +21687,12 @@
           },
           "description": {
             "type": "string",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }
@@ -28235,6 +28247,12 @@
           "windowEndUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
             "nullable": true
           }
         }

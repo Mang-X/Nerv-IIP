@@ -881,7 +881,8 @@ public sealed record BusinessConsoleCreateQualityReasonRequest(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition);
+    string? DefaultDisposition,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleUpdateQualityReasonRequest(
     [property: RouteParam] string ReasonCode,
@@ -1204,7 +1205,8 @@ public sealed record BusinessConsoleCreateStandardOperationRequest(
     bool RequiresReporting,
     bool RequiresQualityInspection,
     bool IsOutsourced,
-    string? Description);
+    string? Description,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleUpdateStandardOperationRequest(
     string OrganizationId,

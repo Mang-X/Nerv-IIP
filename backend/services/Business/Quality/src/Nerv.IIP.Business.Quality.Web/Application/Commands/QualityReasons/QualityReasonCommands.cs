@@ -13,7 +13,8 @@ public sealed record CreateQualityReasonCommand(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition) : ICommand<QualityReasonItem>;
+    string? DefaultDisposition,
+    string? IdempotencyKey = null) : ICommand<QualityReasonItem>;
 
 public sealed record UpdateQualityReasonCommand(
     string OrganizationId,
@@ -36,6 +37,7 @@ public sealed class CreateQualityReasonCommandValidator : AbstractValidator<Crea
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Severity)
@@ -101,9 +103,23 @@ public sealed class CreateQualityReasonCommandHandler(
             request.EnvironmentId,
             "quality-reason",
             request.ReasonCode,
-            idempotencyKey: null,
+            request.IdempotencyKey,
             QualityCodingService.Fingerprint(request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            var persisted = await repository.GetByCodeAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"Quality reason '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return QualityReasonMapper.ToItem(persisted);
+        }
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {

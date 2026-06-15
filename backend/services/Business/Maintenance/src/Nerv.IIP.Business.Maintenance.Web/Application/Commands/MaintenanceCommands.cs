@@ -154,7 +154,8 @@ public sealed record CreateMaintenancePlanCommand(
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
-    DateTimeOffset? WindowEndUtc) : ICommand<MaintenancePlanId>;
+    DateTimeOffset? WindowEndUtc,
+    string? IdempotencyKey = null) : ICommand<MaintenancePlanId>;
 
 public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<CreateMaintenancePlanCommand>
 {
@@ -164,6 +165,7 @@ public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PlanCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.Interval).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(150);
         RuleFor(x => x)
@@ -194,7 +196,7 @@ public sealed class CreateMaintenancePlanCommandHandler(
             request.EnvironmentId,
             "maintenance-plan",
             request.PlanCode,
-            idempotencyKey: null,
+            request.IdempotencyKey,
             MaintenanceCodingService.Fingerprint(
                 request.DeviceAssetId,
                 request.Interval,
@@ -203,6 +205,20 @@ public sealed class CreateMaintenancePlanCommandHandler(
                 request.WindowStartUtc,
                 request.WindowEndUtc),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            var persisted = await dbContext.MaintenancePlans.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.PlanCode == allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"Maintenance plan '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return persisted.Id;
+        }
 
         var windowStartUtc = request.WindowStartUtc?.ToUniversalTime();
         var windowEndUtc = request.WindowEndUtc?.ToUniversalTime();

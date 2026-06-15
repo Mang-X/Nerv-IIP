@@ -980,6 +980,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     groupName: string;
     severity: string;
     defaultDisposition?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateQualityReasonRequest = {
@@ -1339,6 +1340,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     requiresQualityInspection?: boolean;
     isOutsourced?: boolean;
     description?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateStandardOperationRequest = {
@@ -3061,6 +3063,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     owner: string;
     windowStartUtc?: string | null;
     windowEndUtc?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenancePlanListResponse = NetCorePalExtensionsDtoResponseData & {

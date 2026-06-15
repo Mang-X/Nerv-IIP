@@ -159,6 +159,31 @@ public sealed class QualityEndpointContractTests
     }
 
     [Fact]
+    public async Task Quality_reason_create_replays_same_reason_for_same_idempotency_key()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateQualityReasonCommandHandler(
+            new QualityReasonRepository(dbContext),
+            new QualityCodingService());
+
+        var first = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework", "quality-reason-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await create.Handle(
+            new CreateQualityReasonCommand("org-001", "env-dev", null, "Scratch", "Appearance", "minor", "rework", "quality-reason-create-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.ReasonCode, replay.ReasonCode);
+        Assert.Equal(first.ReasonName, replay.ReasonName);
+        Assert.Equal(1, await dbContext.QualityReasons.CountAsync());
+    }
+
+    [Fact]
     public void Quality_reason_command_validators_reject_unsupported_catalog_values()
     {
         var create = new CreateQualityReasonCommandValidator().Validate(

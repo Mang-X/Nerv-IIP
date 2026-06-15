@@ -18,7 +18,8 @@ public sealed record CreateStandardOperationCommand(
     bool RequiresReporting,
     bool RequiresQualityInspection,
     bool IsOutsourced,
-    string? Description) : ICommand<StandardOperationCommandResult>, IStandardOperationDetails;
+    string? Description,
+    string? IdempotencyKey = null) : ICommand<StandardOperationCommandResult>, IStandardOperationDetails;
 
 public sealed class CreateStandardOperationCommandValidator : AbstractValidator<CreateStandardOperationCommand>
 {
@@ -28,6 +29,7 @@ public sealed class CreateStandardOperationCommandValidator : AbstractValidator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.OperationCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -45,7 +47,7 @@ public sealed class CreateStandardOperationCommandHandler(
             request.EnvironmentId,
             "standard-operation",
             request.OperationCode,
-            idempotencyKey: null,
+            request.IdempotencyKey,
             ProductEngineeringCodingService.Fingerprint(
                 request.OperationName,
                 request.DefaultWorkCenterCode,
@@ -57,6 +59,20 @@ public sealed class CreateStandardOperationCommandHandler(
                 request.IsOutsourced,
                 request.Description),
             cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            var persisted = await repository.GetByCodeAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"Standard operation '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return new StandardOperationCommandResult(persisted.OperationCode);
+        }
 
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
         {

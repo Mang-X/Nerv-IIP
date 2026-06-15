@@ -45,7 +45,8 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
-    DateTimeOffset? WindowEndUtc);
+    DateTimeOffset? WindowEndUtc,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateMaintenancePlanResponse(string PlanId);
 

@@ -27,7 +27,8 @@ public sealed record CreateQualityReasonRequest(
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition);
+    string? DefaultDisposition,
+    string? IdempotencyKey = null);
 
 public sealed record UpdateQualityReasonRequest(
     string OrganizationId,
@@ -97,7 +98,8 @@ public sealed class CreateQualityReasonEndpoint(ISender sender)
             req.ReasonName,
             req.GroupName,
             req.Severity,
-            req.DefaultDisposition), ct);
+            req.DefaultDisposition,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
