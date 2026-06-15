@@ -40,7 +40,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         LocationCode = InventoryText.Required(locationCode);
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
-        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
+        QualityStatus = StockQualityStatus.Normalize(qualityStatus);
         OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
         OwnerId = InventoryText.Optional(ownerId);
         ExpectedLedgerVersion = expectedLedgerVersion;
@@ -119,6 +119,13 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         }
 
         EnsureSameDimension(ledger);
+        if (ledger.LedgerVersion != ExpectedLedgerVersion)
+        {
+            Status = "recount-required";
+            UpdatedAtUtc = DateTime.UtcNow;
+            throw new InvalidOperationException("Stock count task requires recount because ledger version changed after the count snapshot.");
+        }
+
         var variance = countedQuantity - ledger.OnHandQuantity;
         var adjustment = StockMovement.Post(
             ledger.OrganizationId,

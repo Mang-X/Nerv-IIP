@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
@@ -62,8 +63,8 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
                 && x.LocationCode == request.LocationCode
                 && x.LotNo == request.LotNo
                 && x.SerialNo == request.SerialNo
-                && x.QualityStatus == request.QualityStatus
-                && x.OwnerType == request.OwnerType
+                && x.QualityStatus == StockQualityStatus.Normalize(request.QualityStatus)
+                && x.OwnerType == request.OwnerType.ToLower()
                 && x.OwnerId == request.OwnerId,
             cancellationToken)
             ?? throw new KnownException("Stock ledger does not exist for the requested count scope.");
@@ -84,6 +85,7 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
             ledger.OwnerType,
             ledger.OwnerId,
             ledger.LedgerVersion);
+        ledger.FreezeForCount(task.CountTaskCode);
         dbContext.StockCountTasks.Add(task);
         return new CreateStockCountTaskResult(task.Id, task.ExpectedLedgerVersion);
     }

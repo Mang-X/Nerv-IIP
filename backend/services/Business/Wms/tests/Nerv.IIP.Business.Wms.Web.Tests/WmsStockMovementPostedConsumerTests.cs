@@ -108,6 +108,8 @@ public sealed class WmsStockMovementPostedConsumerTests
                 "company",
                 "owner-001",
                 5m,
+                null,
+                null,
                 DateTimeOffset.UtcNow));
     }
 

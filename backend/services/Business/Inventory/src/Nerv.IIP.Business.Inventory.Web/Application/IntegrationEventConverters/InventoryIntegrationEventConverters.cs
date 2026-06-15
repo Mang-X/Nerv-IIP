@@ -42,6 +42,8 @@ public sealed class StockMovementPostedIntegrationEventConverter(IInventoryInteg
                 movement.OwnerType,
                 movement.OwnerId,
                 movement.Quantity,
+                movement.UnitCost,
+                movement.MovementAmount,
                 movement.PostedAtUtc));
     }
 }
@@ -112,6 +114,8 @@ public sealed class StockAvailabilityChangedIntegrationEventConverter(IInventory
                 ledger.OnHandQuantity,
                 ledger.ReservedQuantity,
                 ledger.AvailableQuantity,
+                ledger.MovingAverageUnitCost,
+                ledger.InventoryValue,
                 ledger.LedgerVersion,
                 occurredAtUtc));
     }

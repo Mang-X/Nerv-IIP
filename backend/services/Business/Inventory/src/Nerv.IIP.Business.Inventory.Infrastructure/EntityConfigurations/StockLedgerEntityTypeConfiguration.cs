@@ -12,6 +12,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_site_code_format", "site_code");
+            tableBuilder.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','blocked')");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock ledger aggregate id.");
@@ -27,7 +28,11 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Stock ownership type such as company, customer or supplier.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional public owner reference id.");
         builder.Property(x => x.OnHandQuantity).HasColumnName("on_hand_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current on-hand stock quantity.");
-        builder.Property(x => x.ReservedQuantity).HasColumnName("reserved_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current reserved quantity; always zero in Inventory MVP.");
+        builder.Property(x => x.ReservedQuantity).HasColumnName("reserved_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current reserved stock quantity held by Inventory reservations.");
+        builder.Property(x => x.MovingAverageUnitCost).HasColumnName("moving_average_unit_cost").IsRequired().HasPrecision(18, 6).HasComment("Current moving-average unit cost for this ledger dimension.");
+        builder.Property(x => x.InventoryValue).HasColumnName("inventory_value").IsRequired().HasPrecision(18, 6).HasComment("Current inventory value for this ledger dimension.");
+        builder.Property(x => x.IsFrozenForCount).HasColumnName("is_frozen_for_count").IsRequired().HasComment("Flag indicating regular movements are blocked while an open count task owns this ledger snapshot.");
+        builder.Property(x => x.FrozenCountTaskCode).HasColumnName("frozen_count_task_code").HasMaxLength(100).HasComment("Open count task code that currently freezes this ledger, when any.");
         builder.Ignore(x => x.AvailableQuantity);
         builder.Property(x => x.LedgerVersion).HasColumnName("ledger_version").IsRequired().HasComment("Monotonic ledger version incremented when movements are applied.");
         builder.Property(x => x.RowVersion).HasColumnName("row_version").HasConversion(x => x.VersionNumber, x => new RowVersion(x)).IsConcurrencyToken().HasComment("Optimistic row version for concurrent stock balance updates.");

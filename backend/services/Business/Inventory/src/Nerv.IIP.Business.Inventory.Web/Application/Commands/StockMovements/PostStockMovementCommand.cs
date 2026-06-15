@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
@@ -21,7 +22,9 @@ public sealed record PostStockMovementCommand(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity) : ICommand<PostStockMovementResult>;
+    decimal Quantity,
+    decimal? UnitCost = null,
+    StockReservationId? ReservationId = null) : ICommand<PostStockMovementResult>;
 
 public sealed record PostStockMovementResult(StockMovementId MovementId, decimal OnHandQuantity, decimal AvailableQuantity);
 
@@ -46,6 +49,7 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).NotEqual(0);
+        RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0).When(x => x.UnitCost is not null);
     }
 }
 
@@ -71,7 +75,8 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
             request.QualityStatus,
             request.OwnerType,
             request.OwnerId,
-            request.Quantity);
+            request.Quantity,
+            request.UnitCost);
         var existingMovement = await dbContext.StockMovements.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
                 && x.EnvironmentId == movement.EnvironmentId
@@ -94,6 +99,18 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         }
 
         var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
+        if (request.ReservationId is not null)
+        {
+            if (request.Quantity > 0)
+            {
+                throw new KnownException("Only outbound movements can allocate an existing stock reservation.");
+            }
+
+            var reservation = await dbContext.StockReservations.SingleOrDefaultAsync(x => x.Id == request.ReservationId, cancellationToken)
+                ?? throw new KnownException($"Stock reservation '{request.ReservationId}' was not found.");
+            ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
+        }
+
         var applied = ledger.ApplyMovement(movement);
         if (ReferenceEquals(applied, movement))
         {
