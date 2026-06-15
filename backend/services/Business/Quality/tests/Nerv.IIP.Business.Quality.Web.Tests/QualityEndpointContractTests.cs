@@ -191,12 +191,15 @@ public sealed class QualityEndpointContractTests
         var update = new UpdateQualityReasonCommandValidator().Validate(
             new UpdateQualityReasonCommand("org-001", "env-dev", "QR-BAD", "Bad reason", "Appearance", "high", "accept"));
 
+        const string severityMessage = "Severity must be one of: minor, major, critical.";
+        const string defaultDispositionMessage = "DefaultDisposition must be one of: rework, scrap, return-to-supplier, conditional-release, or omitted.";
+
         Assert.False(create.IsValid);
-        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.Severity));
-        Assert.Contains(create.Errors, x => x.PropertyName == nameof(CreateQualityReasonCommand.DefaultDisposition));
+        Assert.Contains(create.Errors, x => x.ErrorMessage == severityMessage);
+        Assert.Contains(create.Errors, x => x.ErrorMessage == defaultDispositionMessage);
         Assert.False(update.IsValid);
-        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.Severity));
-        Assert.Contains(update.Errors, x => x.PropertyName == nameof(UpdateQualityReasonCommand.DefaultDisposition));
+        Assert.Contains(update.Errors, x => x.ErrorMessage == severityMessage);
+        Assert.Contains(update.Errors, x => x.ErrorMessage == defaultDispositionMessage);
     }
 
     private static ServiceProvider CreateInMemoryProvider()
