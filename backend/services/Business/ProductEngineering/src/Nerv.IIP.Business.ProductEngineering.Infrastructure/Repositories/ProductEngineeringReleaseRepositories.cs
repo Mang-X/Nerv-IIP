@@ -50,6 +50,8 @@ public sealed class EngineeringItemRepository(ApplicationDbContext context)
 public interface IEngineeringBomRepository : IRepository<EngineeringBom, EngineeringBomId>
 {
     Task<EngineeringBom?> GetByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
+
+    Task<EngineeringBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
 }
 
 public sealed class EngineeringBomRepository(ApplicationDbContext context)
@@ -64,11 +66,22 @@ public sealed class EngineeringBomRepository(ApplicationDbContext context)
             x.Revision == revision,
             cancellationToken);
     }
+
+    public async Task<EngineeringBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default)
+    {
+        return ProductEngineeringVersionReference.TryParse(versionId, out var code, out var revision)
+            ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
+            : null;
+    }
 }
 
 public interface IManufacturingBomRepository : IRepository<ManufacturingBom, ManufacturingBomId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
+
+    Task<ManufacturingBom?> GetByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
+
+    Task<ManufacturingBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
 }
 
 public sealed class ManufacturingBomRepository(ApplicationDbContext context)
@@ -83,11 +96,32 @@ public sealed class ManufacturingBomRepository(ApplicationDbContext context)
             x.Revision == revision,
             cancellationToken);
     }
+
+    public async Task<ManufacturingBom?> GetByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.ManufacturingBoms.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.BomCode == bomCode &&
+            x.Revision == revision,
+            cancellationToken);
+    }
+
+    public async Task<ManufacturingBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default)
+    {
+        return ProductEngineeringVersionReference.TryParse(versionId, out var code, out var revision)
+            ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
+            : null;
+    }
 }
 
 public interface IRoutingRepository : IRepository<Routing, RoutingId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default);
+
+    Task<Routing?> GetByBusinessKeyAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default);
+
+    Task<Routing?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
 }
 
 public sealed class RoutingRepository(ApplicationDbContext context)
@@ -101,6 +135,23 @@ public sealed class RoutingRepository(ApplicationDbContext context)
             x.RoutingCode == routingCode &&
             x.Revision == revision,
             cancellationToken);
+    }
+
+    public async Task<Routing?> GetByBusinessKeyAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Routings.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.RoutingCode == routingCode &&
+            x.Revision == revision,
+            cancellationToken);
+    }
+
+    public async Task<Routing?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default)
+    {
+        return ProductEngineeringVersionReference.TryParse(versionId, out var code, out var revision)
+            ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
+            : null;
     }
 }
 
@@ -139,3 +190,21 @@ public interface IEngineeringChangeRepository : IRepository<EngineeringChange, E
 
 public sealed class EngineeringChangeRepository(ApplicationDbContext context)
     : RepositoryBase<EngineeringChange, EngineeringChangeId, ApplicationDbContext>(context), IEngineeringChangeRepository;
+
+internal static class ProductEngineeringVersionReference
+{
+    public static bool TryParse(string versionId, out string code, out string revision)
+    {
+        code = string.Empty;
+        revision = string.Empty;
+        var parts = versionId.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            return false;
+        }
+
+        code = parts[0];
+        revision = parts[1];
+        return true;
+    }
+}

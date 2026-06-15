@@ -15,6 +15,7 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
@@ -568,7 +569,13 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new ReleaseRoutingCommandHandler(new RoutingRepository(dbContext));
+        dbContext.StandardOperations.AddRange(
+            NewStandardOperation("mixing", "WC-MIX-01"),
+            NewStandardOperation("packing", "WC-PACK-01"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseRoutingCommand(
@@ -594,13 +601,16 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(NewStandardOperation("mixing", "WC-MIX-01"));
         var existing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-1000", "A", "SKU-FG-1000")
             .AddOperation(10, "WC-MIX-01", "mixing", "混合", 30);
         existing.Release(new DateOnly(2026, 6, 1));
         dbContext.Routings.Add(existing);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new ReleaseRoutingCommandHandler(new RoutingRepository(dbContext));
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseRoutingCommand(
@@ -613,6 +623,115 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 [new RoutingOperationCommand(10, "WC-MIX-01", "mixing", "混合", 30)]),
             CancellationToken.None));
         Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Release_routing_snapshots_enabled_standard_operation_defaults()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(StandardOperation.Create(
+            "org-001",
+            "env-dev",
+            "mixing",
+            "Standard mixing",
+            "WC-MIX-DEFAULT",
+            7,
+            31,
+            "MIX-QA",
+            requiresReporting: true,
+            requiresQualityInspection: true,
+            isOutsourced: false,
+            description: null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-STD",
+                "A",
+                "SKU-FG-1000",
+                new DateOnly(2026, 6, 1),
+                [new RoutingOperationCommand(10, "WC-IGNORED", "mixing", "Ignored name", 1)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var routing = await dbContext.Routings.SingleAsync(x => x.RoutingCode == "ROUTE-STD", CancellationToken.None);
+        var operation = Assert.Single(routing.Operations);
+        Assert.Equal("WC-MIX-DEFAULT", operation.WorkCenterCode);
+        Assert.Equal("Standard mixing", operation.OperationName);
+        Assert.Equal(7, operation.SetupMinutes);
+        Assert.Equal(31, operation.RunMinutes);
+        Assert.Equal(38, operation.StandardMinutes);
+        Assert.Equal("MIX-QA", operation.ControlKey);
+        Assert.True(operation.RequiresQualityInspection);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_archives_affected_product_engineering_versions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-3000", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 1, 1));
+        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-3000", "A", "SKU-FG-3000")
+            .AddMaterialLine("SKU-RM-3000", 1m, "EA", 0m);
+        mbom.ReleaseFromEngineeringBom("EBOM-3000:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-3000", "A", "SKU-FG-3000")
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30);
+        routing.Release(new DateOnly(2026, 1, 1));
+        var productionVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:A",
+            "ROUTE-3000:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.AddRange(ebom, mbom, routing, productionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-3000",
+                "Supersede first release",
+                "approval-3000",
+                new DateOnly(2026, 6, 1),
+                [
+                    new AffectedVersionCommand("engineering-bom", "EBOM-3000:A"),
+                    new AffectedVersionCommand("manufacturing-bom", "MBOM-3000:A"),
+                    new AffectedVersionCommand("routing", "ROUTE-3000:A"),
+                    new AffectedVersionCommand("production-version", productionVersion.Id.Id.ToString("D"))
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Archived, mbom.Status);
+        Assert.Equal(EngineeringVersionStatus.Archived, routing.Status);
+        Assert.Equal(ProductionVersionStatus.Archived, productionVersion.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
     }
 
     [Theory]
@@ -761,5 +880,22 @@ public sealed class ProductEngineeringReleaseApiContractTests
     private static string NormalizeValidationPropertyName(string propertyName)
     {
         return propertyName.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+    }
+
+    private static StandardOperation NewStandardOperation(string operationCode, string workCenterCode)
+    {
+        return StandardOperation.Create(
+            "org-001",
+            "env-dev",
+            operationCode,
+            operationCode,
+            workCenterCode,
+            1,
+            10,
+            "STD",
+            requiresReporting: true,
+            requiresQualityInspection: false,
+            isOutsourced: false,
+            description: null);
     }
 }

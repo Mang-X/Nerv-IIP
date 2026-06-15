@@ -1,7 +1,9 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
@@ -86,7 +88,10 @@ public sealed class ProductionVersionApiContractTests
             EngineeringVersionStatus.Published));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var handler = new CreateProductionVersionCommandHandler(new ProductionVersionRepository(dbContext));
+        var handler = new CreateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateProductionVersionCommand(
@@ -103,6 +108,59 @@ public sealed class ProductionVersionApiContractTests
                 true),
             CancellationToken.None));
         Assert.Contains("default", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_command_rejects_missing_or_unpublished_mbom_and_routing_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ManufacturingBoms.Add(ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-DRAFT", "A", "SKU-FG-1000")
+            .AddMaterialLine("SKU-RM-1000", 1m, "EA", 0m));
+        dbContext.Routings.Add(ReleasedRouting("ROUTE-1000", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext));
+
+        var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            NewCreateCommand("MBOM-MISSING:A", "ROUTE-1000:A"),
+            CancellationToken.None));
+        var draft = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            NewCreateCommand("MBOM-DRAFT:A", "ROUTE-1000:A"),
+            CancellationToken.None));
+
+        Assert.Contains("MBOM", missing.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("published", draft.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_command_rejects_mismatched_sku_and_effectivity_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ManufacturingBoms.Add(ReleasedManufacturingBom("MBOM-OTHER", "A", "SKU-FG-OTHER", new DateOnly(2026, 1, 1)));
+        dbContext.ManufacturingBoms.Add(ReleasedManufacturingBom("MBOM-VALID", "A", "SKU-FG-1000", new DateOnly(2026, 7, 1)));
+        dbContext.Routings.Add(ReleasedRouting("ROUTE-OTHER", "A", "SKU-FG-OTHER", new DateOnly(2026, 1, 1)));
+        dbContext.Routings.Add(ReleasedRouting("ROUTE-VALID", "A", "SKU-FG-1000", new DateOnly(2026, 7, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext));
+
+        var skuMismatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            NewCreateCommand("MBOM-OTHER:A", "ROUTE-OTHER:A"),
+            CancellationToken.None));
+        var notEffective = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            NewCreateCommand("MBOM-VALID:A", "ROUTE-VALID:A", validFrom: new DateOnly(2026, 6, 1)),
+            CancellationToken.None));
+
+        Assert.Contains("SKU", skuMismatch.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("effective", notEffective.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -198,6 +256,41 @@ public sealed class ProductionVersionApiContractTests
             false,
             EngineeringVersionStatus.Published,
             EngineeringVersionStatus.Published);
+    }
+
+    private static CreateProductionVersionCommand NewCreateCommand(
+        string mbomVersionId,
+        string routingVersionId,
+        DateOnly? validFrom = null)
+    {
+        return new CreateProductionVersionCommand(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            mbomVersionId,
+            routingVersionId,
+            validFrom ?? new DateOnly(2026, 6, 1),
+            null,
+            null,
+            null,
+            10,
+            false);
+    }
+
+    private static ManufacturingBom ReleasedManufacturingBom(string bomCode, string revision, string skuCode, DateOnly effectiveDate)
+    {
+        var bom = ManufacturingBom.CreateDraft("org-001", "env-dev", bomCode, revision, skuCode)
+            .AddMaterialLine("SKU-RM-1000", 1m, "EA", 0m);
+        bom.ReleaseFromEngineeringBom("EBOM-1000:A", EngineeringVersionStatus.Published, effectiveDate);
+        return bom;
+    }
+
+    private static Routing ReleasedRouting(string routingCode, string revision, string skuCode, DateOnly effectiveDate)
+    {
+        var routing = Routing.CreateDraft("org-001", "env-dev", routingCode, revision, skuCode)
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30);
+        routing.Release(effectiveDate);
+        return routing;
     }
 
     private static ServiceProvider CreateInMemoryProvider()

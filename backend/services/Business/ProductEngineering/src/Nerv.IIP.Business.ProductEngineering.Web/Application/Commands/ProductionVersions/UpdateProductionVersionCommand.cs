@@ -25,7 +25,10 @@ public sealed class UpdateProductionVersionCommandValidator : AbstractValidator<
     }
 }
 
-public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepository repository)
+public sealed class UpdateProductionVersionCommandHandler(
+    IProductionVersionRepository repository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository)
     : ICommandHandler<UpdateProductionVersionCommand, ProductionVersionCommandResult>
 {
     public async Task<ProductionVersionCommandResult> Handle(UpdateProductionVersionCommand request, CancellationToken cancellationToken)
@@ -45,6 +48,18 @@ public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepo
             throw new KnownException($"Production version default already exists for SKU '{version.SkuCode}' in the requested effective window.");
         }
 
+        var binding = await ProductionVersionBindingValidator.ResolveAsync(
+            manufacturingBomRepository,
+            routingRepository,
+            version.OrganizationId,
+            version.EnvironmentId,
+            version.SkuCode,
+            request.MbomVersionId,
+            request.RoutingVersionId,
+            request.ValidFrom,
+            request.ValidTo,
+            cancellationToken);
+
         version.UpdateBinding(
             request.MbomVersionId,
             request.RoutingVersionId,
@@ -54,8 +69,8 @@ public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepo
             request.LotSizeMax,
             request.Priority,
             request.IsDefault,
-            EngineeringVersionStatus.Published,
-            EngineeringVersionStatus.Published);
+            binding.MbomStatus,
+            binding.RoutingStatus);
         return new ProductionVersionCommandResult(version.Id.Id.ToString("D"));
     }
 }

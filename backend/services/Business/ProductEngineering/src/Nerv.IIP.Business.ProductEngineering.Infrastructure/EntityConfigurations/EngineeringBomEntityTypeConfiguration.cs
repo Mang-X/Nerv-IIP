@@ -36,6 +36,13 @@ public sealed class EngineeringBomEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ChildItemCode).HasColumnName("child_item_code").IsRequired().HasMaxLength(100).HasComment("Child engineering item code.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Component quantity.");
         builder.Property(x => x.UnitOfMeasureCode).HasColumnName("unit_of_measure_code").IsRequired().HasMaxLength(50).HasComment("Quantity unit of measure code.");
+        builder.Property(x => x.IsPhantom).HasColumnName("is_phantom").IsRequired().HasComment("Whether this component is a phantom item exploded during planning or execution.");
+        builder.Property(x => x.AlternateGroup).HasColumnName("alternate_group").HasMaxLength(100).HasComment("Optional alternate item group for interchangeable EBOM components.");
+        builder.Property(x => x.AlternatePriority).HasColumnName("alternate_priority").HasComment("Optional priority within the alternate component group.");
+        builder.Property(x => x.ReferenceDesignators).HasColumnName("reference_designators").HasMaxLength(500).HasComment("Optional reference designators or positions for this component line.");
+        builder.Property(x => x.ScrapRate).HasColumnName("scrap_rate").IsRequired().HasPrecision(18, 6).HasComment("Expected component scrap rate for engineering planning.");
+        builder.Property(x => x.YieldRate).HasColumnName("yield_rate").IsRequired().HasPrecision(18, 6).HasComment("Expected component yield rate for engineering planning.");
+        builder.Property(x => x.Backflush).HasColumnName("backflush").IsRequired().HasComment("Whether this component is normally backflushed during execution.");
         builder.HasIndex("engineering_bom_id", nameof(EngineeringBomLine.ChildItemCode)).IsUnique();
     }
 }

@@ -42,7 +42,17 @@ public sealed class EngineeringBom : Entity<EngineeringBomId>, IAggregateRoot
         return new EngineeringBom(organizationId, environmentId, bomCode, revision, parentItemCode);
     }
 
-    public EngineeringBom AddLine(string childItemCode, decimal quantity, string unitOfMeasureCode)
+    public EngineeringBom AddLine(
+        string childItemCode,
+        decimal quantity,
+        string unitOfMeasureCode,
+        bool isPhantom = false,
+        string? alternateGroup = null,
+        int? alternatePriority = null,
+        string? referenceDesignators = null,
+        decimal scrapRate = 0m,
+        decimal yieldRate = 1m,
+        bool backflush = false)
     {
         EnsureDraft();
         childItemCode = Required(childItemCode);
@@ -51,7 +61,17 @@ public sealed class EngineeringBom : Entity<EngineeringBomId>, IAggregateRoot
             throw new InvalidOperationException($"Engineering BOM already contains child item '{childItemCode}'.");
         }
 
-        lines.Add(new EngineeringBomLine(childItemCode, Positive(quantity, nameof(quantity)), Required(unitOfMeasureCode)));
+        lines.Add(new EngineeringBomLine(
+            childItemCode,
+            Positive(quantity, nameof(quantity)),
+            Required(unitOfMeasureCode),
+            isPhantom,
+            Optional(alternateGroup),
+            alternatePriority,
+            Optional(referenceDesignators),
+            NonNegative(scrapRate, nameof(scrapRate)),
+            Yield(yieldRate, nameof(yieldRate)),
+            backflush));
         Touch();
         return this;
     }
@@ -68,6 +88,23 @@ public sealed class EngineeringBom : Entity<EngineeringBomId>, IAggregateRoot
         EffectiveDate = effectiveDate;
         Touch();
         AddDomainEvent(new EngineeringBomReleasedDomainEvent(this));
+    }
+
+    public void Archive(string reason)
+    {
+        _ = Required(reason);
+        if (Status == EngineeringVersionStatus.Archived)
+        {
+            return;
+        }
+
+        if (Status != EngineeringVersionStatus.Published)
+        {
+            throw new InvalidOperationException("Only released engineering BOM versions can be archived by an engineering change.");
+        }
+
+        Status = EngineeringVersionStatus.Archived;
+        Touch();
     }
 
     private void EnsureDraft()
@@ -90,14 +127,38 @@ public sealed class EngineeringBomLine
     {
     }
 
-    internal EngineeringBomLine(string childItemCode, decimal quantity, string unitOfMeasureCode)
+    internal EngineeringBomLine(
+        string childItemCode,
+        decimal quantity,
+        string unitOfMeasureCode,
+        bool isPhantom,
+        string? alternateGroup,
+        int? alternatePriority,
+        string? referenceDesignators,
+        decimal scrapRate,
+        decimal yieldRate,
+        bool backflush)
     {
         ChildItemCode = childItemCode;
         Quantity = quantity;
         UnitOfMeasureCode = unitOfMeasureCode;
+        IsPhantom = isPhantom;
+        AlternateGroup = alternateGroup;
+        AlternatePriority = alternatePriority;
+        ReferenceDesignators = referenceDesignators;
+        ScrapRate = scrapRate;
+        YieldRate = yieldRate;
+        Backflush = backflush;
     }
 
     public string ChildItemCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public string UnitOfMeasureCode { get; private set; } = string.Empty;
+    public bool IsPhantom { get; private set; }
+    public string? AlternateGroup { get; private set; }
+    public int? AlternatePriority { get; private set; }
+    public string? ReferenceDesignators { get; private set; }
+    public decimal ScrapRate { get; private set; }
+    public decimal YieldRate { get; private set; } = 1m;
+    public bool Backflush { get; private set; }
 }
