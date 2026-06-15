@@ -1,11 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -277,7 +281,12 @@ public sealed class CreatePurchaseOrderCommandHandler(ApplicationDbContext dbCon
     }
 }
 
-public sealed record PurchaseReceiptCommandLine(string PurchaseOrderLineNo, decimal ReceivedQuantity, string QualityStatus);
+public sealed record PurchaseReceiptCommandLine(
+    string PurchaseOrderLineNo,
+    decimal ReceivedQuantity,
+    string QualityStatus,
+    string? LocationCode = null,
+    string? LotNo = null);
 
 public sealed record RecordPurchaseReceiptCommand(
     string OrganizationId,
@@ -340,8 +349,125 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         var receipt = PurchaseReceipt.Record(
             order,
             allocation.Code,
-            request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus)));
+            request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo)));
         dbContext.PurchaseReceipts.Add(receipt);
         return receipt.Id;
+    }
+}
+
+public sealed record SupplierInvoiceCommandLine(
+    string PurchaseOrderLineNo,
+    string PurchaseReceiptLineNo,
+    decimal InvoiceQuantity,
+    decimal UnitPrice);
+
+public sealed record RecordSupplierInvoiceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? InvoiceNo,
+    string PurchaseOrderNo,
+    string PurchaseReceiptNo,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string CurrencyCode,
+    decimal QuantityTolerance,
+    decimal AmountTolerance,
+    IReadOnlyCollection<SupplierInvoiceCommandLine> Lines,
+    string? PayableNo = null,
+    string? IdempotencyKey = null) : ICommand<SupplierInvoiceId>;
+
+public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<RecordSupplierInvoiceCommand>
+{
+    public RecordSupplierInvoiceCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.InvoiceNo).MaximumLength(100);
+        RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseReceiptNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.InvoiceDate).NotEqual(default(DateOnly));
+        RuleFor(x => x.DueDate).NotEqual(default(DateOnly));
+        RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
+        RuleFor(x => x.QuantityTolerance).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.AmountTolerance).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.PurchaseOrderLineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.PurchaseReceiptLineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.InvoiceQuantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitPrice).GreaterThan(0);
+        });
+    }
+}
+
+public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<RecordSupplierInvoiceCommand, SupplierInvoiceId>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<SupplierInvoiceId> Handle(RecordSupplierInvoiceCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "supplier-invoice",
+            request.InvoiceNo,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return (await dbContext.SupplierInvoices.SingleAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.InvoiceNo == allocation.Code,
+                cancellationToken)).Id;
+        }
+
+        var order = await dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == request.PurchaseOrderNo,
+                cancellationToken)
+            ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        var receipt = await dbContext.PurchaseReceipts
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseReceiptNo == request.PurchaseReceiptNo,
+                cancellationToken)
+            ?? throw new KnownException($"Purchase receipt '{request.PurchaseReceiptNo}' was not found.");
+
+        var invoice = SupplierInvoice.Match(
+            order,
+            receipt,
+            allocation.Code,
+            request.InvoiceDate,
+            request.DueDate,
+            request.CurrencyCode,
+            request.QuantityTolerance,
+            request.AmountTolerance,
+            request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice)));
+        dbContext.SupplierInvoices.Add(invoice);
+
+        var payableNo = string.IsNullOrWhiteSpace(request.PayableNo) ? $"AP-{invoice.InvoiceNo}" : request.PayableNo.Trim();
+        var payable = AccountPayable.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            payableNo,
+            invoice.InvoiceNo,
+            invoice.SupplierCode,
+            invoice.TotalAmount,
+            invoice.CurrencyCode,
+            invoice.InvoiceDate,
+            invoice.DueDate,
+            "MATCHED");
+        dbContext.AccountPayables.Add(payable);
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        return invoice.Id;
     }
 }

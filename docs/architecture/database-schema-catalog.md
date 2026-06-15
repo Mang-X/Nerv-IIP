@@ -349,6 +349,7 @@ Source:
 3. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/*_InitialErpProcurementSalesFinanceSchema.cs`
 4. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260527073242_AddNumberingCounters.cs`
 5. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260612073612_AddCodingTables.cs`
+6. `backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/Migrations/20260615075555_AddErpIssue411BusinessGapClosure.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -356,15 +357,16 @@ Source:
 | `request_for_quotations` / `request_for_quotation_lines` / `request_for_quotation_suppliers` | business | RFQ 头、行和邀请供应商引用。 | RFQ id 归属头；行和供应商通过 owning FK 加载。 | RFQ no 唯一索引用于采购过程追踪。 | 创建后接收供应商报价；供应商主数据仍由 MasterData 拥有。 |
 | `supplier_quotations` / `supplier_quotation_lines` | business | 供应商报价事实，记录数量、单价和承诺日期。 | `quotation_no` 是业务编号；行归属报价。 | quotation no 唯一索引用于报价幂等。 | 接收后保留为采购比价事实。 |
 | `purchase_orders` / `purchase_order_lines` | business | 采购订单头和行，记录订单金额与已收数量。 | `purchase_order_no` 是业务编号；行记录 ordered/received quantity。 | PO no 唯一索引用于收货反查。 | release 后可被收货推进；不写 Inventory 余额。 |
-| `purchase_receipts` / `purchase_receipt_lines` | business | ERP 采购收货事实，记录质量状态摘要。 | `purchase_receipt_no` 是业务编号；行引用 PO line no。 | receipt no 唯一索引用于质量/WMS/AP 下游引用。 | 记录后不可变；质量检验、入库执行和 AP 候选由公开事件/API 接线。 |
+| `purchase_receipts` / `purchase_receipt_lines` | business | ERP 采购收货事实，记录质量状态摘要和库存过账维度快照。 | `purchase_receipt_no` 是业务编号；行引用 PO line no，并复制 SKU、UOM、location 和可选 lot。 | receipt no 唯一索引用于质量/WMS/AP/Inventory 下游引用。 | 记录后不可变；收货通过公开 Inventory movement request 事件请求库存入账，质量检验和 AP 仍由公开事件/API 接线。 |
+| `supplier_invoices` / `supplier_invoice_lines` | business | 供应商发票三单匹配事实，匹配 PO、采购收货和发票行。 | `invoice_no` 是业务编号；头记录 PO/receipt/supplier/date/due date/currency/match status，行记录 PO line、receipt line、SKU、UOM、数量和单价。 | invoice no 唯一索引用于防重复；行归属索引用于加载匹配明细。 | 匹配通过后创建 AP 并生成应付子分类账凭证；超出容差时拒绝入账。 |
 | `opportunities` | business | 销售商机事实。 | `opportunity_no` 是业务编号；`customer_code` 引用 MasterData 客户。 | opportunity no 唯一索引用于 CRM-lite 追踪。 | 创建后作为报价前置事实保留。 |
 | `quotations` / `quotation_lines` | business | 销售报价和报价行。 | `quotation_no` 是业务编号；行记录 SKU、数量、单价和交期。 | quotation no 唯一索引用于销售订单创建。 | 报价需显式 approve 才能创建销售订单。 |
-| `sales_orders` / `sales_order_lines` | business | 销售订单和行，记录已释放发货数量。 | `sales_order_no` 是业务编号；行记录 ordered/delivered quantity。 | SO no 唯一索引用于发货请求反查。 | ERP 只拥有订单事实，WMS 拥有出库执行。 |
-| `delivery_orders` / `delivery_order_lines` | business | ERP 发货请求，供 WMS outbound 执行。 | `delivery_order_no` 是业务编号；行引用 SO line no。 | delivery order no 唯一索引用于 WMS/AR 下游引用。 | release 后保留请求事实，不表达 WMS task state。 |
-| `account_payables` | business | 应付候选事实。 | `payable_no` 是业务编号；记录来源单据、供应商、金额和已付金额。 | AP no 唯一索引用于幂等生成。 | 支付推进不允许超过 open amount；完整总账月结后置。 |
-| `account_receivables` | business | 应收候选事实。 | `receivable_no` 是业务编号；记录来源单据、客户、金额和已收金额。 | AR no 唯一索引用于幂等生成。 | 收款推进不允许超过 open amount；完整收款核销后置。 |
+| `sales_orders` / `sales_order_lines` | business | 销售订单和行，记录已释放发货数量。 | `sales_order_no` 是业务编号；行记录 ordered/delivered quantity。 | SO no 唯一索引用于发货请求反查。 | ERP 只拥有订单事实；可按客户信用额度、已开放应收和 active SO exposure 阻断超限订单，WMS 拥有出库执行。 |
+| `delivery_orders` / `delivery_order_lines` | business | ERP 发货请求，供 WMS outbound 执行。 | `delivery_order_no` 是业务编号；行引用 SO line no，并复制 SKU、UOM、location 和可选 lot。 | delivery order no 唯一索引用于 WMS/AR 下游引用。 | release 后通过公开 WMS outbound-requested 事件请求出库执行，不表达 WMS task state。 |
+| `account_payables` | business | 应付候选事实。 | `payable_no` 是业务编号；记录来源单据、供应商、金额、已付金额、发票日、到期日和付款条件。 | AP no 唯一索引用于幂等生成。 | 支付推进不允许超过 open amount；列表可按 as-of date 输出账龄 bucket；创建和付款核销会生成平衡子分类账凭证，完整总账月结后置。 |
+| `account_receivables` | business | 应收候选事实。 | `receivable_no` 是业务编号；记录来源单据、客户、金额、已收金额、发票日、到期日和付款条件。 | AR no 唯一索引用于幂等生成。 | 收款推进不允许超过 open amount；列表可按 as-of date 输出账龄 bucket；创建和收款核销会生成平衡子分类账凭证，完整收款核销后置。 |
 | `cost_candidates` | business | 成本候选事实，引用 MES、Inventory 或 WMS 公开事实。 | `candidate_no` 是业务编号；`source_type + source_document_no` 描述来源。 | candidate no 唯一索引用于成本候选幂等。 | 作为候选保留，不代表最终成本结转。 |
-| `journal_vouchers` / `journal_voucher_lines` | business | 平衡凭证事实和借贷行。 | `voucher_no` 是业务编号；行记录 account code、debit/credit。 | voucher no 唯一索引用于凭证审计。 | posted 后不可变，借贷必须平衡。 |
+| `journal_vouchers` / `journal_voucher_lines` | business | 平衡凭证事实和借贷行。 | `voucher_no` 是业务编号；行记录 account code、debit/credit。 | voucher no 唯一索引用于凭证审计。 | posted 后不可变，借贷必须平衡；AP/AR/Cost 创建和 AP/AR 清算命令会自动写入最小子分类账凭证。 |
 | `code_counters` | business | ERP service-local 编码计数器，用于采购、销售和财务普通创建请求自动分配业务 code。 | `organization_id + environment_id + rule_key + site_code + reset_key` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编码规则范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
 | `code_idempotency_keys` | business | ERP 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |

@@ -22,6 +22,7 @@ public static class StandardCodeRules
         Document("supplier-quotation", "Supplier quotation", "SQ"),
         Document("purchase-order", "Purchase order", "PO"),
         Document("purchase-receipt", "Purchase receipt", "GR"),
+        Document("supplier-invoice", "Supplier invoice", "SI"),
         Document("account-payable", "Account payable", "AP"),
         Document("account-receivable", "Account receivable", "AR"),
         Document("cost-candidate", "Cost candidate", "COST"),

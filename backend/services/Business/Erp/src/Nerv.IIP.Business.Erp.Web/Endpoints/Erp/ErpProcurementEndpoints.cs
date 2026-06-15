@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
@@ -89,6 +90,23 @@ public sealed record RecordPurchaseReceiptRequest(
     string? IdempotencyKey = null);
 
 public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
+
+public sealed record RecordSupplierInvoiceRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? InvoiceNo,
+    string PurchaseOrderNo,
+    string PurchaseReceiptNo,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string CurrencyCode,
+    decimal QuantityTolerance,
+    decimal AmountTolerance,
+    IReadOnlyCollection<SupplierInvoiceCommandLine> Lines,
+    string? PayableNo = null,
+    string? IdempotencyKey = null);
+
+public sealed record RecordSupplierInvoiceResponse(SupplierInvoiceId SupplierInvoiceId);
 
 public sealed record ListPurchaseOrdersRequest(
     string OrganizationId,
@@ -206,6 +224,34 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
     }
 }
 
+public sealed class RecordSupplierInvoiceEndpoint(ISender sender)
+    : ErpEndpoint<RecordSupplierInvoiceRequest, ResponseData<RecordSupplierInvoiceResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<RecordSupplierInvoiceEndpoint>());
+    }
+
+    public override async Task HandleAsync(RecordSupplierInvoiceRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new RecordSupplierInvoiceCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.InvoiceNo,
+            req.PurchaseOrderNo,
+            req.PurchaseReceiptNo,
+            req.InvoiceDate,
+            req.DueDate,
+            req.CurrencyCode,
+            req.QuantityTolerance,
+            req.AmountTolerance,
+            req.Lines,
+            req.PayableNo,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new RecordSupplierInvoiceResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListPurchaseOrdersEndpoint(ISender sender)
     : ErpEndpoint<ListPurchaseOrdersRequest, ResponseData<ListPurchaseOrdersResponse>>
 {
@@ -239,6 +285,7 @@ public static class ErpProcurementEndpointContracts
         new(typeof(ListRequestsForQuotationEndpoint), "GET", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpRequestsForQuotation"),
         new(typeof(CreatePurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseOrder"),
         new(typeof(RecordPurchaseReceiptEndpoint), "POST", "/api/business/v1/erp/purchase-receipts", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "recordErpPurchaseReceipt"),
+        new(typeof(RecordSupplierInvoiceEndpoint), "POST", "/api/business/v1/erp/supplier-invoices", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "recordErpSupplierInvoice"),
         new(typeof(ListPurchaseOrdersEndpoint), "GET", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseOrders"),
     ];
 

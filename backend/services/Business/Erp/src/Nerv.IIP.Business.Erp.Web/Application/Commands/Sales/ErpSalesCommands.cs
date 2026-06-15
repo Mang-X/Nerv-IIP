@@ -123,7 +123,13 @@ public sealed class ApproveQuotationCommandHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record CreateSalesOrderCommand(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string? IdempotencyKey = null) : ICommand<SalesOrderId>;
+public sealed record CreateSalesOrderCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SalesOrderNo,
+    string QuotationNo,
+    string? IdempotencyKey = null,
+    decimal? CustomerCreditLimit = null) : ICommand<SalesOrderId>;
 
 public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateSalesOrderCommand>
 {
@@ -142,7 +148,7 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
 
     public async Task<SalesOrderId> Handle(CreateSalesOrderCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.QuotationNo), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "sales-order", request.SalesOrderNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.QuotationNo, request.CustomerCreditLimit), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.SalesOrders.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.SalesOrderNo == allocation.Code, cancellationToken)).Id;
@@ -156,13 +162,43 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
             ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
-        var order = SalesOrder.CreateFromQuotation(allocation.Code, quotation);
+        CustomerCreditSnapshot? creditSnapshot = null;
+        if (request.CustomerCreditLimit.HasValue)
+        {
+            var openReceivables = await dbContext.AccountReceivables
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.CustomerCode == quotation.CustomerCode)
+                .SumAsync(x => x.Amount - x.CollectedAmount, cancellationToken);
+            var activeSalesOrders = await dbContext.SalesOrders
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.CustomerCode == quotation.CustomerCode
+                    && x.Status == "released")
+                .SumAsync(x => x.TotalAmount, cancellationToken);
+            creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, request.CustomerCreditLimit.Value, openReceivables, activeSalesOrders);
+        }
+
+        SalesOrder order;
+        try
+        {
+            order = creditSnapshot is null
+                ? SalesOrder.CreateFromQuotation(allocation.Code, quotation)
+                : SalesOrder.CreateFromQuotation(allocation.Code, quotation, creditSnapshot);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
         dbContext.SalesOrders.Add(order);
         return order.Id;
     }
 }
 
-public sealed record DeliveryOrderCommandLine(string SalesOrderLineNo, decimal Quantity);
+public sealed record DeliveryOrderCommandLine(string SalesOrderLineNo, decimal Quantity, string? LocationCode = null, string? LotNo = null);
 
 public sealed record ReleaseDeliveryOrderCommand(
     string OrganizationId,
@@ -212,7 +248,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
         var delivery = DeliveryOrder.Release(
             order,
             allocation.Code,
-            request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity)));
+            request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo)));
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;
     }

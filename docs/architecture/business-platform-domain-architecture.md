@@ -172,13 +172,15 @@ DemandPlanning.PlannedPurchaseSuggestion
   -> ERP.RFQ / SupplierQuotation (SRM-lite)
   -> ERP.PurchaseOrder
   -> ERP.PurchaseReceipt
+  -> ERP.SupplierInvoice (three-way match)
   -> Quality.InspectionPlan
   -> WMS.InboundOrder
   -> Inventory.StockMovement
   -> ERP.AccountPayable
+  -> ERP.SubledgerVoucher
 ```
 
-SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。
+SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。采购收货会通过公开 Inventory movement request 事件请求库存入账；供应商发票按 PO、收货和发票行三单匹配后生成 AP 和最小应付子分类账凭证。
 
 ### 订单到交付到应收
 
@@ -191,9 +193,10 @@ ERP.Opportunity / Quotation (CRM-lite)
   -> WMS.Pick + PackReview
   -> Inventory.StockMovement
   -> ERP.AccountReceivable
+  -> ERP.SubledgerVoucher
 ```
 
-CRM-lite 与 OMS-lite 首批由 ERP Sales 和 WMS fulfillment 承担。CPQ 只在配置型产品场景进入独立规划。
+CRM-lite 与 OMS-lite 首批由 ERP Sales 和 WMS fulfillment 承担。CPQ 只在配置型产品场景进入独立规划。销售订单可按客户信用额度、开放应收和已释放销售订单敞口做最小信用检查；发货请求会通过公开 WMS outbound-requested 事件进入 WMS 出库执行。
 
 ### 生产执行到成本
 

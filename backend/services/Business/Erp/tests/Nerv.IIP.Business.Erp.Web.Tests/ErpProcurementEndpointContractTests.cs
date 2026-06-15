@@ -18,7 +18,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(7, contracts.Length);
+        Assert.Equal(8, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -44,6 +44,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "recordErpPurchaseReceipt");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/erp/supplier-invoices"
+            && x.PermissionCode == ErpPermissionCodes.FinanceManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "recordErpSupplierInvoice");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/erp/rfqs"
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
@@ -63,6 +68,7 @@ public sealed class ErpProcurementEndpointContractTests
     [InlineData(typeof(ListRequestsForQuotationEndpoint))]
     [InlineData(typeof(CreatePurchaseOrderEndpoint))]
     [InlineData(typeof(RecordPurchaseReceiptEndpoint))]
+    [InlineData(typeof(RecordSupplierInvoiceEndpoint))]
     [InlineData(typeof(ListPurchaseOrdersEndpoint))]
     public void Erp_procurement_endpoints_route_through_mediator(Type endpointType)
     {

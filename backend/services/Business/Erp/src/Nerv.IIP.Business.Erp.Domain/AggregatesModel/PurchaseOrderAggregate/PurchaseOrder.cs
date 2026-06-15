@@ -75,7 +75,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         return new PurchaseOrder(organizationId, environmentId, purchaseOrderNo, supplierCode, siteCode, lines);
     }
 
-    public void RegisterReceipt(string lineNo, decimal quantity)
+    public PurchaseOrderLine RegisterReceipt(string lineNo, decimal quantity)
     {
         EnsureOpen();
         var line = lines.SingleOrDefault(x => x.LineNo == lineNo)
@@ -85,6 +85,8 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         {
             Status = PurchaseOrderStatus.Closed;
         }
+
+        return line;
     }
 
     private void EnsureOpen()
