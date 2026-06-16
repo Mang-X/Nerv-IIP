@@ -90,7 +90,9 @@ public sealed record StockMovementPostedPayload(
     string OwnerType,
     string? OwnerId,
     decimal Quantity,
-    DateTimeOffset PostedAtUtc);
+    DateTimeOffset PostedAtUtc,
+    decimal? UnitCost,
+    decimal? MovementAmount);
 
 public sealed record StockCountVarianceConfirmedIntegrationEvent(
     string EventId,
@@ -150,4 +152,6 @@ public sealed record StockAvailabilityChangedPayload(
     decimal ReservedQuantity,
     decimal AvailableQuantity,
     long LedgerVersion,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    decimal MovingAverageUnitCost,
+    decimal InventoryValue);

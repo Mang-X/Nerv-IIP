@@ -165,13 +165,15 @@ Source:
 3. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Migrations/20260523020521_InitialInventorySchema.cs`
 5. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Migrations/20260523064153_AddInventoryCodeCheckConstraints.cs`
+6. `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Infrastructure/Migrations/20260615073828_AddInventoryStatusReservationValuation.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `stock_locations` | business | Inventory 拥有的仓库、库区、库位或逻辑库存地点事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + location_code` 是业务唯一键；`site_code` 是 MasterData 站点业务引用。 | 唯一索引保护库存地点编码；`organization_id + environment_id + site_code + status` 支持按站点列可用库位。 | 创建后保留；状态字段表达启停，不物理删除。 |
-| `stock_ledgers` | business | Inventory 拥有的当前库存余额事实，按 SKU、UOM、站点、地点、批次、序列号、质量状态和 owner 维度聚合。 | `id` 为 Guid v7 强类型 ID；`on_hand_quantity`、`reserved_quantity`、`ledger_version` 和 `row_version` 维护余额与并发控制。 | 唯一索引保护同一库存维度只有一条余额；维度索引用于可用量查询。 | 由库存移动和盘点调整驱动更新；不由 WMS、MES 或 ERP 平行维护余额。 |
-| `stock_movements` | business | 追加式库存移动事实，记录来源服务、来源单据、幂等键和有符号数量。 | `id` 为 Guid v7 强类型 ID；`source_service + source_document_id + idempotency_key` 保护外部调用幂等；`quantity` 为正负移动量。 | 幂等唯一索引防重复入账；SKU/site/location 索引用于追踪库存历史。 | 创建后不可变；余额变化通过 ledger 更新体现。 |
-| `stock_count_tasks` | business | 库存盘点任务事实，记录盘点范围、期望 ledger version、盘点数量、差异和状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + count_task_code` 是业务唯一键。 | 状态与库存维度索引支持待盘点任务查询。 | 创建后进入盘点生命周期；确认后产生调整事实。 |
+| `stock_ledgers` | business | Inventory 拥有的当前库存余额事实，按 SKU、UOM、站点、地点、批次、序列号、受控库存状态和 owner 维度聚合。 | `id` 为 Guid v7 强类型 ID；`on_hand_quantity`、`reserved_quantity`、`moving_average_unit_cost`、`inventory_value`、`is_frozen_for_count`、`ledger_version` 和 `row_version` 维护余额、计价、盘点冻结和并发控制；`quality_status` 只允许 `unrestricted`、`quality`、`blocked`。 | 唯一索引保护同一库存维度只有一条余额；维度索引用于可用量查询；状态 check constraint 防自由文本库存状态。 | 由库存移动、预留/释放、状态转移和盘点调整驱动更新；不由 WMS、MES 或 ERP 平行维护余额。 |
+| `stock_movements` | business | 追加式库存移动事实，记录来源服务、来源单据、幂等键、有符号数量和移动金额。 | `id` 为 Guid v7 强类型 ID；`source_service + source_document_id + idempotency_key` 保护外部调用幂等；`quantity` 为正负移动量；`unit_cost` 和 `movement_amount` 记录移动平均计价输入/结果。 | 幂等唯一索引防重复入账；SKU/site/location 索引用于追踪库存历史；状态 check constraint 防自由文本库存状态。 | 创建后不可变；余额、预留、计价变化通过 ledger 更新体现。 |
+| `stock_reservations` | business | Inventory 拥有的库存预留/分配事实，按来源服务、来源单据和库存维度保留预留数量。 | `id` 为 Guid v7 强类型 ID；`source_service + source_document_id + idempotency_key` 保护预留幂等；`reserved_quantity`、`released_quantity`、`allocated_quantity`、`open_quantity` 和 `status` 记录生命周期；`quality_status` 只允许受控库存状态。 | 来源单据唯一索引防重复预留；SKU/site/location/status 索引用于 ATP 和补偿查询；状态 check constraint 防自由文本库存状态。 | 创建后可部分释放或分配给出库；不删除历史预留事实。 |
+| `stock_count_tasks` | business | 库存盘点任务事实，记录盘点范围、期望 ledger version、盘点数量、差异、冻结状态、取消状态和复盘状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + count_task_code` 是业务唯一键；`expected_ledger_version` 是确认差异前的并发基线。 | 状态与库存维度索引支持待盘点任务查询；状态 check constraint 防自由文本库存状态。 | 创建后冻结目标 ledger 的普通移动；确认或取消会释放冻结；确认时若 ledger version 漂移则进入 `recount-required` 而不是直接过账。 |
 | `stock_count_adjustments` | business | 盘点差异确认事实，记录盘点任务、幂等键、差异数量和生成的库存移动 ID。 | `id` 为 Guid v7 强类型 ID；`idempotency_key` 保护确认幂等；`movement_id` 指向库存移动业务 ID。 | 盘点任务和库存维度索引用于差异追踪。 | 确认后作为审计事实保留，不直接覆盖历史移动。 |
 | `integration_event_dead_letters` | system | Inventory 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -181,7 +183,7 @@ Source:
 
 Known gaps:
 
-1. Inventory MVP 已覆盖库存地点、余额、移动和盘点；预留/冻结、批次谱系、WMS 作业单和 ERP 成本闭环仍归后续业务切片补齐。
+1. Inventory 已覆盖库存地点、余额、受控库存状态、预留/释放/分配、移动平均计价、移动、盘点冻结和盘点调整；批次谱系、WMS 作业单和 ERP GL 月结仍归后续业务切片补齐。
 
 ## BusinessMES Schema
 

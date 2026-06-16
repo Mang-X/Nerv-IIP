@@ -108,7 +108,9 @@ public sealed class WmsStockMovementPostedConsumerTests
                 "company",
                 "owner-001",
                 5m,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow,
+                null,
+                null));
     }
 
     private static ApplicationDbContext CreateContext(string databaseName)
