@@ -152,14 +152,6 @@ const skuOptions = computed(() => toResourceOptions(skus.value))
 
 const visibleWorkOrders = computed(() => workOrders.value)
 
-// 本页可见工单中需现场跟进的（未关闭）与受阻待排除的计数，用于队列上方提示这一页里有几单要盯。
-const openOnPage = computed(
-  () => visibleWorkOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
-)
-const blockedOnPage = computed(
-  () => visibleWorkOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
-)
-
 const canCreateRush = computed(
   () =>
     isNonEmpty(rushForm.organizationId) &&
@@ -386,11 +378,6 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      生产计划下达成的工单在这里<span class="font-medium text-foreground">排产派工、跟踪执行</span>。先用状态/工作中心筛出要盯的工单，再从行内
-      <span class="font-medium text-foreground">报工、查齐套、看工序</span>；临时插单或返工补单点右上角<span class="font-medium text-foreground">「创建急单」</span>。
-    </p>
-
     <Toolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
         <Select v-model="statusFilter">
@@ -414,11 +401,6 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <p v-if="!workOrdersPending && visibleWorkOrders.length" class="text-sm text-muted-foreground" aria-live="polite">
-      本页 <span class="font-medium text-foreground">{{ openOnPage }}</span> 单未关闭待跟进<template v-if="blockedOnPage">，其中
-        <span class="font-medium text-destructive">{{ blockedOnPage }}</span> 单受阻，先排除阻塞再派工</template>。
-    </p>
-
     <DataTable
       v-model:sort="sort"
       :columns="columns"
@@ -428,7 +410,6 @@ function isNonEmpty(value: string) {
       :loading="workOrdersPending"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
     >
-      <!-- TODO(#420): facade 暂只回 skuId(GUID)，无 skuCode/skuName 可解析；不硬显 GUID 当人读物料标识，仅以占位提示。 -->
       <template #cell-workOrderId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -436,17 +417,18 @@ function isNonEmpty(value: string) {
           class="flex flex-col gap-0.5 text-left"
         >
           <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId }}</span>
-          <span class="text-xs text-muted-foreground">物料名称待接入</span>
+          <span v-if="row.skuId" class="text-xs text-muted-foreground">{{ row.skuId }}</span>
+          <span v-else class="text-xs text-muted-foreground">—</span>
         </RouterLink>
         <div v-else class="flex flex-col gap-0.5">
           <span class="font-medium text-muted-foreground">无编号</span>
-          <span class="text-xs text-muted-foreground">物料名称待接入</span>
+          <span v-if="row.skuId" class="text-xs text-muted-foreground">{{ row.skuId }}</span>
+          <span v-else class="text-xs text-muted-foreground">—</span>
         </div>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
-      <!-- TODO(#420): task.workCenterId 为后端 GUID，facade 暂不回工作中心名称；不硬显 GUID，工序行只列「序号 · 状态」。 -->
       <template #cell-operationCount="{ row }">
         <div class="grid gap-1">
           <span

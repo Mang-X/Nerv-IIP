@@ -125,11 +125,8 @@ watch(
 
 type ReceiptRow = (typeof receiptRequests)['value'][number]
 const columns: DataTableColumn<ReceiptRow>[] = [
-  // TODO(#420): receiptRequestId 为后端 GUID，仅作行 key；人读单号用 requestNo，后端未回时降级占位，不显裸 GUID。
   { key: 'requestNo', header: '入库单', cellClass: 'font-medium' },
-  // TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。
   { key: 'workOrderId', header: '工单' },
-  // TODO(#420): skuId 为后端 GUID，facade 暂不回 skuCode/物料名称；不显裸 GUID，仅占位提示。
   { key: 'skuId', header: '成品' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
@@ -216,11 +213,6 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      这里登记<span class="font-medium text-foreground">完工成品的入库</span>并跟踪入库状态：末道工序报完工后，在此把成品<span class="font-medium text-foreground">登记入库</span>。
-      工单与成品由报工完成或工单详情带出；点行内<span class="font-medium text-foreground">查看工单</span>可回到源工单追溯。
-    </p>
-
     <Toolbar :show-search="false">
       <template #filters>
         <Select v-model="statusFilter">
@@ -241,12 +233,10 @@ function isNonEmpty(value: string) {
       :loading="receiptRequestsPending"
       empty-message="还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。"
     >
-      <!-- TODO(#420): 优先用人读单号 requestNo；后端未回时降级占位，不显裸 GUID 当标识。 -->
       <template #cell-requestNo="{ row }">
         <span v-if="row.requestNo">{{ row.requestNo }}</span>
-        <span v-else class="text-muted-foreground">单号待接入</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
-      <!-- TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。 -->
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
@@ -254,13 +244,13 @@ function isNonEmpty(value: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          查看工单
+          {{ row.workOrderId }}
         </button>
-        <span v-else class="text-muted-foreground">未关联工单</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
-      <!-- TODO(#420): facade 暂只回 skuId(GUID)，无 skuCode/物料名称可解析；不硬显 GUID 当人读标识，仅占位提示。 -->
       <template #cell-skuId="{ row }">
-        <span class="text-sm text-muted-foreground">{{ row.skuId ? '物料名称待接入' : '无' }}</span>
+        <span v-if="row.skuId">{{ row.skuId }}</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-receiptStatus="{ row }">

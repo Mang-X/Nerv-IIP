@@ -78,12 +78,6 @@ const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 
 const visibleTasks = computed(() => operationTasks.value)
 
-// 本页可开工 / 执行中的工序条数，用于队列上方一句话提示「这一页里有几道工序现在能动手报工」。
-// 不做成 SectionCards 计数卡：那是分页页内的局部数，按 playbook §0 属机械计数，会冒充总量误导一线。
-const reportableOnPage = computed(
-  () => visibleTasks.value.filter((t) => isReportableStatus(t.status)).length,
-)
-
 // --- Sort (page-owned, before pagination) ---
 const sort = ref<DataTableSort | null>(null)
 function sortValue(task: Row, key: string): string | number {
@@ -107,9 +101,8 @@ const sortedTasks = computed(() => {
 const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter] })
 const pagedTasks = computed(() => sortedTasks.value)
 
-// TODO(#420): operationTaskId / workOrderId / workCenterId / deviceAssetId / shiftId 均为后端 GUID，
-// facade 暂不回工序号、工单号、工作中心/设备/班次名称。本页以「工序序号」(operationSequence) 作人读锚点
-// （现场识别一道工序的自然编号），其余 GUID 列降级为占位/标签，不把裸 GUID 当人读标识。
+// facade 返回人读编码（workOrderId=WO-…、workCenterId=WC-…、operationTaskId=WO-…-OP-序号）：
+// 工序序号(operationSequence)作主锚点，工单/工作中心直接展示编码即可分辨。
 const columns: DataTableColumn<Row>[] = [
   { key: 'operationSequence', header: '工序', cellClass: 'font-medium', align: 'start', width: 'w-20', accessor: (r) => r.operationSequence ?? 0 },
   { key: 'workOrderId', header: '工单' },
@@ -195,11 +188,6 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      这里是分到本班的<span class="font-medium text-foreground">工序任务队列</span>。先用状态/工作中心/班次筛出眼下要做的工序，再从行尾直接
-      <span class="font-medium text-foreground">报工</span>；遇到要送检点<span class="font-medium text-foreground">呼叫质检</span>、设备或物料卡住点<span class="font-medium text-foreground">记录异常</span>。
-    </p>
-
     <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
         <Select v-model="statusFilter">
@@ -230,15 +218,6 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <p v-if="!operationTasksPending && visibleTasks.length" class="text-sm text-muted-foreground" aria-live="polite">
-      <template v-if="reportableOnPage > 0">
-        本页 <span class="font-medium text-foreground">{{ reportableOnPage }}</span> 道工序现在能动手，行尾「报工」直接登记产量。
-      </template>
-      <template v-else>
-        本页工序暂无可直接报工的（多为<span class="font-medium text-foreground">排队中</span>）：需先到<span class="font-medium text-foreground">派工看板</span>派工、开工后，行尾才会出现「报工」。
-      </template>
-    </p>
-
     <DataTable
       v-model:sort="sort"
       :columns="columns"
@@ -251,7 +230,6 @@ function formatError(error: unknown) {
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
       </template>
-      <!-- TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」按钮承载跳转，单元格只给标签。 -->
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
@@ -259,20 +237,20 @@ function formatError(error: unknown) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          查看工单
+          {{ row.workOrderId }}
         </button>
-        <span v-else class="text-muted-foreground">未关联工单</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
         <StatusBadge :value="row.status" />
       </template>
-      <!-- TODO(#420): workCenterId 为后端 GUID，facade 暂不回工作中心名称；用上方「工作中心」筛选按名称定位，单元格不显裸 GUID。 -->
       <template #cell-workCenterId="{ row }">
-        <span class="text-muted-foreground">{{ row.workCenterId ? '名称待接入' : '未指定' }}</span>
+        <span v-if="row.workCenterId">{{ row.workCenterId }}</span>
+        <span v-else class="text-muted-foreground">未指定</span>
       </template>
-      <!-- TODO(#420): shiftId 为后端 GUID，facade 暂不回班次名称；用上方「班次」筛选按名称定位，单元格不显裸 GUID。 -->
       <template #cell-shiftId="{ row }">
-        <span class="text-muted-foreground">{{ row.shiftId ? '名称待接入' : '未指定' }}</span>
+        <span v-if="row.shiftId">{{ row.shiftId }}</span>
+        <span v-else class="text-muted-foreground">未指定</span>
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}

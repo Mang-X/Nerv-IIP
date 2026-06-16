@@ -121,8 +121,6 @@ const emptyMessage = computed(() =>
 const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
   { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
   { key: 'sourceSystem', header: '来源计划' },
-  // TODO(#420): skuId 为后端返回的 GUID，facade 暂不回 skuCode/skuName，无法解析为人读物料标识。
-  // 故此列显示「物料」表头并在单元格内对 GUID 做降级提示，不把裸 GUID 当人读标识展示。
   { key: 'skuId', header: '物料' },
   { key: 'plannedQuantity', header: '数量', align: 'end', width: 'w-24', accessor: (r) => r.plannedQuantity ?? 0 },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
@@ -248,10 +246,6 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      这里是需求与计划（MRP/MPS）下达的可执行计划。把<span class="font-medium text-foreground">绿色「可转工单」</span>的计划下达为工单交付生产；标红的计划需先排除阻塞再转。
-    </p>
-
     <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、物料">
       <template #filters>
         <Select v-model="sourceFilter">
@@ -289,9 +283,9 @@ function formatError(error: unknown) {
           <span v-if="row.sourceDocumentId" class="text-xs text-muted-foreground">{{ row.sourceDocumentId }}</span>
         </div>
       </template>
-      <!-- TODO(#420): facade 暂只回 skuId(GUID)，无 skuCode/skuName 可解析；不硬显 GUID 当人读标识，仅以占位提示。 -->
-      <template #cell-skuId>
-        <span class="text-sm text-muted-foreground">物料名称待接入</span>
+      <template #cell-skuId="{ row }">
+        <span v-if="row.skuId">{{ row.skuId }}</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-plannedQuantity="{ row }">
         <span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span>

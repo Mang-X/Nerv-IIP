@@ -40,8 +40,6 @@ type RequestRow = (typeof materialIssueRequests)['value'][number]
 const columns: DataTableColumn<RequestRow>[] = [
   { key: 'requestId', header: '申请号', cellClass: 'font-medium', accessor: (r) => r.requestId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
-  // TODO(#420): materialId 为后端返回的 GUID，facade 暂不回 materialCode/materialName，无法解析为人读物料标识。
-  // 故显示「物料」表头并在单元格内做占位提示，不把裸 GUID 当人读标识展示。
   { key: 'materialId', header: '物料' },
   { key: 'receivedQuantity', header: '收料进度', width: 'w-44' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -83,11 +81,6 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      这里跟踪各工单的<span class="font-medium text-foreground">领料申请与收料进度</span>。领料从工单详情发起，仓库出库后这里回写「已收数量」；
-      <span class="font-medium text-foreground">已收 = 应领</span>即该料齐套，可开工。
-    </p>
-
     <SectionCards :columns="3">
       <SectionCard description="待收料的领料申请" :value="awaitingReceiptCount" hint="已发起但仓库尚未收齐，需跟催出库" />
     </SectionCards>
@@ -108,9 +101,9 @@ function formatError(error: unknown) {
       :loading="materialIssueRequestsPending"
       empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
     >
-      <!-- TODO(#420): facade 暂只回 materialId(GUID)，无 materialCode/materialName 可解析；不硬显 GUID 当人读标识，仅占位提示。 -->
-      <template #cell-materialId>
-        <span class="text-sm text-muted-foreground">物料名称待接入</span>
+      <template #cell-materialId="{ row }">
+        <span v-if="row.materialId">{{ row.materialId }}</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-receivedQuantity="{ row }">
         <div class="flex flex-col gap-1">

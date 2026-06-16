@@ -50,7 +50,7 @@ function openFull() {
     <DialogContent class="sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>工单速览</DialogTitle>
-        <DialogDescription>就地查看工单概要，不离开当前页；需要全貌再打开完整详情。</DialogDescription>
+        <DialogDescription>{{ workOrderId }}</DialogDescription>
       </DialogHeader>
 
       <div v-if="detailPending" class="flex items-center gap-2 py-6 text-sm text-muted-foreground">
@@ -77,8 +77,8 @@ function openFull() {
           </div>
           <div class="flex justify-between gap-3">
             <span class="text-muted-foreground">物料</span>
-            <!-- TODO(#420): skuId 为 GUID，facade 暂不回物料名；不显裸 GUID。 -->
-            <span class="text-muted-foreground">物料名称待接入</span>
+            <span v-if="detail.skuId" class="font-medium">{{ detail.skuId }}</span>
+            <span v-else class="text-muted-foreground">—</span>
           </div>
         </div>
 

@@ -23,16 +23,13 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.statu
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-// 本页卡点：当前页存在阻塞原因的在制行——驱动「排阻塞」动作（非机械计数，不冒充后端总量）。
-const blockedCount = computed(() => wipRows.value.filter((r) => r.blockingReasons?.length).length)
 const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
-// 工序(operationTaskId) / 工作中心(workCenterId) 为后端 GUID 且无名称(#420)，
-// 只能显「待接入」占位、铺满无意义，暂不展示；后端回名称后再恢复这两列。
+// facade 返回的是人读编码（workOrderId=WO-…、workCenterId=WC-…），直接展示即可分辨，不藏占位。
 const columns: DataTableColumn<WipRow>[] = [
-  // TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。
   { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
+  { key: 'workCenterId', header: '工作中心', width: 'w-32' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'progress', header: '在制进度', width: 'w-48', accessor: (r) => r.goodQuantity ?? 0 },
   { key: 'blockingReasons', header: '卡点' },
@@ -69,17 +66,6 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      这里跟踪在制工单与工序的<span class="font-medium text-foreground">进度与卡点</span>：看
-      <span class="font-medium text-foreground">已产 / 计划</span>判断完成度、看
-      <span class="font-medium text-foreground">卡点</span>知道为何停。本页只读追溯，
-      <span class="font-medium text-foreground">报工去工序执行</span>。
-    </p>
-
-    <p v-if="!wipPending && wipRows.length" class="text-sm text-muted-foreground" aria-live="polite">
-      本页在制 {{ wipRows.length }} 行<template v-if="blockedCount">，其中 <span class="font-medium text-warning">{{ blockedCount }} 行有卡点</span>需先排查</template>。
-    </p>
-
     <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="在制状态" />
@@ -95,7 +81,6 @@ function formatError(error: unknown) {
       :loading="wipPending"
       empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
     >
-      <!-- TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。 -->
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
@@ -103,9 +88,13 @@ function formatError(error: unknown) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          查看工单
+          {{ row.workOrderId }}
         </button>
-        <span v-else class="text-muted-foreground">未关联工单</span>
+        <span v-else class="text-muted-foreground">—</span>
+      </template>
+      <template #cell-workCenterId="{ row }">
+        <span v-if="row.workCenterId">{{ row.workCenterId }}</span>
+        <span v-else class="text-muted-foreground">未指定</span>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-progress="{ row }">
