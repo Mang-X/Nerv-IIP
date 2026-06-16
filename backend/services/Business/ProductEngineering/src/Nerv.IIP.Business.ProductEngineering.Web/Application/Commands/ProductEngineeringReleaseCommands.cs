@@ -355,7 +355,7 @@ public sealed record ReleaseRoutingCommand(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationCode, string OperationName, int StandardMinutes);
+public sealed record RoutingOperationCommand(int Sequence, string? WorkCenterCode, string OperationCode, string? OperationName, int StandardMinutes = 0);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -370,10 +370,10 @@ public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRo
         RuleForEach(x => x.Operations).ChildRules(operation =>
         {
             operation.RuleFor(x => x.Sequence).GreaterThan(0);
-            operation.RuleFor(x => x.WorkCenterCode).NotEmpty().MaximumLength(100);
+            operation.RuleFor(x => x.WorkCenterCode).MaximumLength(100);
             operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
-            operation.RuleFor(x => x.OperationName).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(200);
-            operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
+            operation.RuleFor(x => x.OperationName).MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThanOrEqualTo(0);
         });
     }
 }
@@ -393,7 +393,7 @@ public sealed class ReleaseRoutingCommandHandler(
             request.EnvironmentId, "routing",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationCode}:{x.OperationName}:{x.StandardMinutes}")),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.OperationCode}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -564,6 +564,8 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId),
             "production-version" => ArchiveProductionVersion(await productionVersionRepository.GetByIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
                 affectedVersion.VersionId,
                 cancellationToken), affectedVersion.VersionId),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")

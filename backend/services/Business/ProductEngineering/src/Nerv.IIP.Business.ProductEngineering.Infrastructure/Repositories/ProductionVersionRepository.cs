@@ -6,6 +6,12 @@ public interface IProductionVersionRepository : IRepository<ProductionVersion, P
 {
     Task<ProductionVersion?> GetByIdAsync(string productionVersionId, CancellationToken cancellationToken = default);
 
+    Task<ProductionVersion?> GetByIdAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken = default);
+
     Task<bool> HasOverlappingDefaultAsync(
         string organizationId,
         string environmentId,
@@ -28,6 +34,24 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
 
         var typedId = new ProductionVersionId(id);
         return await DbContext.ProductionVersions.SingleOrDefaultAsync(x => x.Id == typedId, cancellationToken);
+    }
+
+    public async Task<ProductionVersion?> GetByIdAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(productionVersionId, out var id))
+        {
+            return null;
+        }
+
+        var typedId = new ProductionVersionId(id);
+        return await DbContext.ProductionVersions.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.Id == typedId, cancellationToken);
     }
 
     public async Task<bool> HasOverlappingDefaultAsync(

@@ -458,6 +458,26 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.False(bomResult.IsValid);
         Assert.Contains(bomResult.Errors, x => IsValidationFailureFor(x, nameof(ReleaseEngineeringBomCommand.EnvironmentId)));
         Assert.Contains(bomResult.Errors, x => IsValidationFailureFor(x, nameof(ReleaseEngineeringBomCommand.Lines)));
+
+        var routingCommandResult = new ReleaseRoutingCommandValidator().Validate(new ReleaseRoutingCommand(
+            "org-001",
+            "env-dev",
+            "ROUTE-1000",
+            "A",
+            "SKU-FG-1000",
+            new DateOnly(2026, 6, 1),
+            [new RoutingOperationCommand(10, null, "mixing", null)]));
+        var routingRequestResult = new ReleaseRoutingRequestValidator().Validate(new ReleaseRoutingRequest(
+            "org-001",
+            "env-dev",
+            "ROUTE-1000",
+            "A",
+            "SKU-FG-1000",
+            new DateOnly(2026, 6, 1),
+            [new RoutingOperationCommand(10, null, "mixing", null)]));
+
+        Assert.True(routingCommandResult.IsValid);
+        Assert.True(routingRequestResult.IsValid);
     }
 
     [Fact]
@@ -732,6 +752,51 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(EngineeringVersionStatus.Archived, routing.Status);
         Assert.Equal(ProductionVersionStatus.Archived, productionVersion.Status);
         Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_rejects_cross_tenant_production_version_archive()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var foreignProductionVersion = ProductionVersion.Create(
+            "org-002",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:A",
+            "ROUTE-3000:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(foreignProductionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-CROSS-TENANT",
+                "Attempt cross-tenant supersede",
+                "approval-3000",
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("production-version", foreignProductionVersion.Id.Id.ToString("D"))]),
+            CancellationToken.None));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ProductionVersionStatus.Active, foreignProductionVersion.Status);
+        Assert.Empty(dbContext.EngineeringChanges);
     }
 
     [Theory]
