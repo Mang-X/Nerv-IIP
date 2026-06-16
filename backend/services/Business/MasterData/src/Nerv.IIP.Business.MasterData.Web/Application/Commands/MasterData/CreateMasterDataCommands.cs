@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
@@ -34,18 +35,40 @@ public sealed record CreateSkuCommand(
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
     IReadOnlyCollection<string> ComplianceTags,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    string? InventoryUomCode = null,
+    string? PurchaseUomCode = null,
+    string? SalesUomCode = null,
+    string? ManufacturingUomCode = null,
+    string? ProcurementType = null,
+    string? MrpType = null,
+    string? LotSizingPolicy = null,
+    decimal? MinimumLotSize = null,
+    decimal? MaximumLotSize = null,
+    decimal? LotSizeMultiple = null,
+    decimal? SafetyStockQuantity = null,
+    decimal? ReorderPointQuantity = null,
+    int? PlannedDeliveryTimeDays = null,
+    int? InHouseProductionTimeDays = null,
+    int? GoodsReceiptProcessingTimeDays = null,
+    string? AbcClass = null,
+    string? LifecycleStatus = "active",
+    bool PurchasingEnabled = true,
+    bool ManufacturingEnabled = true,
+    bool SalesEnabled = true) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, MasterDataResourceResult>
 {
     private readonly ISkuRepository _repository;
     private readonly IReferenceDataCodeRepository? _referenceDataRepository;
+    private readonly ApplicationDbContext? _dbContext;
     private readonly MasterDataCodingService _codingService;
 
     public CreateSkuCommandHandler(ISkuRepository repository, MasterDataCodingService? codingService = null)
     {
         _repository = repository;
         _referenceDataRepository = null;
+        _dbContext = null;
         _codingService = codingService ?? new MasterDataCodingService();
     }
 
@@ -56,12 +79,26 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
     {
         _repository = repository;
         _referenceDataRepository = referenceDataRepository;
+        _dbContext = null;
+        _codingService = codingService ?? new MasterDataCodingService();
+    }
+
+    public CreateSkuCommandHandler(
+        ISkuRepository repository,
+        IReferenceDataCodeRepository referenceDataRepository,
+        ApplicationDbContext dbContext,
+        MasterDataCodingService? codingService = null)
+    {
+        _repository = repository;
+        _referenceDataRepository = referenceDataRepository;
+        _dbContext = dbContext;
         _codingService = codingService ?? new MasterDataCodingService();
     }
 
     public async Task<MasterDataResourceResult> Handle(CreateSkuCommand request, CancellationToken cancellationToken)
     {
         await ValidateControlledReferenceDataAsync(request, cancellationToken);
+        await ValidateChannelUomsAsync(request, cancellationToken);
 
         var allocation = await _codingService.AllocateSkuCodeAsync(
             request.OrganizationId,
@@ -104,9 +141,40 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.StorageConditionCode,
             request.DefaultBarcodeRuleCode,
             request.QualityRequired,
-            request.ComplianceTags);
+            request.ComplianceTags,
+            request.InventoryUomCode,
+            request.PurchaseUomCode,
+            request.SalesUomCode,
+            request.ManufacturingUomCode,
+            request.ProcurementType,
+            request.MrpType,
+            request.LotSizingPolicy,
+            request.MinimumLotSize,
+            request.MaximumLotSize,
+            request.LotSizeMultiple,
+            request.SafetyStockQuantity,
+            request.ReorderPointQuantity,
+            request.PlannedDeliveryTimeDays,
+            request.InHouseProductionTimeDays,
+            request.GoodsReceiptProcessingTimeDays,
+            request.AbcClass,
+            request.LifecycleStatus,
+            request.PurchasingEnabled,
+            request.ManufacturingEnabled,
+            request.SalesEnabled);
         await _repository.AddAsync(sku, cancellationToken);
         return new MasterDataResourceResult("sku", sku.Code, sku.Name);
+    }
+
+    private async Task ValidateChannelUomsAsync(CreateSkuCommand request, CancellationToken cancellationToken)
+    {
+        await SkuChannelUomValidator.ValidateAsync(
+            _dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.BaseUomCode,
+            [request.InventoryUomCode, request.PurchaseUomCode, request.SalesUomCode, request.ManufacturingUomCode],
+            cancellationToken);
     }
 
     private async Task ValidateControlledReferenceDataAsync(CreateSkuCommand request, CancellationToken cancellationToken)
@@ -159,7 +227,76 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.StorageConditionCode,
             request.DefaultBarcodeRuleCode,
             request.QualityRequired,
-            string.Join(',', request.ComplianceTags.Order(StringComparer.Ordinal)));
+            string.Join(',', request.ComplianceTags.Order(StringComparer.Ordinal)),
+            request.InventoryUomCode,
+            request.PurchaseUomCode,
+            request.SalesUomCode,
+            request.ManufacturingUomCode,
+            request.ProcurementType,
+            request.MrpType,
+            request.LotSizingPolicy,
+            request.MinimumLotSize,
+            request.MaximumLotSize,
+            request.LotSizeMultiple,
+            request.SafetyStockQuantity,
+            request.ReorderPointQuantity,
+            request.PlannedDeliveryTimeDays,
+            request.InHouseProductionTimeDays,
+            request.GoodsReceiptProcessingTimeDays,
+            request.AbcClass,
+            request.LifecycleStatus,
+            request.PurchasingEnabled,
+            request.ManufacturingEnabled,
+            request.SalesEnabled);
+    }
+}
+
+internal static class SkuChannelUomValidator
+{
+    public static async Task ValidateAsync(
+        ApplicationDbContext? dbContext,
+        string organizationId,
+        string environmentId,
+        string baseUomCode,
+        IEnumerable<string?> channelUomCodes,
+        CancellationToken cancellationToken)
+    {
+        var baseUom = baseUomCode.Trim();
+        var channelUoms = channelUomCodes
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Where(x => !string.Equals(x, baseUom, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (channelUoms.Length == 0)
+        {
+            return;
+        }
+
+        if (dbContext is null)
+        {
+            throw new KnownException("SKU channel UOM validation requires master data persistence context.");
+        }
+
+        var businessDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var channelUom in channelUoms)
+        {
+            // MVP rule: require an active direct conversion from each channel UOM to the SKU base UOM.
+            // Reverse and transitive conversion paths are intentionally left to a future conversion graph.
+            var hasConversion = await dbContext.UomConversions.AnyAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !x.Disabled &&
+                x.FromUomCode == channelUom &&
+                x.ToUomCode == baseUom &&
+                x.EffectiveFrom <= businessDate &&
+                (x.EffectiveTo == null || x.EffectiveTo >= businessDate),
+                cancellationToken);
+            if (!hasConversion)
+            {
+                throw new KnownException($"SKU channel UOM '{channelUom}' requires an active direct conversion to base UOM '{baseUom}'.");
+            }
+        }
     }
 }
 
@@ -220,7 +357,8 @@ public sealed record CreateUomConversionCommand(
     decimal Offset,
     int Precision,
     string RoundingMode,
-    DateOnly EffectiveFrom) : ICommand<MasterDataResourceResult>;
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateUomConversionCommandHandler(IUomConversionRepository repository, ApplicationDbContext dbContext)
     : ICommandHandler<CreateUomConversionCommand, MasterDataResourceResult>
@@ -256,7 +394,8 @@ public sealed class CreateUomConversionCommandHandler(IUomConversionRepository r
             request.Offset,
             request.Precision,
             request.RoundingMode,
-            request.EffectiveFrom);
+            request.EffectiveFrom,
+            request.EffectiveTo);
         await repository.AddAsync(conversion, cancellationToken);
         return new MasterDataResourceResult("uom-conversion", $"{conversion.FromUomCode}->{conversion.ToUomCode}", $"{conversion.FromUomCode} to {conversion.ToUomCode}");
     }
@@ -270,7 +409,14 @@ public sealed record CreateBusinessPartnerCommand(
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? TaxId = null,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    string? TaxRegionCode = null,
+    string? DefaultCurrencyCode = null,
+    string? PaymentTermsCode = null,
+    string? PrimaryAddress = null,
+    string? PrimaryContactName = null,
+    string? PrimaryContactEmail = null,
+    string? PrimaryContactPhone = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateBusinessPartnerCommand, MasterDataResourceResult>
@@ -311,7 +457,14 @@ public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerReposito
             request.PartnerType,
             request.Name,
             request.PartnerRoles,
-            request.TaxId);
+            request.TaxId,
+            request.TaxRegionCode,
+            request.DefaultCurrencyCode,
+            request.PaymentTermsCode,
+            request.PrimaryAddress,
+            request.PrimaryContactName,
+            request.PrimaryContactEmail,
+            request.PrimaryContactPhone);
         await repository.AddAsync(partner, cancellationToken);
         return new MasterDataResourceResult("business-partner", partner.Code, partner.Name);
     }
@@ -605,7 +758,8 @@ public sealed record CreateShiftCommand(
     TimeOnly StartsAt,
     TimeOnly EndsAt,
     int PaidMinutes,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    int BreakMinutes = 0) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateShiftCommandHandler(IShiftRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateShiftCommand, MasterDataResourceResult>
@@ -619,7 +773,7 @@ public sealed class CreateShiftCommandHandler(IShiftRepository repository, Maste
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.Name, request.StartsAt, request.EndsAt, request.PaidMinutes),
+            MasterDataCodingService.Fingerprint(request.Name, request.StartsAt, request.EndsAt, request.PaidMinutes, request.BreakMinutes),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -639,7 +793,8 @@ public sealed class CreateShiftCommandHandler(IShiftRepository repository, Maste
             request.Name,
             request.StartsAt,
             request.EndsAt,
-            request.PaidMinutes);
+            request.PaidMinutes,
+            request.BreakMinutes);
         await repository.AddAsync(shift, cancellationToken);
         return new MasterDataResourceResult("shift", shift.Code, shift.Name);
     }
@@ -658,7 +813,12 @@ public sealed record CreateWorkCenterCommand(
     string CapacityUnit,
     bool FiniteCapacity,
     string? WorkshopCode = null,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    decimal UtilizationRate = 1m,
+    decimal EfficiencyRate = 1m,
+    int NumberOfCapacities = 1,
+    string? CostCenterCode = null,
+    bool Bottleneck = false) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkCenterCommand, MasterDataResourceResult>
@@ -672,7 +832,7 @@ public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository reposit
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.Name, request.CapacityMinutesPerDay, request.ResourceType, request.PlantCode, request.LineCode, request.DefaultCalendarCode, request.CapacityUnit, request.FiniteCapacity, request.WorkshopCode),
+            MasterDataCodingService.Fingerprint(request.Name, request.CapacityMinutesPerDay, request.ResourceType, request.PlantCode, request.LineCode, request.DefaultCalendarCode, request.CapacityUnit, request.FiniteCapacity, request.WorkshopCode, request.UtilizationRate, request.EfficiencyRate, request.NumberOfCapacities, request.CostCenterCode, request.Bottleneck),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -697,7 +857,12 @@ public sealed class CreateWorkCenterCommandHandler(IWorkCenterRepository reposit
             request.WorkshopCode,
             request.DefaultCalendarCode,
             request.CapacityUnit,
-            request.FiniteCapacity);
+            request.FiniteCapacity,
+            request.UtilizationRate,
+            request.EfficiencyRate,
+            request.NumberOfCapacities,
+            request.CostCenterCode,
+            request.Bottleneck);
         await repository.AddAsync(workCenter, cancellationToken);
         return new MasterDataResourceResult("work-center", workCenter.Code, workCenter.Name);
     }
@@ -708,7 +873,11 @@ public sealed record CreateWorkCalendarCommand(
     string EnvironmentId,
     string? Code,
     string Name,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    string Timezone = "UTC",
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? HolidayCalendarCode = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateWorkCalendarCommandHandler(IWorkCalendarRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateWorkCalendarCommand, MasterDataResourceResult>
@@ -722,7 +891,7 @@ public sealed class CreateWorkCalendarCommandHandler(IWorkCalendarRepository rep
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.Name),
+            MasterDataCodingService.Fingerprint(request.Name, request.Timezone, request.EffectiveFrom, request.EffectiveTo, request.HolidayCalendarCode),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -739,7 +908,11 @@ public sealed class CreateWorkCalendarCommandHandler(IWorkCalendarRepository rep
             request.OrganizationId,
             request.EnvironmentId,
             code,
-            request.Name);
+            request.Name,
+            request.Timezone,
+            request.EffectiveFrom,
+            request.EffectiveTo,
+            request.HolidayCalendarCode);
         await repository.AddAsync(calendar, cancellationToken);
         return new MasterDataResourceResult("work-calendar", calendar.Code, calendar.Name);
     }

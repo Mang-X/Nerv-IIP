@@ -17,7 +17,14 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         string partnerType,
         string name,
         IReadOnlyCollection<string>? partnerRoles,
-        string? taxId)
+        string? taxId,
+        string? taxRegionCode = null,
+        string? defaultCurrencyCode = null,
+        string? paymentTermsCode = null,
+        string? primaryAddress = null,
+        string? primaryContactName = null,
+        string? primaryContactEmail = null,
+        string? primaryContactPhone = null)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -26,6 +33,13 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         PartnerType = PartnerRoles[0];
         Name = Required(name);
         TaxId = Optional(taxId);
+        TaxRegionCode = Optional(taxRegionCode);
+        DefaultCurrencyCode = Optional(defaultCurrencyCode);
+        PaymentTermsCode = Optional(paymentTermsCode);
+        PrimaryAddress = Optional(primaryAddress);
+        PrimaryContactName = Optional(primaryContactName);
+        PrimaryContactEmail = Optional(primaryContactEmail);
+        PrimaryContactPhone = Optional(primaryContactPhone);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(BusinessPartner), OrganizationId, EnvironmentId, Code));
@@ -39,6 +53,13 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     public string[] PartnerRoles { get; private set; } = [];
     public string Name { get; private set; } = string.Empty;
     public string? TaxId { get; private set; }
+    public string? TaxRegionCode { get; private set; }
+    public string? DefaultCurrencyCode { get; private set; }
+    public string? PaymentTermsCode { get; private set; }
+    public string? PrimaryAddress { get; private set; }
+    public string? PrimaryContactName { get; private set; }
+    public string? PrimaryContactEmail { get; private set; }
+    public string? PrimaryContactPhone { get; private set; }
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -55,9 +76,30 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         string partnerType,
         string name,
         IReadOnlyCollection<string>? partnerRoles,
-        string? taxId)
+        string? taxId,
+        string? taxRegionCode = null,
+        string? defaultCurrencyCode = null,
+        string? paymentTermsCode = null,
+        string? primaryAddress = null,
+        string? primaryContactName = null,
+        string? primaryContactEmail = null,
+        string? primaryContactPhone = null)
     {
-        return new BusinessPartner(organizationId, environmentId, code, partnerType, name, partnerRoles, taxId);
+        return new BusinessPartner(
+            organizationId,
+            environmentId,
+            code,
+            partnerType,
+            name,
+            partnerRoles,
+            taxId,
+            taxRegionCode,
+            defaultCurrencyCode,
+            paymentTermsCode,
+            primaryAddress,
+            primaryContactName,
+            primaryContactEmail,
+            primaryContactPhone);
     }
 
     public void Rename(string name)
@@ -70,16 +112,38 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
 
     public void Update(string name, string partnerType)
     {
-        Update(name, [partnerType], TaxId);
+        Update(name, ReplacePrimaryRole(partnerType), TaxId);
     }
 
     public void Update(string name, IReadOnlyCollection<string>? partnerRoles, string? taxId)
     {
+        Update(name, partnerRoles, taxId, TaxRegionCode, DefaultCurrencyCode, PaymentTermsCode, PrimaryAddress, PrimaryContactName, PrimaryContactEmail, PrimaryContactPhone);
+    }
+
+    public void Update(
+        string name,
+        IReadOnlyCollection<string>? partnerRoles,
+        string? taxId,
+        string? taxRegionCode,
+        string? defaultCurrencyCode,
+        string? paymentTermsCode,
+        string? primaryAddress,
+        string? primaryContactName,
+        string? primaryContactEmail,
+        string? primaryContactPhone)
+    {
         EnsureEnabled();
         Name = Required(name);
-        PartnerRoles = NormalizeRoles(PartnerType, partnerRoles);
+        PartnerRoles = NormalizeRoles(partnerRoles?.FirstOrDefault() ?? PartnerType, partnerRoles);
         PartnerType = PartnerRoles[0];
         TaxId = Optional(taxId);
+        TaxRegionCode = Optional(taxRegionCode);
+        DefaultCurrencyCode = Optional(defaultCurrencyCode);
+        PaymentTermsCode = Optional(paymentTermsCode);
+        PrimaryAddress = Optional(primaryAddress);
+        PrimaryContactName = Optional(primaryContactName);
+        PrimaryContactEmail = Optional(primaryContactEmail);
+        PrimaryContactPhone = Optional(primaryContactPhone);
         Touch();
     }
 
@@ -138,5 +202,11 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
             .ToArray();
 
         return roles.Length == 0 ? [Required(partnerType)] : roles;
+    }
+
+    private string[] ReplacePrimaryRole(string partnerType)
+    {
+        var primaryRole = Required(partnerType);
+        return [primaryRole, .. PartnerRoles.Skip(1).Where(role => !string.Equals(role, primaryRole, StringComparison.OrdinalIgnoreCase))];
     }
 }

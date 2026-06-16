@@ -2428,6 +2428,12 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/production-versions/pv-001"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions/pv-001/archive"));
         Assert.All(handler.Requests, request => Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter));
+        var archiveProductionVersionRequestIndex = handler.Requests.FindIndex(request =>
+            request.RequestUri!.PathAndQuery == "/api/business/v1/engineering/production-versions/pv-001/archive");
+        using var archiveProductionVersionDocument = JsonDocument.Parse(handler.RequestBodies[archiveProductionVersionRequestIndex]!);
+        Assert.Equal("org-001", archiveProductionVersionDocument.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", archiveProductionVersionDocument.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("pv-001", archiveProductionVersionDocument.RootElement.GetProperty("productionVersionId").GetString());
     }
 
     [Fact]
@@ -3530,10 +3536,13 @@ public sealed class BusinessGatewayProxyTests
     {
         public List<HttpRequestMessage> Requests { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        public List<string?> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestBodies.Add(request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken));
             Requests.Add(request);
-            return Task.FromResult(responseFactory(request));
+            return responseFactory(request);
         }
     }
 

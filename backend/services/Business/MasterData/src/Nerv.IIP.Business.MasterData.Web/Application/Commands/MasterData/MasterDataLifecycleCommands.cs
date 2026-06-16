@@ -76,7 +76,42 @@ public sealed record UpdateMasterDataResourceCommand(
     IReadOnlyCollection<WorkCalendarExceptionDetail>? Exceptions = null,
     decimal? Factor = null,
     decimal? Offset = null,
-    DateOnly? EffectiveFrom = null) : ICommand<MasterDataResourceDetail>;
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? InventoryUomCode = null,
+    string? PurchaseUomCode = null,
+    string? SalesUomCode = null,
+    string? ManufacturingUomCode = null,
+    string? ProcurementType = null,
+    string? MrpType = null,
+    string? LotSizingPolicy = null,
+    decimal? MinimumLotSize = null,
+    decimal? MaximumLotSize = null,
+    decimal? LotSizeMultiple = null,
+    decimal? SafetyStockQuantity = null,
+    decimal? ReorderPointQuantity = null,
+    int? PlannedDeliveryTimeDays = null,
+    int? InHouseProductionTimeDays = null,
+    int? GoodsReceiptProcessingTimeDays = null,
+    string? AbcClass = null,
+    string? LifecycleStatus = null,
+    bool? PurchasingEnabled = null,
+    bool? ManufacturingEnabled = null,
+    bool? SalesEnabled = null,
+    string? TaxRegionCode = null,
+    string? DefaultCurrencyCode = null,
+    string? PaymentTermsCode = null,
+    string? PrimaryAddress = null,
+    string? PrimaryContactName = null,
+    string? PrimaryContactEmail = null,
+    string? PrimaryContactPhone = null,
+    decimal? UtilizationRate = null,
+    decimal? EfficiencyRate = null,
+    int? NumberOfCapacities = null,
+    string? CostCenterCode = null,
+    bool? Bottleneck = null,
+    string? HolidayCalendarCode = null,
+    int? BreakMinutes = null) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
     string OrganizationId,
@@ -99,9 +134,21 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             case "sku":
                 var sku = await FindSkuAsync(request, cancellationToken);
                 await ValidateSkuControlledReferenceDataAsync(request, cancellationToken);
+                var nextBaseUomCode = request.BaseUomCode ?? sku.BaseUomCode;
+                var nextInventoryUomCode = request.InventoryUomCode ?? sku.InventoryUomCode;
+                var nextPurchaseUomCode = request.PurchaseUomCode ?? sku.PurchaseUomCode;
+                var nextSalesUomCode = request.SalesUomCode ?? sku.SalesUomCode;
+                var nextManufacturingUomCode = request.ManufacturingUomCode ?? sku.ManufacturingUomCode;
+                await SkuChannelUomValidator.ValidateAsync(
+                    dbContext,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    nextBaseUomCode,
+                    [nextInventoryUomCode, nextPurchaseUomCode, nextSalesUomCode, nextManufacturingUomCode],
+                    cancellationToken);
                 sku.UpdateIndustrial(
                     request.Name ?? sku.Name,
-                    request.BaseUomCode ?? sku.BaseUomCode,
+                    nextBaseUomCode,
                     request.Category ?? sku.Category,
                     request.MaterialType ?? sku.MaterialType,
                     request.BatchTrackingPolicy ?? sku.BatchTrackingPolicy,
@@ -109,7 +156,27 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.ShelfLifePolicyCode ?? sku.ShelfLifePolicyCode,
                     request.StorageConditionCode ?? sku.StorageConditionCode,
                     request.DefaultBarcodeRuleCode ?? sku.DefaultBarcodeRuleCode,
-                    request.QualityRequired ?? sku.QualityRequired);
+                    request.QualityRequired ?? sku.QualityRequired,
+                    nextInventoryUomCode,
+                    nextPurchaseUomCode,
+                    nextSalesUomCode,
+                    nextManufacturingUomCode,
+                    request.ProcurementType ?? sku.ProcurementType,
+                    request.MrpType ?? sku.MrpType,
+                    request.LotSizingPolicy ?? sku.LotSizingPolicy,
+                    request.MinimumLotSize ?? sku.MinimumLotSize,
+                    request.MaximumLotSize ?? sku.MaximumLotSize,
+                    request.LotSizeMultiple ?? sku.LotSizeMultiple,
+                    request.SafetyStockQuantity ?? sku.SafetyStockQuantity,
+                    request.ReorderPointQuantity ?? sku.ReorderPointQuantity,
+                    request.PlannedDeliveryTimeDays ?? sku.PlannedDeliveryTimeDays,
+                    request.InHouseProductionTimeDays ?? sku.InHouseProductionTimeDays,
+                    request.GoodsReceiptProcessingTimeDays ?? sku.GoodsReceiptProcessingTimeDays,
+                    request.AbcClass ?? sku.AbcClass,
+                    request.LifecycleStatus ?? sku.LifecycleStatus,
+                    request.PurchasingEnabled ?? sku.PurchasingEnabled,
+                    request.ManufacturingEnabled ?? sku.ManufacturingEnabled,
+                    request.SalesEnabled ?? sku.SalesEnabled);
                 return Detail(sku);
             case "unit-of-measure":
                 var uom = await FindUnitOfMeasureAsync(request, cancellationToken);
@@ -126,7 +193,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Factor ?? conversion.Factor,
                     request.Offset ?? conversion.Offset,
                     request.Precision ?? conversion.Precision,
-                    request.RoundingMode ?? conversion.RoundingMode);
+                    request.RoundingMode ?? conversion.RoundingMode,
+                    request.EffectiveTo ?? conversion.EffectiveTo);
                 return Detail(conversion);
             case "business-partner":
                 var partner = await FindBusinessPartnerAsync(request, cancellationToken);
@@ -136,6 +204,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     await dbContext.BusinessPartners.AnyAsync(x =>
                         x.OrganizationId == request.OrganizationId &&
                         x.EnvironmentId == request.EnvironmentId &&
+                        x.Code != partner.Code &&
+                        !x.Disabled &&
                         x.TaxId == taxId,
                         cancellationToken))
                 {
@@ -145,7 +215,14 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 partner.Update(
                     request.Name ?? partner.Name,
                     request.PartnerRoles ?? [request.PartnerType ?? partner.PartnerType],
-                    taxId ?? partner.TaxId);
+                    taxId ?? partner.TaxId,
+                    request.TaxRegionCode ?? partner.TaxRegionCode,
+                    request.DefaultCurrencyCode ?? partner.DefaultCurrencyCode,
+                    request.PaymentTermsCode ?? partner.PaymentTermsCode,
+                    request.PrimaryAddress ?? partner.PrimaryAddress,
+                    request.PrimaryContactName ?? partner.PrimaryContactName,
+                    request.PrimaryContactEmail ?? partner.PrimaryContactEmail,
+                    request.PrimaryContactPhone ?? partner.PrimaryContactPhone);
                 return Detail(partner);
             case "site":
                 var site = await FindSiteAsync(request, cancellationToken);
@@ -178,7 +255,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Name ?? shift.Name,
                     request.StartsAt ?? shift.StartsAt,
                     request.EndsAt ?? shift.EndsAt,
-                    request.PaidMinutes ?? shift.PaidMinutes);
+                    request.PaidMinutes ?? shift.PaidMinutes,
+                    request.BreakMinutes ?? shift.BreakMinutes);
                 return Detail(shift);
             case "work-calendar":
                 var calendar = await FindWorkCalendarAsync(request, cancellationToken);
@@ -186,7 +264,11 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Name ?? calendar.Name,
                     request.WorkingTimes?.Select(x => new WorkCalendarWorkingTime(x.DayOfWeek)).ToArray(),
                     request.Holidays?.Select(x => new WorkCalendarHoliday(x.Date, x.Name)).ToArray(),
-                    request.Exceptions?.Select(x => new WorkCalendarException(x.Date, x.IsWorkingDay, x.StartsAt, x.EndsAt, x.Reason)).ToArray());
+                    request.Exceptions?.Select(x => new WorkCalendarException(x.Date, x.IsWorkingDay, x.StartsAt, x.EndsAt, x.Reason)).ToArray(),
+                    request.Timezone ?? calendar.Timezone,
+                    request.EffectiveFrom ?? calendar.EffectiveFrom,
+                    request.EffectiveTo ?? calendar.EffectiveTo,
+                    request.HolidayCalendarCode ?? calendar.HolidayCalendarCode);
                 return Detail(calendar);
             case "production-line":
                 var line = await FindProductionLineAsync(request, cancellationToken);
@@ -203,7 +285,12 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.WorkshopCode ?? workCenter.WorkshopCode,
                     request.DefaultCalendarCode ?? workCenter.DefaultCalendarCode,
                     request.CapacityUnit ?? workCenter.CapacityUnit,
-                    request.FiniteCapacity ?? workCenter.FiniteCapacity);
+                    request.FiniteCapacity ?? workCenter.FiniteCapacity,
+                    request.UtilizationRate ?? workCenter.UtilizationRate,
+                    request.EfficiencyRate ?? workCenter.EfficiencyRate,
+                    request.NumberOfCapacities ?? workCenter.NumberOfCapacities,
+                    request.CostCenterCode ?? workCenter.CostCenterCode,
+                    request.Bottleneck ?? workCenter.Bottleneck);
                 return Detail(workCenter);
             case "device-asset":
                 var device = await FindDeviceAssetAsync(request, cancellationToken);
@@ -392,16 +479,32 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             x.StorageConditionCode,
             x.DefaultBarcodeRuleCode,
             x.QualityRequired,
-            Status: x.Disabled ? "disabled" : "active");
+            Status: x.Disabled ? "disabled" : x.LifecycleStatus,
+            ProcurementType: x.ProcurementType,
+            MrpType: x.MrpType,
+            LotSizingPolicy: x.LotSizingPolicy,
+            MinimumLotSize: x.MinimumLotSize,
+            MaximumLotSize: x.MaximumLotSize,
+            LotSizeMultiple: x.LotSizeMultiple,
+            SafetyStockQuantity: x.SafetyStockQuantity,
+            ReorderPointQuantity: x.ReorderPointQuantity,
+            PlannedDeliveryTimeDays: x.PlannedDeliveryTimeDays,
+            InHouseProductionTimeDays: x.InHouseProductionTimeDays,
+            GoodsReceiptProcessingTimeDays: x.GoodsReceiptProcessingTimeDays,
+            AbcClass: x.AbcClass,
+            LifecycleStatus: x.LifecycleStatus,
+            PurchasingEnabled: x.PurchasingEnabled,
+            ManufacturingEnabled: x.ManufacturingEnabled,
+            SalesEnabled: x.SalesEnabled);
 
     internal static MasterDataResourceDetail Detail(UnitOfMeasure x) =>
         new("unit-of-measure", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DimensionType: x.DimensionType, Precision: x.Precision, RoundingMode: x.RoundingMode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(UomConversion x) =>
-        new("uom-conversion", $"{x.FromUomCode}->{x.ToUomCode}", $"{x.FromUomCode} to {x.ToUomCode}", !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Status: x.Disabled ? "disabled" : "active", FromUomCode: x.FromUomCode, ToUomCode: x.ToUomCode, Factor: x.Factor, Offset: x.Offset, Precision: x.Precision, RoundingMode: x.RoundingMode, EffectiveFrom: x.EffectiveFrom);
+        new("uom-conversion", $"{x.FromUomCode}->{x.ToUomCode}", $"{x.FromUomCode} to {x.ToUomCode}", !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Status: x.Disabled ? "disabled" : "active", FromUomCode: x.FromUomCode, ToUomCode: x.ToUomCode, Factor: x.Factor, Offset: x.Offset, Precision: x.Precision, RoundingMode: x.RoundingMode, EffectiveFrom: x.EffectiveFrom, EffectiveTo: x.EffectiveTo);
 
     internal static MasterDataResourceDetail Detail(BusinessPartner x) =>
-        new("business-partner", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PartnerType: x.PartnerType, PartnerRoles: x.PartnerRoles, TaxId: x.TaxId, Status: x.Disabled ? "disabled" : "active");
+        new("business-partner", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PartnerType: x.PartnerType, PartnerRoles: x.PartnerRoles, TaxId: x.TaxId, Status: x.Disabled ? "disabled" : "active", TaxRegionCode: x.TaxRegionCode, DefaultCurrencyCode: x.DefaultCurrencyCode, PaymentTermsCode: x.PaymentTermsCode, PrimaryAddress: x.PrimaryAddress, PrimaryContactName: x.PrimaryContactName, PrimaryContactEmail: x.PrimaryContactEmail, PrimaryContactPhone: x.PrimaryContactPhone);
 
     internal static MasterDataResourceDetail Detail(Site x) =>
         new("site", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, Timezone: x.Timezone, Status: x.Disabled ? "disabled" : "active");
@@ -416,7 +519,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("team", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, DepartmentCode: x.DepartmentCode, ShiftCode: x.ShiftCode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(Shift x) =>
-        new("shift", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, StartsAt: x.StartsAt, EndsAt: x.EndsAt, PaidMinutes: x.PaidMinutes, Status: x.Disabled ? "disabled" : "active");
+        new("shift", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, StartsAt: x.StartsAt, EndsAt: x.EndsAt, PaidMinutes: x.PaidMinutes, Status: x.Disabled ? "disabled" : "active", BreakMinutes: x.BreakMinutes);
 
     internal static MasterDataResourceDetail Detail(WorkCalendar x) =>
         new(
@@ -429,6 +532,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             x.EnvironmentId,
             x.Name,
             Status: x.Disabled ? "disabled" : "active",
+            Timezone: x.Timezone,
+            EffectiveFrom: x.EffectiveFrom,
+            EffectiveTo: x.EffectiveTo,
+            HolidayCalendarCode: x.HolidayCalendarCode,
             WorkingTimes: x.WorkingTimes.Select(y => new WorkCalendarWorkingTimeDetail(y.DayOfWeek)).ToArray(),
             Holidays: x.Holidays.Select(y => new WorkCalendarHolidayDetail(y.Date, y.Name)).ToArray(),
             Exceptions: x.Exceptions.Select(y => new WorkCalendarExceptionDetail(y.Date, y.IsWorkingDay, y.StartsAt, y.EndsAt, y.Reason)).ToArray());
@@ -437,7 +544,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("production-line", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, WorkshopCode: x.WorkshopCode, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(WorkCenter x) =>
-        new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active");
+        new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active", UtilizationRate: x.UtilizationRate, EfficiencyRate: x.EfficiencyRate, NumberOfCapacities: x.NumberOfCapacities, EffectiveCapacityMinutesPerDay: x.EffectiveCapacityMinutesPerDay, CostCenterCode: x.CostCenterCode, Bottleneck: x.Bottleneck);
 
     internal static MasterDataResourceDetail Detail(DeviceAsset x) =>
         new("device-asset", x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Model: x.Model, LineCode: x.LineCode, WorkCenterCode: x.WorkCenterCode, AssetClassCode: x.AssetClassCode, Manufacturer: x.Manufacturer, SerialNo: x.SerialNo, MinimumCapacity: x.MinimumCapacity, MaximumCapacity: x.MaximumCapacity, CapacityUomCode: x.CapacityUomCode, Criticality: x.Criticality, Maintainable: x.Maintainable, TelemetryEnabled: x.TelemetryEnabled, Status: x.Disabled ? "disabled" : "active");

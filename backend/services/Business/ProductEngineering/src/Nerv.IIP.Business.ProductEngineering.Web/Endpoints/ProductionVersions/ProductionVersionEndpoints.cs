@@ -78,6 +78,8 @@ public sealed class CreateProductionVersionEndpoint(ISender sender)
 }
 
 public sealed record UpdateProductionVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
     string ProductionVersionId,
     string MbomVersionId,
     string RoutingVersionId,
@@ -100,6 +102,8 @@ public sealed class UpdateProductionVersionEndpoint(ISender sender)
     public override async Task HandleAsync(UpdateProductionVersionRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new UpdateProductionVersionCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
             req.ProductionVersionId,
             req.MbomVersionId,
             req.RoutingVersionId,
@@ -113,7 +117,11 @@ public sealed class UpdateProductionVersionEndpoint(ISender sender)
     }
 }
 
-public sealed record ArchiveProductionVersionRequest(string ProductionVersionId, string Reason);
+public sealed record ArchiveProductionVersionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ProductionVersionId,
+    string Reason);
 
 public sealed class ArchiveProductionVersionEndpoint(ISender sender)
     : ProductionVersionEndpoint<ArchiveProductionVersionRequest, ResponseData<object>>
@@ -126,7 +134,7 @@ public sealed class ArchiveProductionVersionEndpoint(ISender sender)
 
     public override async Task HandleAsync(ArchiveProductionVersionRequest req, CancellationToken ct)
     {
-        await sender.Send(new ArchiveProductionVersionCommand(req.ProductionVersionId, req.Reason), ct);
+        await sender.Send(new ArchiveProductionVersionCommand(req.OrganizationId, req.EnvironmentId, req.ProductionVersionId, req.Reason), ct);
         await Send.OkAsync(new object().AsResponseData(), ct);
     }
 }
