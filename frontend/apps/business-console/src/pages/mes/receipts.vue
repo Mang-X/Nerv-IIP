@@ -21,8 +21,6 @@ import {
   Input,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -62,10 +60,27 @@ const statusFilter = computed({
 })
 const statusOptions = [
   { label: '全部状态', value: 'all' },
-  { label: '待处理', value: 'Pending' },
-  { label: '已完成', value: 'Completed' },
+  { label: '待入库', value: 'Pending' },
+  { label: '已入库', value: 'Completed' },
   { label: '失败', value: 'Failed' },
 ]
+
+// 完工入库申请状态的可读中文标签（与一线 / PDA 完工入库口径一致：待入库 / 部分入库 / 已入库…）。
+// 通用 StatusBadge 会把 Completed 解析成「已完成」，但本域语义是「已入库」，故按入库上下文显式映射。
+const RECEIPT_STATUS_LABELS: Record<string, string> = {
+  Requested: '待入库',
+  Pending: '待入库',
+  Created: '待入库',
+  Submitted: '待入库',
+  PartiallyReceived: '部分入库',
+  Received: '已入库',
+  Completed: '已入库',
+  Cancelled: '已取消',
+  Rejected: '已驳回',
+}
+function receiptStatusLabel(status?: string | null) {
+  return RECEIPT_STATUS_LABELS[status ?? ''] ?? '未知状态'
+}
 
 const form = reactive({
   organizationId: filters.organizationId,
@@ -80,7 +95,6 @@ const form = reactive({
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
 const createErrorMessage = computed(() => formatError(createReceiptRequestError.value))
-const pendingCount = computed(() => receiptRequests.value.filter((item) => item.receiptStatus !== 'Completed').length)
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>
@@ -110,12 +124,15 @@ watch(
 
 type ReceiptRow = (typeof receiptRequests)['value'][number]
 const columns: DataTableColumn<ReceiptRow>[] = [
-  { key: 'receiptRequestId', header: '请求号', cellClass: 'font-medium', accessor: (r) => r.receiptRequestId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
-  { key: 'skuId', header: '物料', accessor: (r) => r.skuId ?? '无' },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
-  { key: 'receiptStatus', header: '状态', width: 'w-24' },
-  { key: 'requestedAtUtc', header: '请求时间', width: 'w-44' },
+  // TODO(#420): receiptRequestId 为后端 GUID，仅作行 key；人读单号用 requestNo，后端未回时降级占位，不显裸 GUID。
+  { key: 'requestNo', header: '入库单', cellClass: 'font-medium' },
+  // TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。
+  { key: 'workOrderId', header: '工单' },
+  // TODO(#420): skuId 为后端 GUID，facade 暂不回 skuCode/物料名称；不显裸 GUID，仅占位提示。
+  { key: 'skuId', header: '成品' },
+  { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
+  { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
+  { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 
@@ -142,7 +159,10 @@ async function submitReceiptRequest() {
     idempotencyKey: optionalText(form.idempotencyKey) ?? `receipt-${form.workOrderId.trim()}`,
   }
   await createReceiptRequest(body)
-  successMessage.value = `完工入库请求 ${body.workOrderId} 已提交。`
+  if (createReceiptRequestError.value) return
+  successMessage.value = '成品入库登记已提交，可在列表查看入库状态。'
+  receiptSheetOpen.value = false
+  await refreshReceiptRequests()
 }
 
 function formatDateTime(value?: string | null) {
@@ -183,11 +203,11 @@ function isNonEmpty(value: string) {
 
 <template>
   <BusinessLayout>
-    <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${receiptRequestsTotal} 条入库请求`">
+    <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${receiptRequestsTotal} 条入库登记`">
       <template #actions>
         <Button size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
           <PackageCheckIcon aria-hidden="true" />
-          {{ hasReceiptContext ? '新增入库请求' : '从工单详情发起' }}
+          {{ hasReceiptContext ? '登记完工入库' : '从工单详情发起' }}
         </Button>
         <Button size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
           <RefreshCwIcon aria-hidden="true" />
@@ -196,16 +216,15 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="入库请求" :value="receiptRequestsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页待处理" :value="pendingCount" hint="当前页统计" />
-      <SectionCard description="本页已完成" :value="receiptRequests.length - pendingCount" hint="当前页统计" />
-    </SectionCards>
+    <p class="text-sm text-muted-foreground">
+      这里登记<span class="font-medium text-foreground">完工成品的入库</span>并跟踪入库状态：末道工序报完工后，在此把成品<span class="font-medium text-foreground">登记入库</span>。
+      工单与成品由报工完成或工单详情带出；点行内<span class="font-medium text-foreground">查看工单</span>可回到源工单追溯。
+    </p>
 
     <Toolbar :show-search="false">
       <template #filters>
         <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="入库状态"><SelectValue /></SelectTrigger>
+          <SelectTrigger class="h-9 w-32" aria-label="按入库状态筛选"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
           </SelectContent>
@@ -220,13 +239,36 @@ function isNonEmpty(value: string) {
       :rows="receiptRequests"
       row-key="receiptRequestId"
       :loading="receiptRequestsPending"
-      empty-message="暂无完工入库请求。通常从报工完成、质量放行或工单详情发起。"
+      empty-message="还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。"
     >
+      <!-- TODO(#420): 优先用人读单号 requestNo；后端未回时降级占位，不显裸 GUID 当标识。 -->
+      <template #cell-requestNo="{ row }">
+        <span v-if="row.requestNo">{{ row.requestNo }}</span>
+        <span v-else class="text-muted-foreground">单号待接入</span>
+      </template>
+      <!-- TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。 -->
+      <template #cell-workOrderId="{ row }">
+        <button
+          v-if="row.workOrderId"
+          type="button"
+          class="text-brand underline-offset-4 hover:underline"
+          @click="openWorkOrder(row.workOrderId)"
+        >
+          查看工单
+        </button>
+        <span v-else class="text-muted-foreground">未关联工单</span>
+      </template>
+      <!-- TODO(#420): facade 暂只回 skuId(GUID)，无 skuCode/物料名称可解析；不硬显 GUID 当人读标识，仅占位提示。 -->
+      <template #cell-skuId="{ row }">
+        <span class="text-sm text-muted-foreground">{{ row.skuId ? '物料名称待接入' : '无' }}</span>
+      </template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
-      <template #cell-receiptStatus="{ row }"><StatusBadge :value="row.receiptStatus" /></template>
+      <template #cell-receiptStatus="{ row }">
+        <StatusBadge :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
+      </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`入库请求操作 ${row.receiptRequestId ?? ''}`">
+        <RowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
           <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
             <EyeIcon aria-hidden="true" />
             查看工单
@@ -240,8 +282,8 @@ function isNonEmpty(value: string) {
     <Dialog v-model:open="receiptSheetOpen">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>新增入库请求</DialogTitle>
-          <DialogDescription>用于生产完成后的成品入库申请，工单和物料由工单详情或报工完成结果带出。</DialogDescription>
+          <DialogTitle>登记完工入库</DialogTitle>
+          <DialogDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量和单位。</DialogDescription>
         </DialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitReceiptRequest">
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
@@ -253,11 +295,11 @@ function isNonEmpty(value: string) {
               <Input id="receipt-work-order" v-model="form.workOrderId" readonly required />
             </Field>
             <Field>
-              <FieldLabel for="receipt-sku">物料</FieldLabel>
+              <FieldLabel for="receipt-sku">成品</FieldLabel>
               <Input id="receipt-sku" v-model="form.skuId" readonly required />
             </Field>
             <Field>
-              <FieldLabel for="receipt-quantity">数量</FieldLabel>
+              <FieldLabel for="receipt-quantity">入库数量</FieldLabel>
               <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0" required type="number" />
             </Field>
             <Field>
@@ -265,7 +307,7 @@ function isNonEmpty(value: string) {
               <Input id="receipt-uom" v-model="form.uomCode" required />
             </Field>
             <Field>
-              <FieldLabel for="receipt-requested-at">请求时间</FieldLabel>
+              <FieldLabel for="receipt-requested-at">登记时间</FieldLabel>
               <Input id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
             </Field>
           </FieldGroup>
@@ -275,7 +317,7 @@ function isNonEmpty(value: string) {
             <Button type="submit" :disabled="createReceiptRequestPending || !canCreate">
               <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
               <PackageCheckIcon v-else aria-hidden="true" />
-              提交入库请求
+              提交入库登记
             </Button>
           </DialogFooter>
         </form>

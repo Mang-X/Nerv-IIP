@@ -116,6 +116,18 @@ test('报工记录：报工历史渲染产量、回链工单可点', async ({ pa
   await expect(page).toHaveURL(/\/mes\/work-orders\/WO-001/)
 })
 
+test('完工入库：直接开为只读、回链工单；带工单上下文进来自动开登记弹窗', async ({ page }) => {
+  // 直接打开：登记需从工单详情带上下文，按钮禁用并提示「从工单详情发起」。
+  await page.goto('/mes/receipts', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator('[data-slot="breadcrumb-page"]').filter({ hasText: '完工入库' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('查看工单').first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: '从工单详情发起' })).toBeDisabled()
+
+  // 带工单上下文进来（模拟工单完工跳转）→ 登记弹窗自动打开（抓跨页带参+可登记）。
+  await page.goto('/mes/receipts?workOrderId=WO-001&skuId=sku-1&quantity=5', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 15_000 })
+})
+
 async function expectHeading(page: Page, path: string, heading: string) {
   await page.goto(path, { waitUntil: 'domcontentloaded' })
   // 慢的 dev 环境 + 连续多页导航，放宽到 15s。
