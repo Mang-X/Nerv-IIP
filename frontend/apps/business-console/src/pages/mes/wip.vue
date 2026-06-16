@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { useMesWipSummary } from '@/composables/useBusinessMes'
+import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -9,36 +9,51 @@ import {
   DataTablePagination,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const goodTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
-const scrapTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
+const router = useRouter()
+
+// 本页卡点：当前页存在阻塞原因的在制行——驱动「排阻塞」动作（非机械计数，不冒充后端总量）。
+const blockedCount = computed(() => wipRows.value.filter((r) => r.blockingReasons?.length).length)
 const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
 const columns: DataTableColumn<WipRow>[] = [
-  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderId ?? '无' },
-  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  // TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。
+  { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
+  // TODO(#420): operationTaskId 为后端 GUID，facade 暂不回工序号；不显裸 GUID，降级占位。
+  { key: 'operationTaskId', header: '工序' },
+  // TODO(#420): workCenterId 为后端 GUID，facade 暂不回工作中心名称；不显裸 GUID，降级占位。
+  { key: 'workCenterId', header: '工作中心' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'plannedQuantity', header: '计划数', align: 'end', width: 'w-20' },
-  { key: 'goodQuantity', header: '良品', align: 'end', width: 'w-20' },
-  { key: 'scrapQuantity', header: '报废', align: 'end', width: 'w-20' },
-  { key: 'blockingReasons', header: '阻塞原因', accessor: (r) => r.blockingReasons?.join('，') || '无' },
+  { key: 'progress', header: '在制进度', width: 'w-48', accessor: (r) => r.goodQuantity ?? 0 },
+  { key: 'blockingReasons', header: '卡点' },
 ]
 
-function formatQuantity(value?: number) {
+// 完成度（0–1）= 已产良品 / 计划数，用于进度条宽度。
+function progressRatio(row: WipRow) {
+  const planned = row.plannedQuantity ?? 0
+  if (planned <= 0) return row.goodQuantity != null && row.goodQuantity > 0 ? 1 : 0
+  return Math.min(1, Math.max(0, (row.goodQuantity ?? 0) / planned))
+}
+function readinessList(reasons?: string[] | null) {
+  return (reasons ?? []).map(describeMesReadinessReason)
+}
+function openWorkOrder(workOrderId?: string | null) {
+  if (!workOrderId) return
+  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+}
+function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
 function formatError(error: unknown) {
@@ -57,11 +72,16 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="在制行" :value="wipTotal" hint="后端筛选总数" />
-      <SectionCard description="本页良品数" :value="formatQuantity(goodTotal)" hint="当前页合计" />
-      <SectionCard description="本页报废数" :value="formatQuantity(scrapTotal)" hint="当前页合计" />
-    </SectionCards>
+    <p class="text-sm text-muted-foreground">
+      这里跟踪在制工单与工序的<span class="font-medium text-foreground">进度与卡点</span>：看
+      <span class="font-medium text-foreground">已产 / 计划</span>判断完成度、看
+      <span class="font-medium text-foreground">卡点</span>知道为何停。本页只读追溯，
+      <span class="font-medium text-foreground">报工去工序执行</span>。
+    </p>
+
+    <p v-if="!wipPending && wipRows.length" class="text-sm text-muted-foreground" aria-live="polite">
+      本页在制 {{ wipRows.length }} 行<template v-if="blockedCount">，其中 <span class="font-medium text-warning">{{ blockedCount }} 行有卡点</span>需先排查</template>。
+    </p>
 
     <Toolbar :show-search="false">
       <template #filters>
@@ -76,12 +96,54 @@ function formatError(error: unknown) {
       :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
-      empty-message="暂无在制数据。工单释放并排程后，在制行会出现在这里。"
+      empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
     >
+      <!-- TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。 -->
+      <template #cell-workOrderId="{ row }">
+        <button
+          v-if="row.workOrderId"
+          type="button"
+          class="text-brand underline-offset-4 hover:underline"
+          @click="openWorkOrder(row.workOrderId)"
+        >
+          查看工单
+        </button>
+        <span v-else class="text-muted-foreground">未关联工单</span>
+      </template>
+      <!-- TODO(#420): operationTaskId 为后端 GUID，facade 暂不回工序号；不显裸 GUID，降级占位。 -->
+      <template #cell-operationTaskId="{ row }">
+        <span class="text-muted-foreground">{{ row.operationTaskId ? '工序待接入' : '无' }}</span>
+      </template>
+      <!-- TODO(#420): workCenterId 为后端 GUID，facade 暂不回工作中心名称；不显裸 GUID，降级占位。 -->
+      <template #cell-workCenterId="{ row }">
+        <span class="text-muted-foreground">{{ row.workCenterId ? '工作中心待接入' : '未指定' }}</span>
+      </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-      <template #cell-plannedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span></template>
-      <template #cell-goodQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.goodQuantity) }}</span></template>
-      <template #cell-scrapQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.scrapQuantity) }}</span></template>
+      <template #cell-progress="{ row }">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm tabular-nums">
+            已产 {{ formatQuantity(row.goodQuantity) }} / 计划 {{ formatQuantity(row.plannedQuantity) }}
+          </span>
+          <div class="h-1.5 w-full overflow-hidden rounded-full bg-muted" role="presentation">
+            <div
+              class="h-full rounded-full bg-success transition-all"
+              :style="{ width: `${Math.round(progressRatio(row) * 100)}%` }"
+            />
+          </div>
+          <span v-if="(row.scrapQuantity ?? 0) > 0" class="text-xs text-warning tabular-nums">
+            报废 {{ formatQuantity(row.scrapQuantity) }}
+          </span>
+        </div>
+      </template>
+      <template #cell-blockingReasons="{ row }">
+        <div v-if="row.blockingReasons?.length" class="grid gap-2">
+          <div v-for="reason in readinessList(row.blockingReasons)" :key="`${row.operationTaskId}-${reason.code}`" class="grid gap-0.5">
+            <StatusBadge :label="reason.label" tone="warning" />
+            <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
+          </div>
+        </div>
+        <span v-else class="text-muted-foreground">无卡点</span>
+      </template>
     </DataTable>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
