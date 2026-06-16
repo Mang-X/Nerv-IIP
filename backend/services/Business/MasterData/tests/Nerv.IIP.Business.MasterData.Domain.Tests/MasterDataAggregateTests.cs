@@ -176,6 +176,102 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Sku_can_hold_channel_uoms_planning_defaults_and_lifecycle_gates()
+    {
+        var sku = Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-PLAN-001",
+            "Planned Finished Good",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            inventoryUomCode: "EA",
+            purchaseUomCode: "BOX",
+            salesUomCode: "CASE",
+            manufacturingUomCode: "EA",
+            procurementType: "make",
+            mrpType: "pd",
+            lotSizingPolicy: "fixed-lot",
+            minimumLotSize: 10m,
+            maximumLotSize: 1000m,
+            lotSizeMultiple: 5m,
+            safetyStockQuantity: 25m,
+            reorderPointQuantity: 50m,
+            plannedDeliveryTimeDays: 7,
+            inHouseProductionTimeDays: 2,
+            goodsReceiptProcessingTimeDays: 1,
+            abcClass: "A",
+            lifecycleStatus: "blocked",
+            purchasingEnabled: false,
+            manufacturingEnabled: true,
+            salesEnabled: false);
+
+        Assert.Equal("BOX", sku.PurchaseUomCode);
+        Assert.Equal("CASE", sku.SalesUomCode);
+        Assert.Equal("make", sku.ProcurementType);
+        Assert.Equal("pd", sku.MrpType);
+        Assert.Equal("fixed-lot", sku.LotSizingPolicy);
+        Assert.Equal(25m, sku.SafetyStockQuantity);
+        Assert.Equal(50m, sku.ReorderPointQuantity);
+        Assert.Equal(7, sku.PlannedDeliveryTimeDays);
+        Assert.Equal("A", sku.AbcClass);
+        Assert.Equal("blocked", sku.LifecycleStatus);
+        Assert.False(sku.PurchasingEnabled);
+        Assert.True(sku.ManufacturingEnabled);
+        Assert.False(sku.SalesEnabled);
+    }
+
+    [Fact]
+    public void Business_partner_update_changes_primary_role_and_commercial_defaults()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-001",
+            "supplier",
+            "Partner",
+            ["supplier"],
+            "TAX-001",
+            taxRegionCode: "CN-SH",
+            defaultCurrencyCode: "CNY",
+            paymentTermsCode: "NET30",
+            primaryAddress: "Shanghai",
+            primaryContactName: "Li Wei",
+            primaryContactEmail: "li.wei@example.com",
+            primaryContactPhone: "+86-21-0000");
+
+        partner.Update(
+            "Partner Updated",
+            ["customer", "supplier"],
+            "TAX-002",
+            taxRegionCode: "CN-BJ",
+            defaultCurrencyCode: "USD",
+            paymentTermsCode: "NET45",
+            primaryAddress: "Beijing",
+            primaryContactName: "Wang Min",
+            primaryContactEmail: "wang.min@example.com",
+            primaryContactPhone: "+86-10-0000");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "supplier"], partner.PartnerRoles);
+        Assert.Equal("CN-BJ", partner.TaxRegionCode);
+        Assert.Equal("USD", partner.DefaultCurrencyCode);
+        Assert.Equal("NET45", partner.PaymentTermsCode);
+        Assert.Equal("Beijing", partner.PrimaryAddress);
+        Assert.Equal("Wang Min", partner.PrimaryContactName);
+        Assert.Equal("wang.min@example.com", partner.PrimaryContactEmail);
+        Assert.Equal("+86-10-0000", partner.PrimaryContactPhone);
+    }
+
+    [Fact]
     public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
     {
         var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");
@@ -208,7 +304,12 @@ public sealed class MasterDataAggregateTests
             "WS-MIX",
             "CAL-24X5",
             "L",
-            true);
+            true,
+            utilizationRate: 0.85m,
+            efficiencyRate: 0.9m,
+            numberOfCapacities: 3,
+            costCenterCode: "CC-MIX",
+            bottleneck: true);
         var asset = DeviceAsset.RegisterCapability(
             "org-001",
             "env-dev",
@@ -230,9 +331,56 @@ public sealed class MasterDataAggregateTests
         Assert.Equal("process-unit", workCenter.ResourceType);
         Assert.Equal("PLANT-01", workCenter.PlantCode);
         Assert.Equal("WS-MIX", workCenter.WorkshopCode);
+        Assert.Equal(0.85m, workCenter.UtilizationRate);
+        Assert.Equal(0.9m, workCenter.EfficiencyRate);
+        Assert.Equal(3, workCenter.NumberOfCapacities);
+        Assert.Equal("CC-MIX", workCenter.CostCenterCode);
+        Assert.True(workCenter.Bottleneck);
+        Assert.Equal(1652.4m, workCenter.EffectiveCapacityMinutesPerDay);
         Assert.Equal("L", asset.CapacityUomCode);
         Assert.Equal(500m, asset.MinimumCapacity);
         Assert.Equal("MIXER-01", asset.ExternalReferences["scada"]);
+    }
+
+    [Fact]
+    public void Uom_calendar_and_shift_capture_effective_window_timezone_and_breaks()
+    {
+        var conversion = UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "BOX",
+            "EA",
+            24m,
+            0m,
+            3,
+            "half-up",
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31));
+        var calendar = WorkCalendar.Create(
+            "org-001",
+            "env-dev",
+            "CAL-SH",
+            "Shanghai Calendar",
+            "Asia/Shanghai",
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31),
+            "CN-2026");
+        var shift = Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-DAY",
+            "Day Shift",
+            new TimeOnly(8, 0),
+            new TimeOnly(17, 0),
+            480,
+            60);
+
+        Assert.Equal(new DateOnly(2026, 12, 31), conversion.EffectiveTo);
+        Assert.Equal("Asia/Shanghai", calendar.Timezone);
+        Assert.Equal("CN-2026", calendar.HolidayCalendarCode);
+        Assert.Equal(new DateOnly(2026, 1, 1), calendar.EffectiveFrom);
+        Assert.Equal(new DateOnly(2026, 12, 31), calendar.EffectiveTo);
+        Assert.Equal(60, shift.BreakMinutes);
     }
 
     [Fact]
