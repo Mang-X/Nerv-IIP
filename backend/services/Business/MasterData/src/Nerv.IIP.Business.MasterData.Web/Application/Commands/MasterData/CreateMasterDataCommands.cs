@@ -168,34 +168,13 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 
     private async Task ValidateChannelUomsAsync(CreateSkuCommand request, CancellationToken cancellationToken)
     {
-        if (_dbContext is null)
-        {
-            return;
-        }
-
-        var baseUom = request.BaseUomCode.Trim();
-        foreach (var channelUom in new[] { request.InventoryUomCode, request.PurchaseUomCode, request.SalesUomCode, request.ManufacturingUomCode }
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (string.Equals(channelUom, baseUom, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var hasConversion = await _dbContext.UomConversions.AnyAsync(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                !x.Disabled &&
-                x.FromUomCode == channelUom &&
-                x.ToUomCode == baseUom,
-                cancellationToken);
-            if (!hasConversion)
-            {
-                throw new KnownException($"SKU channel UOM '{channelUom}' requires an active conversion to base UOM '{baseUom}'.");
-            }
-        }
+        await SkuChannelUomValidator.ValidateAsync(
+            _dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.BaseUomCode,
+            [request.InventoryUomCode, request.PurchaseUomCode, request.SalesUomCode, request.ManufacturingUomCode],
+            cancellationToken);
     }
 
     private async Task ValidateControlledReferenceDataAsync(CreateSkuCommand request, CancellationToken cancellationToken)
@@ -269,6 +248,55 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.PurchasingEnabled,
             request.ManufacturingEnabled,
             request.SalesEnabled);
+    }
+}
+
+internal static class SkuChannelUomValidator
+{
+    public static async Task ValidateAsync(
+        ApplicationDbContext? dbContext,
+        string organizationId,
+        string environmentId,
+        string baseUomCode,
+        IEnumerable<string?> channelUomCodes,
+        CancellationToken cancellationToken)
+    {
+        var baseUom = baseUomCode.Trim();
+        var channelUoms = channelUomCodes
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Where(x => !string.Equals(x, baseUom, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (channelUoms.Length == 0)
+        {
+            return;
+        }
+
+        if (dbContext is null)
+        {
+            throw new KnownException("SKU channel UOM validation requires master data persistence context.");
+        }
+
+        var businessDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var channelUom in channelUoms)
+        {
+            // MVP rule: require an active direct conversion from each channel UOM to the SKU base UOM.
+            // Reverse and transitive conversion paths are intentionally left to a future conversion graph.
+            var hasConversion = await dbContext.UomConversions.AnyAsync(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                !x.Disabled &&
+                x.FromUomCode == channelUom &&
+                x.ToUomCode == baseUom &&
+                x.EffectiveFrom <= businessDate &&
+                (x.EffectiveTo == null || x.EffectiveTo >= businessDate),
+                cancellationToken);
+            if (!hasConversion)
+            {
+                throw new KnownException($"SKU channel UOM '{channelUom}' requires an active direct conversion to base UOM '{baseUom}'.");
+            }
+        }
     }
 }
 

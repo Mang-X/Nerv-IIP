@@ -112,7 +112,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
 
     public void Update(string name, string partnerType)
     {
-        Update(name, [partnerType], TaxId);
+        Update(name, ReplacePrimaryRole(partnerType), TaxId);
     }
 
     public void Update(string name, IReadOnlyCollection<string>? partnerRoles, string? taxId)
@@ -202,5 +202,11 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
             .ToArray();
 
         return roles.Length == 0 ? [Required(partnerType)] : roles;
+    }
+
+    private string[] ReplacePrimaryRole(string partnerType)
+    {
+        var primaryRole = Required(partnerType);
+        return [primaryRole, .. PartnerRoles.Skip(1).Where(role => !string.Equals(role, primaryRole, StringComparison.OrdinalIgnoreCase))];
     }
 }

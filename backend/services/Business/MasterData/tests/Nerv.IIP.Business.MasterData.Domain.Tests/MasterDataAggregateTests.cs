@@ -230,6 +230,27 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Sku_rejects_invalid_lifecycle_status()
+    {
+        Assert.Throws<ArgumentException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-LIFE",
+            "Bad Lifecycle",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            lifecycleStatus: "retired"));
+    }
+
+    [Fact]
     public void Business_partner_update_changes_primary_role_and_commercial_defaults()
     {
         var partner = BusinessPartner.Create(
@@ -272,6 +293,24 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Business_partner_legacy_update_preserves_existing_roles_when_replacing_primary_role()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-LEGACY",
+            "supplier",
+            "Partner",
+            ["supplier", "carrier"],
+            null);
+
+        partner.Update("Partner Renamed", "customer");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "carrier"], partner.PartnerRoles);
+    }
+
+    [Fact]
     public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
     {
         var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");
@@ -306,7 +345,7 @@ public sealed class MasterDataAggregateTests
             "L",
             true,
             utilizationRate: 0.85m,
-            efficiencyRate: 0.9m,
+            efficiencyRate: 1.1m,
             numberOfCapacities: 3,
             costCenterCode: "CC-MIX",
             bottleneck: true);
@@ -332,14 +371,41 @@ public sealed class MasterDataAggregateTests
         Assert.Equal("PLANT-01", workCenter.PlantCode);
         Assert.Equal("WS-MIX", workCenter.WorkshopCode);
         Assert.Equal(0.85m, workCenter.UtilizationRate);
-        Assert.Equal(0.9m, workCenter.EfficiencyRate);
+        Assert.Equal(1.1m, workCenter.EfficiencyRate);
         Assert.Equal(3, workCenter.NumberOfCapacities);
         Assert.Equal("CC-MIX", workCenter.CostCenterCode);
         Assert.True(workCenter.Bottleneck);
-        Assert.Equal(1652.4m, workCenter.EffectiveCapacityMinutesPerDay);
+        Assert.Equal(2019.6m, workCenter.EffectiveCapacityMinutesPerDay);
         Assert.Equal("L", asset.CapacityUomCode);
         Assert.Equal(500m, asset.MinimumCapacity);
         Assert.Equal("MIXER-01", asset.ExternalReferences["scada"]);
+    }
+
+    [Fact]
+    public void Work_center_validates_capacity_factors_and_can_clear_cost_center()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-UTIL", "Bad Utilization", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, utilizationRate: 1.1m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-EFF", "Bad Efficiency", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, efficiencyRate: 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-CAP", "Bad Capacity Count", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, numberOfCapacities: 0));
+
+        var workCenter = WorkCenter.CreateResource(
+            "org-001",
+            "env-dev",
+            "WC-CLEAR",
+            "Clear Cost",
+            480,
+            "work-center",
+            "PLANT",
+            "LINE",
+            workshopCode: null,
+            "CAL",
+            "minute",
+            true,
+            costCenterCode: "CC-OLD");
+
+        workCenter.UpdateResource("Clear Cost", 480, "work-center", "PLANT", "LINE", null, "CAL", "minute", true, costCenterCode: "");
+
+        Assert.Null(workCenter.CostCenterCode);
     }
 
     [Fact]
@@ -381,6 +447,30 @@ public sealed class MasterDataAggregateTests
         Assert.Equal(new DateOnly(2026, 1, 1), calendar.EffectiveFrom);
         Assert.Equal(new DateOnly(2026, 12, 31), calendar.EffectiveTo);
         Assert.Equal(60, shift.BreakMinutes);
+    }
+
+    [Fact]
+    public void Shift_rejects_break_minutes_greater_than_paid_minutes()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-BAD",
+            "Bad Shift",
+            new TimeOnly(8, 0),
+            new TimeOnly(12, 0),
+            120,
+            121));
+    }
+
+    [Fact]
+    public void Disabled_business_partner_rejects_updates()
+    {
+        var partner = BusinessPartner.Create("org-001", "env-dev", "BP-DISABLED", "supplier", "Disabled Partner");
+
+        partner.Disable("retired");
+
+        Assert.Throws<InvalidOperationException>(() => partner.Update("Renamed", "customer"));
     }
 
     [Fact]

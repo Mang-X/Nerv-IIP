@@ -134,9 +134,21 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
             case "sku":
                 var sku = await FindSkuAsync(request, cancellationToken);
                 await ValidateSkuControlledReferenceDataAsync(request, cancellationToken);
+                var nextBaseUomCode = request.BaseUomCode ?? sku.BaseUomCode;
+                var nextInventoryUomCode = request.InventoryUomCode ?? sku.InventoryUomCode;
+                var nextPurchaseUomCode = request.PurchaseUomCode ?? sku.PurchaseUomCode;
+                var nextSalesUomCode = request.SalesUomCode ?? sku.SalesUomCode;
+                var nextManufacturingUomCode = request.ManufacturingUomCode ?? sku.ManufacturingUomCode;
+                await SkuChannelUomValidator.ValidateAsync(
+                    dbContext,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    nextBaseUomCode,
+                    [nextInventoryUomCode, nextPurchaseUomCode, nextSalesUomCode, nextManufacturingUomCode],
+                    cancellationToken);
                 sku.UpdateIndustrial(
                     request.Name ?? sku.Name,
-                    request.BaseUomCode ?? sku.BaseUomCode,
+                    nextBaseUomCode,
                     request.Category ?? sku.Category,
                     request.MaterialType ?? sku.MaterialType,
                     request.BatchTrackingPolicy ?? sku.BatchTrackingPolicy,
@@ -145,10 +157,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.StorageConditionCode ?? sku.StorageConditionCode,
                     request.DefaultBarcodeRuleCode ?? sku.DefaultBarcodeRuleCode,
                     request.QualityRequired ?? sku.QualityRequired,
-                    request.InventoryUomCode ?? sku.InventoryUomCode,
-                    request.PurchaseUomCode ?? sku.PurchaseUomCode,
-                    request.SalesUomCode ?? sku.SalesUomCode,
-                    request.ManufacturingUomCode ?? sku.ManufacturingUomCode,
+                    nextInventoryUomCode,
+                    nextPurchaseUomCode,
+                    nextSalesUomCode,
+                    nextManufacturingUomCode,
                     request.ProcurementType ?? sku.ProcurementType,
                     request.MrpType ?? sku.MrpType,
                     request.LotSizingPolicy ?? sku.LotSizingPolicy,
@@ -192,6 +204,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     await dbContext.BusinessPartners.AnyAsync(x =>
                         x.OrganizationId == request.OrganizationId &&
                         x.EnvironmentId == request.EnvironmentId &&
+                        x.Code != partner.Code &&
+                        !x.Disabled &&
                         x.TaxId == taxId,
                         cancellationToken))
                 {

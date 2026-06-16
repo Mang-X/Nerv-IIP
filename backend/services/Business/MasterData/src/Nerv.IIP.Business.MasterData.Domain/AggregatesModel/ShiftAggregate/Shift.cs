@@ -117,5 +117,10 @@ public class Shift : Entity<ShiftId>, IAggregateRoot
         {
             throw new ArgumentOutOfRangeException(nameof(breakMinutes), "Break minutes cannot be negative.");
         }
+
+        if (breakMinutes > paidMinutes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(breakMinutes), "Break minutes cannot exceed paid minutes.");
+        }
     }
 }

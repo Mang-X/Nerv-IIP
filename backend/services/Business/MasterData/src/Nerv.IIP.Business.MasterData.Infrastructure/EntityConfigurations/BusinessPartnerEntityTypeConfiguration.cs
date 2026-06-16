@@ -28,7 +28,7 @@ public sealed class BusinessPartnerEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the business partner was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the business partner was last updated.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Code }).IsUnique();
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TaxId }).IsUnique().HasFilter("tax_id IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.TaxId }).IsUnique().HasFilter("tax_id IS NOT NULL AND disabled = false");
         builder.HasIndex(x => new { x.PartnerType, x.Disabled });
     }
 }

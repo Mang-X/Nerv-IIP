@@ -174,7 +174,10 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         UtilizationRate = nextUtilizationRate;
         EfficiencyRate = nextEfficiencyRate;
         NumberOfCapacities = nextNumberOfCapacities;
-        CostCenterCode = NormalizeOptional(costCenterCode) ?? CostCenterCode;
+        if (costCenterCode is not null)
+        {
+            CostCenterCode = NormalizeOptional(costCenterCode);
+        }
         Bottleneck = bottleneck ?? Bottleneck;
         Touch();
     }
@@ -238,9 +241,9 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(utilizationRate), "Utilization rate must be in the range (0, 1].");
         }
 
-        if (efficiencyRate <= 0 || efficiencyRate > 1)
+        if (efficiencyRate <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(efficiencyRate), "Efficiency rate must be in the range (0, 1].");
+            throw new ArgumentOutOfRangeException(nameof(efficiencyRate), "Efficiency rate must be positive.");
         }
 
         if (numberOfCapacities <= 0)

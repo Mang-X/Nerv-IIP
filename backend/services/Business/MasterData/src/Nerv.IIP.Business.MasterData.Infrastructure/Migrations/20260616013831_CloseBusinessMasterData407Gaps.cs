@@ -11,6 +11,19 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_business_partners_organization_id_environment_id_tax_id",
+                schema: "business_masterdata",
+                table: "business_partners");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_business_partners_organization_id_environment_id_tax_id",
+                schema: "business_masterdata",
+                table: "business_partners",
+                columns: new[] { "organization_id", "environment_id", "tax_id" },
+                unique: true,
+                filter: "tax_id IS NOT NULL AND disabled = false");
+
             migrationBuilder.AddColumn<bool>(
                 name: "bottleneck",
                 schema: "business_masterdata",
@@ -331,6 +344,19 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropIndex(
+                name: "IX_business_partners_organization_id_environment_id_tax_id",
+                schema: "business_masterdata",
+                table: "business_partners");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_business_partners_organization_id_environment_id_tax_id",
+                schema: "business_masterdata",
+                table: "business_partners",
+                columns: new[] { "organization_id", "environment_id", "tax_id" },
+                unique: true,
+                filter: "tax_id IS NOT NULL");
+
             migrationBuilder.DropColumn(
                 name: "bottleneck",
                 schema: "business_masterdata",

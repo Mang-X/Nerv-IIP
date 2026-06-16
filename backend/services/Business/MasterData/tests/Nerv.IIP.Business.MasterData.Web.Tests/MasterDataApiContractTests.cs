@@ -599,6 +599,31 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Business_partner_tax_id_uniqueness_ignores_disabled_partners()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand("org-001", "env-dev", "BP-OLD", "supplier", "Old Partner", ["supplier"], "TAX-REUSE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var oldPartner = await dbContext.BusinessPartners.SingleAsync(x => x.Code == "BP-OLD", CancellationToken.None);
+        oldPartner.Disable("retired");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await createHandler.Handle(
+            new CreateBusinessPartnerCommand("org-001", "env-dev", "BP-NEW", "customer", "New Partner", ["customer"], "TAX-REUSE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("BP-NEW", created.Code);
+    }
+
+    [Fact]
     public async Task MasterData_lifecycle_commands_update_disable_enable_and_detail_by_code()
     {
         await using var provider = CreateInMemoryProvider();
@@ -619,6 +644,16 @@ public sealed class MasterDataApiContractTests
             "ean13",
             true,
             []));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "kg",
+            "g",
+            1000m,
+            0m,
+            3,
+            "half-up",
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1)));
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1192,6 +1227,80 @@ public sealed class MasterDataApiContractTests
         Assert.False(detail.PurchasingEnabled);
         Assert.True(detail.ManufacturingEnabled);
         Assert.False(detail.SalesEnabled);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_rejects_missing_or_expired_channel_uom_conversion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "case", "Case", "quantity", 0, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "box",
+            "ea",
+            24m,
+            0m,
+            0,
+            "half-up",
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-10),
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            dbContext);
+
+        var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
+            CancellationToken.None));
+        Assert.Contains("requires an active direct conversion", expired.Message, StringComparison.Ordinal);
+
+        var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
+            CancellationToken.None));
+        Assert.Contains("requires an active direct conversion", missing.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_sku_command_rejects_missing_channel_uom_conversion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "SKU-UPDATE-UOM",
+            "Update UOM",
+            "ea",
+            "electronic",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new UpdateMasterDataResourceCommand("org-001", "env-dev", "sku", "SKU-UPDATE-UOM", PurchaseUomCode: "box"),
+            CancellationToken.None));
+
+        Assert.Contains("requires an active direct conversion", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
