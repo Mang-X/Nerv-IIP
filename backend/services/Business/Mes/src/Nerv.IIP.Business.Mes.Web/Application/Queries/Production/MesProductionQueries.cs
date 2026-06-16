@@ -26,7 +26,9 @@ public sealed record ProductionReportFact(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     decimal ReworkQuantity,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -82,7 +84,9 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 x.GoodQuantity,
                 x.ScrapQuantity,
                 0m,
-                x.ReportedAtUtc))
+                x.ReportedAtUtc,
+                x.WorkOrderId,
+                x.OperationTaskId))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
     }
@@ -110,7 +114,9 @@ public sealed record FinishedGoodsReceiptRequestFact(
     string SkuId,
     decimal Quantity,
     string ReceiptStatus,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? SkuCode = null);
 
 public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListFinishedGoodsReceiptRequestsQuery, ListFinishedGoodsReceiptRequestsResponse>
@@ -164,7 +170,9 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.SkuId,
                 x.Quantity,
                 "Requested",
-                x.RequestedAtUtc))
+                x.RequestedAtUtc,
+                x.WorkOrderId,
+                x.SkuId))
             .ToArrayAsync(cancellationToken);
         return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }
@@ -191,7 +199,11 @@ public sealed record CapacityImpactFact(
     string Status,
     DateTimeOffset EffectiveFromUtc,
     DateTimeOffset? EffectiveToUtc,
-    string ReasonCode);
+    string ReasonCode,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCapacityImpactsQuery, ListCapacityImpactsResponse>
@@ -246,7 +258,11 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.ToUtc == null ? "Open" : "Recovered",
                 x.FromUtc,
                 x.ToUtc,
-                x.Reason))
+                x.Reason,
+                x.WorkCenterId,
+                x.WorkCenterId,
+                x.DeviceAssetId,
+                x.DeviceAssetId))
             .ToArrayAsync(cancellationToken);
         return new ListCapacityImpactsResponse(items, total);
     }

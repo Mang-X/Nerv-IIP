@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
+import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -11,26 +12,35 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
 
 const { downtimeEvents, downtimeEventsError, downtimeEventsPending, downtimeEventsTotal, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
 
-const openCount = computed(() => downtimeEvents.value.filter((x) => x.status === 'Open').length)
+const openCount = computed(() => downtimeEvents.value.filter((x) => x.status?.toLowerCase() === 'open').length)
 const errorMessage = computed(() => formatError(downtimeEventsError.value))
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
 const columns: DataTableColumn<DowntimeRow>[] = [
   { key: 'downtimeEventId', header: '停机事件', cellClass: 'font-medium', accessor: (r) => r.downtimeEventId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '未指定' },
-  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskId ?? '未指定' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '未关联' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '未关联' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   { key: 'recoveredAtUtc', header: '恢复', width: 'w-44' },
@@ -65,7 +75,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="停机状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="停机状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 

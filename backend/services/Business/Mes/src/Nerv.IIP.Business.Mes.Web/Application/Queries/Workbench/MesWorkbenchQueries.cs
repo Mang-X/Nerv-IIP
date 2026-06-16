@@ -223,7 +223,7 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -433,7 +433,13 @@ public sealed record MesOperationTaskRow(
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
     DateTimeOffset? StartedAtUtc,
-    string QualityStatus);
+    string QualityStatus,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -520,7 +526,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.AssignedUserId,
                 x.EarliestStartUtc,
                 x.ExistingStartUtc,
-                "Ready"));
+                "Ready",
+                x.WorkOrderId,
+                x.OperationTaskIdValue,
+                x.WorkCenterId,
+                x.WorkCenterId,
+                x.DeviceAssetId,
+                x.DeviceAssetId));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -545,7 +557,8 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            query = query.Where(x => x.Status.ToString() == status);
+            var normalizedStatus = status.Trim().ToLowerInvariant();
+            query = query.Where(x => x.Status.ToString().ToLower() == normalizedStatus);
         }
 
         if (!string.IsNullOrWhiteSpace(keyword))
@@ -656,7 +669,10 @@ public sealed record MesMaterialIssueRequestRow(
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
     string Status,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? MaterialCode = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -715,7 +731,10 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
                 x.Status,
-                x.RequestedAtUtc))
+                x.RequestedAtUtc,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId))
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total);
     }
@@ -745,7 +764,13 @@ public sealed record MesDispatchTaskRow(
     string? ShiftId,
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDispatchTasksQuery, MesDispatchTaskListResponse>
@@ -786,7 +811,13 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 x.ShiftId,
                 x.AssignedUserId,
                 x.PlannedStartUtc,
-                Array.Empty<string>()))
+                Array.Empty<string>(),
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.WorkCenterId,
+                x.WorkCenterId,
+                x.DeviceAssetId,
+                x.DeviceAssetId))
             .ToArrayAsync(cancellationToken);
         return new MesDispatchTaskListResponse(tasks, total);
     }
@@ -931,7 +962,11 @@ public sealed record MesWipSummaryRow(
     decimal PlannedQuantity,
     decimal GoodQuantity,
     decimal ScrapQuantity,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null);
 
 public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetWipSummaryQuery, MesWipSummaryResponse>
@@ -1002,7 +1037,11 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
                 quantities.GetValueOrDefault(task.WorkOrderId),
                 report?.GoodQuantity ?? 0m,
                 report?.ScrapQuantity ?? 0m,
-                []);
+                [],
+                task.WorkOrderId,
+                task.OperationTaskId,
+                task.WorkCenterId,
+                task.WorkCenterId);
         }).ToArray();
 
         return new MesWipSummaryResponse(items, total);
@@ -1121,7 +1160,11 @@ public sealed record MesDowntimeEventRow(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? RecoveredAtUtc,
     string WorkCenterId,
-    string ReasonCode);
+    string ReasonCode,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDowntimeEventsQuery, MesDowntimeEventListResponse>
@@ -1177,7 +1220,11 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.FromUtc,
                 x.ToUtc,
                 x.WorkCenterId,
-                x.Reason))
+                x.Reason,
+                null,
+                null,
+                x.DeviceAssetId,
+                x.DeviceAssetId))
             .ToArrayAsync(cancellationToken);
         return new MesDowntimeEventListResponse(items, total);
     }

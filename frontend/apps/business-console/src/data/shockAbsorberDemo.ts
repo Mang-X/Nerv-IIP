@@ -164,10 +164,10 @@ export const demoWorkOrders: BusinessConsoleMesWorkOrderItem[] = [
     quantity: 1200,
     priority: 3,
     dueUtc: '2026-05-28T20:00:00Z',
-    status: 'Released',
+    status: 'released',
     operationTasks: [
-      { operationTaskId: 'OP-WO001-10', status: 'Ready', operationSequence: 10, workCenterId: 'WC-TUBE-WELD', earliestStartUtc: '2026-05-27T08:00:00Z' },
-      { operationTaskId: 'OP-WO001-20', status: 'Queued', operationSequence: 20, workCenterId: 'WC-OIL-FILL', earliestStartUtc: '2026-05-27T14:00:00Z' },
+      { operationTaskId: 'OP-WO001-10', status: 'ready', operationSequence: 10, workCenterId: 'WC-TUBE-WELD', earliestStartUtc: '2026-05-27T08:00:00Z' },
+      { operationTaskId: 'OP-WO001-20', status: 'queued', operationSequence: 20, workCenterId: 'WC-OIL-FILL', earliestStartUtc: '2026-05-27T14:00:00Z' },
     ],
   },
   {
@@ -177,9 +177,9 @@ export const demoWorkOrders: BusinessConsoleMesWorkOrderItem[] = [
     quantity: 800,
     priority: 5,
     dueUtc: '2026-05-29T20:00:00Z',
-    status: 'Ready',
+    status: 'ready',
     operationTasks: [
-      { operationTaskId: 'OP-WO002-10', status: 'Ready', operationSequence: 10, workCenterId: 'WC-OIL-FILL', earliestStartUtc: '2026-05-28T08:00:00Z' },
+      { operationTaskId: 'OP-WO002-10', status: 'ready', operationSequence: 10, workCenterId: 'WC-OIL-FILL', earliestStartUtc: '2026-05-28T08:00:00Z' },
     ],
   },
   {
@@ -189,18 +189,18 @@ export const demoWorkOrders: BusinessConsoleMesWorkOrderItem[] = [
     quantity: 120,
     priority: 1,
     dueUtc: '2026-05-27T20:00:00Z',
-    status: 'Blocked',
+    status: 'blocked',
     operationTasks: [
-      { operationTaskId: 'OP-WO003-10', status: 'Blocked', operationSequence: 10, workCenterId: 'WC-DAMP-TEST', earliestStartUtc: '2026-05-27T12:00:00Z' },
+      { operationTaskId: 'OP-WO003-10', status: 'blocked', operationSequence: 10, workCenterId: 'WC-DAMP-TEST', earliestStartUtc: '2026-05-27T12:00:00Z' },
     ],
   },
 ]
 
 export const demoOperationTasks: BusinessConsoleMesOperationTaskRow[] = [
-  { operationTaskId: 'OP-WO001-10', workOrderId: 'WO-SO-260527-001', status: 'Ready', operationSequence: 10, workCenterId: 'WC-TUBE-WELD', deviceAssetId: 'EQ-WELD-01', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T08:00:00Z', qualityStatus: '待首检' },
-  { operationTaskId: 'OP-WO001-20', workOrderId: 'WO-SO-260527-001', status: 'Queued', operationSequence: 20, workCenterId: 'WC-OIL-FILL', deviceAssetId: 'EQ-FILL-02', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T14:00:00Z', qualityStatus: '未检' },
-  { operationTaskId: 'OP-WO002-10', workOrderId: 'WO-STOCK-260527-002', status: 'Running', operationSequence: 10, workCenterId: 'WC-OIL-FILL', deviceAssetId: 'EQ-FILL-02', shiftId: 'SHIFT-NIGHT', plannedStartUtc: '2026-05-28T20:00:00Z', qualityStatus: '首检合格' },
-  { operationTaskId: 'OP-WO003-10', workOrderId: 'WO-RUSH-260527-003', status: 'Blocked', operationSequence: 10, workCenterId: 'WC-DAMP-TEST', deviceAssetId: 'EQ-TEST-01', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T12:00:00Z', qualityStatus: '待复检' },
+  { operationTaskId: 'OP-WO001-10', workOrderId: 'WO-SO-260527-001', status: 'ready', operationSequence: 10, workCenterId: 'WC-TUBE-WELD', deviceAssetId: 'EQ-WELD-01', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T08:00:00Z', qualityStatus: '待首检' },
+  { operationTaskId: 'OP-WO001-20', workOrderId: 'WO-SO-260527-001', status: 'queued', operationSequence: 20, workCenterId: 'WC-OIL-FILL', deviceAssetId: 'EQ-FILL-02', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T14:00:00Z', qualityStatus: '未检' },
+  { operationTaskId: 'OP-WO002-10', workOrderId: 'WO-STOCK-260527-002', status: 'inProgress', operationSequence: 10, workCenterId: 'WC-OIL-FILL', deviceAssetId: 'EQ-FILL-02', shiftId: 'SHIFT-NIGHT', plannedStartUtc: '2026-05-28T20:00:00Z', qualityStatus: '首检合格' },
+  { operationTaskId: 'OP-WO003-10', workOrderId: 'WO-RUSH-260527-003', status: 'blocked', operationSequence: 10, workCenterId: 'WC-DAMP-TEST', deviceAssetId: 'EQ-TEST-01', shiftId: 'SHIFT-DAY', plannedStartUtc: '2026-05-27T12:00:00Z', qualityStatus: '待复检' },
 ]
 
 export const demoErpSalesOrders = [
@@ -246,11 +246,11 @@ export function toDemoWorkOrderFromPlan(plan: BusinessConsoleMesProductionPlanRo
     quantity: plan.plannedQuantity,
     priority: plan.sourceSystem === 'sales-order' ? 3 : 5,
     dueUtc: dueUtc || plan.plannedEndUtc || plan.plannedStartUtc || undefined,
-    status: 'Ready',
+    status: 'ready',
     operationTasks: [
       {
         operationTaskId: `OP-${workOrderId}-10`,
-        status: 'Ready',
+        status: 'ready',
         operationSequence: 10,
         workCenterId: firstWorkCenter,
         earliestStartUtc: plan.plannedStartUtc || undefined,

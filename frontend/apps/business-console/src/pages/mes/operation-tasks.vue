@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -64,22 +65,15 @@ watch(shiftFilter, (value) => {
   filters.shiftId = value === 'all' ? undefined : value
 })
 
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '可开工', value: 'Ready' },
-  { label: '执行中', value: 'Running' },
-  { label: '暂停', value: 'Paused' },
-  { label: '已完成', value: 'Completed' },
-  { label: '阻塞', value: 'Blocked' },
-]
+const statusOptions = mesStatusOptions
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 
 const visibleTasks = computed(() => operationTasks.value)
 
-const readyCount = computed(() => visibleTasks.value.filter((t) => t.status === 'Ready').length)
-const runningCount = computed(() => visibleTasks.value.filter((t) => ['Running', 'Started', 'InProgress'].includes(t.status ?? '')).length)
-const blockedCount = computed(() => visibleTasks.value.filter((t) => ['Blocked', 'Held'].includes(t.status ?? '')).length)
+const readyCount = computed(() => visibleTasks.value.filter((t) => t.status?.toLowerCase() === 'ready').length)
+const runningCount = computed(() => visibleTasks.value.filter((t) => ['inprogress', 'active'].includes(t.status?.toLowerCase() ?? '')).length)
+const blockedCount = computed(() => visibleTasks.value.filter((t) => t.status?.toLowerCase() === 'blocked').length)
 
 // --- Sort (page-owned, before pagination) ---
 const sort = ref<DataTableSort | null>(null)
@@ -105,12 +99,12 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilt
 const pagedTasks = computed(() => sortedTasks.value)
 
 const columns: DataTableColumn<Row>[] = [
-  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无编号' },
-  { key: 'workOrderId', header: '工单' },
+  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'qualityStatus', header: '质量状态' },

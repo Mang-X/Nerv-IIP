@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
+import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -60,12 +61,7 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
 })
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '待处理', value: 'Pending' },
-  { label: '已完成', value: 'Completed' },
-  { label: '失败', value: 'Failed' },
-]
+const statusOptions = mesStatusOptions
 
 const form = reactive({
   organizationId: filters.organizationId,
@@ -80,7 +76,7 @@ const form = reactive({
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
 const createErrorMessage = computed(() => formatError(createReceiptRequestError.value))
-const pendingCount = computed(() => receiptRequests.value.filter((item) => item.receiptStatus !== 'Completed').length)
+const pendingCount = computed(() => receiptRequests.value.filter((item) => item.receiptStatus?.toLowerCase() !== 'completed').length)
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>
@@ -111,8 +107,8 @@ watch(
 type ReceiptRow = (typeof receiptRequests)['value'][number]
 const columns: DataTableColumn<ReceiptRow>[] = [
   { key: 'receiptRequestId', header: '请求号', cellClass: 'font-medium', accessor: (r) => r.receiptRequestId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
-  { key: 'skuId', header: '物料', accessor: (r) => r.skuId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'skuId', header: '物料', accessor: (r) => r.skuCode ?? r.skuId ?? '无' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'receiptStatus', header: '状态', width: 'w-24' },
   { key: 'requestedAtUtc', header: '请求时间', width: 'w-44' },

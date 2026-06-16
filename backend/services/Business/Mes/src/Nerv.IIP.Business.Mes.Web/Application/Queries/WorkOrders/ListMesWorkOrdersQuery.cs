@@ -26,7 +26,9 @@ public sealed record MesWorkOrderExecutionFact(
     int Priority,
     DateTimeOffset DueUtc,
     string Status,
-    IReadOnlyCollection<MesOperationTaskExecutionFact> OperationTasks);
+    IReadOnlyCollection<MesOperationTaskExecutionFact> OperationTasks,
+    string? WorkOrderNo = null,
+    string? SkuCode = null);
 
 public sealed record MesOperationTaskExecutionFact(
     string OperationTaskId,
@@ -37,7 +39,10 @@ public sealed record MesOperationTaskExecutionFact(
     DateTimeOffset EarliestStartUtc,
     long DurationTicks,
     DateTimeOffset? ExistingStartUtc,
-    DateTimeOffset? ExistingEndUtc);
+    DateTimeOffset? ExistingEndUtc,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null);
 
 public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMesWorkOrdersQuery, ListMesWorkOrdersResponse>
@@ -52,7 +57,8 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            workOrdersQuery = workOrdersQuery.Where(x => x.Status == request.Status);
+            var status = request.Status.Trim().ToLowerInvariant();
+            workOrdersQuery = workOrdersQuery.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -137,7 +143,10 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
                     task.EarliestStartUtc,
                     task.DurationTicks,
                     task.ExistingStartUtc,
-                    task.ExistingEndUtc)).ToArray(),
+                    task.ExistingEndUtc,
+                    task.OperationTaskIdValue,
+                    task.WorkCenterId,
+                    task.WorkCenterId)).ToArray(),
                 StringComparer.OrdinalIgnoreCase);
         var items = workOrders.Select(x => new MesWorkOrderExecutionFact(
             x.WorkOrderIdValue,
@@ -147,7 +156,9 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
             x.Priority,
             x.DueUtc,
             x.Status,
-            tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []))).ToArray();
+            tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []),
+            x.WorkOrderIdValue,
+            x.SkuId)).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

@@ -391,7 +391,10 @@ public sealed class BusinessGatewayOpenApiTests
                 "deviceAssetId",
                 "skip",
                 "take");
+            AssertMesStatusQueryEnum(paths, mesListPath);
         }
+
+        AssertMesListDisplayContract(document);
 
         AssertQueryParameters(
             paths,
@@ -608,6 +611,133 @@ public sealed class BusinessGatewayOpenApiTests
 
         Assert.Equal("string", schema.GetProperty("type").GetString());
         Assert.Equal(values, actualValues);
+    }
+
+    private static void AssertMesListDisplayContract(JsonDocument document)
+    {
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesCapacityImpactRow",
+            "workCenterCode",
+            "workCenterName",
+            "deviceAssetCode",
+            "deviceAssetName");
+        AssertMesStatusEnum(document, "BusinessConsoleMesCapacityImpactRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesDowntimeEventRow",
+            "workOrderNo",
+            "operationTaskNo",
+            "deviceAssetCode",
+            "deviceAssetName");
+        AssertMesStatusEnum(document, "BusinessConsoleMesDowntimeEventRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesOperationTaskRow",
+            "workOrderNo",
+            "operationTaskNo",
+            "workCenterCode",
+            "workCenterName",
+            "deviceAssetCode",
+            "deviceAssetName");
+        AssertMesStatusEnum(document, "BusinessConsoleMesOperationTaskRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesDispatchTaskRow",
+            "workOrderNo",
+            "operationTaskNo",
+            "workCenterCode",
+            "workCenterName",
+            "deviceAssetCode",
+            "deviceAssetName");
+        AssertMesStatusEnum(document, "BusinessConsoleMesDispatchTaskRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesWipSummaryRow",
+            "workOrderNo",
+            "operationTaskNo",
+            "workCenterCode",
+            "workCenterName");
+        AssertMesStatusEnum(document, "BusinessConsoleMesWipSummaryRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesMaterialIssueRequestRow",
+            "workOrderNo",
+            "operationTaskNo",
+            "materialCode");
+        AssertMesStatusEnum(document, "BusinessConsoleMesMaterialIssueRequestRow", "status");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesProductionReportRow",
+            "workOrderNo",
+            "operationTaskNo");
+
+        AssertMesDisplayProperties(
+            document,
+            "BusinessConsoleMesReceiptRequestRow",
+            "workOrderNo",
+            "skuCode");
+        AssertMesStatusEnum(document, "BusinessConsoleMesReceiptRequestRow", "receiptStatus");
+    }
+
+    private static void AssertMesDisplayProperties(JsonDocument document, string schemaNameSuffix, params string[] propertyNames)
+    {
+        var schema = FindSchemaBySuffix(document, schemaNameSuffix);
+        var properties = schema.GetProperty("properties");
+        foreach (var propertyName in propertyNames)
+        {
+            Assert.True(
+                properties.TryGetProperty(propertyName, out _),
+                $"{schemaNameSuffix} must expose {propertyName} so the frontend does not render raw internal ids.");
+        }
+    }
+
+    private static void AssertMesStatusEnum(JsonDocument document, string schemaNameSuffix, string propertyName)
+    {
+        var property = FindSchemaBySuffix(document, schemaNameSuffix)
+            .GetProperty("properties")
+            .GetProperty(propertyName);
+
+        Assert.True(
+            property.TryGetProperty("enum", out var inlineEnum)
+            || property.TryGetProperty("$ref", out _)
+            || property.TryGetProperty("oneOf", out _),
+            $"{schemaNameSuffix}.{propertyName} must be an OpenAPI enum, not a free-form string.");
+
+        if (property.TryGetProperty("enum", out inlineEnum))
+        {
+            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "ready");
+        }
+    }
+
+    private static void AssertMesStatusQueryEnum(JsonElement paths, string path)
+    {
+        var statusParameter = FindQueryParameter(paths, path, "get", "status");
+        var schema = statusParameter.GetProperty("schema");
+
+        Assert.True(
+            schema.TryGetProperty("enum", out var values),
+            $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
+        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
+    }
+
+    private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)
+    {
+        var schemas = document.RootElement
+            .GetProperty("components")
+            .GetProperty("schemas")
+            .EnumerateObject()
+            .Where(schema => schema.Name.EndsWith(schemaNameSuffix, StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Single(schemas);
+        return schemas[0].Value;
     }
 
     private static void AssertOperationIdsAreUnique(JsonDocument document)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
+import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -11,11 +12,16 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '产能影响' } })
 
@@ -28,15 +34,19 @@ const {
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
 
-const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status === 'Active').length)
+const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'active').length)
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 type ImpactRow = (typeof capacityImpacts)['value'][number]
 const columns: DataTableColumn<ImpactRow>[] = [
   { key: 'impactId', header: '影响编号', cellClass: 'font-medium', accessor: (r) => r.impactId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'effectiveFromUtc', header: '开始', width: 'w-44' },
   { key: 'effectiveToUtc', header: '结束', width: 'w-44' },
@@ -72,7 +82,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="影响状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="影响状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 

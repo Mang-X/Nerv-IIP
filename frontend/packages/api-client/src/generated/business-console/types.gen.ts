@@ -1770,13 +1770,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     priority?: number;
     dueUtc?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem>;
+    workOrderNo?: string | null;
+    skuCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
     operationTaskId?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     operationSequence?: number;
     workCenterId?: string;
     alternativeWorkCenterIds?: Array<string>;
@@ -1784,6 +1786,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     durationTicks?: number;
     existingStartUtc?: string | null;
     existingEndUtc?: string | null;
+    operationTaskNo?: string | null;
+    workCenterCode?: string | null;
+    workCenterName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
@@ -1809,7 +1814,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     operationSequence?: number;
     workCenterId?: string;
     deviceAssetId?: string | null;
@@ -1818,6 +1823,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     plannedStartUtc?: string | null;
     startedAtUtc?: string | null;
     qualityStatus?: string;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    workCenterCode?: string | null;
+    workCenterName?: string | null;
+    deviceAssetCode?: string | null;
+    deviceAssetName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
@@ -1930,9 +1941,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     materialLotId?: string | null;
     requestedQuantity?: number;
     receivedQuantity?: number;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    materialCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
@@ -1954,13 +1968,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     workCenterId?: string;
     deviceAssetId?: string | null;
     shiftId?: string | null;
     assignedUserId?: string | null;
     plannedStartUtc?: string | null;
     blockingReasons?: Array<string>;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    workCenterCode?: string | null;
+    workCenterName?: string | null;
+    deviceAssetCode?: string | null;
+    deviceAssetName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAssignDispatchTaskRequest = {
@@ -2007,11 +2027,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string;
     workCenterId?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     plannedQuantity?: number;
     goodQuantity?: number;
     scrapQuantity?: number;
     blockingReasons?: Array<string>;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    workCenterCode?: string | null;
+    workCenterName?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2032,6 +2056,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     scrapQuantity?: number;
     reworkQuantity?: number;
     reportedAtUtc?: string;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2088,7 +2114,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     qualityItemId?: string;
     sourceType?: string;
     sourceDocumentId?: string;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     defectCode?: string | null;
     ncrId?: string | null;
 };
@@ -2108,8 +2134,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
-    receiptStatus?: string;
+    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     requestedAtUtc?: string;
+    workOrderNo?: string | null;
+    skuCode?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceiptResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2146,9 +2174,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     startedAtUtc?: string;
     recoveredAtUtc?: string | null;
+    workOrderNo?: string | null;
+    operationTaskNo?: string | null;
+    deviceAssetCode?: string | null;
+    deviceAssetName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
@@ -2245,10 +2277,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     impactId?: string;
     workCenterId?: string;
     deviceAssetId?: string | null;
-    status?: string;
+    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
     effectiveFromUtc?: string;
     effectiveToUtc?: string | null;
     reasonCode?: string;
+    workCenterCode?: string | null;
+    workCenterName?: string | null;
+    deviceAssetCode?: string | null;
+    deviceAssetName?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResult = NetCorePalExtensionsDtoResponseData & {
@@ -7416,7 +7452,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7519,7 +7555,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7711,7 +7747,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7780,7 +7816,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7849,7 +7885,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8014,7 +8050,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8051,7 +8087,7 @@ export type ListBusinessConsoleMesProductionReportsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8142,7 +8178,7 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8179,7 +8215,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8243,7 +8279,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8339,7 +8375,7 @@ export type ListBusinessConsoleMesShiftHandoversData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8531,7 +8567,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: string | null;
+        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;

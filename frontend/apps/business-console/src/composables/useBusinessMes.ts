@@ -85,6 +85,22 @@ import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } f
 
 const DEFAULT_TAKE = 100
 
+type MesListStatus =
+  | 'accepted'
+  | 'active'
+  | 'blocked'
+  | 'closed'
+  | 'completed'
+  | 'inProgress'
+  | 'open'
+  | 'paused'
+  | 'queued'
+  | 'ready'
+  | 'recovered'
+  | 'released'
+  | 'requested'
+  | 'warning'
+
 export interface MesReadinessReasonDisplay {
   code: string
   label: string
@@ -245,7 +261,7 @@ function toListQuery(filters: MesListFilters) {
   return {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    ...optionalQuery('status', filters.status),
+    ...optionalQuery('status', filters.status as MesListStatus | undefined),
     ...optionalQuery('keyword', filters.keyword),
     ...optionalQuery('workCenterId', filters.workCenterId),
     ...optionalQuery('shiftId', filters.shiftId),

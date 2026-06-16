@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -11,11 +12,16 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '齐套与物料' } })
 
@@ -28,15 +34,20 @@ const {
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
 
-const openCount = computed(() => materialIssueRequests.value.filter((x) => x.status !== 'Closed').length)
-const closedCount = computed(() => materialIssueRequests.value.filter((x) => x.status === 'Closed').length)
+const openCount = computed(() => materialIssueRequests.value.filter((x) => x.status?.toLowerCase() !== 'closed').length)
+const closedCount = computed(() => materialIssueRequests.value.filter((x) => x.status?.toLowerCase() === 'closed').length)
 const errorMessage = computed(() => formatError(materialIssueRequestsError.value))
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 type RequestRow = (typeof materialIssueRequests)['value'][number]
 const columns: DataTableColumn<RequestRow>[] = [
   { key: 'requestId', header: '申请号', cellClass: 'font-medium', accessor: (r) => r.requestId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'materialId', header: '物料', accessor: (r) => r.materialCode ?? r.materialId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'wmsRequestId', header: '仓库单号', accessor: (r) => r.wmsRequestId ?? '未下发' },
   { key: 'requestedAtUtc', header: '申请时间', width: 'w-44' },
@@ -71,7 +82,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="领料状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="领料状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 
