@@ -168,6 +168,34 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Safety_stock_floor_is_not_repeated_as_gross_requirement_across_date_buckets()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 1)),
+                new DemandSnapshot("DEMAND-002", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 2)),
+            ],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 10m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 3m, null, null, null),
+            ],
+            bomComponents: []);
+
+        var suggestions = MrpCalculator.Calculate(input)
+            .Where(x => x.SuggestionType == "planned-work-order")
+            .ToArray();
+
+        var workOrder = Assert.Single(suggestions);
+        Assert.Equal(new DateOnly(2026, 6, 2), workOrder.RequiredDate);
+        Assert.Equal(1m, workOrder.Quantity);
+    }
+
+    [Fact]
     public void Demand_outside_horizon_does_not_create_suggestions()
     {
         var input = NewInput(demands:

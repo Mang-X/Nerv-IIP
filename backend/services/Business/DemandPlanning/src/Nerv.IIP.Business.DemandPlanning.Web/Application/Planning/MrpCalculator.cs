@@ -151,8 +151,9 @@ public static class MrpCalculator
                 productionVersions.TryGetValue(first.SkuCode, out var version);
                 var supply = ConsumeSupply(
                     key,
-                    grossRequirement + Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
+                    grossRequirement,
                     group.Key.RequiredDate,
+                    Math.Max(0, planningParameter?.SafetyStockQuantity ?? 0m),
                     availability,
                     scheduledReceipts);
                 var netRequirement = supply.Shortage;
@@ -241,12 +242,14 @@ public static class MrpCalculator
         ItemKey key,
         decimal requiredQuantity,
         DateOnly requiredDate,
+        decimal safetyStockQuantity,
         IDictionary<ItemKey, decimal> availability,
         IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
     {
         var remainingRequirement = requiredQuantity;
         var availableQuantity = availability.TryGetValue(key, out var available) ? available : 0m;
-        var usedAvailable = Math.Min(availableQuantity, remainingRequirement);
+        var availableForNetting = Math.Max(0, availableQuantity - safetyStockQuantity);
+        var usedAvailable = Math.Min(availableForNetting, remainingRequirement);
         if (usedAvailable > 0)
         {
             availability[key] = availableQuantity - usedAvailable;

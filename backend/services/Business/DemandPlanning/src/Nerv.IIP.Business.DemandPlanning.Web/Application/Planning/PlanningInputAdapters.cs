@@ -186,10 +186,6 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             snapshotSources.Add(snapshot.SnapshotSource);
             versions.AddRange(snapshot.ProductionVersions);
             components.AddRange(snapshot.BomComponents);
-            var makeSkus = snapshot.ProductionVersions.Select(x => x.ParentSkuCode).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            pending.AddRange(snapshot.BomComponents
-                .Where(x => !requested.Contains(x.ComponentSkuCode) && makeSkus.Contains(x.ComponentSkuCode))
-                .Select(x => x.ComponentSkuCode));
             pending.AddRange(snapshot.BomComponents
                 .Where(x => !requested.Contains(x.ComponentSkuCode))
                 .Select(x => x.ComponentSkuCode));
@@ -331,26 +327,40 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
             return new PlanningScheduledReceiptSnapshot("erp-purchase-orders:0", []);
         }
 
-        using var httpRequest = new HttpRequestMessage(
-            HttpMethod.Get,
-            "/api/business/v1/erp/purchase-orders?" + PlanningHttpQuery.Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("status", "Released"),
-                ("take", 500)));
-        if (!string.IsNullOrWhiteSpace(internalBearerToken))
+        var orders = new List<ErpPurchaseOrderItem>();
+        const int PageSize = 500;
+        var skip = 0;
+        while (true)
         {
-            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/business/v1/erp/purchase-orders?" + PlanningHttpQuery.Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("status", "Released"),
+                    ("skip", skip),
+                    ("take", PageSize)));
+            if (!string.IsNullOrWhiteSpace(internalBearerToken))
+            {
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+            }
+
+            using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ErpPurchaseOrdersResponse>>(cancellationToken);
+            var body = envelope?.Data ?? throw new InvalidOperationException("ERP returned an empty purchase order response envelope.");
+            orders.AddRange(body.Items);
+            skip += PageSize;
+            if (body.Items.Count == 0 || skip >= body.Total)
+            {
+                break;
+            }
         }
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ErpPurchaseOrdersResponse>>(cancellationToken);
-        var body = envelope?.Data ?? throw new InvalidOperationException("ERP returned an empty purchase order response envelope.");
         var itemKeys = request.Items
             .Select(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var receipts = body.Items
+        var receipts = orders
             .SelectMany(order => order.Lines
                 .Select(line => new
                 {
@@ -363,7 +373,7 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                     line.PromisedDate,
                 }))
             .Where(x => x.Quantity > 0)
-            .Where(x => x.PromisedDate >= request.HorizonStart && x.PromisedDate <= request.HorizonEnd)
+            .Where(x => x.PromisedDate <= request.HorizonEnd)
             .Where(x => itemKeys.Contains($"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}"))
             .Select(x => new ScheduledReceiptSnapshot(
                 x.SkuCode,

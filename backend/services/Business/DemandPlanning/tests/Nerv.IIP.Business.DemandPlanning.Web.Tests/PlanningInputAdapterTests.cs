@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
@@ -102,6 +104,91 @@ public sealed class PlanningInputAdapterTests
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], erp.RequestedSkuCodes);
     }
 
+    [Fact]
+    public async Task Erp_scheduled_receipt_client_maps_open_purchase_order_lines_across_pages()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Contains("status=Released", request.RequestUri!.Query, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("take=500", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+
+            if (request.RequestUri.Query.Contains("skip=500", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "total": 501,
+                        "items": [
+                          {
+                            "purchaseOrderNo": "PO-501",
+                            "supplierCode": "SUP-001",
+                            "siteCode": "SITE-01",
+                            "status": "Released",
+                            "totalAmount": 0,
+                            "lines": [
+                              { "lineNo": "10", "skuCode": "SKU-RM-1000", "uomCode": "pcs", "orderedQuantity": 9, "receivedQuantity": 2, "unitPrice": 1, "promisedDate": "2026-05-24" }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "total": 501,
+                    "items": [
+                      {
+                        "purchaseOrderNo": "PO-100",
+                        "supplierCode": "SUP-001",
+                        "siteCode": "SITE-01",
+                        "status": "Released",
+                        "totalAmount": 0,
+                        "lines": [
+                          { "lineNo": "10", "skuCode": "SKU-RM-1000", "uomCode": "pcs", "orderedQuantity": 12, "receivedQuantity": 5, "unitPrice": 1, "promisedDate": "2026-05-30" },
+                          { "lineNo": "20", "skuCode": "SKU-RM-1000", "uomCode": "pcs", "orderedQuantity": 5, "receivedQuantity": 5, "unitPrice": 1, "promisedDate": "2026-05-30" },
+                          { "lineNo": "30", "skuCode": "SKU-RM-1000", "uomCode": "kg", "orderedQuantity": 4, "receivedQuantity": 0, "unitPrice": 1, "promisedDate": "2026-05-30" },
+                          { "lineNo": "40", "skuCode": "SKU-RM-1000", "uomCode": "pcs", "orderedQuantity": 4, "receivedQuantity": 0, "unitPrice": 1, "promisedDate": "2026-07-01" },
+                          { "lineNo": "50", "skuCode": "SKU-OTHER", "uomCode": "pcs", "orderedQuantity": 4, "receivedQuantity": 0, "unitPrice": 1, "promisedDate": "2026-05-30" }
+                        ]
+                      }
+                    ]
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
+        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient);
+
+        var snapshot = await client.GetScheduledReceiptsAsync(
+            "token",
+            new PlanningScheduledReceiptSnapshotRequest(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 5, 25),
+                new DateOnly(2026, 6, 30),
+                [new PlanningScheduledReceiptSnapshotItem("sku-rm-1000", "PCS", "site-01")]),
+            CancellationToken.None);
+
+        Assert.Equal("erp-purchase-orders:2", snapshot.SnapshotSource);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Equal([7m, 7m], snapshot.ScheduledReceipts.Select(x => x.Quantity).ToArray());
+        Assert.Contains(snapshot.ScheduledReceipts, x =>
+            x.SourceDocumentId == "PO-100:10"
+            && x.ExpectedReceiptDate == new DateOnly(2026, 5, 30));
+        Assert.Contains(snapshot.ScheduledReceipts, x =>
+            x.SourceDocumentId == "PO-501:10"
+            && x.ExpectedReceiptDate == new DateOnly(2026, 5, 24));
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -168,5 +255,24 @@ public sealed class PlanningInputAdapterTests
                     new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 7m, new DateOnly(2026, 5, 30), "erp", "purchase-order", "PO-1000:10"),
                 ]));
         }
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(send(request));
+        }
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+    {
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
     }
 }
