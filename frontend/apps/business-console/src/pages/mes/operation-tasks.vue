@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -42,6 +43,8 @@ const {
 const router = useRouter()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
+
+const quickViewWorkOrderId = ref<string | null>(null)
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -132,8 +135,7 @@ function resetFilters() {
 }
 
 function openWorkOrder(workOrderId?: string | null) {
-  if (!workOrderId) return
-  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+  if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function openRoute(path: string, task: Row) {
   void router.push({
@@ -229,7 +231,12 @@ function formatError(error: unknown) {
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <p v-if="!operationTasksPending && visibleTasks.length" class="text-sm text-muted-foreground" aria-live="polite">
-      本页 <span class="font-medium text-foreground">{{ reportableOnPage }}</span> 道工序现在能动手，行尾「报工」直接登记产量。
+      <template v-if="reportableOnPage > 0">
+        本页 <span class="font-medium text-foreground">{{ reportableOnPage }}</span> 道工序现在能动手，行尾「报工」直接登记产量。
+      </template>
+      <template v-else>
+        本页工序暂无可直接报工的（多为<span class="font-medium text-foreground">排队中</span>）：需先到<span class="font-medium text-foreground">派工看板</span>派工、开工后，行尾才会出现「报工」。
+      </template>
     </p>
 
     <DataTable
@@ -321,5 +328,7 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="operationTasksTotal"
     />
+
+    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
+import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -31,8 +32,8 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '完工入库' } })
 
@@ -50,9 +51,9 @@ const {
 const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
 
 const route = useRoute()
-const router = useRouter()
 const successMessage = shallowRef('')
 const receiptSheetOpen = shallowRef(false)
+const quickViewWorkOrderId = ref<string | null>(null)
 
 const statusFilter = computed({
   get: () => filters.status || 'all',
@@ -137,8 +138,7 @@ const columns: DataTableColumn<ReceiptRow>[] = [
 ]
 
 function openWorkOrder(workOrderId?: string | null) {
-  if (!workOrderId) return
-  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+  if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function openReceiptSheet() {
   if (!hasReceiptContext.value) return
@@ -323,5 +323,7 @@ function isNonEmpty(value: string) {
         </form>
       </DialogContent>
     </Dialog>
+
+    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
 </template>

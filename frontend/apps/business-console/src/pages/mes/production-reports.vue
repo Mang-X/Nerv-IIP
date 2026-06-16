@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
+import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -12,8 +13,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工记录' } })
 
@@ -27,7 +27,7 @@ const {
 } = useMesProductionReports()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const router = useRouter()
+const quickViewWorkOrderId = ref<string | null>(null)
 
 const errorMessage = computed(() => formatError(productionReportsError.value))
 
@@ -51,8 +51,7 @@ function formatDateTime(value?: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 function openWorkOrder(workOrderId?: string | null) {
-  if (!workOrderId) return
-  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+  if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -127,5 +126,7 @@ function formatError(error: unknown) {
     </DataTable>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
+
+    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
 </template>

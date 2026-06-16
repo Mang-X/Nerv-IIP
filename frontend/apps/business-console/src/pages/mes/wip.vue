@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
+import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -13,28 +14,25 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
-const router = useRouter()
+const quickViewWorkOrderId = ref<string | null>(null)
 
 // 本页卡点：当前页存在阻塞原因的在制行——驱动「排阻塞」动作（非机械计数，不冒充后端总量）。
 const blockedCount = computed(() => wipRows.value.filter((r) => r.blockingReasons?.length).length)
 const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
+// 工序(operationTaskId) / 工作中心(workCenterId) 为后端 GUID 且无名称(#420)，
+// 只能显「待接入」占位、铺满无意义，暂不展示；后端回名称后再恢复这两列。
 const columns: DataTableColumn<WipRow>[] = [
   // TODO(#420): workOrderId 为后端 GUID，facade 暂不回工单号；不显裸 GUID，以「查看工单」承载回链。
   { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
-  // TODO(#420): operationTaskId 为后端 GUID，facade 暂不回工序号；不显裸 GUID，降级占位。
-  { key: 'operationTaskId', header: '工序' },
-  // TODO(#420): workCenterId 为后端 GUID，facade 暂不回工作中心名称；不显裸 GUID，降级占位。
-  { key: 'workCenterId', header: '工作中心' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'progress', header: '在制进度', width: 'w-48', accessor: (r) => r.goodQuantity ?? 0 },
   { key: 'blockingReasons', header: '卡点' },
@@ -50,8 +48,7 @@ function readinessList(reasons?: string[] | null) {
   return (reasons ?? []).map(describeMesReadinessReason)
 }
 function openWorkOrder(workOrderId?: string | null) {
-  if (!workOrderId) return
-  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+  if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
@@ -110,14 +107,6 @@ function formatError(error: unknown) {
         </button>
         <span v-else class="text-muted-foreground">未关联工单</span>
       </template>
-      <!-- TODO(#420): operationTaskId 为后端 GUID，facade 暂不回工序号；不显裸 GUID，降级占位。 -->
-      <template #cell-operationTaskId="{ row }">
-        <span class="text-muted-foreground">{{ row.operationTaskId ? '工序待接入' : '无' }}</span>
-      </template>
-      <!-- TODO(#420): workCenterId 为后端 GUID，facade 暂不回工作中心名称；不显裸 GUID，降级占位。 -->
-      <template #cell-workCenterId="{ row }">
-        <span class="text-muted-foreground">{{ row.workCenterId ? '工作中心待接入' : '未指定' }}</span>
-      </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-progress="{ row }">
         <div class="flex flex-col gap-1">
@@ -147,5 +136,7 @@ function formatError(error: unknown) {
     </DataTable>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
+
+    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
 </template>
