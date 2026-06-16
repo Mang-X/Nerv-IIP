@@ -171,13 +171,16 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                     && x.EnvironmentId == request.EnvironmentId
                     && x.CustomerCode == quotation.CustomerCode)
                 .SumAsync(x => x.Amount - x.CollectedAmount, cancellationToken);
-            var activeSalesOrders = await dbContext.SalesOrders
+            var activeSalesOrders = (await dbContext.SalesOrders
+                .Include(x => x.Lines)
                 .Where(x =>
                     x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.CustomerCode == quotation.CustomerCode
                     && x.Status == "released")
-                .SumAsync(x => x.TotalAmount, cancellationToken);
+                .ToListAsync(cancellationToken))
+                .SelectMany(x => x.Lines)
+                .Sum(x => x.OpenQuantity * x.UnitPrice);
             creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, request.CustomerCreditLimit.Value, openReceivables, activeSalesOrders);
         }
 

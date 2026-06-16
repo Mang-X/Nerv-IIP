@@ -25,6 +25,8 @@ public static class StandardCodeRules
         Document("supplier-invoice", "Supplier invoice", "SI"),
         Document("account-payable", "Account payable", "AP"),
         Document("account-receivable", "Account receivable", "AR"),
+        Document("account-payable-payment", "Account payable payment", "APPAY"),
+        Document("account-receivable-collection", "Account receivable collection", "ARCOL"),
         Document("cost-candidate", "Cost candidate", "COST"),
         Document("journal-voucher", "Journal voucher", "JV"),
         Document("engineering-document", "Engineering document", "EDOC"),

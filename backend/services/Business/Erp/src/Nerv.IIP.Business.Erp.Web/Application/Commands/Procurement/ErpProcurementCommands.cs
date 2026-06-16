@@ -414,7 +414,7 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             "supplier-invoice",
             request.InvoiceNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.QuantityTolerance, request.AmountTolerance, request.PayableNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -441,6 +441,16 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 && x.PurchaseReceiptNo == request.PurchaseReceiptNo,
                 cancellationToken)
             ?? throw new KnownException($"Purchase receipt '{request.PurchaseReceiptNo}' was not found.");
+        var alreadyInvoicedQuantitiesByReceiptLineNo = (await dbContext.SupplierInvoices
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseReceiptNo == request.PurchaseReceiptNo)
+            .SelectMany(x => x.Lines)
+            .ToListAsync(cancellationToken))
+            .GroupBy(x => x.PurchaseReceiptLineNo, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Sum(line => line.InvoiceQuantity), StringComparer.Ordinal);
 
         var invoice = SupplierInvoice.Match(
             order,
@@ -451,14 +461,27 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             request.CurrencyCode,
             request.QuantityTolerance,
             request.AmountTolerance,
-            request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice)));
+            request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice)),
+            alreadyInvoicedQuantitiesByReceiptLineNo);
         dbContext.SupplierInvoices.Add(invoice);
 
-        var payableNo = string.IsNullOrWhiteSpace(request.PayableNo) ? $"AP-{invoice.InvoiceNo}" : request.PayableNo.Trim();
+        if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
+        {
+            return invoice.Id;
+        }
+
+        var payableAllocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-payable",
+            request.PayableNo,
+            request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:account-payable",
+            ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.InvoiceDate, invoice.DueDate, "MATCHED"),
+            cancellationToken);
         var payable = AccountPayable.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            payableNo,
+            payableAllocation.Code,
             invoice.InvoiceNo,
             invoice.SupplierCode,
             invoice.TotalAmount,

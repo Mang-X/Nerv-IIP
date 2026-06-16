@@ -68,8 +68,8 @@ public sealed record CreateCostCandidateRequest(string OrganizationId, string En
 public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId);
 public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string? VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
-public sealed record RegisterAccountPayablePaymentRequest(string OrganizationId, string EnvironmentId, string PayableNo, decimal Amount, DateOnly PaymentDate, string CashAccountCode);
-public sealed record RegisterAccountReceivableCollectionRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, decimal Amount, DateOnly CollectionDate, string CashAccountCode);
+public sealed record RegisterAccountPayablePaymentRequest(string OrganizationId, string EnvironmentId, string PayableNo, decimal Amount, DateOnly PaymentDate, string CashAccountCode, string IdempotencyKey);
+public sealed record RegisterAccountReceivableCollectionRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, decimal Amount, DateOnly CollectionDate, string CashAccountCode, string IdempotencyKey);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
 public sealed record ListFinanceDocumentsRequest(
     string OrganizationId,
@@ -243,7 +243,7 @@ public sealed class RegisterAccountPayablePaymentEndpoint(ISender sender) : ErpE
 
     public override async Task HandleAsync(RegisterAccountPayablePaymentRequest req, CancellationToken ct)
     {
-        await sender.Send(new RegisterAccountPayablePaymentCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode), ct);
+        await sender.Send(new RegisterAccountPayablePaymentCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode, req.IdempotencyKey), ct);
         await Send.OkAsync("registered".AsResponseData(), cancellation: ct);
     }
 }
@@ -254,7 +254,7 @@ public sealed class RegisterAccountReceivableCollectionEndpoint(ISender sender) 
 
     public override async Task HandleAsync(RegisterAccountReceivableCollectionRequest req, CancellationToken ct)
     {
-        await sender.Send(new RegisterAccountReceivableCollectionCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode), ct);
+        await sender.Send(new RegisterAccountReceivableCollectionCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode, req.IdempotencyKey), ct);
         await Send.OkAsync("registered".AsResponseData(), cancellation: ct);
     }
 }

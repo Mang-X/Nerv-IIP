@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
@@ -136,8 +137,74 @@ public sealed class ErpBusinessGapClosureTests
         Assert.NotNull(invoiceId);
         var payable = Assert.Single(dbContext.AccountPayables);
         Assert.Equal("INV-001", payable.SourceDocumentNo);
+        Assert.NotEqual("AP-INV-001", payable.PayableNo);
         Assert.Equal(25m, payable.Amount);
         Assert.Equal(new DateOnly(2026, 7, 10), payable.DueDate);
+        Assert.Single(dbContext.JournalVouchers);
+    }
+
+    [Fact]
+    public async Task Supplier_invoice_command_holds_payment_when_cumulative_invoice_quantity_exceeds_receipt()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreatePurchaseOrderCommandHandler(dbContext).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-001",
+                "PO-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01", "LOT-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordSupplierInvoiceCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-001",
+                "PO-001",
+                "RCV-001",
+                new DateOnly(2026, 6, 10),
+                new DateOnly(2026, 7, 10),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await handler.Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-002",
+                "PO-001",
+                "RCV-001",
+                new DateOnly(2026, 6, 11),
+                new DateOnly(2026, 7, 11),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 0.1m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var heldInvoice = dbContext.SupplierInvoices.Single(x => x.InvoiceNo == "INV-002");
+        Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldInvoice.MatchStatus);
+        Assert.Single(dbContext.AccountPayables);
         Assert.Single(dbContext.JournalVouchers);
     }
 
@@ -155,11 +222,20 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new RegisterAccountPayablePaymentCommandHandler(dbContext).Handle(
-            new RegisterAccountPayablePaymentCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001"),
+        var payablePaymentHandler = new RegisterAccountPayablePaymentCommandHandler(dbContext);
+        var receivableCollectionHandler = new RegisterAccountReceivableCollectionCommandHandler(dbContext);
+        await payablePaymentHandler.Handle(
+            new RegisterAccountPayablePaymentCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-payment-001"),
             CancellationToken.None);
-        await new RegisterAccountReceivableCollectionCommandHandler(dbContext).Handle(
-            new RegisterAccountReceivableCollectionCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001"),
+        await receivableCollectionHandler.Handle(
+            new RegisterAccountReceivableCollectionCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-collection-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await payablePaymentHandler.Handle(
+            new RegisterAccountPayablePaymentCommand("org-001", "env-dev", "AP-001", 40m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ap-payment-001"),
+            CancellationToken.None);
+        await receivableCollectionHandler.Handle(
+            new RegisterAccountReceivableCollectionCommand("org-001", "env-dev", "AR-001", 35m, new DateOnly(2026, 6, 20), "BANK-001", "idem-ar-collection-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -199,5 +275,57 @@ public sealed class ErpBusinessGapClosureTests
         await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(dbContext).Handle(
             new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", CustomerCreditLimit: 100m),
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Sales_order_credit_exposure_counts_only_open_sales_order_quantity()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await new CreateQuotationCommandHandler(dbContext).Handle(
+            new CreateQuotationCommand(
+                "org-001",
+                "env-dev",
+                "QT-001",
+                "CUST-001",
+                new DateOnly(2026, 12, 31),
+                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 2m, 20m, new DateOnly(2026, 7, 1))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QT-001"),
+            CancellationToken.None);
+        await new CreateSalesOrderCommandHandler(dbContext).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", CustomerCreditLimit: 100m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
+            new ReleaseDeliveryOrderCommand(
+                "org-001",
+                "env-dev",
+                "DO-001",
+                "SO-001",
+                [new DeliveryOrderCommandLine("LINE-001", 1m, "FG-SHIP", "LOT-FG-001")]),
+            CancellationToken.None);
+        await new CreateQuotationCommandHandler(dbContext).Handle(
+            new CreateQuotationCommand(
+                "org-001",
+                "env-dev",
+                "QT-002",
+                "CUST-001",
+                new DateOnly(2026, 12, 31),
+                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 1m, 40m, new DateOnly(2026, 7, 1))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QT-002"),
+            CancellationToken.None);
+
+        var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-002", "QT-002", CustomerCreditLimit: 60m),
+            CancellationToken.None);
+
+        Assert.NotNull(salesOrderId);
     }
 }

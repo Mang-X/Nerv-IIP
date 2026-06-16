@@ -141,7 +141,8 @@ public sealed record RegisterAccountPayablePaymentCommand(
     string PayableNo,
     decimal Amount,
     DateOnly PaymentDate,
-    string CashAccountCode) : ICommand;
+    string CashAccountCode,
+    string IdempotencyKey) : ICommand;
 
 public sealed class RegisterAccountPayablePaymentCommandValidator : AbstractValidator<RegisterAccountPayablePaymentCommand>
 {
@@ -153,14 +154,35 @@ public sealed class RegisterAccountPayablePaymentCommandValidator : AbstractVali
         RuleFor(x => x.Amount).GreaterThan(0);
         RuleFor(x => x.PaymentDate).NotEqual(default(DateOnly));
         RuleFor(x => x.CashAccountCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 
-public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbContext dbContext)
+public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<RegisterAccountPayablePaymentCommand>
 {
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
     public async Task Handle(RegisterAccountPayablePaymentCommand request, CancellationToken cancellationToken)
     {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-payable-payment",
+            null,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.PayableNo, request.Amount, request.PaymentDate, request.CashAccountCode),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay
+            && await dbContext.JournalVouchers.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.VoucherNo == allocation.Code,
+                cancellationToken))
+        {
+            return;
+        }
+
         var payable = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
@@ -169,7 +191,7 @@ public sealed class RegisterAccountPayablePaymentCommandHandler(ApplicationDbCon
             ?? throw new KnownException($"Account payable '{request.PayableNo}' was not found.");
 
         payable.RegisterPayment(request.Amount);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(payable, request.Amount, request.PaymentDate, request.CashAccountCode));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForPayablePayment(payable, allocation.Code, request.Amount, request.PaymentDate, request.CashAccountCode));
     }
 }
 
@@ -179,7 +201,8 @@ public sealed record RegisterAccountReceivableCollectionCommand(
     string ReceivableNo,
     decimal Amount,
     DateOnly CollectionDate,
-    string CashAccountCode) : ICommand;
+    string CashAccountCode,
+    string IdempotencyKey) : ICommand;
 
 public sealed class RegisterAccountReceivableCollectionCommandValidator : AbstractValidator<RegisterAccountReceivableCollectionCommand>
 {
@@ -191,14 +214,35 @@ public sealed class RegisterAccountReceivableCollectionCommandValidator : Abstra
         RuleFor(x => x.Amount).GreaterThan(0);
         RuleFor(x => x.CollectionDate).NotEqual(default(DateOnly));
         RuleFor(x => x.CashAccountCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 
-public sealed class RegisterAccountReceivableCollectionCommandHandler(ApplicationDbContext dbContext)
+public sealed class RegisterAccountReceivableCollectionCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
     : ICommandHandler<RegisterAccountReceivableCollectionCommand>
 {
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
     public async Task Handle(RegisterAccountReceivableCollectionCommand request, CancellationToken cancellationToken)
     {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-receivable-collection",
+            null,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.ReceivableNo, request.Amount, request.CollectionDate, request.CashAccountCode),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay
+            && await dbContext.JournalVouchers.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.VoucherNo == allocation.Code,
+                cancellationToken))
+        {
+            return;
+        }
+
         var receivable = await dbContext.AccountReceivables.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
@@ -207,7 +251,7 @@ public sealed class RegisterAccountReceivableCollectionCommandHandler(Applicatio
             ?? throw new KnownException($"Account receivable '{request.ReceivableNo}' was not found.");
 
         receivable.RegisterCollection(request.Amount);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, request.Amount, request.CollectionDate, request.CashAccountCode));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForReceivableCollection(receivable, allocation.Code, request.Amount, request.CollectionDate, request.CashAccountCode));
     }
 }
 
@@ -304,12 +348,12 @@ internal static class FinanceVoucherFactory
             ]);
     }
 
-    public static JournalVoucher ForPayablePayment(AccountPayable payable, decimal amount, DateOnly paymentDate, string cashAccountCode)
+    public static JournalVoucher ForPayablePayment(AccountPayable payable, string voucherNo, decimal amount, DateOnly paymentDate, string cashAccountCode)
     {
         return JournalVoucher.Post(
             payable.OrganizationId,
             payable.EnvironmentId,
-            TruncateVoucherNo($"JV-APPAY-{payable.PayableNo}-{Guid.CreateVersion7():N}"),
+            voucherNo,
             paymentDate,
             [
                 new JournalVoucherLineDraft("2202", amount, 0m, $"Pay AP {payable.PayableNo}"),
@@ -317,21 +361,16 @@ internal static class FinanceVoucherFactory
             ]);
     }
 
-    public static JournalVoucher ForReceivableCollection(AccountReceivable receivable, decimal amount, DateOnly collectionDate, string cashAccountCode)
+    public static JournalVoucher ForReceivableCollection(AccountReceivable receivable, string voucherNo, decimal amount, DateOnly collectionDate, string cashAccountCode)
     {
         return JournalVoucher.Post(
             receivable.OrganizationId,
             receivable.EnvironmentId,
-            TruncateVoucherNo($"JV-ARCOL-{receivable.ReceivableNo}-{Guid.CreateVersion7():N}"),
+            voucherNo,
             collectionDate,
             [
                 new JournalVoucherLineDraft(cashAccountCode, amount, 0m, $"Cash collection for {receivable.ReceivableNo}"),
                 new JournalVoucherLineDraft("1122", 0m, amount, $"Collect AR {receivable.ReceivableNo}"),
             ]);
-    }
-
-    private static string TruncateVoucherNo(string voucherNo)
-    {
-        return voucherNo.Length <= 100 ? voucherNo : voucherNo[..100];
     }
 }

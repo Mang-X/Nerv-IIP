@@ -37,7 +37,8 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         string currencyCode,
         decimal quantityTolerance,
         decimal amountTolerance,
-        IEnumerable<SupplierInvoiceLineDraft> lineDrafts)
+        IEnumerable<SupplierInvoiceLineDraft> lineDrafts,
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(receipt);
@@ -57,6 +58,8 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
         MatchedAtUtc = DateTime.UtcNow;
 
+        var held = false;
+        var currentInvoiceQuantitiesByReceiptLineNo = new Dictionary<string, decimal>(StringComparer.Ordinal);
         foreach (var draft in lineDrafts)
         {
             var poLine = order.Lines.SingleOrDefault(x => x.LineNo == draft.PurchaseOrderLineNo)
@@ -68,8 +71,15 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
                 throw new InvalidOperationException("Supplier invoice purchase order line and receipt line do not align.");
             }
 
-            EnsureWithinTolerance(draft, poLine, receiptLine, quantityTolerance, amountTolerance);
+            var alreadyInvoicedQuantity = alreadyInvoicedQuantitiesByReceiptLineNo?.GetValueOrDefault(draft.PurchaseReceiptLineNo) ?? 0m;
+            var currentInvoiceQuantity = currentInvoiceQuantitiesByReceiptLineNo.GetValueOrDefault(draft.PurchaseReceiptLineNo);
+            if (!IsWithinTolerance(draft, poLine, receiptLine, alreadyInvoicedQuantity + currentInvoiceQuantity, quantityTolerance, amountTolerance))
+            {
+                held = true;
+            }
+
             lines.Add(SupplierInvoiceLine.Create(draft, poLine));
+            currentInvoiceQuantitiesByReceiptLineNo[draft.PurchaseReceiptLineNo] = currentInvoiceQuantity + draft.InvoiceQuantity;
         }
 
         if (lines.Count == 0)
@@ -78,8 +88,11 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         }
 
         TotalAmount = lines.Sum(x => x.LineAmount);
-        MatchStatus = SupplierInvoiceMatchStatus.Matched;
-        this.AddDomainEvent(new SupplierInvoiceMatchedDomainEvent(this));
+        MatchStatus = held ? SupplierInvoiceMatchStatus.PaymentHeld : SupplierInvoiceMatchStatus.Matched;
+        if (MatchStatus == SupplierInvoiceMatchStatus.Matched)
+        {
+            this.AddDomainEvent(new SupplierInvoiceMatchedDomainEvent(this));
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -105,30 +118,29 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         string currencyCode,
         decimal quantityTolerance,
         decimal amountTolerance,
-        IEnumerable<SupplierInvoiceLineDraft> lines)
+        IEnumerable<SupplierInvoiceLineDraft> lines,
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, lines);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
     }
 
-    private static void EnsureWithinTolerance(
+    private static bool IsWithinTolerance(
         SupplierInvoiceLineDraft draft,
         PurchaseOrderLine poLine,
         PurchaseReceiptLine receiptLine,
+        decimal alreadyInvoicedQuantity,
         decimal quantityTolerance,
         decimal amountTolerance)
     {
         var invoiceQuantity = ErpText.Positive(draft.InvoiceQuantity, nameof(draft.InvoiceQuantity));
         var unitPrice = ErpText.Positive(draft.UnitPrice, nameof(draft.UnitPrice));
-        if (invoiceQuantity > receiptLine.ReceivedQuantity + quantityTolerance)
+        if (alreadyInvoicedQuantity + invoiceQuantity > receiptLine.ReceivedQuantity + quantityTolerance)
         {
-            throw new InvalidOperationException("Supplier invoice quantity exceeds received quantity tolerance.");
+            return false;
         }
 
         var priceDeltaAmount = Math.Abs(unitPrice - poLine.UnitPrice) * invoiceQuantity;
-        if (priceDeltaAmount > amountTolerance)
-        {
-            throw new InvalidOperationException("Supplier invoice amount exceeds purchase order tolerance.");
-        }
+        return priceDeltaAmount <= amountTolerance;
     }
 }
 

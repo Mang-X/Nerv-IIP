@@ -180,7 +180,7 @@ DemandPlanning.PlannedPurchaseSuggestion
   -> ERP.SubledgerVoucher
 ```
 
-SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。采购收货会通过公开 Inventory movement request 事件请求库存入账；供应商发票按 PO、收货和发票行三单匹配后生成 AP 和最小应付子分类账凭证。
+SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。采购收货会通过公开 Inventory movement request 事件请求库存入账；供应商发票按 PO、收货和发票行三单匹配，通过后生成 AP 和最小应付子分类账凭证，超出容差或累计已开票数量超过收货数量时进入 `PaymentHeld`，不创建 AP/凭证。
 
 ### 订单到交付到应收
 

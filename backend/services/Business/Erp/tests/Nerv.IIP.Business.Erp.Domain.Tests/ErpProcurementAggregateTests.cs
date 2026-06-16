@@ -169,7 +169,7 @@ public sealed class ErpProcurementAggregateTests
         Assert.Single(invoice.GetDomainEvents());
         Assert.IsType<SupplierInvoiceMatchedDomainEvent>(invoice.GetDomainEvents().Single());
 
-        Assert.Throws<InvalidOperationException>(() => SupplierInvoice.Match(
+        var heldByQuantity = SupplierInvoice.Match(
             order,
             receipt,
             "INV-002",
@@ -178,7 +178,22 @@ public sealed class ErpProcurementAggregateTests
             "CNY",
             quantityTolerance: 0m,
             amountTolerance: 0m,
-            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4.1m, 12.5m)]));
+            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4.1m, 12.5m)]);
+        Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldByQuantity.MatchStatus);
+        Assert.Empty(heldByQuantity.GetDomainEvents());
+
+        var heldByCumulativeQuantity = SupplierInvoice.Match(
+            order,
+            receipt,
+            "INV-002-A",
+            new DateOnly(2026, 6, 10),
+            new DateOnly(2026, 7, 10),
+            "CNY",
+            quantityTolerance: 0m,
+            amountTolerance: 0m,
+            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 0.1m, 12.5m)],
+            new Dictionary<string, decimal>(StringComparer.Ordinal) { ["LINE-001"] = 4m });
+        Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldByCumulativeQuantity.MatchStatus);
 
         var multiLineOrder = PurchaseOrder.Create(
             "org-001",
