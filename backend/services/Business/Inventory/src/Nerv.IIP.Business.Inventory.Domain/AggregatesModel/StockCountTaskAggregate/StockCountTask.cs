@@ -123,7 +123,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         {
             Status = "recount-required";
             UpdatedAtUtc = DateTime.UtcNow;
-            throw new InvalidOperationException("Stock count task requires recount because ledger version changed after the count snapshot.");
+            throw new StockCountRecountRequiredException("Stock count task requires recount because ledger version changed after the count snapshot.");
         }
 
         var variance = countedQuantity - ledger.OnHandQuantity;
@@ -153,6 +153,26 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockCountVarianceConfirmedDomainEvent(this, adjustment));
         return adjustment;
+    }
+
+    public void Cancel(StockLedger ledger, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (Status == "confirmed")
+        {
+            throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
+        }
+
+        if (Status == "cancelled")
+        {
+            return;
+        }
+
+        _ = InventoryText.Required(reason);
+        EnsureSameDimension(ledger);
+        ledger.ReleaseCountFreeze();
+        Status = "cancelled";
+        UpdatedAtUtc = DateTime.UtcNow;
     }
 
     private void EnsureSameDimension(StockLedger ledger)

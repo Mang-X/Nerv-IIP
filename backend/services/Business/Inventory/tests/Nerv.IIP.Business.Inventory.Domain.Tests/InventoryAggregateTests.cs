@@ -154,6 +154,22 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Outbound_movement_ignores_external_unit_cost_and_uses_moving_average()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001", unitCost: 2m));
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-002", unitCost: 4m));
+        var outbound = NewMovement("outbound", -5m, "idem-out-001", unitCost: 99m);
+
+        ledger.ApplyMovement(outbound);
+
+        Assert.Equal(3m, outbound.UnitCost);
+        Assert.Equal(-15m, outbound.MovementAmount);
+        Assert.Equal(45m, ledger.InventoryValue);
+        Assert.Equal(3m, ledger.MovingAverageUnitCost);
+    }
+
+    [Fact]
     public void Duplicate_idempotency_key_with_same_payload_returns_existing_movement()
     {
         var ledger = NewLedger();
@@ -279,11 +295,27 @@ public sealed class InventoryAggregateTests
         var task = NewCountTask(ledger);
         ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-002"));
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<StockCountRecountRequiredException>(() =>
             task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-001"));
 
         Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("recount-required", task.Status);
+    }
+
+    [Fact]
+    public void Count_task_cancel_releases_ledger_freeze()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+
+        task.Cancel(ledger, "operator-cancelled");
+
+        Assert.Equal("cancelled", task.Status);
+        Assert.False(ledger.IsFrozenForCount);
+        ledger.ApplyMovement(NewMovement("outbound", -1m, "idem-out-001"));
+        Assert.Equal(9m, ledger.OnHandQuantity);
     }
 
     [Fact]

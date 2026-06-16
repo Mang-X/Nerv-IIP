@@ -83,6 +83,11 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 
         var source = await FindLedgerAsync(request, sourceStatus, cancellationToken)
             ?? throw new KnownException("Source stock ledger does not exist for the requested status transfer.");
+        if (request.Quantity > source.AvailableQuantity)
+        {
+            throw new KnownException("Status transfer quantity exceeds available stock on the source ledger.");
+        }
+
         var outbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
@@ -101,7 +106,15 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.OwnerType,
             request.OwnerId,
             -request.Quantity);
-        source.ApplyMovement(outbound);
+        try
+        {
+            source.ApplyMovement(outbound);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
         dbContext.StockMovements.Add(outbound);
 
         var target = await FindLedgerAsync(request, targetStatus, cancellationToken);
@@ -141,7 +154,15 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.OwnerId,
             request.Quantity,
             source.MovingAverageUnitCost);
-        target.ApplyMovement(inbound);
+        try
+        {
+            target.ApplyMovement(inbound);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
         dbContext.StockMovements.Add(inbound);
 
         return new PostStockStatusTransferResult(outbound.Id, inbound.Id, source.OnHandQuantity, target.OnHandQuantity);

@@ -17,21 +17,40 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
 {
     public const string ConsumerName = "business-inventory.quality-inspection-result";
 
+    private readonly IntegrationEventConsumerGuard<InspectionResultIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            [
+                QualityIntegrationEventTypes.InspectionPassed,
+                QualityIntegrationEventTypes.InspectionRejected
+            ],
+            QualityIntegrationEventVersions.V1));
+
     public async Task HandleAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(integrationEvent);
-        _ = deadLetterStore;
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
 
+    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
         var targetStatus = integrationEvent.EventType switch
         {
             QualityIntegrationEventTypes.InspectionPassed => "unrestricted",
             QualityIntegrationEventTypes.InspectionRejected => "blocked",
-            _ => throw new KnownException($"Quality inspection event type '{integrationEvent.EventType}' is not supported by Inventory stock release."),
+            _ => throw new InvalidOperationException("Quality inspection event was not filtered by the consumer guard."),
         };
 
-        if (integrationEvent.EventVersion != QualityIntegrationEventVersions.V1)
+        if (await IsAlreadyProcessedAsync(integrationEvent, cancellationToken))
         {
-            throw new KnownException($"Quality inspection event version '{integrationEvent.EventVersion}' is not supported by Inventory.");
+            return;
         }
 
         var payload = integrationEvent.Payload;
@@ -75,9 +94,29 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             cancellationToken);
     }
 
-    [CapSubscribe("Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent", Group = ConsumerName)]
-    public Task HandleCapAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    private async Task<bool> IsAlreadyProcessedAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        return HandleAsync(integrationEvent, cancellationToken);
+        var payload = integrationEvent.Payload;
+        var outboundKey = $"{integrationEvent.IdempotencyKey}:out";
+        var inboundKey = $"{integrationEvent.IdempotencyKey}:in";
+        var outboundExists = await dbContext.StockMovements.AnyAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.SourceService == "quality"
+                && x.SourceDocumentId == payload.SourceDocumentId
+                && x.IdempotencyKey == outboundKey,
+            cancellationToken);
+        if (!outboundExists)
+        {
+            return false;
+        }
+
+        return await dbContext.StockMovements.AnyAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId
+                && x.EnvironmentId == integrationEvent.EnvironmentId
+                && x.SourceService == "quality"
+                && x.SourceDocumentId == payload.SourceDocumentId
+                && x.IdempotencyKey == inboundKey,
+            cancellationToken);
     }
 }

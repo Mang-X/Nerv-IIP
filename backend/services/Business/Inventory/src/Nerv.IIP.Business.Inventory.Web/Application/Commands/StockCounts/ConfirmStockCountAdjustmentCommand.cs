@@ -68,7 +68,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
         {
             movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
         }
-        catch (InvalidOperationException exception) when (exception.Message.Contains("recount", StringComparison.OrdinalIgnoreCase))
+        catch (StockCountRecountRequiredException exception)
         {
             throw new KnownException(exception.Message);
         }

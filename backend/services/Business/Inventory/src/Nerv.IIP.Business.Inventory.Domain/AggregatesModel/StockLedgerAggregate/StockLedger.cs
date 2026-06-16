@@ -216,8 +216,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             return;
         }
 
-        var outboundUnitCost = movement.UnitCost ?? MovingAverageUnitCost;
-        movement.ApplyValuation(outboundUnitCost);
+        movement.ApplyValuation(MovingAverageUnitCost);
         InventoryValue += movement.MovementAmount ?? 0m;
         if (nextOnHand == 0)
         {
