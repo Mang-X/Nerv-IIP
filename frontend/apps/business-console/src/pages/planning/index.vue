@@ -5,7 +5,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 definePage({
   meta: {
     requiresAuth: true,
-    title: 'routes.planning',
+    title: '需求与计划',
   },
 })
 </script>

@@ -154,7 +154,8 @@ const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'dueDate', header: '日期', width: 'w-28' },
 ]
 const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
-  { key: 'runId', header: '运行批次', cellClass: 'font-medium' },
+  // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
+  { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
   { key: 'productionEngineeringSnapshotSource', header: '工程快照' },
@@ -169,8 +170,8 @@ const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'engineeringRef', header: '工程引用' },
 ]
 const suggestionColumns: DataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
-  { key: 'suggestionId', header: '建议', cellClass: 'font-medium' },
-  { key: 'suggestionType', header: '类型', width: 'w-24' },
+  // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
+  { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
@@ -212,7 +213,17 @@ function suggestionTypeLabel(value?: string | null) {
   return ({ 'planned-purchase': '采购建议', 'planned-work-order': '生产建议' } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
 }
 function reasonLabel(value?: string | null) {
-  return ({ inventory_shortage: '库存不足', material_shortage: '物料不足', demand_pegging: '需求驱动', safety_stock: '安全库存' } as Record<string, string>)[value ?? ''] ?? (value || '按计划规则形成')
+  const map: Record<string, string> = {
+    'inventory_shortage': '库存不足',
+    'material_shortage': '物料不足',
+    'demand_pegging': '需求驱动',
+    'safety_stock': '安全库存',
+    'finished-good-net-requirement': '成品净需求',
+    'component-net-requirement': '组件净需求',
+    'safety-stock-replenishment': '安全库存补充',
+  }
+  // 未知码一律降级为通用中文，绝不回显原始英文码。
+  return map[value ?? ''] ?? '按计划规则形成'
 }
 function isOpen(status?: string | null) {
   return status?.toLowerCase() === 'open'
@@ -354,10 +365,6 @@ function formatSource(value?: string | null) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <p class="text-sm text-muted-foreground">
-    计划流程：① 录入需求 → ② 运行 MRP 生成建议 → ③ 评审并接受建议下达
-  </p>
-
   <Tabs default-value="demands">
     <TabsList>
       <TabsTrigger value="demands">需求池 ({{ demands.length }})</TabsTrigger>
@@ -387,6 +394,7 @@ function formatSource(value?: string | null) {
 
     <TabsContent value="runs" class="grid gap-4">
       <DataTable :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" empty-message="尚未运行 MRP。">
+        <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
         <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
         <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
         <template #cell-productionEngineeringSnapshotSource="{ row }">{{ formatSource(row.productionEngineeringSnapshotSource) }}</template>
