@@ -33,7 +33,10 @@ public sealed record NcrOpenedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrOpenedPayload Payload);
+    NcrOpenedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record NcrDispositionDecidedIntegrationEvent(
     string EventId,
@@ -47,7 +50,10 @@ public sealed record NcrDispositionDecidedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrDispositionDecidedPayload Payload);
+    NcrDispositionDecidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record NcrClosedIntegrationEvent(
     string EventId,
@@ -61,7 +67,10 @@ public sealed record NcrClosedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrClosedPayload Payload);
+    NcrClosedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record InspectionResultIntegrationEvent(
     string EventId,
@@ -91,7 +100,28 @@ public sealed record InspectionResultPayload(
     string Result,
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
-    DateTimeOffset RecordedAtUtc);
+    DateTimeOffset RecordedAtUtc,
+    StockReleaseDimensionPayload? StockRelease = null,
+    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null);
+
+public sealed record StockReleaseDimensionPayload(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string SourceQualityStatus,
+    string OwnerType,
+    string? OwnerId);
+
+public sealed record InspectionResultLinePayload(
+    string CharacteristicCode,
+    decimal? MeasuredValue,
+    string? ObservedText,
+    string? UnitCode,
+    string Result,
+    string? DefectReason,
+    decimal? DefectQuantity);
 
 public sealed record NcrOpenedPayload(
     string NcrId,
@@ -116,7 +146,14 @@ public sealed record NcrDispositionDecidedPayload(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    IReadOnlyCollection<MrbReviewPayload>? MrbReviews = null);
+
+public sealed record MrbReviewPayload(
+    string ReviewerId,
+    string Decision,
+    string? Comment,
+    DateTimeOffset ReviewedAtUtc);
 
 public sealed record NcrClosedPayload(
     string NcrId,

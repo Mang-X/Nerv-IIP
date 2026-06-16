@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
@@ -2188,7 +2189,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ncrId,
                 request.DispositionType,
                 request.DispositionApprovalChainId,
-                request.AttachmentFileIds),
+                request.AttachmentFileIds,
+                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray()),
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
@@ -2265,7 +2267,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             request.SerialNo,
             request.ResultLines?.Select(ToDownstreamLine).ToArray(),
             request.DispositionReason,
-            request.DispositionAttachmentFileIds);
+            request.DispositionAttachmentFileIds,
+            request.StockRelease);
 
     private static DownstreamInspectionResultLine ToDownstreamLine(
         BusinessConsoleInspectionCharacteristicResult line) =>
@@ -2276,7 +2279,15 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             line.Result,
             line.DefectReason,
             line.DefectQuantity,
-            line.AttachmentFileIds ?? []);
+            line.AttachmentFileIds ?? [],
+            line.MeasuredValue);
+
+    private static DownstreamMrbReview ToDownstreamMrbReview(BusinessConsoleMrbReview review) =>
+        new(
+            review.ReviewerId,
+            review.Decision,
+            review.Comment,
+            review.ReviewedAtUtc);
 
     private sealed record DownstreamCreateInspectionRecordRequest(
         string OrganizationId,
@@ -2291,7 +2302,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? SerialNo,
         IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
         string? DispositionReason,
-        IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+        IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BusinessConsoleInspectionStockRelease? StockRelease);
 
     private sealed record DownstreamInspectionResultLine(
         string CharacteristicCode,
@@ -2300,7 +2312,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Result,
         string? DefectReason,
         decimal? DefectQuantity,
-        IReadOnlyCollection<string> AttachmentFileIds);
+        IReadOnlyCollection<string> AttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? MeasuredValue);
 
     private sealed record DownstreamInspectionPlanItem(
         string InspectionPlanId,
@@ -2334,7 +2347,14 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string NcrId,
         string DispositionType,
         string? DispositionApprovalChainId,
-        IReadOnlyCollection<string>? AttachmentFileIds);
+        IReadOnlyCollection<string>? AttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews);
+
+    private sealed record DownstreamMrbReview(
+        string ReviewerId,
+        string Decision,
+        string? Comment,
+        DateTimeOffset ReviewedAtUtc);
 
     private sealed record DownstreamCloseNcrRequest(
         string NcrId,
