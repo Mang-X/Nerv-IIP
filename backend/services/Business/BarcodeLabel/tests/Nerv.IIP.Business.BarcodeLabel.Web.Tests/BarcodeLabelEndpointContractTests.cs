@@ -160,6 +160,32 @@ public sealed class BarcodeLabelEndpointContractTests
     }
 
     [Fact]
+    public void Validators_reject_unsupported_accepted_scan_workflow()
+    {
+        var result = new RecordScanCommandValidator().Validate(new RecordScanCommand(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BC001",
+            "mes.report",
+            "WO-001",
+            "idem-scan-unsupported-001",
+            "accepted",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.SourceWorkflow)));
+    }
+
+    [Fact]
     public async Task BarcodeLabel_http_endpoints_reject_anonymous_callers_before_persistence()
     {
         await using var factory = new WebApplicationFactory<Program>()

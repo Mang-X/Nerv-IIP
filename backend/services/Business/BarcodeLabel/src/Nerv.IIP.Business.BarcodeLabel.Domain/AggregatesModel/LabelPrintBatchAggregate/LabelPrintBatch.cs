@@ -48,7 +48,7 @@ public sealed class LabelPrintBatch : Entity<LabelPrintBatchId>, IAggregateRoot
         for (var sequence = 1; sequence <= requestedQuantity; sequence++)
         {
             var item = rule.BarcodeType.StartsWith("gs1-", StringComparison.Ordinal)
-                ? LabelPrintItem.CreateSerialized(sequence, rule.GenerateGs1Value(SourceDocumentType, labelValues.LotNo, labelValues.SerialPrefix, sequence), null)
+                ? LabelPrintItem.CreateSerialized(sequence, rule.GenerateGs1Value(SourceDocumentType, labelValues.RequireLotNo(), labelValues.RequireSerialPrefix(), sequence), null)
                 : LabelPrintItem.Create(sequence, rule.GenerateValue(SourceDocumentType, SourceDocumentId, sequence), null);
             Items.Add(item);
             if (!string.IsNullOrWhiteSpace(item.SerialNumber))
@@ -152,8 +152,18 @@ public sealed class LabelPrintItem : Entity<LabelPrintItemId>
     }
 }
 
-internal sealed record LabelValueInputs(string LotNo, string SerialPrefix)
+internal sealed record LabelValueInputs(string? LotNo, string? SerialPrefix)
 {
+    public string RequireLotNo()
+    {
+        return BarcodeLabelText.Required(LotNo ?? string.Empty, "lotNo");
+    }
+
+    public string RequireSerialPrefix()
+    {
+        return BarcodeLabelText.Required(SerialPrefix ?? string.Empty, "serialPrefix");
+    }
+
     public static LabelValueInputs Parse(string labelValuesJson)
     {
         using var document = JsonDocument.Parse(BarcodeLabelText.Required(labelValuesJson, nameof(labelValuesJson)));
@@ -165,7 +175,7 @@ internal sealed record LabelValueInputs(string LotNo, string SerialPrefix)
             ? serialElement.GetString()
             : null;
         return new LabelValueInputs(
-            BarcodeLabelText.Required(lotNo ?? "LOT", "lotNo"),
-            BarcodeLabelText.Required(serialPrefix ?? "SN-", "serialPrefix"));
+            BarcodeLabelText.Optional(lotNo),
+            BarcodeLabelText.Optional(serialPrefix));
     }
 }

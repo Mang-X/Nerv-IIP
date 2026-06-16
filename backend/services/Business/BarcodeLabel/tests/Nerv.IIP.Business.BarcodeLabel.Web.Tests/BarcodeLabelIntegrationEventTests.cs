@@ -79,7 +79,7 @@ public sealed class BarcodeLabelIntegrationEventTests
         var accepted = NewInventoryScan();
 
         var integrationEvent = new InventoryMovementRequestedFromBarcodeScanIntegrationEventConverter()
-            .Convert(new LabelScannedDomainEvent(accepted));
+            .Convert(new InventoryMovementRequestedFromScanDomainEvent(accepted));
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
@@ -89,6 +89,14 @@ public sealed class BarcodeLabelIntegrationEventTests
         Assert.Equal("LOT-A", integrationEvent.Payload.LotNo);
         Assert.Equal("SN-0001", integrationEvent.Payload.SerialNo);
         Assert.Equal(2, integrationEvent.Payload.Quantity);
+    }
+
+    [Fact]
+    public void Accepted_wms_receiving_scan_does_not_have_inventory_movement_domain_event()
+    {
+        var accepted = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC001", "wms.receiving", "ASN-001", "idem-scan-001", "accepted", null);
+
+        Assert.DoesNotContain(accepted.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
     }
 
     private static LabelPrintBatch NewPrintBatch()

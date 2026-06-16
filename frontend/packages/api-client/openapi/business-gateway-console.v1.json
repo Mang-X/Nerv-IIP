@@ -31203,6 +31203,11 @@
           "checksumRule": {
             "type": "string"
           },
+          "gs1CompanyPrefixLength": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
           "allowedSourceDocumentTypes": {
             "type": "array",
             "items": {
@@ -31282,6 +31287,11 @@
           },
           "status": {
             "type": "string"
+          },
+          "gs1CompanyPrefixLength": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         }
       },

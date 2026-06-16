@@ -85,7 +85,7 @@ public sealed class BarcodeScanAcceptedIntegrationEventConverter
     {
         var scan = domainEvent.ScanRecord;
         return new BarcodeScanAcceptedIntegrationEvent(
-            scan.DownstreamEventId ?? $"evt-barcode-scan-{Guid.CreateVersion7():N}",
+            $"evt-barcode-scan-{scan.Id}",
             BarcodeLabelIntegrationEventTypes.BarcodeScanAccepted,
             BarcodeLabelIntegrationEventVersions.V1,
             scan.ScannedAtUtc,
@@ -111,16 +111,11 @@ public sealed class BarcodeScanAcceptedIntegrationEventConverter
 }
 
 public sealed class InventoryMovementRequestedFromBarcodeScanIntegrationEventConverter
-    : IIntegrationEventConverter<LabelScannedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+    : IIntegrationEventConverter<InventoryMovementRequestedFromScanDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {
-    public InventoryMovementRequestedIntegrationEvent Convert(LabelScannedDomainEvent domainEvent)
+    public InventoryMovementRequestedIntegrationEvent Convert(InventoryMovementRequestedFromScanDomainEvent domainEvent)
     {
         var scan = domainEvent.ScanRecord;
-        if (!string.Equals(scan.BusinessAction, "inventory-movement-requested", StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Scan workflow '{scan.SourceWorkflow}' does not request an inventory movement.");
-        }
-
         var occurredAtUtc = DateTimeOffset.UtcNow;
         var idempotencyKey = $"barcode:{scan.OrganizationId}:{scan.EnvironmentId}:{scan.IdempotencyKey}";
         return new InventoryMovementRequestedIntegrationEvent(

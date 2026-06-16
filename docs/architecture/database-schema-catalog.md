@@ -270,10 +270,11 @@ Source:
 2. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260523103022_InitialBarcodeLabelSchema.cs`
 4. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260615073431_AddGs1ScanTraceability.cs`
+5. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260616015829_AddGs1CompanyPrefixLength.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `barcode_rules` | business | 条码规则定义，描述编码范围、前缀、序列和业务对象绑定。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + rule_code` 是业务唯一键。 | rule code 唯一索引防重复；对象类型/状态索引用于选择可用规则。 | 规则版本作为配置事实保留；停用后不再用于新标签生成。 |
+| `barcode_rules` | business | 条码规则定义，描述编码范围、前缀、序列和业务对象绑定；GS1 规则额外保存显式 `gs1_company_prefix_length`，用于正确拆分 SGTIN EPC URI。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + rule_code` 是业务唯一键；GS1 规则要求 13 位 GTIN root 和 6-12 位 company prefix length。 | rule code 唯一索引防重复；对象类型/状态索引用于选择可用规则。 | 规则版本作为配置事实保留；停用后不再用于新标签生成。 |
 | `label_templates` | business | 标签模板引用，绑定 FileStorage file id、模板名称和变量 schema。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + template_code` 是业务唯一键；`template_file_id` 是 FileStorage 公开引用。 | template code 唯一索引防重复；状态索引用于筛选可用模板。 | 模板登记后保留；文件本体和下载授权仍由 FileStorage 管理。 |
 | `label_print_batches` | business | 标签打印批次，记录模板、规则、业务来源和打印状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + batch_code` 是业务唯一键。 | batch code 唯一索引防重复；来源单据索引用于追踪打印来源。 | 批次创建后生成打印项，完成后作为追溯事实保留。 |
 | `label_print_items` | business | 打印批次内单张标签项，保存条码值、GS1 GTIN、批次、序列号和 EPC URI。 | `id` 为 Guid v7 强类型 ID；`label_print_batch_id` 归属批次；`label_value` 是标签值；`gtin + lot_no + serial_number` 记录序列化追溯键。 | label value 索引用于扫码反查；batch+sequence 唯一索引用于批次内顺序；GTIN/lot/serial 索引用于序列化追溯。 | 生命周期跟随打印批次；不会拥有库存数量或业务单据状态。 |

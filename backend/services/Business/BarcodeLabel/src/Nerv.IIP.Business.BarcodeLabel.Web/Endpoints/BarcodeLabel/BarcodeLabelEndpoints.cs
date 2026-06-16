@@ -48,7 +48,8 @@ public sealed record CreateOrUpdateBarcodeRuleRequest(
     int Length,
     string ChecksumRule,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
-    string Status);
+    string Status,
+    int? Gs1CompanyPrefixLength = null);
 
 public sealed record CreateOrUpdateBarcodeRuleResponse(BarcodeRuleId BarcodeRuleId);
 
@@ -183,7 +184,8 @@ public sealed class CreateOrUpdateBarcodeRuleEndpoint(ISender sender)
             req.Length,
             req.ChecksumRule,
             req.AllowedSourceDocumentTypes,
-            req.Status), ct);
+            req.Status,
+            req.Gs1CompanyPrefixLength), ct);
         await Send.OkAsync(new CreateOrUpdateBarcodeRuleResponse(id).AsResponseData(), cancellation: ct);
     }
 }

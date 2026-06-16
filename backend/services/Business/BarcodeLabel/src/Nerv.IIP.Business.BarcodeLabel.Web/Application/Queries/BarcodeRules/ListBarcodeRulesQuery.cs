@@ -20,6 +20,7 @@ public sealed record BarcodeRuleSummary(
     string Prefix,
     int Length,
     string ChecksumRule,
+    int? Gs1CompanyPrefixLength,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
     string Status);
 
@@ -67,6 +68,7 @@ public sealed class ListBarcodeRulesQueryHandler(ApplicationDbContext dbContext)
                 x.Prefix,
                 x.Length,
                 x.ChecksumRule,
+                x.Gs1CompanyPrefixLength,
                 x.AllowedSourceDocumentTypes,
                 x.Status))
             .ToArrayAsync(cancellationToken);

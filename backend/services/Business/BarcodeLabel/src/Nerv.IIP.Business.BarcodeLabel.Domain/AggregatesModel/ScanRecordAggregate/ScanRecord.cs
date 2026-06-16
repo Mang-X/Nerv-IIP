@@ -40,7 +40,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         EnvironmentId = BarcodeLabelText.Required(environmentId, nameof(environmentId));
         DeviceCode = BarcodeLabelText.Required(deviceCode, nameof(deviceCode));
         ScannedValue = BarcodeLabelText.Required(scannedValue, nameof(scannedValue));
-        SourceWorkflow = BarcodeLabelText.Required(sourceWorkflow, nameof(sourceWorkflow));
+        SourceWorkflow = BarcodeLabelText.Required(sourceWorkflow, nameof(sourceWorkflow)).ToLowerInvariant();
         SourceDocumentId = BarcodeLabelText.Required(sourceDocumentId, nameof(sourceDocumentId));
         IdempotencyKey = BarcodeLabelText.Required(idempotencyKey, nameof(idempotencyKey));
         Result = BarcodeLabelText.Supported(result, SupportedResults, nameof(result));
@@ -61,7 +61,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         }
         else
         {
-            if (!SupportedAcceptedWorkflows.Contains(SourceWorkflow, StringComparer.Ordinal))
+            if (!IsSupportedAcceptedWorkflow(SourceWorkflow))
             {
                 throw new ArgumentException($"Unsupported SourceWorkflow '{sourceWorkflow}'.", nameof(sourceWorkflow));
             }
@@ -74,6 +74,10 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
             }
 
             this.AddDomainEvent(new LabelScannedDomainEvent(this));
+            if (BusinessAction == "inventory-movement-requested")
+            {
+                this.AddDomainEvent(new InventoryMovementRequestedFromScanDomainEvent(this));
+            }
         }
     }
 
@@ -102,6 +106,18 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
     public string? DownstreamEventId { get; private set; }
     public DateTimeOffset ScannedAtUtc { get; private set; }
     public List<EpcisEvent> EpcisEvents { get; private set; } = [];
+
+    public static bool IsSupportedAcceptedWorkflow(string sourceWorkflow)
+    {
+        var normalized = BarcodeLabelText.Required(sourceWorkflow, nameof(sourceWorkflow)).ToLowerInvariant();
+        return SupportedAcceptedWorkflows.Contains(normalized);
+    }
+
+    public static bool RequiresInventoryContext(string sourceWorkflow)
+    {
+        var normalized = BarcodeLabelText.Required(sourceWorkflow, nameof(sourceWorkflow)).ToLowerInvariant();
+        return normalized.StartsWith("inventory.", StringComparison.Ordinal);
+    }
 
     public static ScanRecord Record(
         string organizationId,
@@ -173,7 +189,10 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
 
     private void ParseGs1ValueIfPresent()
     {
-        if (!ScannedValue.StartsWith("(01)", StringComparison.Ordinal))
+        if (!ScannedValue.StartsWith("(01)", StringComparison.Ordinal)
+            && !(ScannedValue.Length >= 16
+                && ScannedValue.StartsWith("01", StringComparison.Ordinal)
+                && ScannedValue.Skip(2).Take(14).All(char.IsDigit)))
         {
             return;
         }
@@ -183,7 +202,6 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         LotNo = parsed.LotNo;
         SerialNumber = parsed.SerialNumber;
         EpcUri = parsed.EpcUri;
-        Quantity ??= parsed.Quantity;
     }
 
     private void ConfigureBusinessAction()
@@ -205,6 +223,6 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         }
 
         BusinessAction = "inventory-movement-requested";
-        DownstreamEventId = $"evt-barcode-inventory-{OrganizationId}-{EnvironmentId}-{IdempotencyKey}".Replace(":", "-", StringComparison.Ordinal);
+        DownstreamEventId = $"evt-{Guid.CreateVersion7():N}";
     }
 }

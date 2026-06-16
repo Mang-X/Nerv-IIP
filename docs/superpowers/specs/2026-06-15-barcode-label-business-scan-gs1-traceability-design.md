@@ -10,7 +10,7 @@ BarcodeLabel remains the owner of barcode rules, label templates, print batches,
 
 This slice implements the minimum closed loop:
 
-1. GS1 AI parsing and validation for GTIN `(01)`, lot `(10)`, serial `(21)` and optional quantity `(30)`.
+1. GS1 AI parsing and validation for GTIN `(01)`, lot `(10)`, serial `(21)` and optional quantity `(30)`, including parenthesized values and raw GS1-128 values separated by FNC1 / ASCII 29.
 2. GS1-aware label generation for serialized label items, with `gtin`, `lotNo` and `serialNumber` persisted on each item.
 3. Scan records that store parsed GS1 data and reject unsupported workflow values instead of routing by free text.
 4. EPCIS minimum facts in BarcodeLabel:
@@ -41,9 +41,9 @@ The scan request must provide `skuCode`, `uomCode`, `siteCode`, `locationCode`, 
 ## Domain Rules
 
 1. GS1 rules use barcode type `gs1-128` or `gs1-datamatrix` and checksum rule `gs1-mod10`.
-2. GS1 label generation requires a numeric 13- or 14-digit GTIN root and produces an AI string containing `(01)`, `(10)` and `(21)`.
+2. GS1 label generation requires a numeric 13-digit GTIN root plus an explicit 6-12 digit GS1 company prefix length, then produces an AI string containing `(01)`, `(10)` and `(21)`.
 3. Serialized label items must persist `gtin`, `lotNo`, `serialNumber` and optional `epcUri`.
-4. Accepted scans must parse GS1 values before persistence when the scanned value starts with GS1 AI data.
+4. Accepted scans must parse GS1 values before persistence when the scanned value starts with GS1 AI data. AI `(30)` is parsed as package content reference only; inventory movement quantity must be supplied by the scan context.
 5. Inventory workflows require parsed or explicit SKU/lot/serial context and inventory movement fields. Missing business fields reject the command before persistence.
 6. Rejected scans remain allowed and do not publish business action events.
 7. Idempotent replay returns the existing scan and must not create duplicate EPCIS or downstream movement facts.
@@ -52,9 +52,10 @@ The scan request must provide `skuCode`, `uomCode`, `siteCode`, `locationCode`, 
 
 Add to schema `barcode`:
 
-1. Columns on `label_print_items`: `gtin`, `lot_no`, `serial_number`, `epc_uri`.
-2. Columns on `scan_records`: `gtin`, `lot_no`, `serial_number`, `quantity`, `business_action`, `downstream_event_id`.
-3. Table `epcis_events`: event id, organization/environment, event type, action, business step, disposition, epc/label value, GTIN, lot, serial, source document, source workflow, scan record id, print item id and occurred time.
+1. Column on `barcode_rules`: nullable `gs1_company_prefix_length`, required by GS1 rule validation and used to split SGTIN EPC URI values.
+2. Columns on `label_print_items`: `gtin`, `lot_no`, `serial_number`, `epc_uri`.
+3. Columns on `scan_records`: `gtin`, `lot_no`, `serial_number`, `quantity`, `business_action`, `downstream_event_id`.
+4. Table `epcis_events`: event id, organization/environment, event type, action, business step, disposition, epc/label value, GTIN, lot, serial, source document, source workflow, scan record id, print item id and occurred time.
 
 No cross-schema foreign keys are introduced.
 

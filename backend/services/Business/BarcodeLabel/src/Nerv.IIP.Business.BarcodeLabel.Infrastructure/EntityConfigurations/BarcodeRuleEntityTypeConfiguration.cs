@@ -17,6 +17,7 @@ public sealed class BarcodeRuleEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.Prefix).HasColumnName("prefix").IsRequired().HasMaxLength(40).HasComment("Barcode prefix included in generated label values.");
         builder.Property(x => x.Length).HasColumnName("length").IsRequired().HasComment("Maximum generated barcode length.");
         builder.Property(x => x.ChecksumRule).HasColumnName("checksum_rule").IsRequired().HasMaxLength(50).HasComment("Checksum policy name for generated barcode values.");
+        builder.Property(x => x.Gs1CompanyPrefixLength).HasColumnName("gs1_company_prefix_length").HasComment("Explicit GS1 company prefix length used to split SGTIN EPC URI values for GS1 barcode rules.");
         builder.PrimitiveCollection(x => x.AllowedSourceDocumentTypes).HasColumnName("allowed_source_document_types").HasComment("Allowed source document types for this barcode rule.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Rule lifecycle status: active or inactive.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the rule was created.");

@@ -17,7 +17,18 @@ public sealed class BarcodeLabelAggregateTests
         Assert.Equal("LOT-A", parsed.LotNo);
         Assert.Equal("SN-0001", parsed.SerialNumber);
         Assert.Equal(2, parsed.Quantity);
-        Assert.Equal("urn:epc:id:sgtin:0950600.013435.SN-0001", parsed.EpcUri);
+        Assert.Equal(string.Empty, parsed.EpcUri);
+    }
+
+    [Fact]
+    public void Gs1_parser_extracts_raw_gs1_128_with_fnc1_separators()
+    {
+        var parsed = Gs1ApplicationIdentifierParser.Parse("010950600013435210LOT-A\u001D21SN-0001\u001D302");
+
+        Assert.Equal("09506000134352", parsed.Gtin);
+        Assert.Equal("LOT-A", parsed.LotNo);
+        Assert.Equal("SN-0001", parsed.SerialNumber);
+        Assert.Equal(2, parsed.Quantity);
     }
 
     [Fact]
@@ -26,10 +37,31 @@ public sealed class BarcodeLabelAggregateTests
         Assert.Equal("09506000134352", Gs1BarcodeValue.AppendMod10CheckDigit("0950600013435"));
     }
 
+    [Theory]
+    [InlineData(6, "urn:epc:id:sgtin:095060.0013435.SN-0001")]
+    [InlineData(7, "urn:epc:id:sgtin:0950600.013435.SN-0001")]
+    [InlineData(12, "urn:epc:id:sgtin:095060001343.5.SN-0001")]
+    public void Gs1_epc_uri_uses_explicit_company_prefix_length(int companyPrefixLength, string expected)
+    {
+        var value = Gs1BarcodeValue.Create("0950600013435", "LOT-A", "SN-0001", companyPrefixLength);
+
+        Assert.Equal(expected, value.EpcUri);
+    }
+
+    [Theory]
+    [InlineData("095060001343")]
+    [InlineData("09506000134352")]
+    public void Gs1_mod10_rejects_non_13_digit_gtin_root(string digitsWithoutCheckDigit)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => Gs1BarcodeValue.AppendMod10CheckDigit(digitsWithoutCheckDigit));
+
+        Assert.Contains("13", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Gs1_print_batch_persists_serialized_label_fields_and_commissioning_events()
     {
-        var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active");
+        var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active", 7);
 
         var batch = LabelPrintBatch.Create(
             "org-001",
@@ -48,7 +80,7 @@ public sealed class BarcodeLabelAggregateTests
             Assert.Equal("09506000134352", item.Gtin);
             Assert.Equal("LOT-A", item.LotNo);
             Assert.StartsWith("(01)09506000134352(10)LOT-A(21)SN-", item.LabelValue, StringComparison.Ordinal);
-            Assert.StartsWith("urn:epc:id:sgtin:", item.EpcUri, StringComparison.Ordinal);
+            Assert.StartsWith("urn:epc:id:sgtin:0950600.013435.", item.EpcUri, StringComparison.Ordinal);
         });
         Assert.Equal(2, batch.EpcisEvents.Count);
         Assert.All(batch.EpcisEvents, epcisEvent =>
@@ -57,6 +89,25 @@ public sealed class BarcodeLabelAggregateTests
             Assert.Equal("ADD", epcisEvent.Action);
             Assert.Equal("commissioning", epcisEvent.BusinessStep);
         });
+    }
+
+    [Theory]
+    [InlineData("""{"skuCode":"SKU-FG-1000","serialPrefix":"SN-"}""")]
+    [InlineData("""{"skuCode":"SKU-FG-1000","lotNo":"LOT-A"}""")]
+    public void Gs1_print_batch_rejects_missing_lot_or_serial_prefix(string labelValuesJson)
+    {
+        var rule = BarcodeRule.Create("org-001", "env-dev", "GS1-FG", "gs1-128", "0950600013435", 80, "gs1-mod10", ["wms.inbound"], "active", 7);
+
+        Assert.Throws<ArgumentException>(() => LabelPrintBatch.Create(
+            "org-001",
+            "env-dev",
+            rule,
+            new LabelTemplateId(Guid.CreateVersion7()),
+            "wms.inbound",
+            "ASN-001",
+            "idem-print-gs1-001",
+            labelValuesJson,
+            1));
     }
 
     [Fact]
@@ -220,10 +271,54 @@ public sealed class BarcodeLabelAggregateTests
         Assert.Equal(2, scan.Quantity);
         Assert.Equal("inventory-movement-requested", scan.BusinessAction);
         Assert.NotNull(scan.DownstreamEventId);
+        Assert.Contains(scan.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
         var epcisEvent = Assert.Single(scan.EpcisEvents);
         Assert.Equal("objectEvent", epcisEvent.EventType);
         Assert.Equal("OBSERVE", epcisEvent.Action);
         Assert.Equal("inventory.receipt", epcisEvent.BusinessStep);
+    }
+
+    [Fact]
+    public void Accepted_inventory_scan_does_not_use_gs1_ai30_as_movement_quantity()
+    {
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A(21)SN-0001(30)24",
+            "inventory.receipt",
+            "ASN-001",
+            "idem-scan-gs1-ai30",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            null));
+
+        Assert.Contains("Quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Accepted_non_inventory_scan_does_not_raise_inventory_movement_domain_event()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BC001",
+            "wms.receiving",
+            "ASN-001",
+            "idem-scan-wms-001",
+            "accepted",
+            null);
+
+        Assert.Contains(scan.GetDomainEvents(), x => x is LabelScannedDomainEvent);
+        Assert.DoesNotContain(scan.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
     }
 
     [Fact]

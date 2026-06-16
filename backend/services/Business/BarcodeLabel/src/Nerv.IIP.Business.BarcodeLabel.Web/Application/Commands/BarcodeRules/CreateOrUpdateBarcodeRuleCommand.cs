@@ -12,7 +12,8 @@ public sealed record CreateOrUpdateBarcodeRuleCommand(
     int Length,
     string ChecksumRule,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
-    string Status) : ICommand<BarcodeRuleId>;
+    string Status,
+    int? Gs1CompanyPrefixLength = null) : ICommand<BarcodeRuleId>;
 
 public sealed class CreateOrUpdateBarcodeRuleCommandValidator : AbstractValidator<CreateOrUpdateBarcodeRuleCommand>
 {
@@ -27,6 +28,18 @@ public sealed class CreateOrUpdateBarcodeRuleCommandValidator : AbstractValidato
         RuleFor(x => x.ChecksumRule).NotEmpty().MaximumLength(50);
         RuleFor(x => x.AllowedSourceDocumentTypes).NotEmpty();
         RuleFor(x => x.Status).NotEmpty().MaximumLength(30);
+        When(x => !string.IsNullOrWhiteSpace(x.BarcodeType)
+            && x.BarcodeType.StartsWith("gs1-", StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.Prefix).Matches("^[0-9]{13}$").WithMessage("GS1 barcode rules require a 13-digit GTIN root prefix.");
+            RuleFor(x => x.ChecksumRule).Equal("gs1-mod10", StringComparer.OrdinalIgnoreCase);
+            RuleFor(x => x.Gs1CompanyPrefixLength).NotNull().InclusiveBetween(6, 12);
+        });
+        When(x => !string.IsNullOrWhiteSpace(x.BarcodeType)
+            && !x.BarcodeType.StartsWith("gs1-", StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.Gs1CompanyPrefixLength).Null();
+        });
     }
 }
 
@@ -42,20 +55,46 @@ public sealed class CreateOrUpdateBarcodeRuleCommandHandler(ApplicationDbContext
             cancellationToken);
         if (existing is not null)
         {
-            existing.Update(request.BarcodeType, request.Prefix, request.Length, request.ChecksumRule, request.AllowedSourceDocumentTypes, request.Status);
+            try
+            {
+                existing.Update(request.BarcodeType, request.Prefix, request.Length, request.ChecksumRule, request.AllowedSourceDocumentTypes, request.Status, request.Gs1CompanyPrefixLength);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new KnownException(ex.Message, ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new KnownException(ex.Message, ex);
+            }
+
             return existing.Id;
         }
 
-        var rule = BarcodeRule.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.RuleCode,
-            request.BarcodeType,
-            request.Prefix,
-            request.Length,
-            request.ChecksumRule,
-            request.AllowedSourceDocumentTypes,
-            request.Status);
+        BarcodeRule rule;
+        try
+        {
+            rule = BarcodeRule.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.RuleCode,
+                request.BarcodeType,
+                request.Prefix,
+                request.Length,
+                request.ChecksumRule,
+                request.AllowedSourceDocumentTypes,
+                request.Status,
+                request.Gs1CompanyPrefixLength);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new KnownException(ex.Message, ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message, ex);
+        }
+
         dbContext.BarcodeRules.Add(rule);
         return rule.Id;
     }

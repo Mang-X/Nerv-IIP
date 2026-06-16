@@ -42,8 +42,16 @@ public sealed class RecordScanCommandValidator : AbstractValidator<RecordScanCom
         RuleFor(x => x.QualityStatus).MaximumLength(100);
         RuleFor(x => x.OwnerType).MaximumLength(100);
         RuleFor(x => x.OwnerId).MaximumLength(150);
+        When(x => string.Equals(x.Result, "accepted", StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.SourceWorkflow)
+                .Must(sourceWorkflow => !string.IsNullOrWhiteSpace(sourceWorkflow)
+                    && ScanRecord.IsSupportedAcceptedWorkflow(sourceWorkflow))
+                .WithMessage("Unsupported accepted scan workflow.");
+        });
         When(x => string.Equals(x.Result, "accepted", StringComparison.OrdinalIgnoreCase)
-            && x.SourceWorkflow.StartsWith("inventory.", StringComparison.OrdinalIgnoreCase), () =>
+            && !string.IsNullOrWhiteSpace(x.SourceWorkflow)
+            && ScanRecord.RequiresInventoryContext(x.SourceWorkflow), () =>
         {
             RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
             RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
@@ -61,24 +69,36 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<ScanRecordId> Handle(RecordScanCommand request, CancellationToken cancellationToken)
     {
-        var candidate = ScanRecord.Record(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.DeviceCode,
-            request.ScannedValue,
-            request.SourceWorkflow,
-            request.SourceDocumentId,
-            request.IdempotencyKey,
-            request.Result,
-            request.RejectionReason,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.QualityStatus,
-            request.OwnerType,
-            request.OwnerId,
-            request.Quantity);
+        ScanRecord candidate;
+        try
+        {
+            candidate = ScanRecord.Record(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceCode,
+                request.ScannedValue,
+                request.SourceWorkflow,
+                request.SourceDocumentId,
+                request.IdempotencyKey,
+                request.Result,
+                request.RejectionReason,
+                request.SkuCode,
+                request.UomCode,
+                request.SiteCode,
+                request.LocationCode,
+                request.QualityStatus,
+                request.OwnerType,
+                request.OwnerId,
+                request.Quantity);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new KnownException(ex.Message, ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message, ex);
+        }
 
         var existing = await dbContext.ScanRecords.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
