@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.ProductEngineering;
 
 public static class ProductionEngineeringContractStatuses
@@ -71,7 +73,10 @@ public sealed record BomReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    BomReleasedPayload Payload);
+    BomReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record RoutingReleasedIntegrationEvent(
     string EventId,
@@ -85,7 +90,10 @@ public sealed record RoutingReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    RoutingReleasedPayload Payload);
+    RoutingReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ProductionVersionCreatedIntegrationEvent(
     string EventId,
@@ -99,7 +107,10 @@ public sealed record ProductionVersionCreatedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    ProductionVersionCreatedPayload Payload);
+    ProductionVersionCreatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record EngineeringChangeReleasedIntegrationEvent(
     string EventId,
@@ -113,7 +124,10 @@ public sealed record EngineeringChangeReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    EngineeringChangeReleasedPayload Payload);
+    EngineeringChangeReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record BomReleasedPayload(
     string BomVersionId,
