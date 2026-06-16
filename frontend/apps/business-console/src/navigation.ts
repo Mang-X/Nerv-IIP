@@ -1,17 +1,23 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import {
   ActivityIcon,
+  ArrowRightLeftIcon,
   AwardIcon,
+  BellRingIcon,
   BookMarkedIcon,
   BoxesIcon,
   BoxIcon,
   Building2Icon,
+  CalendarCogIcon,
   CalendarRangeIcon,
+  CheckCheckIcon,
   ClipboardCheckIcon,
+  ClipboardListIcon,
   CpuIcon,
   FactoryIcon,
   FileTextIcon,
   FolderTreeIcon,
+  GaugeIcon,
   GitBranchIcon,
   GitForkIcon,
   GitPullRequestIcon,
@@ -20,11 +26,18 @@ import {
   LayersIcon,
   LayoutDashboardIcon,
   NetworkIcon,
+  PackageCheckIcon,
   PackageIcon,
   PackageSearchIcon,
+  PlayIcon,
   ReceiptTextIcon,
   RouteIcon,
   RulerIcon,
+  SearchIcon,
+  ShieldAlertIcon,
+  ShieldCheckIcon,
+  TrendingUpIcon,
+  UserCheckIcon,
   UsersRoundIcon,
   WarehouseIcon,
   WrenchIcon,
@@ -59,7 +72,7 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
 
 /** Domain-local side navigation (the left of the T), per domain id. */
 export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
-  'workbench': [{ items: [{ title: '工作台首页', to: { path: '/' } }] }],
+  'workbench': [{ items: [{ title: '工作台首页', icon: LayoutDashboardIcon, to: { path: '/' } }] }],
   'master-data': [
     {
       label: '主对象',
@@ -114,83 +127,83 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
-  'planning': [{ items: [{ title: '需求与物料计划', to: { path: '/planning' } }] }],
-  'erp': [{ items: [{ title: '采购与供应', to: { path: '/erp' } }] }],
+  'planning': [{ items: [{ title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' } }] }],
+  'erp': [{ items: [{ title: '采购与供应', icon: ReceiptTextIcon, to: { path: '/erp' } }] }],
   'mes': [
     {
       label: '计划与工单',
       items: [
-        { title: '生产驾驶舱', to: { path: '/mes' } },
-        { title: '生产计划', to: { path: '/mes/plans' } },
-        { title: '工单与派工', to: { path: '/mes/work-orders' } },
-        { title: '派工看板', to: { path: '/mes/dispatch' } },
+        { title: '生产驾驶舱', icon: GaugeIcon, to: { path: '/mes' } },
+        { title: '生产计划', icon: CalendarRangeIcon, to: { path: '/mes/plans' } },
+        { title: '工单与派工', icon: ClipboardListIcon, to: { path: '/mes/work-orders' } },
+        { title: '派工看板', icon: UserCheckIcon, to: { path: '/mes/dispatch' } },
       ],
     },
     {
       label: '执行与齐套',
       items: [
-        { title: '领料与齐套', to: { path: '/mes/materials' } },
-        { title: '工序执行', to: { path: '/mes/operation-tasks' } },
-        { title: '在制跟踪', to: { path: '/mes/wip' } },
+        { title: '领料与齐套', icon: PackageIcon, to: { path: '/mes/materials' } },
+        { title: '工序执行', icon: PlayIcon, to: { path: '/mes/operation-tasks' } },
+        { title: '在制跟踪', icon: ActivityIcon, to: { path: '/mes/wip' } },
       ],
     },
     {
       label: '报工与完工',
       items: [
-        { title: '报工记录', to: { path: '/mes/production-reports' } },
-        { title: '完工入库', to: { path: '/mes/receipts' } },
+        { title: '报工记录', icon: ClipboardCheckIcon, to: { path: '/mes/production-reports' } },
+        { title: '完工入库', icon: PackageCheckIcon, to: { path: '/mes/receipts' } },
       ],
     },
     {
       label: '异常与协同',
       items: [
-        { title: '质量与不良', to: { path: '/mes/quality' } },
-        { title: '设备与停机', to: { path: '/mes/downtime' } },
-        { title: '异常与产能', to: { path: '/mes/capacity' } },
-        { title: '规则排程', to: { path: '/mes/schedules' } },
-        { title: '班次交接', to: { path: '/mes/handovers' } },
+        { title: '质量与不良', icon: ShieldCheckIcon, to: { path: '/mes/quality' } },
+        { title: '设备与停机', icon: WrenchIcon, to: { path: '/mes/downtime' } },
+        { title: '异常与产能', icon: TrendingUpIcon, to: { path: '/mes/capacity' } },
+        { title: '规则排程', icon: CalendarCogIcon, to: { path: '/mes/schedules' } },
+        { title: '班次交接', icon: ArrowRightLeftIcon, to: { path: '/mes/handovers' } },
       ],
     },
     {
       label: '追溯与诊断',
       items: [
-        { title: '追溯查询', to: { path: '/mes/traceability' } },
-        { title: '生产准备检查', to: { path: '/mes/foundation' } },
+        { title: '追溯查询', icon: SearchIcon, to: { path: '/mes/traceability' } },
+        { title: '生产准备检查', icon: CheckCheckIcon, to: { path: '/mes/foundation' } },
       ],
     },
   ],
   'quality': [
     {
       items: [
-        { title: '检验任务与记录', to: { path: '/quality/inspections' } },
-        { title: '不合格品处理', to: { path: '/quality/ncrs' } },
-        { title: '原因码目录', to: { path: '/quality/reason-codes' } },
+        { title: '检验任务与记录', icon: ClipboardCheckIcon, to: { path: '/quality/inspections' } },
+        { title: '不合格品处理', icon: ShieldAlertIcon, to: { path: '/quality/ncrs' } },
+        { title: '原因码目录', icon: HashIcon, to: { path: '/quality/reason-codes' } },
       ],
     },
   ],
   'inventory': [
     {
       items: [
-        { title: '库存可用量', to: { path: '/inventory/availability' } },
-        { title: '库存移动', to: { path: '/inventory/movements' } },
-        { title: '库存盘点', to: { path: '/inventory/counts' } },
+        { title: '库存可用量', icon: PackageSearchIcon, to: { path: '/inventory/availability' } },
+        { title: '库存移动', icon: ArrowRightLeftIcon, to: { path: '/inventory/movements' } },
+        { title: '库存盘点', icon: ClipboardListIcon, to: { path: '/inventory/counts' } },
       ],
     },
   ],
   'wms': [
     {
       items: [
-        { title: '收货入库', to: { path: '/wms/inbound' } },
-        { title: '出库发货', to: { path: '/wms/outbound' } },
-        { title: 'WCS 任务', to: { path: '/wms/wcs' } },
+        { title: '收货入库', icon: PackageCheckIcon, to: { path: '/wms/inbound' } },
+        { title: '出库发货', icon: PackageIcon, to: { path: '/wms/outbound' } },
+        { title: 'WCS 任务', icon: CpuIcon, to: { path: '/wms/wcs' } },
       ],
     },
   ],
   'equipment': [
     {
       items: [
-        { title: '设备运行看板', to: { path: '/equipment' } },
-        { title: '设备报警', to: { path: '/equipment/alarms' } },
+        { title: '设备运行看板', icon: ActivityIcon, to: { path: '/equipment' } },
+        { title: '设备报警', icon: BellRingIcon, to: { path: '/equipment/alarms' } },
       ],
     },
   ],
