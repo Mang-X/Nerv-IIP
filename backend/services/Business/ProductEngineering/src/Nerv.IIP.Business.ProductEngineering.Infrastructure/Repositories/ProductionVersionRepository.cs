@@ -12,15 +12,6 @@ public interface IProductionVersionRepository : IRepository<ProductionVersion, P
         string productionVersionId,
         CancellationToken cancellationToken = default);
 
-    Task<bool> HasOverlappingDefaultAsync(
-        string organizationId,
-        string environmentId,
-        string skuCode,
-        DateOnly validFrom,
-        DateOnly? validTo,
-        string? excludingProductionVersionId = null,
-        CancellationToken cancellationToken = default);
-
     Task<bool> HasOverlappingActiveAsync(
         string organizationId,
         string environmentId,
@@ -63,18 +54,6 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
             x.Id == typedId, cancellationToken);
     }
 
-    public async Task<bool> HasOverlappingDefaultAsync(
-        string organizationId,
-        string environmentId,
-        string skuCode,
-        DateOnly validFrom,
-        DateOnly? validTo,
-        string? excludingProductionVersionId = null,
-        CancellationToken cancellationToken = default)
-    {
-        return await HasOverlappingAsync(organizationId, environmentId, skuCode, validFrom, validTo, defaultOnly: true, excludingProductionVersionId, cancellationToken);
-    }
-
     public async Task<bool> HasOverlappingActiveAsync(
         string organizationId,
         string environmentId,
@@ -84,19 +63,6 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
         string? excludingProductionVersionId = null,
         CancellationToken cancellationToken = default)
     {
-        return await HasOverlappingAsync(organizationId, environmentId, skuCode, validFrom, validTo, defaultOnly: false, excludingProductionVersionId, cancellationToken);
-    }
-
-    private async Task<bool> HasOverlappingAsync(
-        string organizationId,
-        string environmentId,
-        string skuCode,
-        DateOnly validFrom,
-        DateOnly? validTo,
-        bool defaultOnly,
-        string? excludingProductionVersionId,
-        CancellationToken cancellationToken)
-    {
         var requestedEnd = validTo ?? DateOnly.MaxValue;
         var query = DbContext.ProductionVersions.Where(x =>
             x.OrganizationId == organizationId &&
@@ -105,11 +71,6 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
             x.Status != ProductionVersionStatus.Archived &&
             x.ValidFrom <= requestedEnd &&
             validFrom <= (x.ValidTo ?? DateOnly.MaxValue));
-
-        if (defaultOnly)
-        {
-            query = query.Where(x => x.IsDefault);
-        }
 
         if (Guid.TryParse(excludingProductionVersionId, out var excludingId))
         {

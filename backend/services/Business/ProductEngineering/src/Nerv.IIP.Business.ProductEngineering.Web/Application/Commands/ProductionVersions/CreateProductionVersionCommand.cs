@@ -49,8 +49,7 @@ public sealed class CreateProductionVersionCommandHandler(
             request.ValidTo,
             cancellationToken: cancellationToken))
         {
-            var scope = request.IsDefault ? "default " : string.Empty;
-            throw new KnownException($"Production version {scope}effective window already exists for SKU '{request.SkuCode}'. Archive or close the current version before creating an overlapping one.");
+            throw new KnownException($"Production version effective window already exists for SKU '{request.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
 
         var binding = await ProductionVersionBindingValidator.ResolveAsync(

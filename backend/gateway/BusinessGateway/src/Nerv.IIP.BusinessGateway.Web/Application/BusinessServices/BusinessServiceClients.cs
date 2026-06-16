@@ -2723,7 +2723,7 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/engineering/production-versions/{Uri.EscapeDataString(productionVersionId)}/archive",
-            new DownstreamArchiveProductionVersionRequest(productionVersionId, request.Reason),
+            new DownstreamArchiveProductionVersionRequest(request.OrganizationId, request.EnvironmentId, productionVersionId, request.Reason),
             cancellationToken);
         return new BusinessConsoleAcceptedResponse(true);
     }
@@ -2731,7 +2731,11 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
-    private sealed record DownstreamArchiveProductionVersionRequest(string ProductionVersionId, string Reason);
+    private sealed record DownstreamArchiveProductionVersionRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string ProductionVersionId,
+        string Reason);
 }
 
 public sealed class HttpBusinessPlanningClient(HttpClient httpClient)

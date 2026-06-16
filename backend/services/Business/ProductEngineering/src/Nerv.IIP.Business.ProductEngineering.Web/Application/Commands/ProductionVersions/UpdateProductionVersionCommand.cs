@@ -4,6 +4,8 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.ProductionVersions;
 
 public sealed record UpdateProductionVersionCommand(
+    string OrganizationId,
+    string EnvironmentId,
     string ProductionVersionId,
     string MbomVersionId,
     string RoutingVersionId,
@@ -18,6 +20,8 @@ public sealed class UpdateProductionVersionCommandValidator : AbstractValidator<
 {
     public UpdateProductionVersionCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ProductionVersionId).NotEmpty();
         RuleFor(x => x.MbomVersionId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RoutingVersionId).NotEmpty().MaximumLength(100);
@@ -33,27 +37,26 @@ public sealed class UpdateProductionVersionCommandHandler(
 {
     public async Task<ProductionVersionCommandResult> Handle(UpdateProductionVersionCommand request, CancellationToken cancellationToken)
     {
-        var version = await repository.GetByIdAsync(request.ProductionVersionId, cancellationToken)
+        var version = await repository.GetByIdAsync(request.OrganizationId, request.EnvironmentId, request.ProductionVersionId, cancellationToken)
             ?? throw new KnownException($"Production version '{request.ProductionVersionId}' was not found.");
 
         if (await repository.HasOverlappingActiveAsync(
-            version.OrganizationId,
-            version.EnvironmentId,
+            request.OrganizationId,
+            request.EnvironmentId,
             version.SkuCode,
             request.ValidFrom,
             request.ValidTo,
             request.ProductionVersionId,
             cancellationToken))
         {
-            var scope = request.IsDefault ? "default " : string.Empty;
-            throw new KnownException($"Production version {scope}effective window already exists for SKU '{version.SkuCode}'. Archive or close the current version before creating an overlapping one.");
+            throw new KnownException($"Production version effective window already exists for SKU '{version.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
 
         var binding = await ProductionVersionBindingValidator.ResolveAsync(
             manufacturingBomRepository,
             routingRepository,
-            version.OrganizationId,
-            version.EnvironmentId,
+            request.OrganizationId,
+            request.EnvironmentId,
             version.SkuCode,
             request.MbomVersionId,
             request.RoutingVersionId,

@@ -107,7 +107,7 @@ public sealed class ProductionVersionApiContractTests
                 20,
                 true),
             CancellationToken.None));
-        Assert.Contains("default", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -196,6 +196,87 @@ public sealed class ProductionVersionApiContractTests
 
         Assert.Contains("SKU", skuMismatch.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("effective", notEffective.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_command_rejects_cross_tenant_production_version_id()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var foreignProductionVersion = ProductionVersion.Create(
+            "org-002",
+            "env-dev",
+            "SKU-FG-1000",
+            "MBOM-FOREIGN:A",
+            "ROUTE-FOREIGN:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(foreignProductionVersion);
+        dbContext.ManufacturingBoms.Add(ReleasedManufacturingBom("MBOM-FOREIGN", "B", "SKU-FG-1000", new DateOnly(2026, 1, 1), "org-002"));
+        dbContext.Routings.Add(ReleasedRouting("ROUTE-FOREIGN", "B", "SKU-FG-1000", new DateOnly(2026, 1, 1), "org-002"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new UpdateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new UpdateProductionVersionCommand(
+                "org-001",
+                "env-dev",
+                foreignProductionVersion.Id.Id.ToString("D"),
+                "MBOM-FOREIGN:B",
+                "ROUTE-FOREIGN:B",
+                new DateOnly(2026, 6, 1),
+                null,
+                null,
+                null,
+                20,
+                false),
+            CancellationToken.None));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("MBOM-FOREIGN:A", foreignProductionVersion.MbomVersionId);
+        Assert.Equal(10, foreignProductionVersion.Priority);
+    }
+
+    [Fact]
+    public async Task Archive_command_rejects_cross_tenant_production_version_id()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var foreignProductionVersion = ProductionVersion.Create(
+            "org-002",
+            "env-dev",
+            "SKU-FG-1000",
+            "MBOM-FOREIGN:A",
+            "ROUTE-FOREIGN:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(foreignProductionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ArchiveProductionVersionCommandHandler(new ProductionVersionRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveProductionVersionCommand("org-001", "env-dev", foreignProductionVersion.Id.Id.ToString("D"), "review isolation"),
+            CancellationToken.None));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ProductionVersionStatus.Active, foreignProductionVersion.Status);
     }
 
     [Fact]
@@ -312,17 +393,27 @@ public sealed class ProductionVersionApiContractTests
             false);
     }
 
-    private static ManufacturingBom ReleasedManufacturingBom(string bomCode, string revision, string skuCode, DateOnly effectiveDate)
+    private static ManufacturingBom ReleasedManufacturingBom(
+        string bomCode,
+        string revision,
+        string skuCode,
+        DateOnly effectiveDate,
+        string organizationId = "org-001")
     {
-        var bom = ManufacturingBom.CreateDraft("org-001", "env-dev", bomCode, revision, skuCode)
+        var bom = ManufacturingBom.CreateDraft(organizationId, "env-dev", bomCode, revision, skuCode)
             .AddMaterialLine("SKU-RM-1000", 1m, "EA", 0m);
         bom.ReleaseFromEngineeringBom("EBOM-1000:A", EngineeringVersionStatus.Published, effectiveDate);
         return bom;
     }
 
-    private static Routing ReleasedRouting(string routingCode, string revision, string skuCode, DateOnly effectiveDate)
+    private static Routing ReleasedRouting(
+        string routingCode,
+        string revision,
+        string skuCode,
+        DateOnly effectiveDate,
+        string organizationId = "org-001")
     {
-        var routing = Routing.CreateDraft("org-001", "env-dev", routingCode, revision, skuCode)
+        var routing = Routing.CreateDraft(organizationId, "env-dev", routingCode, revision, skuCode)
             .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30);
         routing.Release(effectiveDate);
         return routing;
