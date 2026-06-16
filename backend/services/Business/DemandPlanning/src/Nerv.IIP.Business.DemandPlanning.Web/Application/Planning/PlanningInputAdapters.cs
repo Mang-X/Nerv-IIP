@@ -149,6 +149,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             engineering.ProductionVersions,
             engineering.BomComponents,
             scheduledReceipts.ScheduledReceipts,
+            // Lead time, safety stock, and lot multiple await #407 MasterData planning attributes.
             []);
     }
 
@@ -186,6 +187,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             snapshotSources.Add(snapshot.SnapshotSource);
             versions.AddRange(snapshot.ProductionVersions);
             components.AddRange(snapshot.BomComponents);
+            // BOM lines do not expose make/buy; one component lookahead discovers child production versions.
             pending.AddRange(snapshot.BomComponents
                 .Where(x => !requested.Contains(x.ComponentSkuCode))
                 .Select(x => x.ComponentSkuCode));
