@@ -41,7 +41,7 @@ public sealed class CreateProductionVersionCommandHandler(
 {
     public async Task<ProductionVersionCommandResult> Handle(CreateProductionVersionCommand request, CancellationToken cancellationToken)
     {
-        if (request.IsDefault && await repository.HasOverlappingDefaultAsync(
+        if (await repository.HasOverlappingActiveAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SkuCode,
@@ -49,7 +49,8 @@ public sealed class CreateProductionVersionCommandHandler(
             request.ValidTo,
             cancellationToken: cancellationToken))
         {
-            throw new KnownException($"Production version default already exists for SKU '{request.SkuCode}' in the requested effective window.");
+            var scope = request.IsDefault ? "default " : string.Empty;
+            throw new KnownException($"Production version {scope}effective window already exists for SKU '{request.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
 
         var binding = await ProductionVersionBindingValidator.ResolveAsync(

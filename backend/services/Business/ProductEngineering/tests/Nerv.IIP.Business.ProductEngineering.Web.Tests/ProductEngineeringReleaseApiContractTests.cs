@@ -521,6 +521,101 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_bom_rejects_overlapping_published_revision()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var existing = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-OVERLAP", "A", "ENG-1000")
+            .AddLine("ENG-1001", 1m, "EA");
+        existing.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.Add(existing);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringBomCommandHandler(new EngineeringBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringBomCommand(
+                "org-001",
+                "env-dev",
+                "EBOM-OVERLAP",
+                "B",
+                "ENG-1000",
+                new DateOnly(2026, 6, 1),
+                [new BomLineCommand("ENG-1002", 1m, "EA")]),
+            CancellationToken.None));
+
+        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("EBOM-OVERLAP", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_rejects_overlapping_published_revision()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-OVERLAP", "A", "ENG-1000")
+            .AddLine("ENG-1001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 1, 1));
+        var existing = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-OVERLAP", "A", "SKU-FG-1000")
+            .AddMaterialLine("SKU-RM-1000", 1m, "EA", 0m);
+        existing.ReleaseFromEngineeringBom("EBOM-OVERLAP:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        dbContext.AddRange(ebom, existing);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-OVERLAP",
+                "B",
+                "SKU-FG-1000",
+                "EBOM-OVERLAP",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-1001", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("MBOM-OVERLAP", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Release_routing_rejects_overlapping_published_revision()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(NewStandardOperation("mixing", "WC-MIX-01"));
+        var existing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-OVERLAP", "A", "SKU-FG-1000")
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30);
+        existing.Release(new DateOnly(2026, 1, 1));
+        dbContext.Routings.Add(existing);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-OVERLAP",
+                "B",
+                "SKU-FG-1000",
+                new DateOnly(2026, 6, 1),
+                [new RoutingOperationCommand(10, null, "mixing", null)]),
+            CancellationToken.None));
+
+        Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ROUTE-OVERLAP", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Release_engineering_bom_wraps_duplicate_component_as_known_exception()
     {
         await using var provider = CreateInMemoryProvider();

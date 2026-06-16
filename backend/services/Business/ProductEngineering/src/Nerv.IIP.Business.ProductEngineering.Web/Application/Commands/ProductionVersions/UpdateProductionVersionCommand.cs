@@ -36,7 +36,7 @@ public sealed class UpdateProductionVersionCommandHandler(
         var version = await repository.GetByIdAsync(request.ProductionVersionId, cancellationToken)
             ?? throw new KnownException($"Production version '{request.ProductionVersionId}' was not found.");
 
-        if (request.IsDefault && await repository.HasOverlappingDefaultAsync(
+        if (await repository.HasOverlappingActiveAsync(
             version.OrganizationId,
             version.EnvironmentId,
             version.SkuCode,
@@ -45,7 +45,8 @@ public sealed class UpdateProductionVersionCommandHandler(
             request.ProductionVersionId,
             cancellationToken))
         {
-            throw new KnownException($"Production version default already exists for SKU '{version.SkuCode}' in the requested effective window.");
+            var scope = request.IsDefault ? "default " : string.Empty;
+            throw new KnownException($"Production version {scope}effective window already exists for SKU '{version.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
 
         var binding = await ProductionVersionBindingValidator.ResolveAsync(

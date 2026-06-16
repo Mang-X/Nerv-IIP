@@ -209,6 +209,11 @@ public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepositor
             throw new KnownException($"Engineering BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
+        if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Engineering BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
+        }
+
         var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
             var draft = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.ParentItemCode);
@@ -303,6 +308,11 @@ public sealed class ReleaseManufacturingBomCommandHandler(
         if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
             throw new KnownException($"Manufacturing BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
+        }
+
+        if (await manufacturingBomRepository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Manufacturing BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
         }
 
         var ebom = await engineeringBomRepository.GetByBusinessKeyAsync(
@@ -403,6 +413,11 @@ public sealed class ReleaseRoutingCommandHandler(
         if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
             throw new KnownException($"Routing '{allocation.Code}' revision '{request.Revision}' already exists.");
+        }
+
+        if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Routing '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
         }
 
         var standardOperations = new Dictionary<string, StandardOperation>(StringComparer.Ordinal);

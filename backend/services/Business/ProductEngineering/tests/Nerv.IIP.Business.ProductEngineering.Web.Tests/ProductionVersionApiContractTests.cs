@@ -111,6 +111,41 @@ public sealed class ProductionVersionApiContractTests
     }
 
     [Fact]
+    public async Task Create_command_rejects_overlapping_non_default_for_same_sku()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductionVersions.Add(ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "MBOM-1000:A",
+            "ROUTE-1000:A",
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31),
+            null,
+            null,
+            10,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published));
+        dbContext.ManufacturingBoms.Add(ReleasedManufacturingBom("MBOM-1000", "B", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
+        dbContext.Routings.Add(ReleasedRouting("ROUTE-1000", "B", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateProductionVersionCommandHandler(
+            new ProductionVersionRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            NewCreateCommand("MBOM-1000:B", "ROUTE-1000:B", validFrom: new DateOnly(2026, 6, 1)),
+            CancellationToken.None));
+
+        Assert.Contains("effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Create_command_rejects_missing_or_unpublished_mbom_and_routing_references()
     {
         await using var provider = CreateInMemoryProvider();

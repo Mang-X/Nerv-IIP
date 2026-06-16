@@ -52,6 +52,8 @@ public interface IEngineeringBomRepository : IRepository<EngineeringBom, Enginee
     Task<EngineeringBom?> GetByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
 
     Task<EngineeringBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
+
+    Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string bomCode, string excludingRevision, CancellationToken cancellationToken = default);
 }
 
 public sealed class EngineeringBomRepository(ApplicationDbContext context)
@@ -73,6 +75,17 @@ public sealed class EngineeringBomRepository(ApplicationDbContext context)
             ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
             : null;
     }
+
+    public async Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string bomCode, string excludingRevision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.EngineeringBoms.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.BomCode == bomCode &&
+            x.Revision != excludingRevision &&
+            x.Status == EngineeringVersionStatus.Published,
+            cancellationToken);
+    }
 }
 
 public interface IManufacturingBomRepository : IRepository<ManufacturingBom, ManufacturingBomId>
@@ -82,6 +95,8 @@ public interface IManufacturingBomRepository : IRepository<ManufacturingBom, Man
     Task<ManufacturingBom?> GetByBusinessKeyAsync(string organizationId, string environmentId, string bomCode, string revision, CancellationToken cancellationToken = default);
 
     Task<ManufacturingBom?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
+
+    Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string bomCode, string excludingRevision, CancellationToken cancellationToken = default);
 }
 
 public sealed class ManufacturingBomRepository(ApplicationDbContext context)
@@ -113,6 +128,17 @@ public sealed class ManufacturingBomRepository(ApplicationDbContext context)
             ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
             : null;
     }
+
+    public async Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string bomCode, string excludingRevision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.ManufacturingBoms.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.BomCode == bomCode &&
+            x.Revision != excludingRevision &&
+            x.Status == EngineeringVersionStatus.Published,
+            cancellationToken);
+    }
 }
 
 public interface IRoutingRepository : IRepository<Routing, RoutingId>
@@ -122,6 +148,8 @@ public interface IRoutingRepository : IRepository<Routing, RoutingId>
     Task<Routing?> GetByBusinessKeyAsync(string organizationId, string environmentId, string routingCode, string revision, CancellationToken cancellationToken = default);
 
     Task<Routing?> GetByVersionIdAsync(string organizationId, string environmentId, string versionId, CancellationToken cancellationToken = default);
+
+    Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string routingCode, string excludingRevision, CancellationToken cancellationToken = default);
 }
 
 public sealed class RoutingRepository(ApplicationDbContext context)
@@ -152,6 +180,17 @@ public sealed class RoutingRepository(ApplicationDbContext context)
         return ProductEngineeringVersionReference.TryParse(versionId, out var code, out var revision)
             ? await GetByBusinessKeyAsync(organizationId, environmentId, code, revision, cancellationToken)
             : null;
+    }
+
+    public async Task<bool> HasPublishedRevisionAsync(string organizationId, string environmentId, string routingCode, string excludingRevision, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Routings.AnyAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.RoutingCode == routingCode &&
+            x.Revision != excludingRevision &&
+            x.Status == EngineeringVersionStatus.Published,
+            cancellationToken);
     }
 }
 
