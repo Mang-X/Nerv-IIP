@@ -67,6 +67,21 @@ public sealed class ProductionVersionApiContractTests
     }
 
     [Fact]
+    public void Production_version_repository_does_not_expose_unscoped_lookup_by_id()
+    {
+        var unscopedLookup = typeof(IProductionVersionRepository)
+            .GetMethods()
+            .Where(method => method.Name == nameof(IProductionVersionRepository.GetByIdAsync))
+            .Select(method => method.GetParameters())
+            .SingleOrDefault(parameters =>
+                parameters.Length == 2 &&
+                parameters[0].ParameterType == typeof(string) &&
+                parameters[1].ParameterType == typeof(CancellationToken));
+
+        Assert.Null(unscopedLookup);
+    }
+
+    [Fact]
     public async Task Create_command_rejects_overlapping_default_for_same_sku()
     {
         await using var provider = CreateInMemoryProvider();

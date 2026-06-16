@@ -4,8 +4,6 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 
 public interface IProductionVersionRepository : IRepository<ProductionVersion, ProductionVersionId>
 {
-    Task<ProductionVersion?> GetByIdAsync(string productionVersionId, CancellationToken cancellationToken = default);
-
     Task<ProductionVersion?> GetByIdAsync(
         string organizationId,
         string environmentId,
@@ -25,17 +23,6 @@ public interface IProductionVersionRepository : IRepository<ProductionVersion, P
 public sealed class ProductionVersionRepository(ApplicationDbContext context)
     : RepositoryBase<ProductionVersion, ProductionVersionId, ApplicationDbContext>(context), IProductionVersionRepository
 {
-    public async Task<ProductionVersion?> GetByIdAsync(string productionVersionId, CancellationToken cancellationToken = default)
-    {
-        if (!Guid.TryParse(productionVersionId, out var id))
-        {
-            return null;
-        }
-
-        var typedId = new ProductionVersionId(id);
-        return await DbContext.ProductionVersions.SingleOrDefaultAsync(x => x.Id == typedId, cancellationToken);
-    }
-
     public async Task<ProductionVersion?> GetByIdAsync(
         string organizationId,
         string environmentId,
