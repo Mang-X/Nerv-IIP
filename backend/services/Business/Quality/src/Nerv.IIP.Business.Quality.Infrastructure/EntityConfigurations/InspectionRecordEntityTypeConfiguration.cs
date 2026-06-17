@@ -20,6 +20,12 @@ public sealed class InspectionRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.InspectedQuantity).HasColumnName("inspected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity inspected.");
         builder.Property(x => x.BatchNo).HasColumnName("batch_no").HasMaxLength(100).HasComment("Optional batch number reference.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number reference.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional stock release UOM code for Inventory quality-status transfer.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Optional stock release site code for Inventory quality-status transfer.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Optional stock release location code for Inventory quality-status transfer.");
+        builder.Property(x => x.SourceQualityStatus).HasColumnName("source_quality_status").HasMaxLength(50).HasComment("Optional source Inventory quality status to transfer from after inspection.");
+        builder.Property(x => x.OwnerType).HasColumnName("owner_type").HasMaxLength(50).HasComment("Optional stock owner type for Inventory quality-status transfer.");
+        builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional stock owner reference id for Inventory quality-status transfer.");
         builder.Property(x => x.Result).HasColumnName("result").IsRequired().HasMaxLength(50).HasComment("Inspection result: passed, rejected or conditional-release.");
         builder.Property(x => x.DispositionReason).HasColumnName("disposition_reason").HasMaxLength(500).HasComment("Disposition reason preserved for rejected or conditional-release inspections.");
         builder.PrimitiveCollection(x => x.DispositionAttachmentFileIds).HasColumnName("disposition_attachment_file_ids").HasComment("File Storage attachment ids supporting the disposition.");
@@ -47,6 +53,7 @@ public sealed class InspectionResultLineEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.InspectionRecordId).HasColumnName("inspection_record_id").IsRequired().HasComment("Owning inspection record id.");
         builder.Property(x => x.CharacteristicCode).HasColumnName("characteristic_code").IsRequired().HasMaxLength(100).HasComment("Measured or checked characteristic code.");
         builder.Property(x => x.ObservedValue).HasColumnName("observed_value").IsRequired().HasMaxLength(500).HasComment("Observed measurement value or check result.");
+        builder.Property(x => x.MeasuredValue).HasColumnName("measured_value").HasPrecision(18, 6).HasComment("Numeric measured value for variable characteristics.");
         builder.Property(x => x.UnitCode).HasColumnName("unit_code").HasMaxLength(50).HasComment("Optional unit of measure code for measured values.");
         builder.Property(x => x.Result).HasColumnName("result").IsRequired().HasMaxLength(50).HasComment("Line result: passed, failed or conditional-release.");
         builder.Property(x => x.DefectReason).HasColumnName("defect_reason").HasMaxLength(500).HasComment("Defect or waiver reason for failed or conditional-release lines.");

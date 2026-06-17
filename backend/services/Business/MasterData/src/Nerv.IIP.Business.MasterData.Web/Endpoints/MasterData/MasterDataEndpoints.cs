@@ -87,7 +87,27 @@ public sealed record CreateSkuRequest(
     string DefaultBarcodeRuleCode,
     bool QualityRequired,
     IReadOnlyCollection<string>? ComplianceTags,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? InventoryUomCode = null,
+    string? PurchaseUomCode = null,
+    string? SalesUomCode = null,
+    string? ManufacturingUomCode = null,
+    string? ProcurementType = null,
+    string? MrpType = null,
+    string? LotSizingPolicy = null,
+    decimal? MinimumLotSize = null,
+    decimal? MaximumLotSize = null,
+    decimal? LotSizeMultiple = null,
+    decimal? SafetyStockQuantity = null,
+    decimal? ReorderPointQuantity = null,
+    int? PlannedDeliveryTimeDays = null,
+    int? InHouseProductionTimeDays = null,
+    int? GoodsReceiptProcessingTimeDays = null,
+    string? AbcClass = null,
+    string? LifecycleStatus = "active",
+    bool PurchasingEnabled = true,
+    bool ManufacturingEnabled = true,
+    bool SalesEnabled = true);
 
 public sealed class ListMasterDataResourcesEndpoint(ISender sender)
     : MasterDataEndpoint<ListMasterDataResourcesRequest, ResponseData<ListMasterDataResourcesResponse>>
@@ -208,7 +228,42 @@ public sealed record UpdateMasterDataResourceRequest(
     IReadOnlyCollection<WorkCalendarExceptionDetail>? Exceptions = null,
     decimal? Factor = null,
     decimal? Offset = null,
-    DateOnly? EffectiveFrom = null);
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? InventoryUomCode = null,
+    string? PurchaseUomCode = null,
+    string? SalesUomCode = null,
+    string? ManufacturingUomCode = null,
+    string? ProcurementType = null,
+    string? MrpType = null,
+    string? LotSizingPolicy = null,
+    decimal? MinimumLotSize = null,
+    decimal? MaximumLotSize = null,
+    decimal? LotSizeMultiple = null,
+    decimal? SafetyStockQuantity = null,
+    decimal? ReorderPointQuantity = null,
+    int? PlannedDeliveryTimeDays = null,
+    int? InHouseProductionTimeDays = null,
+    int? GoodsReceiptProcessingTimeDays = null,
+    string? AbcClass = null,
+    string? LifecycleStatus = null,
+    bool? PurchasingEnabled = null,
+    bool? ManufacturingEnabled = null,
+    bool? SalesEnabled = null,
+    string? TaxRegionCode = null,
+    string? DefaultCurrencyCode = null,
+    string? PaymentTermsCode = null,
+    string? PrimaryAddress = null,
+    string? PrimaryContactName = null,
+    string? PrimaryContactEmail = null,
+    string? PrimaryContactPhone = null,
+    decimal? UtilizationRate = null,
+    decimal? EfficiencyRate = null,
+    int? NumberOfCapacities = null,
+    string? CostCenterCode = null,
+    bool? Bottleneck = null,
+    string? HolidayCalendarCode = null,
+    int? BreakMinutes = null);
 
 public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
     : MasterDataEndpoint<UpdateMasterDataResourceRequest, ResponseData<MasterDataResourceDetail>>
@@ -278,7 +333,42 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.Exceptions,
                 req.Factor,
                 req.Offset,
-                req.EffectiveFrom),
+                req.EffectiveFrom,
+                req.EffectiveTo,
+                req.InventoryUomCode,
+                req.PurchaseUomCode,
+                req.SalesUomCode,
+                req.ManufacturingUomCode,
+                req.ProcurementType,
+                req.MrpType,
+                req.LotSizingPolicy,
+                req.MinimumLotSize,
+                req.MaximumLotSize,
+                req.LotSizeMultiple,
+                req.SafetyStockQuantity,
+                req.ReorderPointQuantity,
+                req.PlannedDeliveryTimeDays,
+                req.InHouseProductionTimeDays,
+                req.GoodsReceiptProcessingTimeDays,
+                req.AbcClass,
+                req.LifecycleStatus,
+                req.PurchasingEnabled,
+                req.ManufacturingEnabled,
+                req.SalesEnabled,
+                req.TaxRegionCode,
+                req.DefaultCurrencyCode,
+                req.PaymentTermsCode,
+                req.PrimaryAddress,
+                req.PrimaryContactName,
+                req.PrimaryContactEmail,
+                req.PrimaryContactPhone,
+                req.UtilizationRate,
+                req.EfficiencyRate,
+                req.NumberOfCapacities,
+                req.CostCenterCode,
+                req.Bottleneck,
+                req.HolidayCalendarCode,
+                req.BreakMinutes),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -355,7 +445,27 @@ public sealed class CreateSkuEndpoint(ISender sender)
             req.DefaultBarcodeRuleCode,
             req.QualityRequired,
             req.ComplianceTags ?? [],
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.InventoryUomCode,
+            req.PurchaseUomCode,
+            req.SalesUomCode,
+            req.ManufacturingUomCode,
+            req.ProcurementType,
+            req.MrpType,
+            req.LotSizingPolicy,
+            req.MinimumLotSize,
+            req.MaximumLotSize,
+            req.LotSizeMultiple,
+            req.SafetyStockQuantity,
+            req.ReorderPointQuantity,
+            req.PlannedDeliveryTimeDays,
+            req.InHouseProductionTimeDays,
+            req.GoodsReceiptProcessingTimeDays,
+            req.AbcClass,
+            req.LifecycleStatus,
+            req.PurchasingEnabled,
+            req.ManufacturingEnabled,
+            req.SalesEnabled), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -379,7 +489,8 @@ public sealed record CreateUomConversionRequest(
     decimal Offset,
     int Precision,
     string RoundingMode,
-    DateOnly EffectiveFrom);
+    DateOnly EffectiveFrom,
+    DateOnly? EffectiveTo = null);
 
 public sealed class CreateUnitOfMeasureEndpoint(ISender sender)
     : MasterDataEndpoint<CreateUnitOfMeasureRequest, ResponseData<MasterDataResourceResponse>>
@@ -425,7 +536,8 @@ public sealed class CreateUomConversionEndpoint(ISender sender)
             req.Offset,
             req.Precision,
             req.RoundingMode,
-            req.EffectiveFrom), ct);
+            req.EffectiveFrom,
+            req.EffectiveTo), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -438,7 +550,14 @@ public sealed record CreateBusinessPartnerRequest(
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? TaxId = null,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? TaxRegionCode = null,
+    string? DefaultCurrencyCode = null,
+    string? PaymentTermsCode = null,
+    string? PrimaryAddress = null,
+    string? PrimaryContactName = null,
+    string? PrimaryContactEmail = null,
+    string? PrimaryContactPhone = null);
 
 public sealed class CreateBusinessPartnerEndpoint(ISender sender)
     : MasterDataEndpoint<CreateBusinessPartnerRequest, ResponseData<MasterDataResourceResponse>>
@@ -459,7 +578,14 @@ public sealed class CreateBusinessPartnerEndpoint(ISender sender)
             req.Name,
             req.PartnerRoles,
             req.TaxId,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.TaxRegionCode,
+            req.DefaultCurrencyCode,
+            req.PaymentTermsCode,
+            req.PrimaryAddress,
+            req.PrimaryContactName,
+            req.PrimaryContactEmail,
+            req.PrimaryContactPhone), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -477,7 +603,12 @@ public sealed record CreateWorkCenterRequest(
     string CapacityUnit,
     bool FiniteCapacity,
     string? WorkshopCode = null,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    decimal UtilizationRate = 1m,
+    decimal EfficiencyRate = 1m,
+    int NumberOfCapacities = 1,
+    string? CostCenterCode = null,
+    bool Bottleneck = false);
 
 public sealed record CreateDepartmentRequest(
     string OrganizationId,
@@ -540,14 +671,19 @@ public sealed record CreateShiftRequest(
     TimeOnly StartsAt,
     TimeOnly EndsAt,
     int PaidMinutes,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    int BreakMinutes = 0);
 
 public sealed record CreateWorkCalendarRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Code,
     string Name,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string Timezone = "UTC",
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? HolidayCalendarCode = null);
 
 public sealed class CreateDepartmentEndpoint(ISender sender)
     : MasterDataEndpoint<CreateDepartmentRequest, ResponseData<MasterDataResourceResponse>>
@@ -733,7 +869,8 @@ public sealed class CreateShiftEndpoint(ISender sender)
             req.StartsAt,
             req.EndsAt,
             req.PaidMinutes,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.BreakMinutes), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -754,7 +891,11 @@ public sealed class CreateWorkCalendarEndpoint(ISender sender)
             req.EnvironmentId,
             req.Code,
             req.Name,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.Timezone,
+            req.EffectiveFrom,
+            req.EffectiveTo,
+            req.HolidayCalendarCode), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }
@@ -783,7 +924,12 @@ public sealed class CreateWorkCenterEndpoint(ISender sender)
             req.CapacityUnit,
             req.FiniteCapacity,
             req.WorkshopCode,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.UtilizationRate,
+            req.EfficiencyRate,
+            req.NumberOfCapacities,
+            req.CostCenterCode,
+            req.Bottleneck), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
     }
 }

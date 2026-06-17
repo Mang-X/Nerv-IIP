@@ -40,6 +40,13 @@ public sealed class ManufacturingBomEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Consumed material quantity.");
         builder.Property(x => x.UnitOfMeasureCode).HasColumnName("unit_of_measure_code").IsRequired().HasMaxLength(50).HasComment("Quantity unit of measure code.");
         builder.Property(x => x.ScrapRate).HasColumnName("scrap_rate").IsRequired().HasPrecision(18, 6).HasComment("Expected scrap rate for the material line.");
+        builder.Property(x => x.IsPhantom).HasColumnName("is_phantom").IsRequired().HasComment("Whether this consumed material is a phantom component exploded during planning or execution.");
+        builder.Property(x => x.AlternateGroup).HasColumnName("alternate_group").HasMaxLength(100).HasComment("Optional alternate material group.");
+        builder.Property(x => x.AlternatePriority).HasColumnName("alternate_priority").HasComment("Optional priority within the alternate material group.");
+        builder.Property(x => x.SubstituteSkuCodes).HasColumnName("substitute_sku_codes").HasMaxLength(500).HasComment("Semicolon-delimited substitute SKU codes captured at MBOM release.");
+        builder.Property(x => x.ReferenceDesignators).HasColumnName("reference_designators").HasMaxLength(500).HasComment("Optional reference designators or positions for this material line.");
+        builder.Property(x => x.YieldRate).HasColumnName("yield_rate").IsRequired().HasPrecision(18, 6).HasComment("Expected material yield rate.");
+        builder.Property(x => x.Backflush).HasColumnName("backflush").IsRequired().HasComment("Whether this material is normally backflushed during execution.");
         builder.HasIndex("manufacturing_bom_id", nameof(ManufacturingBomMaterialLine.SkuCode)).IsUnique();
     }
 

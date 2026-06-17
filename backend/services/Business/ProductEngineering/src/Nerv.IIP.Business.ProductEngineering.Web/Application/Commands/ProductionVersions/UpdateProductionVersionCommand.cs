@@ -4,6 +4,8 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.ProductionVersions;
 
 public sealed record UpdateProductionVersionCommand(
+    string OrganizationId,
+    string EnvironmentId,
     string ProductionVersionId,
     string MbomVersionId,
     string RoutingVersionId,
@@ -18,6 +20,8 @@ public sealed class UpdateProductionVersionCommandValidator : AbstractValidator<
 {
     public UpdateProductionVersionCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ProductionVersionId).NotEmpty();
         RuleFor(x => x.MbomVersionId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.RoutingVersionId).NotEmpty().MaximumLength(100);
@@ -25,25 +29,40 @@ public sealed class UpdateProductionVersionCommandValidator : AbstractValidator<
     }
 }
 
-public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepository repository)
+public sealed class UpdateProductionVersionCommandHandler(
+    IProductionVersionRepository repository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository)
     : ICommandHandler<UpdateProductionVersionCommand, ProductionVersionCommandResult>
 {
     public async Task<ProductionVersionCommandResult> Handle(UpdateProductionVersionCommand request, CancellationToken cancellationToken)
     {
-        var version = await repository.GetByIdAsync(request.ProductionVersionId, cancellationToken)
+        var version = await repository.GetByIdAsync(request.OrganizationId, request.EnvironmentId, request.ProductionVersionId, cancellationToken)
             ?? throw new KnownException($"Production version '{request.ProductionVersionId}' was not found.");
 
-        if (request.IsDefault && await repository.HasOverlappingDefaultAsync(
-            version.OrganizationId,
-            version.EnvironmentId,
+        if (await repository.HasOverlappingActiveAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
             version.SkuCode,
             request.ValidFrom,
             request.ValidTo,
             request.ProductionVersionId,
             cancellationToken))
         {
-            throw new KnownException($"Production version default already exists for SKU '{version.SkuCode}' in the requested effective window.");
+            throw new KnownException($"Production version effective window already exists for SKU '{version.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
+
+        var binding = await ProductionVersionBindingValidator.ResolveAsync(
+            manufacturingBomRepository,
+            routingRepository,
+            request.OrganizationId,
+            request.EnvironmentId,
+            version.SkuCode,
+            request.MbomVersionId,
+            request.RoutingVersionId,
+            request.ValidFrom,
+            request.ValidTo,
+            cancellationToken);
 
         version.UpdateBinding(
             request.MbomVersionId,
@@ -54,8 +73,8 @@ public sealed class UpdateProductionVersionCommandHandler(IProductionVersionRepo
             request.LotSizeMax,
             request.Priority,
             request.IsDefault,
-            EngineeringVersionStatus.Published,
-            EngineeringVersionStatus.Published);
+            binding.MbomStatus,
+            binding.RoutingStatus);
         return new ProductionVersionCommandResult(version.Id.Id.ToString("D"));
     }
 }

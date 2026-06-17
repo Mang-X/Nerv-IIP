@@ -1,11 +1,16 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 
@@ -242,10 +247,14 @@ public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<Crea
     }
 }
 
-public sealed class CreatePurchaseOrderCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+public sealed class CreatePurchaseOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    ErpCodingService? codingService = null,
+    IPurchaseOrderApprovalClient? approvalClient = null)
     : ICommandHandler<CreatePurchaseOrderCommand, PurchaseOrderId>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+    private readonly IPurchaseOrderApprovalClient _approvalClient = approvalClient ?? new GeneratedPurchaseOrderApprovalClient();
 
     public async Task<PurchaseOrderId> Handle(CreatePurchaseOrderCommand request, CancellationToken cancellationToken)
     {
@@ -272,12 +281,45 @@ public sealed class CreatePurchaseOrderCommandHandler(ApplicationDbContext dbCon
             request.SupplierCode,
             request.SiteCode,
             request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
+        var approvalResult = await _approvalClient.StartApprovalAsync(
+            new PurchaseOrderApprovalRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "erp-purchase-order-release",
+                "business-erp",
+                "purchase-order",
+                allocation.Code,
+                null,
+                "system:erp",
+                GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code)),
+            cancellationToken);
+        order.MarkApprovalRequested(approvalResult.ChainId);
         dbContext.PurchaseOrders.Add(order);
         return order.Id;
     }
+
+    private sealed class GeneratedPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
+    {
+        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
+        }
+
+        public static string BuildChainId(string organizationId, string environmentId, string purchaseOrderNo)
+        {
+            var raw = $"{organizationId}:{environmentId}:{purchaseOrderNo}";
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
+            return $"erp-po-approval-{hash}";
+        }
+    }
 }
 
-public sealed record PurchaseReceiptCommandLine(string PurchaseOrderLineNo, decimal ReceivedQuantity, string QualityStatus);
+public sealed record PurchaseReceiptCommandLine(
+    string PurchaseOrderLineNo,
+    decimal ReceivedQuantity,
+    string QualityStatus,
+    string? LocationCode = null,
+    string? LotNo = null);
 
 public sealed record RecordPurchaseReceiptCommand(
     string OrganizationId,
@@ -337,11 +379,296 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 cancellationToken)
             ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
 
-        var receipt = PurchaseReceipt.Record(
-            order,
-            allocation.Code,
-            request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus)));
+        PurchaseReceipt receipt;
+        try
+        {
+            receipt = PurchaseReceipt.Record(
+                order,
+                allocation.Code,
+                request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo)));
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
         dbContext.PurchaseReceipts.Add(receipt);
         return receipt.Id;
+    }
+}
+
+public sealed record SupplierInvoiceCommandLine(
+    string PurchaseOrderLineNo,
+    string PurchaseReceiptLineNo,
+    decimal InvoiceQuantity,
+    decimal UnitPrice);
+
+public sealed record RecordSupplierInvoiceCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? InvoiceNo,
+    string PurchaseOrderNo,
+    string PurchaseReceiptNo,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string CurrencyCode,
+    decimal QuantityTolerance,
+    decimal AmountTolerance,
+    IReadOnlyCollection<SupplierInvoiceCommandLine> Lines,
+    string? PayableNo = null,
+    string? IdempotencyKey = null) : ICommand<SupplierInvoiceId>;
+
+public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<RecordSupplierInvoiceCommand>
+{
+    public RecordSupplierInvoiceCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.InvoiceNo).MaximumLength(100);
+        RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PurchaseReceiptNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.InvoiceDate).NotEqual(default(DateOnly));
+        RuleFor(x => x.DueDate).NotEqual(default(DateOnly));
+        RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
+        RuleFor(x => x.QuantityTolerance).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.AmountTolerance).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.PurchaseOrderLineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.PurchaseReceiptLineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.InvoiceQuantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitPrice).GreaterThan(0);
+        });
+    }
+}
+
+public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<RecordSupplierInvoiceCommand, SupplierInvoiceId>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<SupplierInvoiceId> Handle(RecordSupplierInvoiceCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "supplier-invoice",
+            request.InvoiceNo,
+            request.IdempotencyKey,
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.QuantityTolerance, request.AmountTolerance, request.PayableNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return (await dbContext.SupplierInvoices.SingleAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.InvoiceNo == allocation.Code,
+                cancellationToken)).Id;
+        }
+
+        var order = await dbContext.PurchaseOrders
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseOrderNo == request.PurchaseOrderNo,
+                cancellationToken)
+            ?? throw new KnownException($"Purchase order '{request.PurchaseOrderNo}' was not found.");
+        var receipt = await dbContext.PurchaseReceipts
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseReceiptNo == request.PurchaseReceiptNo,
+                cancellationToken)
+            ?? throw new KnownException($"Purchase receipt '{request.PurchaseReceiptNo}' was not found.");
+        var alreadyInvoicedQuantitiesByReceiptLineNo = (await dbContext.SupplierInvoices
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseReceiptNo == request.PurchaseReceiptNo
+                && x.MatchStatus != SupplierInvoiceMatchStatus.Voided)
+            .SelectMany(x => x.Lines)
+            .ToListAsync(cancellationToken))
+            .GroupBy(x => x.PurchaseReceiptLineNo, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Sum(line => line.InvoiceQuantity), StringComparer.Ordinal);
+
+        var invoice = SupplierInvoice.Match(
+            order,
+            receipt,
+            allocation.Code,
+            request.InvoiceDate,
+            request.DueDate,
+            request.CurrencyCode,
+            request.QuantityTolerance,
+            request.AmountTolerance,
+            request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice)),
+            alreadyInvoicedQuantitiesByReceiptLineNo);
+        dbContext.SupplierInvoices.Add(invoice);
+
+        if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
+        {
+            return invoice.Id;
+        }
+
+        var payableAllocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-payable",
+            request.PayableNo,
+            request.IdempotencyKey is null ? null : $"{request.IdempotencyKey}:account-payable",
+            ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.InvoiceDate, invoice.DueDate, "MATCHED"),
+            cancellationToken);
+        var payable = AccountPayable.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            payableAllocation.Code,
+            invoice.InvoiceNo,
+            invoice.SupplierCode,
+            invoice.TotalAmount,
+            invoice.CurrencyCode,
+            invoice.InvoiceDate,
+            invoice.DueDate,
+            "MATCHED");
+        dbContext.AccountPayables.Add(payable);
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        return invoice.Id;
+    }
+}
+
+public sealed record ReleaseSupplierInvoicePaymentHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string InvoiceNo,
+    string? PayableNo,
+    string IdempotencyKey) : ICommand<SupplierInvoiceId>;
+
+public sealed class ReleaseSupplierInvoicePaymentHoldCommandValidator : AbstractValidator<ReleaseSupplierInvoicePaymentHoldCommand>
+{
+    public ReleaseSupplierInvoicePaymentHoldCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.InvoiceNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PayableNo).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
+    : ICommandHandler<ReleaseSupplierInvoicePaymentHoldCommand, SupplierInvoiceId>
+{
+    private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
+
+    public async Task<SupplierInvoiceId> Handle(ReleaseSupplierInvoicePaymentHoldCommand request, CancellationToken cancellationToken)
+    {
+        var invoice = await dbContext.SupplierInvoices
+            .Include(x => x.Lines)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.InvoiceNo == request.InvoiceNo,
+                cancellationToken)
+            ?? throw new KnownException($"Supplier invoice '{request.InvoiceNo}' was not found.");
+
+        var existingPayableForInvoice = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.SourceDocumentNo == invoice.InvoiceNo,
+            cancellationToken);
+        if (existingPayableForInvoice is not null)
+        {
+            if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
+            {
+                invoice.ReleasePaymentHold();
+            }
+
+            return invoice.Id;
+        }
+
+        var payableAllocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "account-payable",
+            request.PayableNo,
+            $"{request.IdempotencyKey}:account-payable",
+            ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.InvoiceDate, invoice.DueDate, "HELD-RELEASE"),
+            cancellationToken);
+        var existingPayable = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PayableNo == payableAllocation.Code,
+            cancellationToken);
+        if (existingPayable is not null)
+        {
+            invoice.ReleasePaymentHold();
+            return invoice.Id;
+        }
+
+        try
+        {
+            invoice.ReleasePaymentHold();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
+        var payable = AccountPayable.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            payableAllocation.Code,
+            invoice.InvoiceNo,
+            invoice.SupplierCode,
+            invoice.TotalAmount,
+            invoice.CurrencyCode,
+            invoice.InvoiceDate,
+            invoice.DueDate,
+            "MATCHED");
+        dbContext.AccountPayables.Add(payable);
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        return invoice.Id;
+    }
+}
+
+public sealed record VoidSupplierInvoicePaymentHoldCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string InvoiceNo) : ICommand<SupplierInvoiceId>;
+
+public sealed class VoidSupplierInvoicePaymentHoldCommandValidator : AbstractValidator<VoidSupplierInvoicePaymentHoldCommand>
+{
+    public VoidSupplierInvoicePaymentHoldCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.InvoiceNo).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class VoidSupplierInvoicePaymentHoldCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<VoidSupplierInvoicePaymentHoldCommand, SupplierInvoiceId>
+{
+    public async Task<SupplierInvoiceId> Handle(VoidSupplierInvoicePaymentHoldCommand request, CancellationToken cancellationToken)
+    {
+        var invoice = await dbContext.SupplierInvoices.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.InvoiceNo == request.InvoiceNo,
+            cancellationToken)
+            ?? throw new KnownException($"Supplier invoice '{request.InvoiceNo}' was not found.");
+
+        try
+        {
+            invoice.VoidPaymentHold();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
+        return invoice.Id;
     }
 }

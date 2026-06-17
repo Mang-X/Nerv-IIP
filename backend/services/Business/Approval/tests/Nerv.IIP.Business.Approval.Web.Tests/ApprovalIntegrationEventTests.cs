@@ -2,7 +2,7 @@ using System.Text.Json;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.DomainEvents;
 using Nerv.IIP.Business.Approval.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Approval.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Approval;
 
 namespace Nerv.IIP.Business.Approval.Web.Tests;
 

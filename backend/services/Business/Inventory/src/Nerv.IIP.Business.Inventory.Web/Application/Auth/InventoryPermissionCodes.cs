@@ -6,6 +6,7 @@ public static class InventoryPermissionCodes
     public const string MovementsCreate = "business.inventory.movements.create";
     public const string LedgerRead = "business.inventory.ledger.read";
     public const string CountsManage = "business.inventory.counts.manage";
+    public const string ReservationsManage = "business.inventory.reservations.manage";
 
     public static readonly IReadOnlyCollection<string> All =
     [
@@ -13,5 +14,6 @@ public static class InventoryPermissionCodes
         MovementsCreate,
         LedgerRead,
         CountsManage,
+        ReservationsManage,
     ];
 }
