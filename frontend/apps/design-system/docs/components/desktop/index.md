@@ -8,6 +8,7 @@ title: 桌面 PC 组件
 
 - **通用**：Button、Badge、Card
 - **布局**：Container、Page（含 PageAside）、PageGrid、PageColumns、PageSection
+- **仪表盘**：DashboardGroup / Sidebar / Panel / Navbar / Toolbar（可组合的控制台外壳）
 - **表单**：Input、Select、Checkbox、Radio、Switch、DatePicker、TimePicker
 - **数据展示**：DataTable、Descriptions、Timeline、Tabs、Status
 - **反馈**：Alert、Dialog、Popconfirm、Tooltip、Notify、Loader、Command

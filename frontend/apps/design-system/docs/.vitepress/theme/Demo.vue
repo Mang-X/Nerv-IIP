@@ -27,7 +27,10 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean }>()
   margin: 1.25rem 0;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--card);
+  /* page-surface background so surface components (Card, Descriptions, …) sit on
+     the same base they do in the app and pop with their ring/shadow, instead of
+     blending into a same-coloured --card panel. */
+  background: var(--background);
   overflow: hidden;
 }
 .ds-demo-preview {

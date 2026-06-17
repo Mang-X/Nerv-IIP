@@ -83,6 +83,10 @@ export default defineConfig({
           ],
         },
         {
+          text: '仪表盘',
+          items: [{ text: 'Dashboard 仪表盘外壳', link: '/components/desktop/dashboard' }],
+        },
+        {
           text: '表单',
           items: [
             { text: 'Input 输入框', link: '/components/desktop/input' },
