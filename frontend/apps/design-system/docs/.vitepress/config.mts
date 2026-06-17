@@ -73,6 +73,16 @@ export default defineConfig({
           ],
         },
         {
+          text: '布局',
+          items: [
+            { text: 'Container 容器', link: '/components/desktop/container' },
+            { text: 'Page 页面布局', link: '/components/desktop/page' },
+            { text: 'PageGrid 卡片网格', link: '/components/desktop/page-grid' },
+            { text: 'PageColumns 瀑布分栏', link: '/components/desktop/page-columns' },
+            { text: 'PageSection 内容区块', link: '/components/desktop/page-section' },
+          ],
+        },
+        {
           text: '表单',
           items: [
             { text: 'Input 输入框', link: '/components/desktop/input' },

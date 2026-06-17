@@ -20,6 +20,9 @@ export * from './components/pro'
 // Touch — large touch-optimized components for tablet boards / workshop kiosks.
 export * from './components/touch'
 
+// Layout — page scaffolding primitives (container, page+asides, grid, columns, sections).
+export * from './components/layout'
+
 export {
   Breadcrumb,
   BreadcrumbEllipsis,
