@@ -89,3 +89,38 @@
 
 /* (The earlier `[data-slot] { background-color: revert-layer }` hack is gone:
  * with utilities now unlayered, `bg-*` already beats VitePress's `button` reset.) */
+
+/* ----------------------------------------------------------------------------
+ * Wider, edge-aligned layout (Arco docs style). VitePress defaults to a
+ * 1440px-centred shell with a cramped 688px doc-content cap, leaving big side
+ * gutters on wide monitors. Widen the shell and let content fill its column so
+ * the sidebar sits near the left edge and component demos have real room.
+ * ------------------------------------------------------------------------- */
+:root {
+  --vp-layout-max-width: 1760px;
+  --vp-sidebar-width: 248px;
+}
+@media (min-width: 1440px) {
+  :root {
+    --vp-sidebar-width: 272px;
+  }
+}
+/* Doc pages: drop the 688px body cap, let the content column fill the space
+   between sidebar and the right outline (cap generously for prose readability). */
+@media (min-width: 960px) {
+  .VPDoc:not(.has-sidebar) .container {
+    max-width: 1152px;
+  }
+  .VPDoc .content-container {
+    max-width: none;
+  }
+  .VPDoc.has-aside .content-container {
+    max-width: none;
+  }
+}
+/* Nudge the doc gutters in a touch so content breathes without hugging edges. */
+@media (min-width: 960px) {
+  .VPDoc .container {
+    padding-inline: 2.5rem;
+  }
+}
