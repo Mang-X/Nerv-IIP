@@ -41,6 +41,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
 {
     public const string IndustrialTelemetryClientName = "SchedulingIndustrialTelemetryAvailability";
     public const string MaintenanceClientName = "SchedulingMaintenanceAvailability";
+    public const string SourceUnavailableReasonCode = "equipment.availabilitySourceUnavailable";
 
     public async Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
         SchedulingProblemContract problem,
@@ -100,7 +101,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<EquipmentRuntimeAvailabilityResponse>>(
                 EquipmentRuntimeJson.Options,
                 cancellationToken);
-            return envelope?.Data ?? Empty(problem);
+            return envelope?.Data ?? SourceUnavailable(problem, clientName);
         }
         catch (HttpRequestException exception)
         {
@@ -109,7 +110,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
                 "Scheduling equipment availability source {Source} was unavailable for problem {ProblemId}.",
                 clientName,
                 problem.ProblemId);
-            return Empty(problem);
+            return SourceUnavailable(problem, clientName);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -118,7 +119,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
                 "Scheduling equipment availability source {Source} timed out for problem {ProblemId}.",
                 clientName,
                 problem.ProblemId);
-            return Empty(problem);
+            return SourceUnavailable(problem, clientName);
         }
     }
 
@@ -158,15 +159,34 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty
     };
 
-    private static EquipmentRuntimeAvailabilityResponse Empty(SchedulingProblemContract problem)
+    private static EquipmentRuntimeAvailabilityResponse SourceUnavailable(
+        SchedulingProblemContract problem,
+        string sourceName)
     {
+        var items = problem.Resources
+            .GroupBy(x => $"{x.ResourceId}\u001F{x.WorkCenterId}", StringComparer.Ordinal)
+            .Select(x => x.First())
+            .Select(resource => new EquipmentRuntimeAvailabilityWindowContract(
+                DeviceAssetId: resource.ResourceId,
+                WorkCenterId: resource.WorkCenterId,
+                AvailabilityStatus: EquipmentRuntimeAvailabilityStatus.Unknown,
+                ReasonCode: SourceUnavailableReasonCode,
+                Severity: EquipmentRuntimeSeverity.Blocked,
+                StartUtc: problem.HorizonStartUtc,
+                EndUtc: problem.HorizonEndUtc,
+                SourceType: EquipmentRuntimeSourceType.StaleSource,
+                SourceReferenceId: sourceName,
+                MessageKey: "equipment.availability.sourceUnavailable",
+                SubstituteDeviceAssetIds: []))
+            .ToArray();
+
         return new EquipmentRuntimeAvailabilityResponse(
             ContractVersion: 1,
             OrganizationId: problem.OrganizationId,
             EnvironmentId: problem.EnvironmentId,
             QueryWindowStartUtc: problem.HorizonStartUtc,
             QueryWindowEndUtc: problem.HorizonEndUtc,
-            Items: []);
+            Items: items);
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

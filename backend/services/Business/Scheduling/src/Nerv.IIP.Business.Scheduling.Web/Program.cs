@@ -74,12 +74,15 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
-    builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
-    builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
     if (isTesting)
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, NoopSchedulingEquipmentAvailabilityProvider>();
         builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, NoopSchedulingMaterialReadinessProvider>();
+    }
+    else
+    {
+        builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
+        builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
     }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");

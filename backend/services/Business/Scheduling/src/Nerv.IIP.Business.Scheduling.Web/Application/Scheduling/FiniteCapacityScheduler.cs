@@ -763,6 +763,7 @@ file sealed class SchedulerState
     {
         yield return operation.RequiredCapabilityCode;
 
+        // APS lite models required skills and tooling as resource capability codes; no separate namespace exists yet.
         foreach (var skillCode in operation.RequiredSkillCodes ?? [])
         {
             yield return skillCode;

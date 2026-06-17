@@ -89,7 +89,14 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 cancellationToken);
             if (!hasWorkOrder)
             {
-                throw new KnownException($"MES work order was not found for released schedule operation, WorkOrderId = {operation.WorkOrderId}");
+                await deadLetterStore.AddAsync(
+                    IntegrationEventDeadLetterMessage.Create(
+                        ConsumerName,
+                        integrationEvent,
+                        "mes.schedulePlanReleased.workOrderNotFound",
+                        $"MES work order was not found for released schedule operation, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}."),
+                    cancellationToken);
+                return;
             }
 
             task = OperationTask.Queue(
@@ -105,6 +112,7 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             dbContext.OperationTasks.Add(task);
         }
 
+        // APS ResourceId is the selected executable device resource; MES stores that value as DeviceAssetId.
         task.ApplyScheduleAssignment(
             operation.WorkCenterId,
             operation.ResourceId,

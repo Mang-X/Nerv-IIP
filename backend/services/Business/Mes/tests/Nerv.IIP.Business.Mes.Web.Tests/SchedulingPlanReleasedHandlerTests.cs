@@ -97,6 +97,28 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_DeadLettersMissingWorkOrderWithoutThrowing()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext,
+            deadLetterStore);
+
+        await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(dbContext.OperationTasks);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("mes.schedulePlanReleased.workOrderNotFound", deadLetter.FailureCode);
+        Assert.Contains("WO-APS-001", deadLetter.FailureMessage, StringComparison.Ordinal);
+    }
+
     private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent()
     {
         return new SchedulePlanReleasedIntegrationEvent(

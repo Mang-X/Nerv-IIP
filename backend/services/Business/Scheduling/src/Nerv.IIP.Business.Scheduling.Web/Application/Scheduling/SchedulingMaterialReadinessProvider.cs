@@ -32,6 +32,8 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
     : ISchedulingMaterialReadinessProvider
 {
     public const string MesClientName = "SchedulingMesMaterialReadiness";
+    public const string SourceUnavailableReasonCode = "mes.materialReadinessSourceUnavailable";
+    private const int MaxConcurrentMesReadinessRequests = 8;
 
     public async Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryAsync(
         SchedulingProblemContract problem,
@@ -50,7 +52,19 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             return [];
         }
 
-        var readiness = await Task.WhenAll(workOrderIds.Select(x => QueryWorkOrderAsync(problem, x, cancellationToken)));
+        using var throttler = new SemaphoreSlim(MaxConcurrentMesReadinessRequests);
+        var readiness = await Task.WhenAll(workOrderIds.Select(async workOrderId =>
+        {
+            await throttler.WaitAsync(cancellationToken);
+            try
+            {
+                return await QueryWorkOrderAsync(problem, workOrderId, cancellationToken);
+            }
+            finally
+            {
+                throttler.Release();
+            }
+        }));
         return readiness
             .SelectMany(x => x)
             .OrderBy(x => x.ScopeType, StringComparer.Ordinal)
@@ -85,7 +99,7 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MesMaterialReadinessResponse>>(
                 SchedulingJson.Options,
                 cancellationToken);
-            return ToSchedulingReadiness(envelope?.Data);
+            return ToSchedulingReadiness(envelope?.Data, workOrderId);
         }
         catch (HttpRequestException exception)
         {
@@ -94,7 +108,7 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 "Scheduling material readiness source MES was unavailable for problem {ProblemId}, work order {WorkOrderId}.",
                 problem.ProblemId,
                 workOrderId);
-            return [];
+            return SourceUnavailable(workOrderId);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -103,15 +117,20 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 "Scheduling material readiness source MES timed out for problem {ProblemId}, work order {WorkOrderId}.",
                 problem.ProblemId,
                 workOrderId);
-            return [];
+            return SourceUnavailable(workOrderId);
         }
     }
 
     private static IReadOnlyCollection<SchedulingMaterialReadinessContract> ToSchedulingReadiness(
-        MesMaterialReadinessResponse? response)
+        MesMaterialReadinessResponse? response,
+        string workOrderId)
     {
-        if (response is null ||
-            string.Equals(response.ReadinessStatus, "Ready", StringComparison.OrdinalIgnoreCase))
+        if (response is null)
+        {
+            return SourceUnavailable(workOrderId);
+        }
+
+        if (string.Equals(response.ReadinessStatus, "Ready", StringComparison.OrdinalIgnoreCase))
         {
             return [];
         }
@@ -133,6 +152,19 @@ public sealed class HttpSchedulingMaterialReadinessProvider(
                 MaterialReadyUtc: null,
                 IsReady: false,
                 ReasonCodes: reasonCodes)
+        ];
+    }
+
+    private static IReadOnlyCollection<SchedulingMaterialReadinessContract> SourceUnavailable(string workOrderId)
+    {
+        return
+        [
+            new SchedulingMaterialReadinessContract(
+                ScopeType: "order",
+                ScopeId: workOrderId,
+                MaterialReadyUtc: null,
+                IsReady: false,
+                ReasonCodes: [SourceUnavailableReasonCode])
         ];
     }
 
