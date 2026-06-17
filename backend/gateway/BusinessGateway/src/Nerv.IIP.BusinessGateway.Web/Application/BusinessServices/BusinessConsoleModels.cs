@@ -924,7 +924,8 @@ public sealed record BusinessConsoleCreateInspectionRecordRequest(
     string? SerialNo,
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    BusinessConsoleInspectionStockRelease? StockRelease = null);
 
 public sealed record BusinessConsoleInspectionCharacteristicResult(
     string CharacteristicCode,
@@ -933,7 +934,16 @@ public sealed record BusinessConsoleInspectionCharacteristicResult(
     string Result,
     string? DefectReason,
     decimal? DefectQuantity,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    decimal? MeasuredValue = null);
+
+public sealed record BusinessConsoleInspectionStockRelease(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string SourceQualityStatus,
+    string? OwnerType,
+    string? OwnerId);
 
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
 
@@ -943,7 +953,14 @@ public sealed record BusinessConsoleNcrDispositionRequest(
     [property: QueryParam] string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null);
+
+public sealed record BusinessConsoleMrbReview(
+    string ReviewerId,
+    string Decision,
+    string? Comment,
+    DateTimeOffset ReviewedAtUtc);
 
 public sealed record BusinessConsoleNcrCloseRequest(
     [property: RouteParam] string NcrId,

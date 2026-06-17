@@ -20218,6 +20218,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "stockRelease": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease"
+              }
+            ]
           }
         }
       },
@@ -20253,6 +20261,37 @@
             "items": {
               "type": "string"
             }
+          },
+          "measuredValue": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "uomCode": {
+            "type": "string"
+          },
+          "siteCode": {
+            "type": "string"
+          },
+          "locationCode": {
+            "type": "string"
+          },
+          "sourceQualityStatus": {
+            "type": "string"
+          },
+          "ownerType": {
+            "type": "string",
+            "nullable": true
+          },
+          "ownerId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -20467,6 +20506,33 @@
             "items": {
               "type": "string"
             }
+          },
+          "mrbReviews": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reviewerId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "reviewedAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

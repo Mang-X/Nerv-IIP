@@ -9,7 +9,20 @@ public sealed record InspectionPlanCharacteristicInput(
     string Method,
     string Severity,
     bool Required,
-    string SamplingRule);
+    string SamplingRule,
+    string? CharacteristicType = null,
+    decimal? NominalValue = null,
+    decimal? LowerSpecLimit = null,
+    decimal? UpperSpecLimit = null,
+    string? UnitCode = null,
+    InspectionSamplingPlanInput? SamplingPlan = null);
+
+public sealed record InspectionSamplingPlanInput(
+    string InspectionLevel,
+    string Aql,
+    int SampleSize,
+    int AcceptanceNumber,
+    int RejectionNumber);
 
 public sealed record CreateInspectionPlanCommand(
     string OrganizationId,
@@ -89,7 +102,20 @@ public sealed class CreateInspectionPlanCommandHandler(IInspectionPlanRepository
                 characteristic.Method,
                 characteristic.Severity,
                 characteristic.Required,
-                characteristic.SamplingRule);
+                characteristic.SamplingRule,
+                characteristic.CharacteristicType ?? InspectionCharacteristicTypes.Attribute,
+                characteristic.NominalValue,
+                characteristic.LowerSpecLimit,
+                characteristic.UpperSpecLimit,
+                characteristic.UnitCode,
+                characteristic.SamplingPlan is null
+                    ? null
+                    : InspectionSamplingPlan.Create(
+                        characteristic.SamplingPlan.InspectionLevel,
+                        characteristic.SamplingPlan.Aql,
+                        characteristic.SamplingPlan.SampleSize,
+                        characteristic.SamplingPlan.AcceptanceNumber,
+                        characteristic.SamplingPlan.RejectionNumber));
         }
 
         await repository.AddAsync(plan, cancellationToken);

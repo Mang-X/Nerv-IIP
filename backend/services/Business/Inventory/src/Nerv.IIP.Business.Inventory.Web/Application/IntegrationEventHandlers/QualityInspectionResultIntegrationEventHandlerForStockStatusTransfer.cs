@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
@@ -54,6 +55,37 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         }
 
         var payload = integrationEvent.Payload;
+        if (payload.StockRelease is not null)
+        {
+            var sourceStatus = StockQualityStatus.Normalize(payload.StockRelease.SourceQualityStatus);
+            if (sourceStatus != StockQualityStatus.Quality)
+            {
+                throw new KnownException("Quality inspection stock release can only transfer stock from quality status.");
+            }
+
+            await sender.Send(
+                new PostStockStatusTransferCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    sourceStatus,
+                    targetStatus,
+                    "quality",
+                    payload.SourceDocumentId,
+                    payload.InspectionRecordId,
+                    integrationEvent.IdempotencyKey,
+                    payload.SkuCode,
+                    payload.StockRelease.UomCode,
+                    payload.StockRelease.SiteCode,
+                    payload.StockRelease.LocationCode,
+                    payload.StockRelease.LotNo,
+                    payload.StockRelease.SerialNo,
+                    payload.StockRelease.OwnerType,
+                    payload.StockRelease.OwnerId,
+                    payload.InspectedQuantity),
+                cancellationToken);
+            return;
+        }
+
         var candidates = await dbContext.StockLedgers
             .AsNoTracking()
             .Where(x => x.OrganizationId == integrationEvent.OrganizationId

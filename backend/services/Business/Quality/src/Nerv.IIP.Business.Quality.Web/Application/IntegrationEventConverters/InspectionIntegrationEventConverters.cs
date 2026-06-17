@@ -70,6 +70,42 @@ internal static class InspectionIntegrationEventPayloads
             record.Result,
             record.DispositionReason,
             record.DispositionAttachmentFileIds,
-            occurredAtUtc);
+            occurredAtUtc,
+            ToStockRelease(record),
+            record.ResultLines.Select(ToResultLinePayload).ToArray());
+    }
+
+    private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record)
+    {
+        if (string.IsNullOrWhiteSpace(record.UomCode)
+            || string.IsNullOrWhiteSpace(record.SiteCode)
+            || string.IsNullOrWhiteSpace(record.LocationCode)
+            || string.IsNullOrWhiteSpace(record.SourceQualityStatus)
+            || string.IsNullOrWhiteSpace(record.OwnerType))
+        {
+            return null;
+        }
+
+        return new StockReleaseDimensionPayload(
+            record.UomCode,
+            record.SiteCode,
+            record.LocationCode,
+            record.BatchNo,
+            record.SerialNo,
+            record.SourceQualityStatus,
+            record.OwnerType,
+            record.OwnerId);
+    }
+
+    private static InspectionResultLinePayload ToResultLinePayload(InspectionResultLine line)
+    {
+        return new InspectionResultLinePayload(
+            line.CharacteristicCode,
+            line.MeasuredValue,
+            line.ObservedValue,
+            line.UnitCode,
+            line.Result,
+            line.DefectReason,
+            line.DefectQuantity);
     }
 }

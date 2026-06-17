@@ -929,6 +929,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
+    stockRelease?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult = {
@@ -939,6 +940,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     defectReason?: string | null;
     defectQuantity?: number | null;
     attachmentFileIds?: Array<string> | null;
+    measuredValue?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease = {
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    sourceQualityStatus?: string;
+    ownerType?: string | null;
+    ownerId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -998,6 +1009,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     dispositionType?: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
+    mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
+    reviewerId?: string;
+    decision?: string;
+    comment?: string | null;
+    reviewedAtUtc?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {

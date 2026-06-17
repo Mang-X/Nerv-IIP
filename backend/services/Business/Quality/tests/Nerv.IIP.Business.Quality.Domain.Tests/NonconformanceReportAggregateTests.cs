@@ -39,20 +39,40 @@ public sealed class NonconformanceReportAggregateTests
         var ncr = NewNcr();
         ncr.ClearDomainEvents();
 
-        ncr.SubmitDisposition(dispositionType, "approval-chain-001", ["file-plan-001"]);
+        ncr.SubmitDisposition(
+            dispositionType,
+            "approval-chain-001",
+            ["file-plan-001"],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted disposition", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
 
         Assert.Equal("disposition-in-progress", ncr.Status);
         Assert.Equal(dispositionType, ncr.DispositionType);
         Assert.Equal("approval-chain-001", ncr.DispositionApprovalChainId);
         Assert.Contains("file-plan-001", ncr.AttachmentFileIds);
+        Assert.Equal("qa-manager-001", Assert.Single(ncr.MrbReviews).ReviewerId);
         Assert.IsType<NonconformanceReportDispositionDecidedDomainEvent>(ncr.GetDomainEvents().Single());
+    }
+
+    [Theory]
+    [InlineData("rework")]
+    [InlineData("scrap")]
+    [InlineData("return-to-supplier")]
+    [InlineData("conditional-release")]
+    public void Disposition_types_with_material_decisions_require_mrb_review(string dispositionType)
+    {
+        var ncr = NewNcr();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ncr.SubmitDisposition(dispositionType, "approval-chain-001", []));
+
+        Assert.Contains("MRB", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Close_rework_requires_rework_work_order_id()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("rework", "approval-chain-001", []);
+        ncr.SubmitDisposition("rework", "approval-chain-001", [], ApprovedMrbReview());
 
         Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
 
@@ -66,7 +86,7 @@ public sealed class NonconformanceReportAggregateTests
     public void Close_scrap_requires_scrap_movement_id()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("scrap", "approval-chain-001", []);
+        ncr.SubmitDisposition("scrap", "approval-chain-001", [], ApprovedMrbReview());
 
         Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
 
@@ -80,7 +100,7 @@ public sealed class NonconformanceReportAggregateTests
     public void Close_return_to_supplier_requires_return_document_id()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("return-to-supplier", "approval-chain-001", []);
+        ncr.SubmitDisposition("return-to-supplier", "approval-chain-001", [], ApprovedMrbReview());
 
         Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
 
@@ -94,20 +114,20 @@ public sealed class NonconformanceReportAggregateTests
     public void Closed_ncr_cannot_change_disposition()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("conditional-release", "approval-chain-001", []);
+        ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview());
         ncr.Close(null, null, null);
 
         Assert.Equal("closed", ncr.Status);
-        Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", []));
+        Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", [], ApprovedMrbReview()));
     }
 
     [Fact]
     public void Disposition_in_progress_ncr_cannot_replace_existing_disposition()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("conditional-release", "approval-chain-001", []);
+        ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview());
 
-        Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", []));
+        Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", [], ApprovedMrbReview()));
         Assert.Equal("conditional-release", ncr.DispositionType);
         Assert.Equal("approval-chain-001", ncr.DispositionApprovalChainId);
     }
@@ -152,5 +172,10 @@ public sealed class NonconformanceReportAggregateTests
             "BATCH-001",
             null,
             attachmentFileIds ?? []);
+    }
+
+    private static IReadOnlyCollection<MrbReviewInput> ApprovedMrbReview()
+    {
+        return [MrbReviewInput.Approve("qa-manager-001", "MRB accepted disposition", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))];
     }
 }

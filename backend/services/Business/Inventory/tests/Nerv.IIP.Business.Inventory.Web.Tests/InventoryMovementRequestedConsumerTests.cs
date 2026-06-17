@@ -11,6 +11,7 @@ using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -171,6 +172,164 @@ public sealed class InventoryMovementRequestedConsumerTests
     }
 
     [Fact]
+    public async Task Quality_inspection_result_consumer_uses_stock_release_dimensions_when_supplied()
+    {
+        await using var dbContext = CreateContext();
+        var firstLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001");
+        firstLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-quality-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        var selectedLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            "LOT-002",
+            null,
+            "quality",
+            "company",
+            "owner-001");
+        selectedLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-002",
+            "LINE-001",
+            "idem-quality-in-002",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            "LOT-002",
+            null,
+            "quality",
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        dbContext.StockLedgers.AddRange(firstLedger, selectedLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            sender,
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "LOT-002",
+                    null,
+                    "quality",
+                    "company",
+                    "owner-001")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.QualityStatus == "quality" && x.LocationCode == "LOC-A-01").OnHandQuantity);
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == "quality" && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked" && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_stock_release_from_non_quality_status()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "unrestricted",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-unrestricted-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "unrestricted",
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            sender,
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-A-01",
+                    "LOT-001",
+                    null,
+                    "unrestricted",
+                    "company",
+                    "owner-001")),
+            CancellationToken.None));
+
+        Assert.Contains("quality status", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Single(dbContext.StockLedgers);
+        Assert.Equal(5m, ledger.OnHandQuantity);
+    }
+
+    [Fact]
     public async Task Quality_inspection_result_consumer_rejects_unsupported_event_type_to_dead_letter_store()
     {
         await using var dbContext = CreateContext();
@@ -321,7 +480,9 @@ public sealed class InventoryMovementRequestedConsumerTests
                 DateTimeOffset.UtcNow));
     }
 
-    private static InspectionResultIntegrationEvent CreateInspectionEvent(string eventType)
+    private static InspectionResultIntegrationEvent CreateInspectionEvent(
+        string eventType,
+        StockReleaseDimensionPayload? stockRelease = null)
     {
         return new InspectionResultIntegrationEvent(
             "quality-event-001",
@@ -346,7 +507,8 @@ public sealed class InventoryMovementRequestedConsumerTests
                 eventType == QualityIntegrationEventTypes.InspectionPassed ? "passed" : "rejected",
                 null,
                 [],
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow,
+                stockRelease));
     }
 
     private static ApplicationDbContext CreateContext()

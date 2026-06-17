@@ -68,7 +68,12 @@ public sealed class NcrDispositionDecidedIntegrationEventConverter(IQualityInteg
                 ncr.ReworkWorkOrderId,
                 ncr.ScrapMovementId,
                 ncr.ReturnDocumentId,
-                occurredAtUtc));
+                occurredAtUtc,
+                ncr.MrbReviews.Select(x => new MrbReviewPayload(
+                    x.ReviewerId,
+                    x.Decision,
+                    x.Comment,
+                    x.ReviewedAtUtc)).ToArray()));
     }
 }
 

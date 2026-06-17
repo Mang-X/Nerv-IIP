@@ -2704,6 +2704,115 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_http_client_forwards_measurements_and_stock_release_dimensions()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    inspectionRecordId = "inspection-001",
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+
+        await client.CreateInspectionRecordAsync(
+            "internal-token-001",
+            new BusinessConsoleCreateInspectionRecordRequest(
+                "org-001",
+                "env-dev",
+                "plan-001",
+                "incoming",
+                "wms-receiving",
+                "ASN-001",
+                "SKU-001",
+                10m,
+                "LOT-001",
+                null,
+                [
+                    new BusinessConsoleInspectionCharacteristicResult(
+                        "diameter",
+                        "10.2",
+                        "mm",
+                        "passed",
+                        null,
+                        null,
+                        [],
+                        10.2m),
+                ],
+                null,
+                null,
+                new BusinessConsoleInspectionStockRelease("pcs", "site-a", "qc-hold", "inspection", "supplier", "sup-001")),
+            CancellationToken.None);
+
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal(10.2m, root.GetProperty("resultLines")[0].GetProperty("measuredValue").GetDecimal());
+        var stockRelease = root.GetProperty("stockRelease");
+        Assert.Equal("pcs", stockRelease.GetProperty("uomCode").GetString());
+        Assert.Equal("site-a", stockRelease.GetProperty("siteCode").GetString());
+        Assert.Equal("qc-hold", stockRelease.GetProperty("locationCode").GetString());
+        Assert.Equal("inspection", stockRelease.GetProperty("sourceQualityStatus").GetString());
+        Assert.Equal("supplier", stockRelease.GetProperty("ownerType").GetString());
+        Assert.Equal("sup-001", stockRelease.GetProperty("ownerId").GetString());
+    }
+
+    [Fact]
+    public async Task Quality_http_client_forwards_mrb_reviews_for_ncr_disposition()
+    {
+        string? requestBody = null;
+        var handler = new RecordingHandler(request =>
+        {
+            requestBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    accepted = true,
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            });
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var client = new HttpBusinessQualityClient(httpClient);
+        var reviewedAt = DateTimeOffset.Parse("2026-06-16T01:02:03Z", CultureInfo.InvariantCulture);
+
+        await client.SubmitNcrDispositionAsync(
+            "internal-token-001",
+            "ncr-001",
+            new BusinessConsoleNcrDispositionRequest(
+                "ncr-001",
+                "org-001",
+                "env-dev",
+                "rework",
+                "approval-chain-001",
+                ["file-001"],
+                [new BusinessConsoleMrbReview("qa-lead", "approved", "release for rework", reviewedAt)]),
+            CancellationToken.None);
+
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        var root = document.RootElement;
+        Assert.Equal("rework", root.GetProperty("dispositionType").GetString());
+        var review = root.GetProperty("mrbReviews")[0];
+        Assert.Equal("qa-lead", review.GetProperty("reviewerId").GetString());
+        Assert.Equal("approved", review.GetProperty("decision").GetString());
+        Assert.Equal("release for rework", review.GetProperty("comment").GetString());
+        Assert.Equal(reviewedAt, review.GetProperty("reviewedAtUtc").GetDateTimeOffset());
+    }
+
+    [Fact]
     public async Task Mes_http_client_sends_internal_bearer_token_and_builds_downstream_body()
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
