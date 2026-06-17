@@ -35,21 +35,26 @@
 <style>
 .ds-mdoc {
   display: grid;
-  gap: 2rem;
+  gap: 2.5rem;
   align-items: start;
 }
-@media (min-width: 1024px) {
+/* Two columns only when there's real room (≥1200px); below that the phone
+   stacks under the docs at full width instead of cramping a narrow split. */
+@media (min-width: 1200px) {
   .ds-mdoc {
-    grid-template-columns: minmax(0, 1fr) 360px;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 3.5rem;
   }
 }
 .ds-mdoc-main {
   min-width: 0;
+  /* keep prose/code readable even when the page column is very wide */
+  max-width: 760px;
 }
 .ds-mdoc-sticky {
   position: static;
 }
-@media (min-width: 1024px) {
+@media (min-width: 1200px) {
   .ds-mdoc-sticky {
     position: sticky;
     top: 5.5rem;
@@ -57,7 +62,7 @@
 }
 .ds-mdoc-phone {
   width: 100%;
-  max-width: 340px;
+  max-width: 360px;
   margin-inline: auto;
   border: 1px solid var(--border);
   border-radius: 28px;

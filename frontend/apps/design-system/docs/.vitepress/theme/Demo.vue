@@ -34,6 +34,13 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean }>()
   border: 0;
   list-style: none;
 }
+/* Links inside a demo are component links (breadcrumb, nav, …), not prose links —
+   strip VitePress's brand-blue + underline so the component's own styling shows. */
+.vp-doc .ds-demo a {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
 .ds-demo {
   margin: 1.25rem 0;
   border: 1px solid var(--border);
