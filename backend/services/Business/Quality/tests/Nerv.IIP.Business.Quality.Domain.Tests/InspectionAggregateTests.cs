@@ -47,7 +47,7 @@ public sealed class InspectionAggregateTests
             inspectedQuantity: 3m,
             batchNo: "BATCH-001",
             serialNo: null,
-            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
                 InspectionResultLineInput.Measure("length", measuredValue: 11m, unitCode: "mm", attachmentFileIds: []),
@@ -90,7 +90,7 @@ public sealed class InspectionAggregateTests
             inspectedQuantity: 3m,
             batchNo: "BATCH-001",
             serialNo: null,
-            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
                 InspectionResultLineInput.Measure("appearance", measuredValue: 1m, unitCode: "mm", attachmentFileIds: []),
@@ -129,7 +129,7 @@ public sealed class InspectionAggregateTests
             inspectedQuantity: 5m,
             batchNo: "BATCH-001",
             serialNo: null,
-            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
                 InspectionResultLineInput.Attribute("appearance", observedText: "one minor scratch", defectReason: "scratch", defectQuantity: 1m, attachmentFileIds: []),
@@ -145,7 +145,7 @@ public sealed class InspectionAggregateTests
             inspectedQuantity: 5m,
             batchNo: "BATCH-002",
             serialNo: null,
-            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
                 InspectionResultLineInput.Attribute("appearance", observedText: "two defects", defectReason: "scratch", defectQuantity: 2m, attachmentFileIds: []),
@@ -161,7 +161,7 @@ public sealed class InspectionAggregateTests
             inspectedQuantity: 5m,
             batchNo: "BATCH-003",
             serialNo: null,
-            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
                 InspectionResultLineInput.Attribute("appearance", observedText: "three defects", defectReason: "scratch", defectQuantity: 3m, attachmentFileIds: []),

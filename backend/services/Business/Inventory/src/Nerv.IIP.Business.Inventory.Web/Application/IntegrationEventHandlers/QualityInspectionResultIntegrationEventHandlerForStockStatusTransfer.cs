@@ -54,6 +54,31 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         }
 
         var payload = integrationEvent.Payload;
+        if (payload.StockRelease is not null)
+        {
+            await sender.Send(
+                new PostStockStatusTransferCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    payload.StockRelease.SourceQualityStatus,
+                    targetStatus,
+                    "quality",
+                    payload.SourceDocumentId,
+                    payload.InspectionRecordId,
+                    integrationEvent.IdempotencyKey,
+                    payload.SkuCode,
+                    payload.StockRelease.UomCode,
+                    payload.StockRelease.SiteCode,
+                    payload.StockRelease.LocationCode,
+                    payload.StockRelease.LotNo,
+                    payload.StockRelease.SerialNo,
+                    payload.StockRelease.OwnerType,
+                    payload.StockRelease.OwnerId,
+                    payload.InspectedQuantity),
+                cancellationToken);
+            return;
+        }
+
         var candidates = await dbContext.StockLedgers
             .AsNoTracking()
             .Where(x => x.OrganizationId == integrationEvent.OrganizationId

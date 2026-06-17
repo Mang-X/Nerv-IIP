@@ -51,7 +51,7 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("ea", integrationEvent.Payload.StockRelease.UomCode);
         Assert.Equal("SITE-01", integrationEvent.Payload.StockRelease.SiteCode);
         Assert.Equal("IQC-HOLD", integrationEvent.Payload.StockRelease.LocationCode);
-        Assert.Equal("inspection", integrationEvent.Payload.StockRelease.SourceQualityStatus);
+        Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
         Assert.Equal("company", integrationEvent.Payload.StockRelease.OwnerType);
         var resultLine = Assert.Single(integrationEvent.Payload.ResultLines!);
         Assert.Equal("length", resultLine.CharacteristicCode);
@@ -145,7 +145,7 @@ public sealed class QualityInspectionIntegrationEventTests
             10m,
             "BATCH-001",
             null,
-            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "inspection", "company", null),
+            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             [InspectionResultLineInput.Measure("length", 11m, "mm", ["file-photo-001"])],
             "Supplier certificate mismatch",
             ["file-mrb-001"]);

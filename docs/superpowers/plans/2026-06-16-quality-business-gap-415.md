@@ -33,14 +33,14 @@
 - Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/CorrectiveActions/CorrectiveActionCommands.cs`
 - Create: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Endpoints/CorrectiveActions/CorrectiveActionEndpoints.cs`
 - Modify: `backend/services/Business/Quality/src/Nerv.IIP.Business.Quality.Web/Program.cs`
-- Create: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatus.cs`
+- Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs`
 - Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Nerv.IIP.Business.Inventory.Web.csproj`
 - Modify: `backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Program.cs`
 - Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/InspectionAggregateTests.cs`
 - Create: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Domain.Tests/CorrectiveActionTests.cs`
 - Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityInspectionIntegrationEventTests.cs`
 - Modify: `backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/QualityEndpointContractTests.cs`
-- Create: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/QualityInspectionResultConsumerTests.cs`
+- Update: `backend/services/Business/Inventory/tests/Nerv.IIP.Business.Inventory.Web.Tests/InventoryMovementRequestedConsumerTests.cs`
 - Modify: `docs/architecture/database-schema-catalog.md`
 - Modify: `docs/architecture/implementation-readiness.md`
 
@@ -54,7 +54,7 @@
 ## Task 2: Red Tests For Quality Events And Inventory Release
 
 - [ ] Add failing Quality contract/event tests asserting inspection event payload includes stock release dimensions and numeric result line facts.
-- [ ] Add failing Inventory Web tests where `quality.InspectionPassed` transfers stock from `inspection` to `qualified`, and `quality.InspectionRejected` transfers stock from `inspection` to `quarantine`.
+- [ ] Add failing Inventory Web tests where `quality.InspectionPassed` transfers stock from `quality` to `unrestricted`, `quality.InspectionRejected` transfers stock from `quality` to `blocked`, and explicit Quality stock release dimensions disambiguate multiple matching ledgers.
 - [ ] Run the focused Quality contract and Inventory consumer tests and confirm failure before implementation.
 - [ ] Implement event payload enrichment and Inventory consumer with deterministic idempotency keys.
 

@@ -25,7 +25,7 @@ In scope for this issue:
 3. Numeric measured value on inspection result lines and automatic pass/fail calculation for planned inspections.
 4. Plan coverage validation for required characteristics and source category matching.
 5. Public Quality inspection event payload enrichment with stock release dimensions needed by Inventory.
-6. Inventory consumer for `quality.InspectionPassed` and `quality.InspectionRejected`, posting status transfer movements from `inspection` to `qualified` or `quarantine`.
+6. Inventory consumer for `quality.InspectionPassed` and `quality.InspectionRejected`, posting public status transfer commands from `quality` to `unrestricted` or `blocked`. When Quality supplies stock release dimensions, Inventory uses them to target the exact ledger; otherwise it keeps the #412 single matching `quality` ledger fallback.
 7. NCR disposition MRB review records and event payload fields.
 8. CAPA aggregate, persistence and internal service API.
 9. Schema catalog/readiness/API contract docs updates and focused verification.
@@ -58,8 +58,8 @@ Explicitly out of scope:
 
 1. Quality event payloads include optional stock release dimensions: UOM, site, location, lot, serial, source quality status, owner type and owner id.
 2. Inventory ignores Quality inspection events that lack stock release dimensions.
-3. Passed inspections transfer inspected quantity from `inspection` to `qualified`.
-4. Rejected inspections transfer inspected quantity from `inspection` to `quarantine`.
+3. Passed inspections transfer inspected quantity from `quality` to `unrestricted`.
+4. Rejected inspections transfer inspected quantity from `quality` to `blocked`.
 5. Inventory uses deterministic idempotency keys derived from the Quality event id and target status.
 
 ### NCR/MRB/CAPA
