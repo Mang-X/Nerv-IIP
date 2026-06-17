@@ -83,6 +83,10 @@ export default defineConfig({
           ],
         },
         {
+          text: '导航',
+          items: [{ text: 'Breadcrumb 面包屑', link: '/components/desktop/breadcrumb' }],
+        },
+        {
           text: '仪表盘',
           items: [{ text: 'Dashboard 仪表盘外壳', link: '/components/desktop/dashboard' }],
         },
