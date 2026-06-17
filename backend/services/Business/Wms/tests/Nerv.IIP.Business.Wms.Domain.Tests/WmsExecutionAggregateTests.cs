@@ -1,3 +1,4 @@
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -65,11 +66,22 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Outbound_pack_review_carries_inventory_reservation_id_to_movement_request()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
+
+        var request = outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+
+        Assert.Equal("res-001", request.InventoryReservationId);
+    }
+
+    [Fact]
     public void Pick_quantity_cannot_exceed_outbound_line_quantity()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
 
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var exception = Assert.Throws<KnownException>(() =>
             outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 5m));
 
         Assert.Contains("pick", exception.Message, StringComparison.OrdinalIgnoreCase);

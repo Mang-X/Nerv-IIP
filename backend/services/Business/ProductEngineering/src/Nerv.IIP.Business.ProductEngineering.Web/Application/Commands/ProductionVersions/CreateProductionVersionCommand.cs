@@ -33,12 +33,15 @@ public sealed class CreateProductionVersionCommandValidator : AbstractValidator<
     }
 }
 
-public sealed class CreateProductionVersionCommandHandler(IProductionVersionRepository repository)
+public sealed class CreateProductionVersionCommandHandler(
+    IProductionVersionRepository repository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository)
     : ICommandHandler<CreateProductionVersionCommand, ProductionVersionCommandResult>
 {
     public async Task<ProductionVersionCommandResult> Handle(CreateProductionVersionCommand request, CancellationToken cancellationToken)
     {
-        if (request.IsDefault && await repository.HasOverlappingDefaultAsync(
+        if (await repository.HasOverlappingActiveAsync(
             request.OrganizationId,
             request.EnvironmentId,
             request.SkuCode,
@@ -46,8 +49,20 @@ public sealed class CreateProductionVersionCommandHandler(IProductionVersionRepo
             request.ValidTo,
             cancellationToken: cancellationToken))
         {
-            throw new KnownException($"Production version default already exists for SKU '{request.SkuCode}' in the requested effective window.");
+            throw new KnownException($"Production version effective window already exists for SKU '{request.SkuCode}'. Archive or close the current version before creating an overlapping one.");
         }
+
+        var binding = await ProductionVersionBindingValidator.ResolveAsync(
+            manufacturingBomRepository,
+            routingRepository,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            request.MbomVersionId,
+            request.RoutingVersionId,
+            request.ValidFrom,
+            request.ValidTo,
+            cancellationToken);
 
         var version = ProductionVersion.Create(
             request.OrganizationId,
@@ -61,9 +76,65 @@ public sealed class CreateProductionVersionCommandHandler(IProductionVersionRepo
             request.LotSizeMax,
             request.Priority,
             request.IsDefault,
-            EngineeringVersionStatus.Published,
-            EngineeringVersionStatus.Published);
+            binding.MbomStatus,
+            binding.RoutingStatus);
         await repository.AddAsync(version, cancellationToken);
         return new ProductionVersionCommandResult(version.Id.Id.ToString("D"));
+    }
+}
+
+internal sealed record ProductionVersionBinding(EngineeringVersionStatus MbomStatus, EngineeringVersionStatus RoutingStatus);
+
+internal static class ProductionVersionBindingValidator
+{
+    public static async Task<ProductionVersionBinding> ResolveAsync(
+        IManufacturingBomRepository manufacturingBomRepository,
+        IRoutingRepository routingRepository,
+        string organizationId,
+        string environmentId,
+        string skuCode,
+        string mbomVersionId,
+        string routingVersionId,
+        DateOnly validFrom,
+        DateOnly? validTo,
+        CancellationToken cancellationToken)
+    {
+        var mbom = await manufacturingBomRepository.GetByVersionIdAsync(organizationId, environmentId, mbomVersionId, cancellationToken)
+            ?? throw new KnownException($"MBOM version '{mbomVersionId}' was not found.");
+        var routing = await routingRepository.GetByVersionIdAsync(organizationId, environmentId, routingVersionId, cancellationToken)
+            ?? throw new KnownException($"Routing version '{routingVersionId}' was not found.");
+
+        if (!string.Equals(mbom.SkuCode, skuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"MBOM version '{mbomVersionId}' belongs to SKU '{mbom.SkuCode}', not requested SKU '{skuCode}'.");
+        }
+
+        if (!string.Equals(routing.SkuCode, skuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Routing version '{routingVersionId}' belongs to SKU '{routing.SkuCode}', not requested SKU '{skuCode}'.");
+        }
+
+        EnsurePublishedAndEffective("MBOM", mbomVersionId, mbom.Status, mbom.EffectiveDate, validFrom, validTo);
+        EnsurePublishedAndEffective("Routing", routingVersionId, routing.Status, routing.EffectiveDate, validFrom, validTo);
+        return new ProductionVersionBinding(mbom.Status, routing.Status);
+    }
+
+    private static void EnsurePublishedAndEffective(
+        string kind,
+        string versionId,
+        EngineeringVersionStatus status,
+        DateOnly? effectiveDate,
+        DateOnly validFrom,
+        DateOnly? validTo)
+    {
+        if (status != EngineeringVersionStatus.Published)
+        {
+            throw new KnownException($"{kind} version '{versionId}' must be published before it can be bound to a production version.");
+        }
+
+        if (effectiveDate is not null && effectiveDate.Value > validFrom)
+        {
+            throw new KnownException($"{kind} version '{versionId}' is not effective for the requested production version window.");
+        }
     }
 }

@@ -18,6 +18,7 @@ public sealed class ShiftEntityTypeConfiguration : IEntityTypeConfiguration<Shif
         builder.Property(x => x.EndsAt).HasColumnName("ends_at").IsRequired().HasComment("Local end time of the shift.");
         builder.Property(x => x.CrossesMidnight).HasColumnName("crosses_midnight").IsRequired().HasComment("Flag that indicates the shift ends on the next local day.");
         builder.Property(x => x.PaidMinutes).HasColumnName("paid_minutes").IsRequired().HasComment("Paid or planned working minutes in the shift.");
+        builder.Property(x => x.BreakMinutes).HasColumnName("break_minutes").IsRequired().HasComment("Planned break minutes inside the shift window.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the shift from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the shift was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the shift was last updated.");

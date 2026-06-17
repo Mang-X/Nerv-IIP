@@ -6,6 +6,7 @@ public static class InventoryIntegrationEventTypes
 {
     public const string InventoryMovementRequested = "inventory.InventoryMovementRequested";
     public const string StockMovementPosted = "inventory.StockMovementPosted";
+    public const string StockMovementPostingFailed = "inventory.StockMovementPostingFailed";
     public const string StockCountVarianceConfirmed = "inventory.StockCountVarianceConfirmed";
     public const string StockAvailabilityChanged = "inventory.StockAvailabilityChanged";
 }
@@ -55,7 +56,8 @@ public sealed record InventoryMovementRequestedPayload(
     string OwnerType,
     string? OwnerId,
     decimal Quantity,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? InventoryReservationId = null);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,
@@ -91,7 +93,46 @@ public sealed record StockMovementPostedPayload(
     string OwnerType,
     string? OwnerId,
     decimal Quantity,
-    DateTimeOffset PostedAtUtc);
+    DateTimeOffset PostedAtUtc,
+    decimal? UnitCost,
+    decimal? MovementAmount);
+
+public sealed record StockMovementPostingFailedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    StockMovementPostingFailedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record StockMovementPostingFailedPayload(
+    string MovementType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    string FailureCode,
+    string FailureMessage,
+    DateTimeOffset FailedAtUtc);
 
 public sealed record StockCountVarianceConfirmedIntegrationEvent(
     string EventId,
@@ -151,4 +192,6 @@ public sealed record StockAvailabilityChangedPayload(
     decimal ReservedQuantity,
     decimal AvailableQuantity,
     long LedgerVersion,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    decimal MovingAverageUnitCost,
+    decimal InventoryValue);

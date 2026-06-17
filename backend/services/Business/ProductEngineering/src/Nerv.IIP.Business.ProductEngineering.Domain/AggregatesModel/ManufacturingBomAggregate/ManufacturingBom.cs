@@ -45,7 +45,18 @@ public sealed class ManufacturingBom : Entity<ManufacturingBomId>, IAggregateRoo
         return new ManufacturingBom(organizationId, environmentId, bomCode, revision, skuCode);
     }
 
-    public ManufacturingBom AddMaterialLine(string skuCode, decimal quantity, string unitOfMeasureCode, decimal scrapRate)
+    public ManufacturingBom AddMaterialLine(
+        string skuCode,
+        decimal quantity,
+        string unitOfMeasureCode,
+        decimal scrapRate,
+        bool isPhantom = false,
+        string? alternateGroup = null,
+        int? alternatePriority = null,
+        string? substituteSkuCodes = null,
+        string? referenceDesignators = null,
+        decimal yieldRate = 1m,
+        bool backflush = false)
     {
         EnsureDraft();
         skuCode = Required(skuCode);
@@ -54,12 +65,18 @@ public sealed class ManufacturingBom : Entity<ManufacturingBomId>, IAggregateRoo
             throw new InvalidOperationException($"Manufacturing BOM already contains SKU '{skuCode}'.");
         }
 
-        if (scrapRate < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(scrapRate), "Scrap rate cannot be negative.");
-        }
-
-        materialLines.Add(new ManufacturingBomMaterialLine(skuCode, Positive(quantity, nameof(quantity)), Required(unitOfMeasureCode), scrapRate));
+        materialLines.Add(new ManufacturingBomMaterialLine(
+            skuCode,
+            Positive(quantity, nameof(quantity)),
+            Required(unitOfMeasureCode),
+            NonNegative(scrapRate, nameof(scrapRate), "Scrap rate cannot be negative."),
+            isPhantom,
+            Optional(alternateGroup),
+            alternatePriority,
+            Optional(substituteSkuCodes),
+            Optional(referenceDesignators),
+            Yield(yieldRate, nameof(yieldRate)),
+            backflush));
         Touch();
         return this;
     }
@@ -98,6 +115,23 @@ public sealed class ManufacturingBom : Entity<ManufacturingBomId>, IAggregateRoo
         AddDomainEvent(new ManufacturingBomReleasedDomainEvent(this));
     }
 
+    public void Archive(string reason)
+    {
+        _ = Required(reason);
+        if (Status == EngineeringVersionStatus.Archived)
+        {
+            return;
+        }
+
+        if (Status != EngineeringVersionStatus.Published)
+        {
+            throw new InvalidOperationException("Only released manufacturing BOM versions can be archived by an engineering change.");
+        }
+
+        Status = EngineeringVersionStatus.Archived;
+        Touch();
+    }
+
     private void EnsureDraft()
     {
         if (Status != EngineeringVersionStatus.Draft)
@@ -118,18 +152,43 @@ public sealed class ManufacturingBomMaterialLine
     {
     }
 
-    internal ManufacturingBomMaterialLine(string skuCode, decimal quantity, string unitOfMeasureCode, decimal scrapRate)
+    internal ManufacturingBomMaterialLine(
+        string skuCode,
+        decimal quantity,
+        string unitOfMeasureCode,
+        decimal scrapRate,
+        bool isPhantom,
+        string? alternateGroup,
+        int? alternatePriority,
+        string? substituteSkuCodes,
+        string? referenceDesignators,
+        decimal yieldRate,
+        bool backflush)
     {
         SkuCode = skuCode;
         Quantity = quantity;
         UnitOfMeasureCode = unitOfMeasureCode;
         ScrapRate = scrapRate;
+        IsPhantom = isPhantom;
+        AlternateGroup = alternateGroup;
+        AlternatePriority = alternatePriority;
+        SubstituteSkuCodes = substituteSkuCodes;
+        ReferenceDesignators = referenceDesignators;
+        YieldRate = yieldRate;
+        Backflush = backflush;
     }
 
     public string SkuCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public string UnitOfMeasureCode { get; private set; } = string.Empty;
     public decimal ScrapRate { get; private set; }
+    public bool IsPhantom { get; private set; }
+    public string? AlternateGroup { get; private set; }
+    public int? AlternatePriority { get; private set; }
+    public string? SubstituteSkuCodes { get; private set; }
+    public string? ReferenceDesignators { get; private set; }
+    public decimal YieldRate { get; private set; } = 1m;
+    public bool Backflush { get; private set; }
 }
 
 public sealed class ManufacturingBomRecipeLine

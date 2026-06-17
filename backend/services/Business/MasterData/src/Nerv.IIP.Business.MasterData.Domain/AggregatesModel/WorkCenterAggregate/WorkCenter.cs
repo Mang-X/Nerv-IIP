@@ -22,13 +22,19 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         string? workshopCode,
         string defaultCalendarCode,
         string capacityUnit,
-        bool finiteCapacity)
+        bool finiteCapacity,
+        decimal utilizationRate,
+        decimal efficiencyRate,
+        int numberOfCapacities,
+        string? costCenterCode,
+        bool bottleneck)
     {
         if (capacityMinutesPerDay <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacityMinutesPerDay), "Capacity minutes per day must be positive.");
         }
 
+        ValidateCapacityFactors(utilizationRate, efficiencyRate, numberOfCapacities);
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
         Code = Required(code);
@@ -41,6 +47,11 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         DefaultCalendarCode = Optional(defaultCalendarCode);
         CapacityUnit = Required(capacityUnit);
         FiniteCapacity = finiteCapacity;
+        UtilizationRate = utilizationRate;
+        EfficiencyRate = efficiencyRate;
+        NumberOfCapacities = numberOfCapacities;
+        CostCenterCode = NormalizeOptional(costCenterCode);
+        Bottleneck = bottleneck;
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(WorkCenter), OrganizationId, EnvironmentId, Code));
@@ -59,13 +70,19 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     public string DefaultCalendarCode { get; private set; } = string.Empty;
     public string CapacityUnit { get; private set; } = string.Empty;
     public bool FiniteCapacity { get; private set; }
+    public decimal UtilizationRate { get; private set; } = 1m;
+    public decimal EfficiencyRate { get; private set; } = 1m;
+    public int NumberOfCapacities { get; private set; } = 1;
+    public string? CostCenterCode { get; private set; }
+    public bool Bottleneck { get; private set; }
+    public decimal EffectiveCapacityMinutesPerDay => CapacityMinutesPerDay * UtilizationRate * EfficiencyRate * NumberOfCapacities;
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
     public static WorkCenter Create(string organizationId, string environmentId, string code, string name, int capacityMinutesPerDay)
     {
-        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, "work-center", string.Empty, string.Empty, null, string.Empty, "minute", true);
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, "work-center", string.Empty, string.Empty, null, string.Empty, "minute", true, 1m, 1m, 1, null, false);
     }
 
     public static WorkCenter CreateResource(
@@ -96,9 +113,14 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         string? workshopCode,
         string defaultCalendarCode,
         string capacityUnit,
-        bool finiteCapacity)
+        bool finiteCapacity,
+        decimal utilizationRate = 1m,
+        decimal efficiencyRate = 1m,
+        int numberOfCapacities = 1,
+        string? costCenterCode = null,
+        bool bottleneck = false)
     {
-        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, workshopCode, defaultCalendarCode, capacityUnit, finiteCapacity);
+        return new WorkCenter(organizationId, environmentId, code, name, capacityMinutesPerDay, resourceType, plantCode, lineCode, workshopCode, defaultCalendarCode, capacityUnit, finiteCapacity, utilizationRate, efficiencyRate, numberOfCapacities, costCenterCode, bottleneck);
     }
 
     public void UpdateResource(
@@ -123,13 +145,22 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         string? workshopCode,
         string defaultCalendarCode,
         string capacityUnit,
-        bool finiteCapacity)
+        bool finiteCapacity,
+        decimal? utilizationRate = null,
+        decimal? efficiencyRate = null,
+        int? numberOfCapacities = null,
+        string? costCenterCode = null,
+        bool? bottleneck = null)
     {
         if (capacityMinutesPerDay <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacityMinutesPerDay), "Capacity minutes per day must be positive.");
         }
 
+        var nextUtilizationRate = utilizationRate ?? UtilizationRate;
+        var nextEfficiencyRate = efficiencyRate ?? EfficiencyRate;
+        var nextNumberOfCapacities = numberOfCapacities ?? NumberOfCapacities;
+        ValidateCapacityFactors(nextUtilizationRate, nextEfficiencyRate, nextNumberOfCapacities);
         EnsureEnabled();
         Name = Required(name);
         CapacityMinutesPerDay = capacityMinutesPerDay;
@@ -140,6 +171,14 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
         DefaultCalendarCode = Optional(defaultCalendarCode);
         CapacityUnit = Required(capacityUnit);
         FiniteCapacity = finiteCapacity;
+        UtilizationRate = nextUtilizationRate;
+        EfficiencyRate = nextEfficiencyRate;
+        NumberOfCapacities = nextNumberOfCapacities;
+        if (costCenterCode is not null)
+        {
+            CostCenterCode = NormalizeOptional(costCenterCode);
+        }
+        Bottleneck = bottleneck ?? Bottleneck;
         Touch();
     }
 
@@ -193,5 +232,23 @@ public class WorkCenter : Entity<WorkCenterId>, IAggregateRoot
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static void ValidateCapacityFactors(decimal utilizationRate, decimal efficiencyRate, int numberOfCapacities)
+    {
+        if (utilizationRate <= 0 || utilizationRate > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(utilizationRate), "Utilization rate must be in the range (0, 1].");
+        }
+
+        if (efficiencyRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(efficiencyRate), "Efficiency rate must be positive.");
+        }
+
+        if (numberOfCapacities <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(numberOfCapacities), "Number of capacities must be positive.");
+        }
     }
 }

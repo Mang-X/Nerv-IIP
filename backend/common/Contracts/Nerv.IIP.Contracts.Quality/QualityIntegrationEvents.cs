@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.Quality;
 
 public static class QualityIntegrationEventTypes
@@ -73,7 +75,10 @@ public sealed record InspectionResultIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    InspectionResultPayload Payload);
+    InspectionResultPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record InspectionResultPayload(
     string InspectionRecordId,

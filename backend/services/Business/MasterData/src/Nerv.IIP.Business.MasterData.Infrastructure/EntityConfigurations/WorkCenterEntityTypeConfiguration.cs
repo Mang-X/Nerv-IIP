@@ -22,6 +22,11 @@ public sealed class WorkCenterEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.DefaultCalendarCode).HasColumnName("default_calendar_code").IsRequired().HasMaxLength(100).HasComment("Default work calendar code used for planning capacity.");
         builder.Property(x => x.CapacityUnit).HasColumnName("capacity_unit").IsRequired().HasMaxLength(50).HasComment("Unit for nominal resource capacity, for example minute, liter or kilogram.");
         builder.Property(x => x.FiniteCapacity).HasColumnName("finite_capacity").IsRequired().HasComment("Flag that indicates planning should treat the work center as finite capacity.");
+        builder.Property(x => x.UtilizationRate).HasColumnName("utilization_rate").IsRequired().HasPrecision(9, 6).HasDefaultValue(1m).HasComment("Default utilization rate used to convert nominal capacity to rated capacity.");
+        builder.Property(x => x.EfficiencyRate).HasColumnName("efficiency_rate").IsRequired().HasPrecision(9, 6).HasDefaultValue(1m).HasComment("Default efficiency rate used to convert nominal capacity to rated capacity.");
+        builder.Property(x => x.NumberOfCapacities).HasColumnName("number_of_capacities").IsRequired().HasDefaultValue(1).HasComment("Parallel capacity count such as machine count or labor station count.");
+        builder.Property(x => x.CostCenterCode).HasColumnName("cost_center_code").HasMaxLength(100).HasComment("Optional ERP costing cost center code for the work center.");
+        builder.Property(x => x.Bottleneck).HasColumnName("bottleneck").IsRequired().HasComment("Whether this work center is treated as a bottleneck resource for planning.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the work center from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the work center was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the work center was last updated.");
