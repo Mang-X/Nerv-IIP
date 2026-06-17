@@ -1650,6 +1650,22 @@ public sealed class BusinessGatewayProxyTests
             "/api/business/v1/maintenance/work-orders" => JsonResponse(HttpStatusCode.OK, new { data = new { workOrderId = "wo-maint-001" } }),
             "/api/business/v1/maintenance/work-orders/wo-maint-001/complete" => JsonResponse(HttpStatusCode.OK, new { data = new { accepted = true } }),
             "/api/business/v1/maintenance/plans" => JsonResponse(HttpStatusCode.OK, new { data = new { planId = "plan-001" } }),
+            "/api/business/v1/maintenance/plans/generate-due" => JsonResponse(HttpStatusCode.OK, new { data = new { generatedCount = 1, workOrderIds = new[] { "wo-pm-001" } } }),
+            "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability" => JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    deviceAssetId = "DEV-PRESS-01",
+                    windowStartUtc = "2026-06-01T08:00:00Z",
+                    windowEndUtc = "2026-06-30T16:00:00Z",
+                    failureCount = 2,
+                    repairCount = 2,
+                    mtbfHours = 24.5m,
+                    mttrMinutes = 35m,
+                },
+            }),
             "/api/business/v1/maintenance/inspections" => JsonResponse(HttpStatusCode.OK, new { data = new { inspectionId = "inspection-001" } }),
             "/api/business/v1/maintenance/spare-parts" => JsonResponse(HttpStatusCode.OK, new { data = new { sparePartLineId = "spare-line-001" } }),
             _ => JsonResponse(HttpStatusCode.NotFound, new { message = "unexpected path" }),
@@ -1685,6 +1701,23 @@ public sealed class BusinessGatewayProxyTests
                 DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
                 DateTimeOffset.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture)),
             CancellationToken.None);
+        await client.GenerateDueWorkOrdersAsync(
+            "internal-token-001",
+            new BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 6, 17),
+                "planner-001"),
+            CancellationToken.None);
+        await client.QueryAssetReliabilityAsync(
+            "internal-token-001",
+            "DEV-PRESS-01",
+            new BusinessConsoleQueryMaintenanceAssetReliabilityRequest(
+                "org-001",
+                "env-dev",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)),
+            CancellationToken.None);
         await client.RecordInspectionAsync(
             "internal-token-001",
             new BusinessConsoleRecordMaintenanceInspectionRequest(
@@ -1705,8 +1738,10 @@ public sealed class BusinessGatewayProxyTests
         AssertRequest(handler.Requests[0], HttpMethod.Post, "/api/business/v1/maintenance/work-orders");
         AssertRequest(handler.Requests[1], HttpMethod.Post, "/api/business/v1/maintenance/work-orders/wo-maint-001/complete");
         AssertRequest(handler.Requests[2], HttpMethod.Post, "/api/business/v1/maintenance/plans");
-        AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
-        AssertRequest(handler.Requests[4], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
+        AssertRequest(handler.Requests[3], HttpMethod.Post, "/api/business/v1/maintenance/plans/generate-due");
+        AssertRequest(handler.Requests[4], HttpMethod.Get, "/api/business/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08%3A00%3A00.0000000%2B00%3A00&windowEndUtc=2026-06-30T16%3A00%3A00.0000000%2B00%3A00");
+        AssertRequest(handler.Requests[5], HttpMethod.Post, "/api/business/v1/maintenance/inspections");
+        AssertRequest(handler.Requests[6], HttpMethod.Post, "/api/business/v1/maintenance/spare-parts");
     }
 
     [Fact]
@@ -5650,6 +5685,34 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(0, []));
+    }
+
+    public Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAssetReliabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceAssetId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            0,
+            0,
+            null,
+            null));
     }
 
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(

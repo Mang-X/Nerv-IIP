@@ -807,6 +807,11 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleCreateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -836,6 +841,12 @@ public interface IBusinessMaintenanceClient
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -3446,6 +3457,22 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         return new BusinessConsoleCreateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
     }
 
+    public async Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamGenerateDueMaintenanceWorkOrdersResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/plans/generate-due",
+            request,
+            cancellationToken);
+        return new BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(
+            response.GeneratedCount,
+            response.WorkOrderIds.Select(FormatJsonScalar).ToArray());
+    }
+
     public async Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -3547,6 +3574,18 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             cancellationToken,
             EquipmentRuntimeJson.Options);
 
+    public Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAssetReliabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/maintenance/assets/{Uri.EscapeDataString(deviceAssetId)}/reliability?" + ReliabilityQuery(request),
+            null,
+            cancellationToken);
+
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -3557,6 +3596,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             ("workCenterIds", request.WorkCenterIds));
 
     private static string DeviceAvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc));
+
+    private static string ReliabilityQuery(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
@@ -3624,6 +3670,10 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
+
+    private sealed record DownstreamGenerateDueMaintenanceWorkOrdersResponse(
+        int GeneratedCount,
+        IReadOnlyCollection<JsonElement> WorkOrderIds);
 
     private sealed record DownstreamRecordMaintenanceInspectionResponse(JsonElement InspectionId);
 

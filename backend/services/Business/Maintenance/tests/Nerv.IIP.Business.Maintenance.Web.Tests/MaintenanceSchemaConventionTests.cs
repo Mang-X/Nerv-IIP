@@ -101,6 +101,32 @@ public sealed class MaintenanceSchemaConventionTests
             ]));
     }
 
+    [Fact]
+    public void Reliability_closure_columns_are_mapped_and_documented()
+    {
+        using var fixture = new SchemaFixture(CreateServices().BuildServiceProvider());
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var workOrder = model.FindEntityType(typeof(MaintenanceWorkOrder))
+            ?? throw new InvalidOperationException("MaintenanceWorkOrder metadata was not found.");
+        var plan = model.FindEntityType(typeof(MaintenancePlan))
+            ?? throw new InvalidOperationException("MaintenancePlan metadata was not found.");
+
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourcePlanCode), "source_plan_code", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmCleared), "alarm_cleared", false);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmClearedAtUtc), "alarm_cleared_at_utc", true);
+        AssertColumn(plan, nameof(MaintenancePlan.LastGeneratedOn), "last_generated_on", true);
+        AssertColumn(plan, nameof(MaintenancePlan.NextDueOn), "next_due_on", false);
+    }
+
+    private static void AssertColumn(IEntityType entity, string propertyName, string columnName, bool nullable)
+    {
+        var property = entity.FindProperty(propertyName)
+            ?? throw new InvalidOperationException($"{entity.ClrType.Name}.{propertyName} metadata was not found.");
+        Assert.Equal(columnName, property.GetColumnName());
+        Assert.Equal(nullable, property.IsNullable);
+        Assert.False(string.IsNullOrWhiteSpace(property.GetComment()));
+    }
+
     private static IEnumerable<string> NoExternalOwnershipColumns(ApplicationDbContext dbContext)
     {
         var forbiddenFragments = new[]

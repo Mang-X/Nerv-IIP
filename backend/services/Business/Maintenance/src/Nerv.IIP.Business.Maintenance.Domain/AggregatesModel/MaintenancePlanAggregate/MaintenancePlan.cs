@@ -39,10 +39,12 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         DeviceAssetId = MaintenanceText.Required(deviceAssetId, nameof(deviceAssetId));
         PlanCode = MaintenanceText.Required(planCode, nameof(planCode));
         Interval = MaintenanceText.Required(interval, nameof(interval));
+        _ = ParseIsoDayInterval(Interval);
         StartsOn = startsOn;
         Owner = MaintenanceText.Required(owner, nameof(owner));
         WindowStartUtc = windowStartUtc;
         WindowEndUtc = windowEndUtc;
+        NextDueOn = startsOn;
         CreatedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new MaintenancePlanCreatedDomainEvent(this));
     }
@@ -53,6 +55,8 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
     public string PlanCode { get; private set; } = string.Empty;
     public string Interval { get; private set; } = string.Empty;
     public DateOnly StartsOn { get; private set; }
+    public DateOnly? LastGeneratedOn { get; private set; }
+    public DateOnly NextDueOn { get; private set; }
     public string Owner { get; private set; } = string.Empty;
     public DateTimeOffset? WindowStartUtc { get; private set; }
     public DateTimeOffset? WindowEndUtc { get; private set; }
@@ -70,5 +74,38 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         DateTimeOffset? windowEndUtc = null)
     {
         return new MaintenancePlan(organizationId, environmentId, deviceAssetId, planCode, interval, startsOn, owner, windowStartUtc, windowEndUtc);
+    }
+
+    public bool IsDueOn(DateOnly businessDate)
+    {
+        return NextDueOn <= businessDate;
+    }
+
+    public void MarkGenerated(DateOnly generatedOn)
+    {
+        if (!IsDueOn(generatedOn))
+        {
+            return;
+        }
+
+        LastGeneratedOn = generatedOn;
+        NextDueOn = generatedOn.AddDays(ParseIsoDayInterval(Interval));
+    }
+
+    private static int ParseIsoDayInterval(string interval)
+    {
+        var normalized = MaintenanceText.Required(interval, nameof(interval)).ToUpperInvariant();
+        if (!normalized.StartsWith('P') || !normalized.EndsWith('D') || normalized.Length <= 2)
+        {
+            throw new ArgumentException("Maintenance plan interval must be an ISO-8601 day interval such as P7D.", nameof(interval));
+        }
+
+        var digits = normalized[1..^1];
+        if (!int.TryParse(digits, out var days) || days <= 0)
+        {
+            throw new ArgumentException("Maintenance plan interval days must be positive.", nameof(interval));
+        }
+
+        return days;
     }
 }

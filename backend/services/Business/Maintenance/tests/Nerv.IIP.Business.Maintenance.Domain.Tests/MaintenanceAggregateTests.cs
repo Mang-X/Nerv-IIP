@@ -23,8 +23,24 @@ public sealed class MaintenanceAggregateTests
             workOrder.GetDomainEvents(),
             x => Assert.IsType<MaintenanceWorkOrderOpenedDomainEvent>(x),
             x => Assert.IsType<AssetUnavailableDomainEvent>(x),
+            x => Assert.IsType<MaintenanceSparePartIssuedDomainEvent>(x),
             x => Assert.IsType<MaintenanceWorkOrderCompletedDomainEvent>(x),
             x => Assert.IsType<AssetRestoredDomainEvent>(x));
+    }
+
+    [Fact]
+    public void Work_order_from_alarm_can_be_marked_alarm_cleared_without_auto_completion()
+    {
+        var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+
+        workOrder.MarkAlarmCleared(clearedAtUtc);
+        workOrder.MarkAlarmCleared(clearedAtUtc.AddMinutes(5));
+
+        Assert.True(workOrder.AlarmCleared);
+        Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceWorkOrderAlarmClearedDomainEvent>());
     }
 
     [Fact]
@@ -69,6 +85,21 @@ public sealed class MaintenanceAggregateTests
     {
         Assert.Throws<ArgumentException>(() =>
             MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "", DateOnly.FromDateTime(DateTime.UtcNow), "maintenance"));
+    }
+
+    [Fact]
+    public void Maintenance_plan_tracks_next_due_date_for_iso_day_interval()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        Assert.Equal(new DateOnly(2026, 6, 1), plan.NextDueOn);
+        Assert.True(plan.IsDueOn(new DateOnly(2026, 6, 8)));
+
+        plan.MarkGenerated(new DateOnly(2026, 6, 8));
+
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.False(plan.IsDueOn(new DateOnly(2026, 6, 14)));
     }
 
     [Fact]

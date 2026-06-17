@@ -28,7 +28,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string deviceAssetId,
         string priority,
         string? sourceAlarmId,
-        string openedBy)
+        string openedBy,
+        string? sourcePlanCode = null)
     {
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
@@ -36,6 +37,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         DeviceAssetId = MaintenanceText.Required(deviceAssetId, nameof(deviceAssetId));
         Priority = MaintenanceText.Required(priority, nameof(priority)).ToLowerInvariant();
         SourceAlarmId = MaintenanceText.Optional(sourceAlarmId);
+        SourcePlanCode = MaintenanceText.Optional(sourcePlanCode);
         OpenedBy = MaintenanceText.Required(openedBy, nameof(openedBy));
         Status = MaintenanceWorkOrderStatus.Open;
         OpenedAtUtc = DateTimeOffset.UtcNow;
@@ -47,9 +49,12 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string DeviceAssetId { get; private set; } = string.Empty;
     public string Priority { get; private set; } = string.Empty;
     public string? SourceAlarmId { get; private set; }
+    public string? SourcePlanCode { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
     public MaintenanceWorkOrderStatus Status { get; private set; }
     public DateTimeOffset OpenedAtUtc { get; private set; }
+    public bool AlarmCleared { get; private set; }
+    public DateTimeOffset? AlarmClearedAtUtc { get; private set; }
     public bool AssetUnavailable { get; private set; }
     public string? AssetUnavailableReason { get; private set; }
     public DateTimeOffset? AssetUnavailableFromUtc { get; private set; }
@@ -69,6 +74,16 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, priority, null, openedBy);
     }
 
+    public static MaintenanceWorkOrder OpenFromPlan(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        string planCode,
+        string openedBy)
+    {
+        return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, "planned", null, openedBy, MaintenanceText.Required(planCode, nameof(planCode)));
+    }
+
     public static MaintenanceWorkOrder OpenFromAlarm(
         string organizationId,
         string environmentId,
@@ -78,6 +93,19 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string openedBy = "industrialTelemetry")
     {
         return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, priority, MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId)), openedBy);
+    }
+
+    public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)
+    {
+        EnsureOpen();
+        if (AlarmCleared)
+        {
+            return;
+        }
+
+        AlarmCleared = true;
+        AlarmClearedAtUtc = clearedAtUtc.ToUniversalTime();
+        this.AddDomainEvent(new MaintenanceWorkOrderAlarmClearedDomainEvent(this, AlarmClearedAtUtc.Value));
     }
 
     public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason)
@@ -104,7 +132,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         sparePartLines.Clear();
         foreach (var part in spareParts)
         {
-            sparePartLines.Add(SparePartLine.Create(part));
+            var line = SparePartLine.Create(part);
+            sparePartLines.Add(line);
+            this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
         }
 
         Status = MaintenanceWorkOrderStatus.Completed;

@@ -433,9 +433,9 @@ Source:
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `maintenance_work_orders` | business | 维修工单、报警引用、设备不可用和完工事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_alarm_id` 防止同一报警重复开单；`device_asset_id` 引用 MasterData 设备。 | source alarm 唯一索引用于报警幂等；状态/设备字段支撑维修看板查询。 | 手工或报警创建；完成后保留停机和备件引用事实。 |
-| `maintenance_work_order_spare_part_lines` | business | 维修工单备件需求行，只记录需求和用量事实，不维护库存余额。 | `id` 为 Guid v7 强类型 ID；`maintenance_work_order_id` 归属工单；`sku_code`、`quantity`、`uom_code` 描述备件。 | 工单外键索引用于加载备件行。 | 生命周期随维修工单推进并保留历史。 |
-| `maintenance_plans` | business | 预防性维护计划、保养周期和可选 runtime availability 维护窗口事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on`、`owner`、`window_start_utc` 和 `window_end_utc` 描述计划与维护窗口。 | 计划编码唯一索引用于防重复；设备与窗口字段支撑 availability 查询。 | 创建后作为计划事实保留；窗口边界必须成对提供并按 UTC 保存；后续版本化/暂停策略由后续切片补齐。 |
+| `maintenance_work_orders` | business | 维修工单、报警引用、PM 来源、报警恢复标记、设备不可用和完工事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_alarm_id` 防止同一报警重复开单；`source_plan_code` 记录 PM 自动开单来源；`alarm_cleared` / `alarm_cleared_at_utc` 记录报警已解除但待维修确认状态；`device_asset_id` 引用 MasterData 设备。 | source alarm 唯一索引用于报警幂等；状态/设备字段支撑维修看板查询。 | 手工、报警或 PM 到期生成；完成后保留停机和备件引用事实。 |
+| `maintenance_work_order_spare_part_lines` | business | 维修工单备件需求行，只记录需求和用量事实，不维护库存余额。 | `id` 为 Guid v7 强类型 ID；`maintenance_work_order_id` 归属工单；`sku_code`、`quantity`、`uom_code` 描述备件。 | 工单外键索引用于加载备件行。 | 工单完工时由 Maintenance 发布 `inventory.InventoryMovementRequested` 出库请求，Inventory 负责扣减库存。 |
+| `maintenance_plans` | business | 预防性维护计划、保养周期、下一次到期日和可选 runtime availability 维护窗口事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + plan_code` 是业务唯一键；`interval`、`starts_on`、`last_generated_on`、`next_due_on`、`owner`、`window_start_utc` 和 `window_end_utc` 描述计划、PM 生成状态与维护窗口。 | 计划编码唯一索引用于防重复；设备与窗口字段支撑 availability 查询；`next_due_on` 支撑 PM 到期扫描。 | 创建后作为计划事实保留；当前 PM 调度支持 ISO day interval（如 `P7D`）；窗口边界必须成对提供并按 UTC 保存；后续用量/状态触发和版本化/暂停策略由后续切片补齐。 |
 | `code_counters` | business | Maintenance service-local 编码计数器，用于保养计划等普通创建请求自动分配业务 code。 | `organization_id + environment_id + rule_key + site_code + reset_key` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编码规则范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
 | `code_idempotency_keys` | business | Maintenance 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `maintenance_inspections` | business | 点检记录，可关联维护计划或维修工单。 | `id` 为 Guid v7 强类型 ID；`maintenance_plan_id`、`maintenance_work_order_id` 是业务引用；`inspector`、`result` 和 `inspected_at_utc` 保存执行事实。 | 计划/工单引用支持追溯点检记录。 | 点检写入后不可覆盖历史，只通过新记录表达新检查。 |
@@ -447,7 +447,7 @@ Source:
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMaintenance 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `maintenance` schema；业务代码不直接读写。 |
 
-`maintenance_plans.window_start_utc` 与 `maintenance_plans.window_end_utc` 是 #207 设备 runtime availability 的可选维护窗口列；窗口边界必须成对提供，且按 UTC 存储。
+`maintenance_plans.window_start_utc` 与 `maintenance_plans.window_end_utc` 是 #207 设备 runtime availability 的可选维护窗口列；窗口边界必须成对提供，且按 UTC 存储。`maintenance_plans.next_due_on` 与 `last_generated_on` 支撑 #416 PM 到期自动开单；迁移会把已有计划的 `next_due_on` 回填为 `starts_on`。
 
 ## BusinessScheduling Schema
 
