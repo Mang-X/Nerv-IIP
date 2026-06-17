@@ -1,4 +1,5 @@
 ---
+layout: page
 title: ScanBar 扫码栏
 ---
 
@@ -12,20 +13,27 @@ function onScan(value) {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div style="display:flex;flex-direction:column;gap:12px;width:100%">
+      <ScanBar placeholder="对准条码 / 二维码" @scan="onScan" />
+      <CellGroup>
+        <Cell v-for="(s, i) in scans" :key="`${s}-${i}`" :title="s" note="物料条码" />
+      </CellGroup>
+    </div>
+  </section>
+</template>
+
 # ScanBar 扫码栏
 
-适配键盘楔入式扫码枪的输入栏：输入框常驻焦点，扫码枪以回车结束后触发 `scan` 事件。当上层打开浮层（抽屉 / 对话框）时传 `active=false`，让其停止自动抢焦点。
+适配键盘楔入式扫码枪的输入栏：输入框常驻焦点，扫码枪以回车结束后触发 `scan` 事件。当上层打开浮层（抽屉 / 对话框）时传 `active=false`，让其停止自动抢焦点。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
 ## 基础用法
 
-<Demo mobile>
-  <div style="display:flex;flex-direction:column;gap:12px;width:100%">
-    <ScanBar placeholder="对准条码 / 二维码" @scan="onScan" />
-    <CellGroup>
-      <Cell v-for="(s, i) in scans" :key="`${s}-${i}`" :title="s" note="物料条码" />
-    </CellGroup>
-  </div>
-</Demo>
+输入框常驻焦点，扫码枪回车后追加一条记录。
 
 ```vue
 <script setup>
@@ -61,3 +69,5 @@ function onScan(value) {
 | 事件 | 说明 | 回调参数 |
 |---|---|---|
 | `scan` | 扫码枪回车提交一段条码 | `(value: string)` |
+
+</MobileDoc>

@@ -1,10 +1,40 @@
 ---
+layout: page
 title: Result 结果页
 ---
 
 <script setup>
 import { MobileButton, Result } from '@nerv-iip/ui-mobile'
 </script>
+
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">成功</p>
+    <div class="w-full rounded-xl border border-border bg-card">
+      <Result
+        status="success"
+        title="本班产出已同步"
+        description="已完成 4,210 件，良率 99.2%。"
+      />
+    </div>
+  </section>
+  <section>
+    <p class="ds-mdoc-label">失败（带操作）</p>
+    <div class="w-full rounded-xl border border-border bg-card">
+      <Result
+        status="error"
+        title="工单上报失败"
+        description="网关连接超时，请检查网络后重试。"
+      >
+        <template #actions>
+          <MobileButton variant="primary" size="md" block>重新上报</MobileButton>
+        </template>
+      </Result>
+    </div>
+  </section>
+</template>
 
 # Result 结果页
 
@@ -13,16 +43,6 @@ import { MobileButton, Result } from '@nerv-iip/ui-mobile'
 ## 成功
 
 `status` 决定图标与色调，`title` / `description` 承载结果说明。
-
-<Demo mobile>
-  <div class="w-full rounded-xl border border-border bg-card">
-    <Result
-      status="success"
-      title="本班产出已同步"
-      description="已完成 4,210 件，良率 99.2%。"
-    />
-  </div>
-</Demo>
 
 ```vue
 <script setup>
@@ -41,20 +61,6 @@ import { Result } from '@nerv-iip/ui-mobile'
 ## 失败（带操作）
 
 `status="error"` 呈现失败态；`#actions` 插槽放置重试等后续操作。
-
-<Demo mobile>
-  <div class="w-full rounded-xl border border-border bg-card">
-    <Result
-      status="error"
-      title="工单上报失败"
-      description="网关连接超时，请检查网络后重试。"
-    >
-      <template #actions>
-        <MobileButton variant="primary" size="md" block>重新上报</MobileButton>
-      </template>
-    </Result>
-  </div>
-</Demo>
 
 ```vue
 <template>
@@ -79,3 +85,5 @@ import { Result } from '@nerv-iip/ui-mobile'
 | 插槽 | 说明 |
 |---|---|
 | `actions` | 标题下方的操作区 |
+
+</MobileDoc>

@@ -1,4 +1,5 @@
 ---
+layout: page
 title: ActionSheet 动作面板
 ---
 
@@ -18,6 +19,23 @@ function onAction(value) {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <MobileButton variant="default" size="md" block @click="actionOpen = true">
+      打开动作面板
+    </MobileButton>
+    <ActionSheet
+      v-model:open="actionOpen"
+      title="工单操作"
+      :actions="actions"
+      @select="onAction"
+    />
+  </section>
+</template>
+
 # ActionSheet 动作面板
 
 从底部升起的动作列表，堆叠备选操作并单独分隔「取消」，点击后回传所选值。
@@ -25,18 +43,6 @@ function onAction(value) {
 ## 基础用法
 
 由触发按钮控制 `open`，`select` 事件回传 `value`。`danger` 项以危险色呈现。
-
-<Demo mobile>
-  <MobileButton variant="default" size="md" block @click="actionOpen = true">
-    打开动作面板
-  </MobileButton>
-  <ActionSheet
-    v-model:open="actionOpen"
-    title="工单操作"
-    :actions="actions"
-    @select="onAction"
-  />
-</Demo>
 
 ```vue
 <script setup>
@@ -84,3 +90,5 @@ function onAction(value) {
 | 事件 | 说明 | 回调参数 |
 |---|---|---|
 | `select` | 选择某项时触发 | `(value: string)` |
+
+</MobileDoc>

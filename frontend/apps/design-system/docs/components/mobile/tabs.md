@@ -1,4 +1,5 @@
 ---
+layout: page
 title: MobileTabs 顶部标签
 ---
 
@@ -15,16 +16,23 @@ const topTabs = [
 ]
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <MobileTabs v-model="topTab" :items="topTabs" />
+    <p class="mt-3 px-4 text-sm text-muted-foreground">当前分类：{{ topTab }}</p>
+  </section>
+</template>
+
 # MobileTabs 顶部标签
 
 顶部内容分类标签，品牌色下划线在标签间滑动切换（Vant / tdesign-mobile 风格），可横向滚动。
 
 ## 基础用法
 
-<Demo mobile>
-  <MobileTabs v-model="topTab" :items="topTabs" />
-  <p class="mt-3 px-4 text-sm text-muted-foreground">当前分类：{{ topTab }}</p>
-</Demo>
+顶部分类标签，下划线随选中项滑动。
 
 ```vue
 <script setup lang="ts">
@@ -53,3 +61,5 @@ const topTabs = [
 | `items` | 标签项数组 | `MobileTabItem[]` | — |
 
 `MobileTabItem`：`{ value: string; label: string }`。
+
+</MobileDoc>

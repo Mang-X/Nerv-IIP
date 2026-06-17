@@ -1,4 +1,5 @@
 ---
+layout: page
 title: Steps 步骤条
 ---
 
@@ -13,17 +14,30 @@ const procSteps = [
 ]
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="px-3">
+      <Steps :steps="procSteps" :current="1" />
+    </div>
+  </section>
+  <section>
+    <p class="ds-mdoc-label">全部完成</p>
+    <div class="px-3">
+      <Steps :steps="procSteps" :current="4" />
+    </div>
+  </section>
+</template>
+
 # Steps 步骤条
 
 横向流程指示器（Vant / tdesign-mobile 风格）：连接线随进度推进填充品牌色，已完成节点显示对勾。
 
 ## 基础用法
 
-<Demo mobile>
-  <div class="px-3">
-    <Steps :steps="procSteps" :current="1" />
-  </div>
-</Demo>
+`current` 指定当前步骤索引，之前的节点显示对勾。
 
 ```vue
 <script setup lang="ts">
@@ -44,11 +58,7 @@ const procSteps = [
 
 ## 全部完成
 
-<Demo mobile>
-  <div class="px-3">
-    <Steps :steps="procSteps" :current="4" />
-  </div>
-</Demo>
+`current` 超过末位索引时，所有节点均为完成态。
 
 ```vue
 <Steps :steps="procSteps" :current="4" />
@@ -62,3 +72,5 @@ const procSteps = [
 | `current` | 当前步骤索引（从 0 开始） | `number` | `0` |
 
 `StepItem`：`{ label: string; note?: string }`。`note` 显示在标签下方并使用品牌色。
+
+</MobileDoc>

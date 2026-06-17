@@ -1,4 +1,5 @@
 ---
+layout: page
 title: Cell 单元格
 ---
 
@@ -9,24 +10,40 @@ import { ref } from 'vue'
 const lockMaterial = ref(true)
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="px-3">
+      <CellGroup>
+        <Cell title="工单号" value="WO-2406-0413" />
+        <Cell title="产品" value="前桥壳体 A2" />
+        <Cell title="工艺路线" note="3 道工序" arrow />
+        <Cell title="加急插单">
+          <template #value><MobileSwitch v-model="lockMaterial" /></template>
+        </Cell>
+      </CellGroup>
+    </div>
+  </section>
+  <section>
+    <p class="ds-mdoc-label">分组标题</p>
+    <div class="px-3">
+      <CellGroup title="生产信息">
+        <Cell title="目标产线" value="A 线 · 精密加工" arrow />
+        <Cell title="计划日期" value="2026-06-18" arrow />
+      </CellGroup>
+    </div>
+  </section>
+</template>
+
 # Cell 单元格
 
-信息 / 表单行（tdesign-mobile 风格）：标题 + 可选备注 + 尾部值，可选箭头。`CellGroup` 把多个单元格组合成带细分割线的圆角卡片。
+信息 / 表单行（tdesign-mobile 风格）：标题 + 可选备注 + 尾部值，可选箭头。`CellGroup` 把多个单元格组合成带细分割线的圆角卡片。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
 ## 基础用法
 
-<Demo mobile>
-  <div class="px-3">
-    <CellGroup>
-      <Cell title="工单号" value="WO-2406-0413" />
-      <Cell title="产品" value="前桥壳体 A2" />
-      <Cell title="工艺路线" note="3 道工序" arrow />
-      <Cell title="加急插单">
-        <template #value><MobileSwitch v-model="lockMaterial" /></template>
-      </Cell>
-    </CellGroup>
-  </div>
-</Demo>
+单元格可承载文本值、备注、箭头，或通过 `#value` 插槽嵌入开关等控件。
 
 ```vue
 <CellGroup>
@@ -41,14 +58,7 @@ const lockMaterial = ref(true)
 
 ## 分组标题
 
-<Demo mobile>
-  <div class="px-3">
-    <CellGroup title="生产信息">
-      <Cell title="目标产线" value="A 线 · 精密加工" arrow />
-      <Cell title="计划日期" value="2026-06-18" arrow />
-    </CellGroup>
-  </div>
-</Demo>
+`CellGroup` 的 `title` 在卡片上方显示分组标题。
 
 ```vue
 <CellGroup title="生产信息">
@@ -75,3 +85,5 @@ const lockMaterial = ref(true)
 | 属性 | 说明 | 类型 | 默认 |
 |---|---|---|---|
 | `title` | 分组标题 | `string` | — |
+
+</MobileDoc>

@@ -1,4 +1,5 @@
 ---
+layout: page
 title: Fab 悬浮按钮
 ---
 
@@ -18,6 +19,20 @@ function onFabSelect(action) {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">速拨菜单</p>
+    <div class="relative h-64 w-full overflow-hidden rounded-xl border border-border bg-background">
+      <div class="space-y-2 p-3">
+        <div v-for="n in 4" :key="n" class="h-12 rounded-lg bg-card" />
+      </div>
+      <Fab :actions="fabActions" @select="onFabSelect" />
+    </div>
+  </section>
+</template>
+
 # Fab 悬浮按钮
 
 锚定容器角落的悬浮操作按钮。提供 `actions` 时变为速拨菜单：主按钮旋转展开、出现遮罩、带标签的子动作依次升起。需放入相对定位（relative）容器。
@@ -25,15 +40,6 @@ function onFabSelect(action) {
 ## 速拨菜单
 
 `actions` 提供子动作，点击主按钮展开；`select` 回传所选动作与下标。
-
-<Demo mobile>
-  <div class="relative h-64 w-full overflow-hidden rounded-xl border border-border bg-background">
-    <div class="space-y-2 p-3">
-      <div v-for="n in 4" :key="n" class="h-12 rounded-lg bg-card" />
-    </div>
-    <Fab :actions="fabActions" @select="onFabSelect" />
-  </div>
-</Demo>
 
 ```vue
 <script setup>
@@ -76,3 +82,5 @@ function onFabSelect(action) {
 |---|---|---|
 | `click` | 单动作模式点击主按钮 | — |
 | `select` | 选择速拨子动作 | `(action: FabAction, index: number)` |
+
+</MobileDoc>

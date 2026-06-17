@@ -1,4 +1,5 @@
 ---
+layout: page
 title: MobileGrid 宫格
 ---
 
@@ -26,6 +27,17 @@ function onGrid(item) {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="w-full overflow-hidden rounded-xl border border-border bg-card">
+      <MobileGrid :items="gridItems" :columns="4" @select="onGrid" />
+    </div>
+  </section>
+</template>
+
 # MobileGrid 宫格
 
 首页/工作台的功能入口宫格，图标加文字单元按 N 列排布，支持角标（数字或圆点），点击回传所选项。
@@ -33,12 +45,6 @@ function onGrid(item) {
 ## 基础用法
 
 `items` 提供入口，`columns` 控制列数；`badge` 为数字显示计数，为 `true` 显示圆点。
-
-<Demo mobile>
-  <div class="w-full overflow-hidden rounded-xl border border-border bg-card">
-    <MobileGrid :items="gridItems" :columns="4" @select="onGrid" />
-  </div>
-</Demo>
 
 ```vue
 <script setup>
@@ -77,3 +83,5 @@ function onGrid(item) {
 | 事件 | 说明 | 回调参数 |
 |---|---|---|
 | `select` | 点击某个入口 | `(item: GridItem, index: number)` |
+
+</MobileDoc>

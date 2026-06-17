@@ -1,4 +1,5 @@
 ---
+layout: page
 title: TabBar 标签栏
 ---
 
@@ -15,18 +16,25 @@ const tabs = [
 ]
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
+      <TabBar v-model="tab" :items="tabs" />
+    </div>
+    <p class="mt-2 px-4 text-sm text-muted-foreground">当前：{{ tab }}</p>
+  </section>
+</template>
+
 # TabBar 标签栏
 
 底部主导航（tdesign-mobile 风格）：每个标签为图标 + 文字，选中态使用品牌色，触控区 ≥ 48px。
 
 ## 基础用法
 
-<Demo mobile>
-  <div class="mx-3 overflow-hidden rounded-xl border border-border bg-card">
-    <TabBar v-model="tab" :items="tabs" />
-  </div>
-  <p class="mt-2 px-4 text-sm text-muted-foreground">当前：{{ tab }}</p>
-</Demo>
+底部固定主导航，点击切换选中态。
 
 ```vue
 <script setup lang="ts">
@@ -55,3 +63,5 @@ const tabs = [
 | `items` | 标签项数组 | `TabItem[]` | — |
 
 `TabItem`：`{ value: string; label: string; icon?: Component }`。事件：`@update:modelValue`。
+
+</MobileDoc>

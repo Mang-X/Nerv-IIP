@@ -1,10 +1,24 @@
 ---
+layout: page
 title: Empty 空状态
 ---
 
 <script setup>
 import { Empty, MobileButton } from '@nerv-iip/ui-mobile'
 </script>
+
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="w-full rounded-xl border border-border bg-card">
+      <Empty description="暂无待处理工单">
+        <MobileButton variant="primary" size="sm">去接单</MobileButton>
+      </Empty>
+    </div>
+  </section>
+</template>
 
 # Empty 空状态
 
@@ -13,14 +27,6 @@ import { Empty, MobileButton } from '@nerv-iip/ui-mobile'
 ## 基础用法
 
 `description` 设置说明文字，默认插槽承载引导按钮。
-
-<Demo mobile>
-  <div class="w-full rounded-xl border border-border bg-card">
-    <Empty description="暂无待处理工单">
-      <MobileButton variant="primary" size="sm">去接单</MobileButton>
-    </Empty>
-  </div>
-</Demo>
 
 ```vue
 <script setup>
@@ -46,3 +52,5 @@ import { Empty, MobileButton } from '@nerv-iip/ui-mobile'
 |---|---|
 | `default` | 说明下方的操作区 |
 | `icon` | 自定义图标（默认收件箱图标） |
+
+</MobileDoc>

@@ -1,4 +1,5 @@
 ---
+layout: page
 title: PullRefresh 下拉刷新
 ---
 
@@ -23,6 +24,19 @@ function onRefresh() {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <div class="w-full overflow-hidden rounded-xl border border-border">
+      <PullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
+        <Cell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
+      </PullRefresh>
+    </div>
+  </section>
+</template>
+
 # PullRefresh 下拉刷新
 
 在自身滚动区域顶部下拉以刷新。指针驱动并带阻尼，松手越过阈值即触发 `refresh`，显示加载态直到 `v-model` 清零。
@@ -30,14 +44,6 @@ function onRefresh() {
 ## 基础用法
 
 `v-model` 绑定刷新中状态，`refresh` 事件里加载数据后将其置回 `false`。
-
-<Demo mobile>
-  <div class="w-full overflow-hidden rounded-xl border border-border">
-    <PullRefresh v-model="refreshing" class="h-56" @refresh="onRefresh">
-      <Cell v-for="(item, i) in refreshList" :key="`${item}-${i}`" :title="item" />
-    </PullRefresh>
-  </div>
-</Demo>
 
 ```vue
 <script setup>
@@ -73,3 +79,5 @@ function onRefresh() {
 | 事件 | 说明 | 回调参数 |
 |---|---|---|
 | `refresh` | 下拉越过阈值触发 | — |
+
+</MobileDoc>

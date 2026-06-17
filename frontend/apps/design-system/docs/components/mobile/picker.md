@@ -1,4 +1,5 @@
 ---
+layout: page
 title: Picker 滚轮选择
 ---
 
@@ -20,23 +21,30 @@ const pickerLabel = computed(
 )
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">基础用法</p>
+    <CellGroup>
+      <Cell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
+    </CellGroup>
+    <Picker
+      v-model:open="pickerOpen"
+      v-model="pickerLine"
+      :options="pickerOptions"
+      title="选择产线"
+    />
+  </section>
+</template>
+
 # Picker 滚轮选择
 
-单列滚轮选择器（Vant / tdesign-mobile 风格），承载于底部抽屉。带中央高亮带的滚动吸附；取消 / 确定提交。`v-model:open` 控制显隐，`v-model` 绑定选中值，需配合触发器与 open ref 使用。
+单列滚轮选择器（Vant / tdesign-mobile 风格），承载于底部抽屉。带中央高亮带的滚动吸附；取消 / 确定提交。`v-model:open` 控制显隐，`v-model` 绑定选中值，需配合触发器与 open ref 使用。右侧手机模拟器为实时组件，随页面滚动吸顶。
 
 ## 基础用法
 
-<Demo mobile>
-  <CellGroup>
-    <Cell title="目标产线" :value="pickerLabel" arrow @click="pickerOpen = true" />
-  </CellGroup>
-  <Picker
-    v-model:open="pickerOpen"
-    v-model="pickerLine"
-    :options="pickerOptions"
-    title="选择产线"
-  />
-</Demo>
+点击单元格打开抽屉，滚动选择后确定提交。
 
 ```vue
 <script setup>
@@ -75,3 +83,5 @@ const pickerLabel = computed(
 | `title` | 标题 | `string` | `'请选择'` |
 
 `PickerOption`：`{ label: string; value: string }`
+
+</MobileDoc>

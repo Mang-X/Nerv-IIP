@@ -2,6 +2,7 @@ import type { Theme } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
 import Demo from './Demo.vue'
 import Layout from './Layout.vue'
+import MobileDoc from './MobileDoc.vue'
 import './style.css'
 
 // Nerv-IIP docs theme — extends VitePress's default, re-skinned via style.css
@@ -12,5 +13,6 @@ export default {
   Layout,
   enhanceApp({ app }) {
     app.component('Demo', Demo)
+    app.component('MobileDoc', MobileDoc)
   },
 } satisfies Theme

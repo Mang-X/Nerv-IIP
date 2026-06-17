@@ -1,4 +1,5 @@
 ---
+layout: page
 title: MobileToast 居中提示
 ---
 
@@ -25,6 +26,27 @@ function runLoadingToast() {
 }
 </script>
 
+<MobileDoc>
+
+<template #phone>
+  <section>
+    <p class="ds-mdoc-label">文字与状态</p>
+    <div class="grid grid-cols-2 gap-2">
+      <MobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')">文字</MobileButton>
+      <MobileButton variant="default" size="md" @click="fireToast('success', '报工成功')">成功</MobileButton>
+      <MobileButton variant="default" size="md" @click="fireToast('error', '网络异常')">失败</MobileButton>
+    </div>
+    <MobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
+  </section>
+  <section>
+    <p class="ds-mdoc-label">加载（带遮罩）</p>
+    <MobileButton variant="default" size="md" block @click="runLoadingToast">
+      加载（带遮罩）
+    </MobileButton>
+    <MobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
+  </section>
+</template>
+
 # MobileToast 居中提示
 
 居中浮层式 HUD 提示，深色圆角卡片配可选状态图标（加载/成功/失败），到时自动消失。
@@ -32,15 +54,6 @@ function runLoadingToast() {
 ## 文字与状态
 
 通过 `v-model:show` 控制显隐，`type` 切换状态图标，`message` 设置文案。
-
-<Demo mobile>
-  <div class="grid grid-cols-2 gap-2">
-    <MobileButton variant="default" size="md" @click="fireToast('text', '已复制单号')">文字</MobileButton>
-    <MobileButton variant="default" size="md" @click="fireToast('success', '报工成功')">成功</MobileButton>
-    <MobileButton variant="default" size="md" @click="fireToast('error', '网络异常')">失败</MobileButton>
-  </div>
-  <MobileToast v-model:show="toastShow" :type="toastType" :message="toastMsg" />
-</Demo>
 
 ```vue
 <script setup>
@@ -66,13 +79,6 @@ function fireToast(type, msg) {
 ## 加载（带遮罩）
 
 `type="loading"` 持续显示直到手动关闭；`overlay` 阻断背后交互，适合提交等待。
-
-<Demo mobile>
-  <MobileButton variant="default" size="md" block @click="runLoadingToast">
-    加载（带遮罩）
-  </MobileButton>
-  <MobileToast v-model:show="loadingToast" type="loading" message="提交中…" overlay />
-</Demo>
 
 ```vue
 <script setup>
@@ -100,3 +106,5 @@ function runLoadingToast() {
 | `type` | 状态类型 | `text \| loading \| success \| error` | `text` |
 | `duration` | 自动关闭延时（ms）；`loading` 与 `0` 时不自动关闭 | `number` | `2000` |
 | `overlay` | 阻断背后交互（配合 `loading`） | `boolean` | `false` |
+
+</MobileDoc>
