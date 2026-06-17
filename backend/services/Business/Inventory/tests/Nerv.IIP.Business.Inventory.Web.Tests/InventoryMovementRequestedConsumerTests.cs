@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
@@ -9,6 +10,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -21,7 +23,8 @@ public sealed class InventoryMovementRequestedConsumerTests
         var sender = new CommandExecutingSender(dbContext);
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
             sender,
-            new InMemoryIntegrationEventDeadLetterStore());
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
 
         await handler.HandleAsync(CreateRequestedEvent("evt-001"), CancellationToken.None);
 
@@ -39,7 +42,8 @@ public sealed class InventoryMovementRequestedConsumerTests
         var sender = new CommandExecutingSender(dbContext);
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
             sender,
-            new InMemoryIntegrationEventDeadLetterStore());
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
         var integrationEvent = CreateRequestedEvent("evt-duplicate");
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -48,6 +52,69 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Single(dbContext.StockMovements);
         Assert.Single(dbContext.StockLedgers);
         Assert.Equal(5m, dbContext.StockLedgers.Single().OnHandQuantity);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_allocates_inventory_reservation_when_supplied()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-SEED",
+            "LINE-001",
+            "idem-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            5m));
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-001", "LINE-001", "idem-res-001", 4m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-reserved-outbound") with
+        {
+            Payload = CreateRequestedEvent("evt-reserved-outbound").Payload with
+            {
+                MovementType = "outbound",
+                SourceDocumentId = "OUT-001",
+                IdempotencyKey = "idem-out-001",
+                Quantity = -4m,
+                InventoryReservationId = reservation.Id.ToString(),
+            },
+        }, CancellationToken.None);
+
+        Assert.Equal(1m, ledger.OnHandQuantity);
+        Assert.Equal(0m, ledger.ReservedQuantity);
+        Assert.Equal(0m, reservation.OpenQuantity);
+        Assert.Equal("allocated", reservation.Status);
     }
 
     [Theory]
@@ -177,6 +244,50 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(2, dbContext.StockMovements.Count());
     }
 
+    [Fact]
+    public async Task Movement_requested_consumer_publishes_posting_failed_event_for_business_rejection()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-negative") with
+        {
+            Payload = CreateRequestedEvent("evt-negative").Payload with
+            {
+                MovementType = "outbound",
+                SourceDocumentId = "OUT-001",
+                IdempotencyKey = "idem-out-001",
+                Quantity = -5m,
+            },
+        }, CancellationToken.None);
+
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(InventoryIntegrationEventTypes.StockMovementPostingFailed, failedEvent.EventType);
+        Assert.Equal("NEGATIVE_ON_HAND", failedEvent.Payload.FailureCode);
+        Assert.Equal("OUT-001", failedEvent.Payload.SourceDocumentId);
+        Assert.Equal("idem-out-001", failedEvent.Payload.IdempotencyKey);
+        Assert.Empty(dbContext.StockMovements);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_leaves_unexpected_invalid_operation_for_retry()
+    {
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            new FailingSender(new InvalidOperationException("Transient infrastructure failure.")),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(CreateRequestedEvent("evt-transient"), CancellationToken.None));
+
+        Assert.Empty(publisher.Published);
+    }
+
     private static InventoryMovementRequestedIntegrationEvent CreateRequestedEvent(string eventId)
     {
         return new InventoryMovementRequestedIntegrationEvent(
@@ -276,6 +387,46 @@ public sealed class InventoryMovementRequestedConsumerTests
         public Task<object?> Send(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("This test sender only supports typed command requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingSender(Exception exception) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            return Task.FromException<TResponse>(exception);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            return Task.FromException(exception);
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            return Task.FromException<object?>(exception);
         }
 
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
