@@ -112,7 +112,7 @@ describe('IAM sessions page', () => {
     const activeBadge = wrapper.findAll('[aria-label="状态：活跃"]')[0]
     expect(activeBadge).toBeTruthy()
     expect(activeBadge.text()).toBe('活跃')
-    expect(activeBadge.classes()).toContain('text-success')
+    expect(activeBadge.classes()).toContain('text-success-strong')
   })
 
   it('maps session status filters to revoked filters', async () => {

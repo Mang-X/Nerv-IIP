@@ -2,7 +2,14 @@ packages:
   - apps/*
   - packages/*
 allowBuilds:
+  # maplibre-gl ships only via @unovis/ts' map components, which we don't use
+  # (we use the XY area/line charts). Skip its native build to keep install lean.
+  maplibre-gl: false
   vue-demi: true
+  # esbuild is needed only by the VitePress docs build: Rolldown-Vite (vite-plus)
+  # deprecated `transformWithEsbuild`, which @vitejs/plugin-vue still calls, and now
+  # requires esbuild installed separately (its postinstall fetches the native bin).
+  esbuild: true
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.1.21
   vitest: npm:@voidzero-dev/vite-plus-test@0.1.21

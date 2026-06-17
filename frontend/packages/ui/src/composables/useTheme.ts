@@ -19,16 +19,26 @@ export const COLOR_MODE_STORAGE_KEY = 'nerv-iip-color-mode'
 export const ACCENT_STORAGE_KEY = 'nerv-iip-accent'
 
 /** Default brand accent — must match `--brand` in styles/theme.css. */
-export const DEFAULT_ACCENT = 'oklch(0.55 0.18 255)'
+export const DEFAULT_ACCENT = 'oklch(0.54 0.16 256)'
 
-/** Curated runtime accents (oklch) for a colour picker — emphasis hues only. */
+/**
+ * Curated runtime accents (oklch) — a 12-hue wheel at a consistent lightness so
+ * any pick reads as a calibrated brand, not a random color. Inspired by Arco's
+ * palette breadth while staying in our OKLCH system.
+ */
 export const ACCENT_PRESETS: Record<string, string> = {
-  blue: 'oklch(0.55 0.18 255)',
-  violet: 'oklch(0.55 0.2 295)',
-  teal: 'oklch(0.6 0.12 195)',
-  green: 'oklch(0.62 0.17 149)',
-  amber: 'oklch(0.72 0.16 70)',
-  rose: 'oklch(0.6 0.21 15)',
+  blue: 'oklch(0.54 0.16 256)',
+  indigo: 'oklch(0.52 0.17 278)',
+  violet: 'oklch(0.55 0.17 300)',
+  magenta: 'oklch(0.56 0.19 340)',
+  rose: 'oklch(0.58 0.18 18)',
+  red: 'oklch(0.57 0.19 28)',
+  orange: 'oklch(0.66 0.16 52)',
+  amber: 'oklch(0.72 0.13 68)',
+  lime: 'oklch(0.7 0.15 130)',
+  green: 'oklch(0.6 0.12 160)',
+  teal: 'oklch(0.6 0.11 200)',
+  cyan: 'oklch(0.65 0.12 224)',
 }
 
 function hasDom(): boolean {
