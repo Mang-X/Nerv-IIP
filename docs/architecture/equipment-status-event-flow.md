@@ -33,7 +33,7 @@ Maintenance 通过 `Nerv.IIP.Contracts.IndustrialTelemetry` 消费 `industrialTe
 
 这不是把 `AlarmEvent` 复制到 Maintenance。报警是触发条件和可追溯来源，维修工单是维护域自己的事实，拥有处置状态、责任人、维护类型、备件需求、停机原因、报警恢复提示和恢复条件。Maintenance 不引用 IndustrialTelemetry 的 Domain、Infrastructure 或 Web 项目，也不写入 IndustrialTelemetry schema。
 
-Maintenance 的预防性维护计划支持 day-interval PM 到期生成：`next_due_on` 到期后由 `GenerateDueMaintenanceWorkOrdersCommand` 或默认关闭的 `MaintenancePlanDueScheduler` 创建计划来源工单，并推进下一次到期日。当前只支持 `P<n>D` 这类 ISO day interval；用量/运行小时/状态触发属于后续 CBM/TPM 深化。
+Maintenance 的预防性维护计划支持 day-interval PM 到期生成：`next_due_on` 到期后由 `GenerateDueMaintenanceWorkOrdersCommand` 或默认关闭的 `MaintenancePlanDueScheduler` 创建计划来源工单，并推进下一次到期日。调度器使用 `Maintenance:PmGeneration:TimeZoneId` 将当前 UTC 时间换算为工厂业务日；未配置时默认 UTC，配置值可使用 IANA 或 Windows timezone ID。当前只支持 `P<n>D` 这类 ISO day interval；用量/运行小时/状态触发属于后续 CBM/TPM 深化。
 
 维修工单完工时，Maintenance 对每条备件行发布 `inventory.InventoryMovementRequested` 出库请求。该事件使用 `Nerv.IIP.Contracts.Inventory`，Inventory 负责幂等过账和库存扣减；Maintenance 仍不保存库存余额。P0 未建维修仓库主数据映射时，事件使用 `siteCode=maintenance`、`locationCode=maintenance-spares` 作为显式默认值，后续可由配置或 MasterData/WMS 仓库事实替换。
 
