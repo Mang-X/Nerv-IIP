@@ -70,6 +70,29 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task Alarm_clear_command_marks_all_matching_open_work_orders_when_duplicate_alarm_facts_exist()
+    {
+        await using var dbContext = CreateDbContext();
+        var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var first = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var second = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        dbContext.MaintenanceWorkOrders.AddRange(first, second);
+        await dbContext.SaveChangesAsync();
+
+        await new MarkMaintenanceWorkOrderAlarmClearedCommandHandler(dbContext).Handle(
+            new MarkMaintenanceWorkOrderAlarmClearedCommand("org-001", "env-dev", "alarm-001", clearedAtUtc),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var workOrders = await dbContext.MaintenanceWorkOrders.OrderBy(x => x.OpenedAtUtc).ToArrayAsync();
+        Assert.All(workOrders, workOrder =>
+        {
+            Assert.True(workOrder.AlarmCleared);
+            Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);
+        });
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

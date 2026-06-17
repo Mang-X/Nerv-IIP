@@ -122,13 +122,17 @@ public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(Applicati
 {
     public async Task Handle(MarkMaintenanceWorkOrderAlarmClearedCommand request, CancellationToken cancellationToken)
     {
-        var workOrder = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.SourceAlarmId == request.SourceAlarmId
-                && x.Status == MaintenanceWorkOrderStatus.Open,
-            cancellationToken);
-        workOrder?.MarkAlarmCleared(request.ClearedAtUtc);
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.SourceAlarmId == request.SourceAlarmId)
+            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open)
+            .OrderBy(x => x.OpenedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        foreach (var workOrder in workOrders)
+        {
+            workOrder.MarkAlarmCleared(request.ClearedAtUtc);
+        }
     }
 }
 

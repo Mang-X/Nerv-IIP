@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -399,6 +400,25 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(1, response.RepairCount);
         Assert.Equal(12m, response.MtbfHours);
         Assert.Equal(120m, response.MttrMinutes);
+    }
+
+    [Fact]
+    public async Task Reliability_query_returns_null_metrics_when_no_fault_samples_exist()
+    {
+        await using var dbContext = CreateDbContext();
+        var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddHours(24);
+
+        var response = await new QueryAssetReliabilityQueryHandler(dbContext).Handle(
+            new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
+            CancellationToken.None);
+
+        Assert.Equal(0, response.FailureCount);
+        Assert.Equal(0, response.RepairCount);
+        var body = JsonSerializer.Serialize(response);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("MtbfHours").ValueKind);
+        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("MttrMinutes").ValueKind);
     }
 
     [Fact]

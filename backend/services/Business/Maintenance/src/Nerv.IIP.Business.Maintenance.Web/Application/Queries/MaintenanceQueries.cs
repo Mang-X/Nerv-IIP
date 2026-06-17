@@ -149,8 +149,8 @@ public sealed record AssetReliabilityResponse(
     DateTimeOffset WindowEndUtc,
     int FailureCount,
     int RepairCount,
-    decimal MtbfHours,
-    decimal MttrMinutes);
+    decimal? MtbfHours,
+    decimal? MttrMinutes);
 
 public sealed class QueryAssetReliabilityQueryValidator : AbstractValidator<QueryAssetReliabilityQuery>
 {
@@ -186,8 +186,8 @@ public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbCon
         var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
         var failureCount = faultOrders.Length;
         var repairCount = completedDurations.Length;
-        var mtbfHours = failureCount == 0 ? 0m : windowHours / failureCount;
-        var mttrMinutes = repairCount == 0 ? 0m : completedDurations.Sum() / repairCount;
+        var mtbfHours = failureCount == 0 ? null : (decimal?)(windowHours / failureCount);
+        var mttrMinutes = repairCount == 0 ? null : (decimal?)(completedDurations.Sum() / repairCount);
 
         return new AssetReliabilityResponse(
             request.OrganizationId,
@@ -197,8 +197,8 @@ public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbCon
             windowEndUtc,
             failureCount,
             repairCount,
-            Math.Round(mtbfHours, 6),
-            Math.Round(mttrMinutes, 6));
+            mtbfHours.HasValue ? Math.Round(mtbfHours.Value, 6) : null,
+            mttrMinutes.HasValue ? Math.Round(mttrMinutes.Value, 6) : null);
     }
 }
 

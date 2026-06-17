@@ -184,11 +184,11 @@ public sealed record AssetReliabilityResponse(
     DateTimeOffset WindowEndUtc,
     int FailureCount,
     int RepairCount,
-    decimal MtbfHours,
-    decimal MttrMinutes);
+    decimal? MtbfHours,
+    decimal? MttrMinutes);
 ```
 
-Failure count is completed or open work orders with `SourceAlarmId != null` in the window. MTTR is average `CompletedAtUtc - OpenedAtUtc` for completed fault orders. MTBF P0 uses elapsed query-window hours divided by failure count, because runtime-hour integration remains a later IndustrialTelemetry adapter.
+Failure count is completed or open work orders with `SourceAlarmId != null` in the window. MTTR is average `CompletedAtUtc - OpenedAtUtc` for completed fault orders and returns `null` when there are no completed repair samples. MTBF P0 uses elapsed query-window hours divided by failure count and returns `null` when there are no fault samples, because runtime-hour integration remains a later IndustrialTelemetry adapter.
 
 - [ ] **Step 2: Endpoint contracts**
 
@@ -205,7 +205,7 @@ Both require `InternalServiceAuthorizationPolicy`; generation uses `business.mai
 
 - [ ] **Step 1: Centralize state classifier**
 
-Keep runtime availability states permissive (`available`, `idle`, `ready`, `running`, `standby`) but narrow OEE productive states to `running` and `productive`. Add comments/tests tying this to SEMI E10 Productive vs Standby.
+Keep runtime availability states permissive (`available`, `idle`, `ready`, `running`, `standby`) but narrow OEE productive runtime to the actual state fact value `running`. `productive` is not a current persisted runtime state value. Add comments/tests tying this to SEMI E10 Productive vs Standby.
 
 - [ ] **Step 2: Run IndustrialTelemetry focused test**
 

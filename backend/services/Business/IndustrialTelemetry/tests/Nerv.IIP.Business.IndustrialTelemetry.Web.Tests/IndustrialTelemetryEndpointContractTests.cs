@@ -198,7 +198,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public async Task Oee_endpoint_counts_standby_as_available_but_not_productive_running_time()
+    public async Task Oee_endpoint_keeps_standby_in_runtime_availability_but_out_of_productive_runtime_rate()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
         using var client = factory.CreateClient();
@@ -220,6 +220,26 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
         Assert.NotNull(availability?.Data);
         Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
+    }
+
+    [Fact]
+    public async Task Oee_endpoint_does_not_treat_productive_as_a_runtime_state_value()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-GHOST", "productive", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-ghost-001");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-GHOST&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T10:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(1, data.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(0m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0m, data.GetProperty("oeeRate").GetDecimal());
     }
 
     [Fact]

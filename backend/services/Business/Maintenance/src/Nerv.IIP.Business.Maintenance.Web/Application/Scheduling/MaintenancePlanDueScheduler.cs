@@ -27,10 +27,30 @@ public sealed class MaintenancePlanDueScheduler(
 
         var interval = configuration.GetValue("Maintenance:PmGeneration:Interval", DefaultInterval);
         using var timer = new PeriodicTimer(interval);
-        await GenerateAsync(organizationId, environmentId, stoppingToken);
+        await TryGenerateAsync(organizationId, environmentId, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await GenerateAsync(organizationId, environmentId, stoppingToken);
+            await TryGenerateAsync(organizationId, environmentId, stoppingToken);
+        }
+    }
+
+    private async Task TryGenerateAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await GenerateAsync(organizationId, environmentId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Maintenance PM generation failed for {OrganizationId}/{EnvironmentId}; the scheduler will retry on the next tick.",
+                organizationId,
+                environmentId);
         }
     }
 

@@ -187,10 +187,9 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryOeeQuery, OeeResponse>
 {
-    private static readonly HashSet<string> ProductiveStates = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ProductiveRuntimeStates = new(StringComparer.OrdinalIgnoreCase)
     {
         "running",
-        "productive",
     };
 
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
@@ -218,10 +217,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             ? inWindowStates
             : [carryInState, .. inWindowStates];
 
-        var availabilityRate = CalculateAvailabilityRate(states, request.WindowStartUtc, request.WindowEndUtc);
+        var productiveRuntimeRate = CalculateProductiveRuntimeRate(states, request.WindowStartUtc, request.WindowEndUtc);
         var performanceRate = states.Length > 0 ? 1m : 0m;
         var qualityRate = states.Length > 0 ? 1m : 0m;
-        var oeeRate = availabilityRate * performanceRate * qualityRate;
+        var oeeRate = productiveRuntimeRate * performanceRate * qualityRate;
 
         return new OeeResponse(
             request.OrganizationId,
@@ -230,7 +229,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(availabilityRate, 6),
+            Math.Round(productiveRuntimeRate, 6),
             performanceRate,
             qualityRate,
             Math.Round(oeeRate, 6),
@@ -238,7 +237,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             true);
     }
 
-    private static decimal CalculateAvailabilityRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
+    private static decimal CalculateProductiveRuntimeRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
     {
         if (states.Count == 0)
         {
@@ -251,7 +250,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             return 0m;
         }
 
-        var runningTicks = 0L;
+        var productiveRuntimeTicks = 0L;
         for (var i = 0; i < states.Count; i++)
         {
             var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
@@ -261,20 +260,20 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
                 segmentEnd = windowEndUtc;
             }
 
-            if (segmentEnd <= segmentStart || !IsRunningState(states[i].State))
+            if (segmentEnd <= segmentStart || !IsProductiveRuntimeState(states[i].State))
             {
                 continue;
             }
 
-            runningTicks += segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            productiveRuntimeTicks += segmentEnd.UtcTicks - segmentStart.UtcTicks;
         }
 
-        return decimal.Divide(runningTicks, totalTicks);
+        return decimal.Divide(productiveRuntimeTicks, totalTicks);
     }
 
-    private static bool IsRunningState(string state)
+    private static bool IsProductiveRuntimeState(string state)
     {
-        return ProductiveStates.Contains(state);
+        return ProductiveRuntimeStates.Contains(state);
     }
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);

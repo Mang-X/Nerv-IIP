@@ -25,7 +25,7 @@ IndustrialTelemetry 拥有采集后的设备运行事实；Maintenance 拥有维
 
 IndustrialTelemetry 保存 `AlarmEvent`、设备状态快照、tag 映射和采集汇总。`AlarmEvent` 表达“某个设备资产在某个采集口径下发生了报警”这一运行事实，来源可以是 Connector Host、OPC UA、MQTT、SCADA adapter 或其他受控数据入口。
 
-IndustrialTelemetry 只发布 `industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` 等公共集成事件。事件 payload 可携带报警 ID、设备资产 ID、报警代码、严重度、发生时间、清除时间和 correlation 信息，但不得携带 PLC 控制指令、现场控制凭据、大体积时序数据或 SCADA 画面状态。OEE P0 将 `running` / `productive` 视为 productive time；`standby`、`idle` 和 `ready` 可以表示 runtime availability 可用，但不再计入 OEE productive running ticks。
+IndustrialTelemetry 只发布 `industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` 等公共集成事件。事件 payload 可携带报警 ID、设备资产 ID、报警代码、严重度、发生时间、清除时间和 correlation 信息，但不得携带 PLC 控制指令、现场控制凭据、大体积时序数据或 SCADA 画面状态。OEE P0 只将设备状态事实值 `running` 视为 productive runtime；`standby`、`idle` 和 `ready` 可以表示 runtime availability 可用，但不计入 OEE productive running ticks。Business Console 既有 `availabilityRate` 字段名暂保持兼容，但当前 P0 数值口径是 productive runtime rate；历史把 standby 计入该字段的窗口在刷新后会下降。
 
 ### 2. Maintenance 消费报警并形成维修事实
 
@@ -37,7 +37,7 @@ Maintenance 的预防性维护计划支持 day-interval PM 到期生成：`next_
 
 维修工单完工时，Maintenance 对每条备件行发布 `inventory.InventoryMovementRequested` 出库请求。该事件使用 `Nerv.IIP.Contracts.Inventory`，Inventory 负责幂等过账和库存扣减；Maintenance 仍不保存库存余额。P0 未建维修仓库主数据映射时，事件使用 `siteCode=maintenance`、`locationCode=maintenance-spares` 作为显式默认值，后续可由配置或 MasterData/WMS 仓库事实替换。
 
-Maintenance 还暴露设备可靠性 P0 查询，用带 `SourceAlarmId` 的维修工单计算故障次数、已完成修复次数、MTTR 和 MTBF。当前 MTTR 使用工单 `OpenedAtUtc -> CompletedAtUtc`；MTBF 使用查询窗口小时数 / 故障次数。后续如果要按真实运行小时计算 MTBF，需要接入 IndustrialTelemetry runtime summaries，而不是在 Maintenance 内复制遥测事实。
+Maintenance 还暴露设备可靠性 P0 查询，用带 `SourceAlarmId` 的维修工单计算故障次数、已完成修复次数、MTTR 和 MTBF。当前 MTTR 使用工单 `OpenedAtUtc -> CompletedAtUtc`；MTBF 使用查询窗口小时数 / 故障次数。无故障样本时 MTBF 返回 `null`，无已完成修复样本时 MTTR 返回 `null`，避免把“无样本”误读为 0 小时/分钟。后续如果要按真实运行小时计算 MTBF，需要接入 IndustrialTelemetry runtime summaries，而不是在 Maintenance 内复制遥测事实。
 
 ### 3. Maintenance 发布资产可用性事实
 
