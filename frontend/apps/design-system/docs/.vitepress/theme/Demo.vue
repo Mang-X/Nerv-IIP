@@ -23,6 +23,17 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean }>()
 </template>
 
 <style>
+/* The demo lives inside VitePress's `.vp-doc`, whose prose typography would
+   inject article margins/borders/sizes onto any heading/paragraph/list in the
+   demo (e.g. `.vp-doc h3 { margin-top: 32px }`). Neutralise that bleed so demo
+   content is governed only by its own utilities — like Tailwind's `not-prose`.
+   High specificity (.vp-doc .ds-demo …) to beat VitePress's `.vp-doc h3` etc. */
+.vp-doc .ds-demo :is(h1, h2, h3, h4, h5, h6, p, ul, ol, li) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  list-style: none;
+}
 .ds-demo {
   margin: 1.25rem 0;
   border: 1px solid var(--border);
