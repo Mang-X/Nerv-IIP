@@ -23,8 +23,6 @@ export * from './components/touch'
 // Layout — page scaffolding primitives (container, page+asides, grid, columns, sections).
 export * from './components/layout'
 
-// Dashboard — composable shell partitions (group, sidebar, panel, navbar, toolbar).
-export * from './components/dashboard'
 
 export {
   Breadcrumb,
