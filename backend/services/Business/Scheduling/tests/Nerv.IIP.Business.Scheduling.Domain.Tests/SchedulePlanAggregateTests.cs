@@ -151,6 +151,15 @@ public sealed class SchedulePlanAggregateTests
             AlgorithmVersion: "aps-lite-v1",
             Status: SchedulePlanInputStatus.Generated,
             GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            Metrics: new GeneratedSchedulePlanMetricsSnapshot(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: 1,
+                AssignedMinutes: 60,
+                MakespanMinutes: 60,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: 0.125m),
             Assignments: [CreateAssignment("assign-001", "op-001")],
             ResourceLoads:
             [

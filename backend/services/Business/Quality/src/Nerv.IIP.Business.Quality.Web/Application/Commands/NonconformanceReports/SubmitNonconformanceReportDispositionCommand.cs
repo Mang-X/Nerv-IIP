@@ -7,7 +7,8 @@ public sealed record SubmitNonconformanceReportDispositionCommand(
     NonconformanceReportId NcrId,
     string DispositionType,
     string? DispositionApprovalChainId,
-    IReadOnlyCollection<string> AttachmentFileIds) : ICommand;
+    IReadOnlyCollection<string> AttachmentFileIds,
+    IReadOnlyCollection<MrbReviewInput> MrbReviews) : ICommand;
 
 public sealed class SubmitNonconformanceReportDispositionCommandValidator : AbstractValidator<SubmitNonconformanceReportDispositionCommand>
 {
@@ -29,6 +30,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(INonconf
         ncr.SubmitDisposition(
             request.DispositionType,
             request.DispositionApprovalChainId,
-            request.AttachmentFileIds);
+            request.AttachmentFileIds,
+            request.MrbReviews);
     }
 }

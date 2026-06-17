@@ -658,6 +658,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     algorithmVersion?: string;
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     generatedAtUtc?: string;
+    metrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
     assignments?: Array<NervIipContractsSchedulingScheduleAssignmentContract>;
     resourceLoads?: Array<NervIipContractsSchedulingScheduleResourceLoadContract>;
     conflicts?: Array<NervIipContractsSchedulingScheduleConflictContract>;
@@ -667,6 +668,17 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
+
+export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
+    scheduledOperationCount?: number;
+    unscheduledOperationCount?: number;
+    assignedMinutes?: number;
+    makespanMinutes?: number;
+    totalTardinessMinutes?: number;
+    lateOperationCount?: number;
+    onTimeRate?: number;
+    averageResourceUtilization?: number;
+};
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
     assignmentId?: string;
@@ -932,6 +944,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
+    stockRelease?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult = {
@@ -942,6 +955,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     defectReason?: string | null;
     defectQuantity?: number | null;
     attachmentFileIds?: Array<string> | null;
+    measuredValue?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease = {
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    sourceQualityStatus?: string;
+    ownerType?: string | null;
+    ownerId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1001,6 +1024,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     dispositionType?: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
+    mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
+    reviewerId?: string;
+    decision?: string;
+    comment?: string | null;
+    reviewedAtUtc?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {
@@ -3088,6 +3119,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     startsOn?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = {
+    generatedCount?: number;
+    workOrderIds?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersRequest = {
+    organizationId: string;
+    environmentId: string;
+    businessDate?: string;
+    requestedBy: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordMaintenanceInspectionResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMaintenanceInspectionResponse | null;
 };
@@ -3161,6 +3208,26 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     skuCode: string;
     quantity?: number;
     uomCode?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssetReliabilityResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssetReliabilityResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    failureCount?: number;
+    repairCount?: number;
+    mtbfHours?: number | null;
+    mttrMinutes?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceAssetReliabilityRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryAvailabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -10273,6 +10340,39 @@ export type CreateBusinessConsoleMaintenancePlanResponses = {
 
 export type CreateBusinessConsoleMaintenancePlanResponse = CreateBusinessConsoleMaintenancePlanResponses[keyof CreateBusinessConsoleMaintenancePlanResponses];
 
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/maintenance/plans/generate-due';
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersError = GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors[keyof GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors];
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse;
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersResponse = GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses[keyof GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses];
+
 export type ListBusinessConsoleMaintenanceInspectionsData = {
     body?: never;
     path?: never;
@@ -10414,6 +10514,46 @@ export type CreateBusinessConsoleMaintenanceSparePartResponses = {
 };
 
 export type CreateBusinessConsoleMaintenanceSparePartResponse = CreateBusinessConsoleMaintenanceSparePartResponses[keyof CreateBusinessConsoleMaintenanceSparePartResponses];
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityData = {
+    body?: never;
+    path: {
+        deviceAssetId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        windowStartUtc: string;
+        windowEndUtc: string;
+    };
+    url: '/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability';
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityError = QueryBusinessConsoleMaintenanceAssetReliabilityErrors[keyof QueryBusinessConsoleMaintenanceAssetReliabilityErrors];
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse;
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityResponse = QueryBusinessConsoleMaintenanceAssetReliabilityResponses[keyof QueryBusinessConsoleMaintenanceAssetReliabilityResponses];
 
 export type QueryBusinessConsoleMaintenanceAvailabilityWindowsData = {
     body?: never;

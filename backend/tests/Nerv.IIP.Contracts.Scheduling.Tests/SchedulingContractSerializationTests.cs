@@ -191,6 +191,15 @@ internal static class SchedulingContractSamples
             AlgorithmVersion: "aps-lite-v1",
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 7, 0, 0, TimeSpan.Zero),
+            Metrics: new SchedulePlanMetricsContract(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: 0,
+                AssignedMinutes: 60,
+                MakespanMinutes: 60,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: 0.1667m),
             Assignments:
             [
                 new ScheduleAssignmentContract(

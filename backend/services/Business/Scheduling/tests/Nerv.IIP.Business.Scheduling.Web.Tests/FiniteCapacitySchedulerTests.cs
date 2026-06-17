@@ -93,6 +93,41 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_returns_plan_level_metrics_for_aps_review()
+    {
+        var baseProblem = CreateSingleOperationProblem();
+        var problem = baseProblem with
+        {
+            Orders =
+            [
+                baseProblem.Orders.Single() with
+                {
+                    DueUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero),
+                    Operations =
+                    [
+                        baseProblem.Orders.Single().Operations.Single() with
+                        {
+                            DueUtc = new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero)
+                        }
+                    ]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-metrics-001", GeneratedAtUtc);
+
+        Assert.Equal(1, plan.Metrics.ScheduledOperationCount);
+        Assert.Equal(0, plan.Metrics.UnscheduledOperationCount);
+        Assert.Equal(60, plan.Metrics.AssignedMinutes);
+        Assert.Equal(60, plan.Metrics.MakespanMinutes);
+        Assert.Equal(30, plan.Metrics.TotalTardinessMinutes);
+        Assert.Equal(1, plan.Metrics.LateOperationCount);
+        Assert.Equal(0m, plan.Metrics.OnTimeRate);
+        Assert.Equal(0.125m, plan.Metrics.AverageResourceUtilization);
+    }
+
+    [Fact]
     public void Schedule_preserves_locked_assignment_and_reserves_capacity()
     {
         var problem = ShockAbsorberSchedulingFixture.CreateProblem() with

@@ -112,12 +112,23 @@ public sealed record SchedulePlanContract(
     string AlgorithmVersion,
     SchedulePlanStatusContract Status,
     DateTimeOffset GeneratedAtUtc,
+    SchedulePlanMetricsContract Metrics,
     IReadOnlyCollection<ScheduleAssignmentContract> Assignments,
     IReadOnlyCollection<ScheduleResourceLoadContract> ResourceLoads,
     IReadOnlyCollection<ScheduleConflictContract> Conflicts,
     IReadOnlyCollection<UnscheduledOperationContract> UnscheduledOperations,
     IReadOnlyCollection<ScheduleChangeContract> ChangeSummary,
     IReadOnlyCollection<GanttScheduleItemContract> GanttItems);
+
+public sealed record SchedulePlanMetricsContract(
+    int ScheduledOperationCount,
+    int UnscheduledOperationCount,
+    int AssignedMinutes,
+    int MakespanMinutes,
+    int TotalTardinessMinutes,
+    int LateOperationCount,
+    decimal OnTimeRate,
+    decimal AverageResourceUtilization);
 
 public sealed record ScheduleAssignmentContract(
     string AssignmentId,

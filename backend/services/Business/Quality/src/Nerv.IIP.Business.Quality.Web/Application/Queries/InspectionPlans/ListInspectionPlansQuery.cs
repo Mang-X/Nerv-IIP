@@ -24,7 +24,20 @@ public sealed record InspectionPlanCharacteristicResponse(
     string Method,
     string Severity,
     bool Required,
-    string SamplingRule);
+    string SamplingRule,
+    string CharacteristicType,
+    decimal? NominalValue,
+    decimal? LowerSpecLimit,
+    decimal? UpperSpecLimit,
+    string? UnitCode,
+    InspectionSamplingPlanResponse? SamplingPlan);
+
+public sealed record InspectionSamplingPlanResponse(
+    string InspectionLevel,
+    string Aql,
+    int SampleSize,
+    int AcceptanceNumber,
+    int RejectionNumber);
 
 public sealed record ListInspectionPlansResponse(IReadOnlyCollection<InspectionPlanResponse> Items, int Total);
 
@@ -121,7 +134,20 @@ public sealed class ListInspectionPlansQueryHandler(ApplicationDbContext dbConte
                     c.Method,
                     c.Severity,
                     c.IsRequired,
-                    c.SamplingRule)).ToArray()))
+                    c.SamplingRule,
+                    c.CharacteristicType,
+                    c.NominalValue,
+                    c.LowerSpecLimit,
+                    c.UpperSpecLimit,
+                    c.UnitCode,
+                    c.SamplingPlan == null
+                        ? null
+                        : new InspectionSamplingPlanResponse(
+                            c.SamplingPlan.InspectionLevel,
+                            c.SamplingPlan.Aql,
+                            c.SamplingPlan.SampleSize,
+                            c.SamplingPlan.AcceptanceNumber,
+                            c.SamplingPlan.RejectionNumber))).ToArray()))
             .ToListAsync(cancellationToken);
 
         return new ListInspectionPlansResponse(items, total);

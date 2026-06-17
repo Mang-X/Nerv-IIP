@@ -37,9 +37,10 @@ WMS posts Inventory changes only through public boundaries:
 
 1. Inbound completion requests an Inventory inbound movement with an idempotency key.
 2. Outbound completion requests an Inventory outbound movement with an idempotency key.
-3. Count completion can request an Inventory count adjustment or emit a count variance event for Inventory/Approval to process.
-4. WMS never reads or writes Inventory tables.
-5. WMS tests should use an in-process Inventory client fake and verify the request payload shape.
+3. Outbound picking reserves stock through Inventory's public reservation API and stores only the returned public reservation id; outbound completion carries that id so Inventory allocates the reservation during posting.
+4. Count completion can request an Inventory count adjustment or emit a count variance event for Inventory/Approval to process.
+5. WMS never reads or writes Inventory tables.
+6. WMS tests should use an in-process Inventory client fake and verify the request payload shape.
 
 ## API Surface
 
@@ -52,6 +53,8 @@ WMS posts Inventory changes only through public boundaries:
 | `POST /api/business/v1/wms/outbound-orders` | Create outbound order from delivery request or manual source. | `business.wms.shipments.manage` |
 | `GET /api/business/v1/wms/outbound-orders` | List outbound orders. | `business.wms.shipments.read` |
 | `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks` | Create picking tasks. | `business.wms.shipments.manage` |
+| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress` | Record putaway/picking task executed quantity. | `business.wms.receipts.manage` |
+| `POST /api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete` | Complete putaway/picking task by setting executed quantity to planned quantity. | `business.wms.receipts.manage` |
 | `POST /api/business/v1/wms/outbound-orders/{outboundOrderId}/complete` | Complete pack review and request Inventory movement. | `business.wms.shipments.manage` |
 | `POST /api/business/v1/wms/count-executions` | Create count execution. | `business.wms.receipts.manage` |
 | `POST /api/business/v1/wms/count-executions/{countExecutionId}/complete` | Complete count and produce variance output. | `business.wms.receipts.manage` |
@@ -69,6 +72,9 @@ WMS posts Inventory changes only through public boundaries:
 6. WCS failures store diagnostic code and message and remain compensatable.
 7. No WMS table may contain on-hand, available or stock-balance columns.
 8. Inventory posting failures must be visible through WMS movement request status.
+9. Inventory business posting rejection is represented by public `inventory.StockMovementPostingFailed`; WMS consumes it and marks the matching movement request `Failed`.
+10. WMS may persist Inventory public reservation ids for outbound allocation, but must not maintain on-hand, available or reserved balance columns.
+11. WCS complete/fail callbacks must match by organization, environment and external task id.
 
 ## Events
 
@@ -120,4 +126,3 @@ Acceptance requires:
 5. Schema convention tests using `Nerv.IIP.Testing`.
 6. Integration event converter/serialization tests for WMS events.
 7. Tests proving WMS schema does not introduce stock balance columns.
-

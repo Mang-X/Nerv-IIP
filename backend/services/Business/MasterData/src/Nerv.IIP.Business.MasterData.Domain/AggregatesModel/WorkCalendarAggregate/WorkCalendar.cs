@@ -14,12 +14,25 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     {
     }
 
-    private WorkCalendar(string organizationId, string environmentId, string code, string name)
+    private WorkCalendar(
+        string organizationId,
+        string environmentId,
+        string code,
+        string name,
+        string timezone,
+        DateOnly? effectiveFrom,
+        DateOnly? effectiveTo,
+        string? holidayCalendarCode)
     {
+        ValidateEffectiveRange(effectiveFrom, effectiveTo);
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
         Code = Required(code);
         Name = Required(name);
+        Timezone = Required(timezone);
+        EffectiveFrom = effectiveFrom;
+        EffectiveTo = effectiveTo;
+        HolidayCalendarCode = Optional(holidayCalendarCode);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(WorkCalendar), OrganizationId, EnvironmentId, Code));
@@ -30,6 +43,10 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     public string EnvironmentId { get; private set; } = string.Empty;
     public string Code { get; private set; } = string.Empty;
     public string Name { get; private set; } = string.Empty;
+    public string Timezone { get; private set; } = "UTC";
+    public DateOnly? EffectiveFrom { get; private set; }
+    public DateOnly? EffectiveTo { get; private set; }
+    public string HolidayCalendarCode { get; private set; } = string.Empty;
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -37,9 +54,17 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     public IReadOnlyCollection<WorkCalendarHoliday> Holidays => holidays.AsReadOnly();
     public IReadOnlyCollection<WorkCalendarException> Exceptions => exceptions.AsReadOnly();
 
-    public static WorkCalendar Create(string organizationId, string environmentId, string code, string name)
+    public static WorkCalendar Create(
+        string organizationId,
+        string environmentId,
+        string code,
+        string name,
+        string timezone = "UTC",
+        DateOnly? effectiveFrom = null,
+        DateOnly? effectiveTo = null,
+        string? holidayCalendarCode = null)
     {
-        return new WorkCalendar(organizationId, environmentId, code, name);
+        return new WorkCalendar(organizationId, environmentId, code, name, timezone, effectiveFrom, effectiveTo, holidayCalendarCode);
     }
 
     public void AddWorkingDay(DayOfWeek dayOfWeek)
@@ -60,10 +85,21 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
         string name,
         IReadOnlyCollection<WorkCalendarWorkingTime>? newWorkingTimes,
         IReadOnlyCollection<WorkCalendarHoliday>? newHolidays,
-        IReadOnlyCollection<WorkCalendarException>? newExceptions)
+        IReadOnlyCollection<WorkCalendarException>? newExceptions,
+        string? timezone = null,
+        DateOnly? effectiveFrom = null,
+        DateOnly? effectiveTo = null,
+        string? holidayCalendarCode = null)
     {
         EnsureEnabled();
+        var nextEffectiveFrom = effectiveFrom ?? EffectiveFrom;
+        var nextEffectiveTo = effectiveTo ?? EffectiveTo;
+        ValidateEffectiveRange(nextEffectiveFrom, nextEffectiveTo);
         Name = Required(name);
+        Timezone = string.IsNullOrWhiteSpace(timezone) ? Timezone : timezone.Trim();
+        EffectiveFrom = nextEffectiveFrom;
+        EffectiveTo = nextEffectiveTo;
+        HolidayCalendarCode = holidayCalendarCode is null ? HolidayCalendarCode : Optional(holidayCalendarCode);
         if (newWorkingTimes is not null)
         {
             workingTimes.Clear();
@@ -158,6 +194,19 @@ public class WorkCalendar : Entity<WorkCalendarId>, IAggregateRoot
     private static string Required(string value)
     {
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string Optional(string? value)
+    {
+        return value?.Trim() ?? string.Empty;
+    }
+
+    private static void ValidateEffectiveRange(DateOnly? effectiveFrom, DateOnly? effectiveTo)
+    {
+        if (effectiveFrom.HasValue && effectiveTo.HasValue && effectiveTo.Value < effectiveFrom.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(effectiveTo), "Effective end date cannot be before effective start date.");
+        }
     }
 }
 

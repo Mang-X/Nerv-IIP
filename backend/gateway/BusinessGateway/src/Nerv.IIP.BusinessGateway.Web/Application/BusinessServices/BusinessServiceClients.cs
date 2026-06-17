@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
@@ -806,6 +807,11 @@ public interface IBusinessMaintenanceClient
         BusinessConsoleCreateMaintenancePlanRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -835,6 +841,12 @@ public interface IBusinessMaintenanceClient
         string internalBearerToken,
         string deviceAssetId,
         BusinessConsoleEquipmentAvailabilityRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -2188,7 +2200,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 ncrId,
                 request.DispositionType,
                 request.DispositionApprovalChainId,
-                request.AttachmentFileIds),
+                request.AttachmentFileIds,
+                request.MrbReviews?.Select(ToDownstreamMrbReview).ToArray()),
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CloseNcrAsync(
@@ -2265,7 +2278,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             request.SerialNo,
             request.ResultLines?.Select(ToDownstreamLine).ToArray(),
             request.DispositionReason,
-            request.DispositionAttachmentFileIds);
+            request.DispositionAttachmentFileIds,
+            request.StockRelease);
 
     private static DownstreamInspectionResultLine ToDownstreamLine(
         BusinessConsoleInspectionCharacteristicResult line) =>
@@ -2276,7 +2290,15 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             line.Result,
             line.DefectReason,
             line.DefectQuantity,
-            line.AttachmentFileIds ?? []);
+            line.AttachmentFileIds ?? [],
+            line.MeasuredValue);
+
+    private static DownstreamMrbReview ToDownstreamMrbReview(BusinessConsoleMrbReview review) =>
+        new(
+            review.ReviewerId,
+            review.Decision,
+            review.Comment,
+            review.ReviewedAtUtc);
 
     private sealed record DownstreamCreateInspectionRecordRequest(
         string OrganizationId,
@@ -2291,7 +2313,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? SerialNo,
         IReadOnlyCollection<DownstreamInspectionResultLine>? ResultLines,
         string? DispositionReason,
-        IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+        IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BusinessConsoleInspectionStockRelease? StockRelease);
 
     private sealed record DownstreamInspectionResultLine(
         string CharacteristicCode,
@@ -2300,7 +2323,8 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string Result,
         string? DefectReason,
         decimal? DefectQuantity,
-        IReadOnlyCollection<string> AttachmentFileIds);
+        IReadOnlyCollection<string> AttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] decimal? MeasuredValue);
 
     private sealed record DownstreamInspectionPlanItem(
         string InspectionPlanId,
@@ -2334,7 +2358,14 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string NcrId,
         string DispositionType,
         string? DispositionApprovalChainId,
-        IReadOnlyCollection<string>? AttachmentFileIds);
+        IReadOnlyCollection<string>? AttachmentFileIds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyCollection<DownstreamMrbReview>? MrbReviews);
+
+    private sealed record DownstreamMrbReview(
+        string ReviewerId,
+        string Decision,
+        string? Comment,
+        DateTimeOffset ReviewedAtUtc);
 
     private sealed record DownstreamCloseNcrRequest(
         string NcrId,
@@ -2723,7 +2754,7 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/engineering/production-versions/{Uri.EscapeDataString(productionVersionId)}/archive",
-            new DownstreamArchiveProductionVersionRequest(productionVersionId, request.Reason),
+            new DownstreamArchiveProductionVersionRequest(request.OrganizationId, request.EnvironmentId, productionVersionId, request.Reason),
             cancellationToken);
         return new BusinessConsoleAcceptedResponse(true);
     }
@@ -2731,7 +2762,11 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
-    private sealed record DownstreamArchiveProductionVersionRequest(string ProductionVersionId, string Reason);
+    private sealed record DownstreamArchiveProductionVersionRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        string ProductionVersionId,
+        string Reason);
 }
 
 public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
@@ -3422,6 +3457,22 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         return new BusinessConsoleCreateMaintenancePlanResponse(FormatJsonScalar(response.PlanId));
     }
 
+    public async Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamGenerateDueMaintenanceWorkOrdersResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/maintenance/plans/generate-due",
+            request,
+            cancellationToken);
+        return new BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(
+            response.GeneratedCount,
+            response.WorkOrderIds.Select(FormatJsonScalar).ToArray());
+    }
+
     public async Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
         string internalBearerToken,
         BusinessConsoleRecordMaintenanceInspectionRequest request,
@@ -3523,6 +3574,18 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             cancellationToken,
             EquipmentRuntimeJson.Options);
 
+    public Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAssetReliabilityResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            $"/api/business/v1/maintenance/assets/{Uri.EscapeDataString(deviceAssetId)}/reliability?" + ReliabilityQuery(request),
+            null,
+            cancellationToken);
+
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
@@ -3533,6 +3596,13 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             ("workCenterIds", request.WorkCenterIds));
 
     private static string DeviceAvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
+            ("windowStartUtc", request.WindowStartUtc),
+            ("windowEndUtc", request.WindowEndUtc));
+
+    private static string ReliabilityQuery(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) =>
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
@@ -3600,6 +3670,10 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         IReadOnlyCollection<BusinessConsoleMaintenanceSparePartInput> SpareParts);
 
     private sealed record DownstreamCreateMaintenancePlanResponse(JsonElement PlanId);
+
+    private sealed record DownstreamGenerateDueMaintenanceWorkOrdersResponse(
+        int GeneratedCount,
+        IReadOnlyCollection<JsonElement> WorkOrderIds);
 
     private sealed record DownstreamRecordMaintenanceInspectionResponse(JsonElement InspectionId);
 

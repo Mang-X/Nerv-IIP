@@ -365,9 +365,19 @@ var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(bu
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+    .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
+    .WithReference(businessMes)
+    .WithReference(businessIndustrialTelemetry)
+    .WithReference(businessMaintenance)
     .WaitFor(businessSchedulingDatabase);
+businessScheduling = businessScheduling
+    .WaitFor(businessMes)
+    .WaitFor(businessIndustrialTelemetry)
+    .WaitFor(businessMaintenance);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
 {

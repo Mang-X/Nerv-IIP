@@ -464,6 +464,8 @@ file sealed class SchedulerState
             .GroupBy(x => new OperationKey(x.OrderId ?? string.Empty, x.OperationId!))
             .ToDictionary(x => x.Key, x => x.First().ReasonCode);
 
+        var resourceLoads = BuildResourceLoads(orderedAssignments);
+
         return new SchedulePlanContract(
             ContractVersion: problem.ContractVersion,
             PlanId: planId,
@@ -472,8 +474,9 @@ file sealed class SchedulerState
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
+            Metrics: BuildMetrics(orderedAssignments, resourceLoads),
             Assignments: orderedAssignments,
-            ResourceLoads: BuildResourceLoads(orderedAssignments),
+            ResourceLoads: resourceLoads,
             Conflicts: conflicts,
             UnscheduledOperations: unscheduledOperations,
             ChangeSummary: changeSummary,
@@ -493,6 +496,52 @@ file sealed class SchedulerState
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
                     ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey));
             }).ToList());
+    }
+
+    private SchedulePlanMetricsContract BuildMetrics(
+        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
+        IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads)
+    {
+        var dueByOperation = problem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (
+                Key: new OperationKey(order.OrderId, operation.OperationId),
+                operation.DueUtc)))
+            .ToDictionary(x => x.Key, x => x.DueUtc);
+        var tardinessMinutes = 0;
+        var lateOperationCount = 0;
+        foreach (var assignment in orderedAssignments)
+        {
+            var key = OperationKey.From(assignment);
+            if (!dueByOperation.TryGetValue(key, out var dueUtc) || assignment.EndUtc <= dueUtc)
+            {
+                continue;
+            }
+
+            lateOperationCount++;
+            tardinessMinutes += (int)Math.Ceiling((assignment.EndUtc - dueUtc).TotalMinutes);
+        }
+
+        var assignedMinutes = orderedAssignments.Sum(x => (int)(x.EndUtc - x.StartUtc).TotalMinutes);
+        var makespanMinutes = orderedAssignments.Count == 0
+            ? 0
+            : (int)(orderedAssignments.Max(x => x.EndUtc) - orderedAssignments.Min(x => x.StartUtc)).TotalMinutes;
+        var totalAvailableMinutes = resourceLoads.Sum(x => x.AvailableMinutes);
+        var onTimeRate = orderedAssignments.Count == 0
+            ? 1m
+            : Math.Round((decimal)(orderedAssignments.Count - lateOperationCount) / orderedAssignments.Count, 4);
+        var averageResourceUtilization = totalAvailableMinutes == 0
+            ? 0m
+            : Math.Round((decimal)resourceLoads.Sum(x => x.AssignedMinutes) / totalAvailableMinutes, 4);
+
+        return new SchedulePlanMetricsContract(
+            ScheduledOperationCount: orderedAssignments.Count,
+            UnscheduledOperationCount: unscheduledOperations.Count,
+            AssignedMinutes: assignedMinutes,
+            MakespanMinutes: makespanMinutes,
+            TotalTardinessMinutes: tardinessMinutes,
+            LateOperationCount: lateOperationCount,
+            OnTimeRate: onTimeRate,
+            AverageResourceUtilization: averageResourceUtilization);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)

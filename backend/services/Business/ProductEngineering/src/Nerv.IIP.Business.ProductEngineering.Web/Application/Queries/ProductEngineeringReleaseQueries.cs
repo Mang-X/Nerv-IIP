@@ -27,7 +27,17 @@ internal static class EngineeringQueryParameters
     }
 }
 
-public sealed record EngineeringBomLineItem(string ChildItemCode, decimal Quantity, string UnitOfMeasureCode);
+public sealed record EngineeringBomLineItem(
+    string ChildItemCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? ReferenceDesignators = null,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record EngineeringBomListItem(
     string BomCode,
@@ -82,7 +92,17 @@ public sealed class ListEngineeringBomsQueryHandler(ApplicationDbContext dbConte
                 x.EffectiveDate,
                 x.Lines
                     .OrderBy(line => line.ChildItemCode)
-                    .Select(line => new EngineeringBomLineItem(line.ChildItemCode, line.Quantity, line.UnitOfMeasureCode))
+                    .Select(line => new EngineeringBomLineItem(
+                        line.ChildItemCode,
+                        line.Quantity,
+                        line.UnitOfMeasureCode,
+                        line.IsPhantom,
+                        line.AlternateGroup,
+                        line.AlternatePriority,
+                        line.ReferenceDesignators,
+                        line.ScrapRate,
+                        line.YieldRate,
+                        line.Backflush))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 
@@ -112,7 +132,17 @@ public sealed class GetEngineeringBomQueryHandler(ApplicationDbContext dbContext
                 x.EffectiveDate,
                 x.Lines
                     .OrderBy(line => line.ChildItemCode)
-                    .Select(line => new EngineeringBomLineItem(line.ChildItemCode, line.Quantity, line.UnitOfMeasureCode))
+                    .Select(line => new EngineeringBomLineItem(
+                        line.ChildItemCode,
+                        line.Quantity,
+                        line.UnitOfMeasureCode,
+                        line.IsPhantom,
+                        line.AlternateGroup,
+                        line.AlternatePriority,
+                        line.ReferenceDesignators,
+                        line.ScrapRate,
+                        line.YieldRate,
+                        line.Backflush))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Engineering BOM '{request.BomCode}' revision '{request.Revision}' was not found.");
@@ -123,7 +153,14 @@ public sealed record ManufacturingBomMaterialLineItem(
     string SkuCode,
     decimal Quantity,
     string UnitOfMeasureCode,
-    decimal ScrapRate);
+    decimal ScrapRate,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record ManufacturingBomRecipeLineItem(string ParameterCode, string TargetValue, string UnitOfMeasureCode);
 
@@ -188,7 +225,14 @@ public sealed class ListManufacturingBomsQueryHandler(ApplicationDbContext dbCon
                         line.SkuCode,
                         line.Quantity,
                         line.UnitOfMeasureCode,
-                        line.ScrapRate))
+                        line.ScrapRate,
+                        line.IsPhantom,
+                        line.AlternateGroup,
+                        line.AlternatePriority,
+                        line.SubstituteSkuCodes,
+                        line.ReferenceDesignators,
+                        line.YieldRate,
+                        line.Backflush))
                     .ToArray(),
                 x.RecipeLines
                     .OrderBy(line => line.ParameterCode)
@@ -226,7 +270,18 @@ public sealed class GetManufacturingBomQueryHandler(ApplicationDbContext dbConte
                 x.EffectiveDate,
                 x.MaterialLines
                     .OrderBy(line => line.SkuCode)
-                    .Select(line => new ManufacturingBomMaterialLineItem(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate))
+                    .Select(line => new ManufacturingBomMaterialLineItem(
+                        line.SkuCode,
+                        line.Quantity,
+                        line.UnitOfMeasureCode,
+                        line.ScrapRate,
+                        line.IsPhantom,
+                        line.AlternateGroup,
+                        line.AlternatePriority,
+                        line.SubstituteSkuCodes,
+                        line.ReferenceDesignators,
+                        line.YieldRate,
+                        line.Backflush))
                     .ToArray(),
                 x.RecipeLines
                     .OrderBy(line => line.ParameterCode)
@@ -242,7 +297,14 @@ public sealed record RoutingOperationItem(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    int SetupMinutes = 0,
+    int RunMinutes = 0,
+    int TeardownMinutes = 0,
+    string ControlKey = "",
+    bool RequiresReporting = true,
+    bool RequiresQualityInspection = false,
+    bool IsOutsourced = false);
 
 public sealed record RoutingListItem(
     string RoutingCode,
@@ -302,7 +364,14 @@ public sealed class ListRoutingsQueryHandler(ApplicationDbContext dbContext)
                         operation.WorkCenterCode,
                         operation.OperationCode,
                         operation.OperationName,
-                        operation.StandardMinutes))
+                        operation.StandardMinutes,
+                        operation.SetupMinutes,
+                        operation.RunMinutes,
+                        operation.TeardownMinutes,
+                        operation.ControlKey,
+                        operation.RequiresReporting,
+                        operation.RequiresQualityInspection,
+                        operation.IsOutsourced))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 
@@ -337,7 +406,14 @@ public sealed class GetRoutingQueryHandler(ApplicationDbContext dbContext)
                         operation.WorkCenterCode,
                         operation.OperationCode,
                         operation.OperationName,
-                        operation.StandardMinutes))
+                        operation.StandardMinutes,
+                        operation.SetupMinutes,
+                        operation.RunMinutes,
+                        operation.TeardownMinutes,
+                        operation.ControlKey,
+                        operation.RequiresReporting,
+                        operation.RequiresQualityInspection,
+                        operation.IsOutsourced))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Routing '{request.RoutingCode}' revision '{request.Revision}' was not found.");

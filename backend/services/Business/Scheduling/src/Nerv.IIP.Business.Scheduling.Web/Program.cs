@@ -34,8 +34,13 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Mes:BaseUrl", "http://localhost:5111");
     var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
     var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Maintenance:BaseUrl", "http://localhost:5117");
+    builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient(HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName, client =>
     {
         client.BaseAddress = industrialTelemetryBaseAddress;
@@ -70,9 +75,11 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
     builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
+    builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
     if (isTesting)
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, NoopSchedulingEquipmentAvailabilityProvider>();
+        builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, NoopSchedulingMaterialReadinessProvider>();
     }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
