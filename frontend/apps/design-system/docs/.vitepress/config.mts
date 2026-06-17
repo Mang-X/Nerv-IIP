@@ -148,6 +148,15 @@ export default defineConfig({
             { text: 'Badge 角标', link: '/components/mobile/badge' },
             { text: 'Cell 单元格', link: '/components/mobile/cell' },
             { text: 'ListRow 列表行', link: '/components/mobile/list-row' },
+            { text: 'Divider 分割线', link: '/components/mobile/divider' },
+          ],
+        },
+        {
+          text: '数据展示',
+          items: [
+            { text: 'Avatar 头像', link: '/components/mobile/avatar' },
+            { text: 'Tag 标签', link: '/components/mobile/tag' },
+            { text: 'Skeleton 骨架屏', link: '/components/mobile/skeleton' },
           ],
         },
         {
@@ -158,6 +167,9 @@ export default defineConfig({
             { text: 'Radio 单选框', link: '/components/mobile/radio' },
             { text: 'Switch 开关', link: '/components/mobile/switch' },
             { text: 'Stepper 步进器', link: '/components/mobile/stepper' },
+            { text: 'Slider 滑块', link: '/components/mobile/slider' },
+            { text: 'Rate 评分', link: '/components/mobile/rate' },
+            { text: 'NumberKeyboard 数字键盘', link: '/components/mobile/number-keyboard' },
             { text: 'SearchBar 搜索栏', link: '/components/mobile/search-bar' },
             { text: 'Picker 滚轮选择', link: '/components/mobile/picker' },
             { text: 'DatePicker 日期选择', link: '/components/mobile/date-picker' },
@@ -172,6 +184,14 @@ export default defineConfig({
             { text: 'Steps 步骤条', link: '/components/mobile/steps' },
             { text: 'NavBar 顶部栏', link: '/components/mobile/nav-bar' },
             { text: 'Collapse 折叠面板', link: '/components/mobile/collapse' },
+            { text: 'DropdownMenu 下拉筛选', link: '/components/mobile/dropdown-menu' },
+          ],
+        },
+        {
+          text: '数据展示',
+          items: [
+            { text: 'Swiper 轮播图', link: '/components/mobile/swiper' },
+            { text: 'Image 图片', link: '/components/mobile/image' },
           ],
         },
         {
@@ -182,6 +202,7 @@ export default defineConfig({
             { text: 'Dialog 对话框', link: '/components/mobile/dialog' },
             { text: 'Toast 居中提示', link: '/components/mobile/toast' },
             { text: 'NoticeBar 通知条', link: '/components/mobile/notice-bar' },
+            { text: 'Progress 进度条', link: '/components/mobile/progress' },
             { text: 'Result 结果页', link: '/components/mobile/result' },
             { text: 'Empty 空状态', link: '/components/mobile/empty' },
           ],
