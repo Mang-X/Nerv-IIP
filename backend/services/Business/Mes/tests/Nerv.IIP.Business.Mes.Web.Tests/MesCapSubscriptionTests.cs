@@ -27,6 +27,7 @@ public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent";
     private const string AssetRestoredTopic = "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent";
+    private const string SchedulePlanReleasedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
 
     [Fact]
     public void Mes_cap_registration_discovers_maintenance_asset_event_subscribers()
@@ -52,6 +53,7 @@ public sealed class MesCapSubscriptionTests
 
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
     }
 
     [Fact]
@@ -78,6 +80,7 @@ public sealed class MesCapSubscriptionTests
 
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
         Assert.Null(provider.GetService<IStorageInitializer>());
     }
 

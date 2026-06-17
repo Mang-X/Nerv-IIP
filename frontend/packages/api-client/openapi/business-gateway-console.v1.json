@@ -19417,6 +19417,9 @@
             "type": "string",
             "format": "date-time"
           },
+          "metrics": {
+            "$ref": "#/components/schemas/NervIIPContractsSchedulingSchedulePlanMetricsContract"
+          },
           "assignments": {
             "type": "array",
             "items": {
@@ -19463,6 +19466,44 @@
           "generated",
           "released"
         ]
+      },
+      "NervIIPContractsSchedulingSchedulePlanMetricsContract": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "scheduledOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unscheduledOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "assignedMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "makespanMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalTardinessMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lateOperationCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "onTimeRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "averageResourceUtilization": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
       },
       "NervIIPContractsSchedulingScheduleAssignmentContract": {
         "type": "object",
@@ -19870,6 +19911,24 @@
           "sourceReference": {
             "type": "string",
             "nullable": true
+          },
+          "setupMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiredSkillCodes": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "requiredToolingIds": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

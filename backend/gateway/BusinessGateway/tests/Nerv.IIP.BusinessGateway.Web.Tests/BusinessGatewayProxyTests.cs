@@ -3373,6 +3373,15 @@ public sealed class BusinessGatewayProxyTests
         AlgorithmVersion: "aps-lite-v1",
         Status: status,
         GeneratedAtUtc: DateTimeOffset.Parse("2026-06-01T08:05:00Z", CultureInfo.InvariantCulture),
+        Metrics: new SchedulePlanMetricsContract(
+            1,
+            0,
+            60,
+            60,
+            0,
+            0,
+            1m,
+            0m),
         Assignments:
         [
             new ScheduleAssignmentContract(
@@ -3417,6 +3426,16 @@ public sealed class BusinessGatewayProxyTests
             "algorithmVersion": "aps-lite-v1",
             "status": "generated",
             "generatedAtUtc": "2026-06-01T08:05:00Z",
+            "metrics": {
+              "scheduledOperationCount": 1,
+              "unscheduledOperationCount": 1,
+              "assignedMinutes": 60,
+              "makespanMinutes": 60,
+              "totalTardinessMinutes": 0,
+              "lateOperationCount": 0,
+              "onTimeRate": 1,
+              "averageResourceUtilization": 0
+            },
             "assignments": [
               {
                 "assignmentId": "assign-001",

@@ -5,7 +5,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -177,6 +177,15 @@ public sealed class SchedulingIntegrationEventTests
                 AlgorithmVersion: "aps-lite-v1",
                 Status: SchedulePlanStatusContract.Generated,
                 GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                Metrics: new SchedulePlanMetricsContract(
+                    ScheduledOperationCount: 1,
+                    UnscheduledOperationCount: 0,
+                    AssignedMinutes: 60,
+                    MakespanMinutes: 60,
+                    TotalTardinessMinutes: 0,
+                    LateOperationCount: 0,
+                    OnTimeRate: 1m,
+                    AverageResourceUtilization: 0m),
                 Assignments:
                 [
                     new ScheduleAssignmentContract(
@@ -208,8 +217,8 @@ public sealed class SchedulingIntegrationEventTests
                 GanttItems: [])));
     }
 
-    private static void AssertSchedulingEnvelope<TPayload>(
-        SchedulingIntegrationEvent<TPayload> integrationEvent,
+    private static void AssertSchedulingEnvelope(
+        IIntegrationEventEnvelope integrationEvent,
         string expectedEventType)
     {
         Assert.Equal(expectedEventType, integrationEvent.EventType);

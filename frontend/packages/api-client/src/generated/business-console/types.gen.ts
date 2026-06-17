@@ -658,6 +658,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     algorithmVersion?: string;
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     generatedAtUtc?: string;
+    metrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
     assignments?: Array<NervIipContractsSchedulingScheduleAssignmentContract>;
     resourceLoads?: Array<NervIipContractsSchedulingScheduleResourceLoadContract>;
     conflicts?: Array<NervIipContractsSchedulingScheduleConflictContract>;
@@ -667,6 +668,17 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
+
+export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
+    scheduledOperationCount?: number;
+    unscheduledOperationCount?: number;
+    assignedMinutes?: number;
+    makespanMinutes?: number;
+    totalTardinessMinutes?: number;
+    lateOperationCount?: number;
+    onTimeRate?: number;
+    averageResourceUtilization?: number;
+};
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
     assignmentId?: string;
@@ -780,6 +792,9 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     materialReadyUtc?: string | null;
     qualityBlockReason?: string | null;
     sourceReference?: string | null;
+    setupMinutes?: number;
+    requiredSkillCodes?: Array<string> | null;
+    requiredToolingIds?: Array<string> | null;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
