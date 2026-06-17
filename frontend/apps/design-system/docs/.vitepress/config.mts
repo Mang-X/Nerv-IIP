@@ -86,6 +86,7 @@ export default defineConfig({
           text: '导航 / 外壳',
           items: [
             { text: 'App & Header 应用外壳', link: '/components/desktop/app' },
+            { text: 'NavigationMenu 导航菜单', link: '/components/desktop/navigation-menu' },
             { text: 'Breadcrumb 面包屑', link: '/components/desktop/breadcrumb' },
           ],
         },
