@@ -1,4 +1,6 @@
-namespace Nerv.IIP.Business.Approval.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
+
+namespace Nerv.IIP.Contracts.Approval;
 
 public static class ApprovalIntegrationEventTypes
 {
@@ -9,9 +11,21 @@ public static class ApprovalIntegrationEventTypes
     public const string ApprovalReturned = "businessApproval.ApprovalReturned";
 }
 
+public static class ApprovalIntegrationEventVersions
+{
+    public const int V1 = 1;
+}
+
 public static class ApprovalIntegrationEventSources
 {
     public const string BusinessApproval = "business-approval";
+}
+
+public static class ApprovalResults
+{
+    public const string Approved = "approved";
+    public const string Rejected = "rejected";
+    public const string Returned = "returned";
 }
 
 public sealed record ApprovalDocumentReferencePayload(
@@ -26,10 +40,16 @@ public sealed record ApprovalStartedIntegrationEvent(
     int EventVersion,
     DateTimeOffset OccurredAtUtc,
     string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
     string IdempotencyKey,
-    ApprovalStartedPayload Payload);
+    ApprovalStartedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ApprovalStartedPayload(
     string ChainId,
@@ -44,10 +64,16 @@ public sealed record ApprovalStepResolvedIntegrationEvent(
     int EventVersion,
     DateTimeOffset OccurredAtUtc,
     string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
     string IdempotencyKey,
-    ApprovalStepResolvedPayload Payload);
+    ApprovalStepResolvedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ApprovalStepResolvedPayload(
     string ChainId,
@@ -64,10 +90,16 @@ public sealed record ApprovalCompletedIntegrationEvent(
     int EventVersion,
     DateTimeOffset OccurredAtUtc,
     string SourceService,
+    string CorrelationId,
+    string CausationId,
     string OrganizationId,
     string EnvironmentId,
+    string Actor,
     string IdempotencyKey,
-    ApprovalCompletedPayload Payload);
+    ApprovalCompletedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ApprovalCompletedPayload(
     string ChainId,

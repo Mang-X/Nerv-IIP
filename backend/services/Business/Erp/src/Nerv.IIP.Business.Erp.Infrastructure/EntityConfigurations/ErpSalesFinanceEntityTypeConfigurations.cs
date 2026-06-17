@@ -131,6 +131,10 @@ public sealed class DeliveryOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Delivery order line id.");
         builder.Property<DeliveryOrderId>("DeliveryOrderId").HasColumnName("delivery_order_id").IsRequired().HasComment("Owning delivery order id.");
         builder.Property(x => x.SalesOrderLineNo).HasColumnName("sales_order_line_no").IsRequired().HasMaxLength(100).HasComment("Referenced sales order line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code copied from sales order line for WMS outbound execution.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData UOM code copied from sales order line for WMS outbound execution.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Outbound source location code.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional outbound lot number.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Requested delivery quantity.");
     }
 }
@@ -149,6 +153,9 @@ public sealed class AccountPayableEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.PaidAmount).HasColumnName("paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Paid amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Supplier invoice date.");
+        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired().HasComment("Payment due date.");
+        builder.Property(x => x.PaymentTermCode).HasColumnName("payment_term_code").IsRequired().HasMaxLength(50).HasComment("Payment term code snapshot.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Ignore(x => x.OpenAmount);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PayableNo }).IsUnique();
@@ -169,6 +176,9 @@ public sealed class AccountReceivableEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.CollectedAmount).HasColumnName("collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Collected amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Customer invoice date.");
+        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired().HasComment("Collection due date.");
+        builder.Property(x => x.PaymentTermCode).HasColumnName("payment_term_code").IsRequired().HasMaxLength(50).HasComment("Payment term code snapshot.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Ignore(x => x.OpenAmount);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReceivableNo }).IsUnique();

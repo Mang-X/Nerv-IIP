@@ -25,6 +25,8 @@ public sealed class StandardCodeRulesTests
     [InlineData("purchase-receipt", "GR")]
     [InlineData("account-payable", "AP")]
     [InlineData("account-receivable", "AR")]
+    [InlineData("account-payable-payment", "APPAY")]
+    [InlineData("account-receivable-collection", "ARCOL")]
     [InlineData("cost-candidate", "COST")]
     [InlineData("journal-voucher", "JV")]
     [InlineData("engineering-document", "EDOC")]

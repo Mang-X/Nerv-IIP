@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
@@ -43,6 +44,9 @@ public sealed class IntegrationEventEnvelopeContractTests
             typeof(StockMovementPostingFailedIntegrationEvent),
             typeof(StockCountVarianceConfirmedIntegrationEvent),
             typeof(StockAvailabilityChangedIntegrationEvent),
+            typeof(ApprovalStartedIntegrationEvent),
+            typeof(ApprovalStepResolvedIntegrationEvent),
+            typeof(ApprovalCompletedIntegrationEvent),
             typeof(AssetUnavailableIntegrationEvent),
             typeof(AssetRestoredIntegrationEvent),
             typeof(WmsIntegrationEvent),

@@ -121,6 +121,16 @@ public sealed class CreateOutboundOrderCommandHandler(ApplicationDbContext dbCon
 {
     public async Task<OutboundOrderId> Handle(CreateOutboundOrderCommand request, CancellationToken cancellationToken)
     {
+        var existingOrder = await dbContext.OutboundOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.OutboundOrderNo == request.OutboundOrderNo,
+            cancellationToken);
+        if (existingOrder is not null)
+        {
+            return existingOrder.Id;
+        }
+
         var order = OutboundOrder.Create(
             request.OrganizationId,
             request.EnvironmentId,
