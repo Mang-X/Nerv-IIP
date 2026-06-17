@@ -12,6 +12,7 @@ public enum SupplierInvoiceMatchStatus
 {
     Matched = 0,
     PaymentHeld = 1,
+    Voided = 2,
 }
 
 public sealed record SupplierInvoiceLineDraft(
@@ -122,6 +123,37 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null)
     {
         return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+    }
+
+    public void ReleasePaymentHold()
+    {
+        if (MatchStatus == SupplierInvoiceMatchStatus.Matched)
+        {
+            return;
+        }
+
+        if (MatchStatus != SupplierInvoiceMatchStatus.PaymentHeld)
+        {
+            throw new InvalidOperationException("Only held supplier invoices can be released.");
+        }
+
+        MatchStatus = SupplierInvoiceMatchStatus.Matched;
+        this.AddDomainEvent(new SupplierInvoiceMatchedDomainEvent(this));
+    }
+
+    public void VoidPaymentHold()
+    {
+        if (MatchStatus == SupplierInvoiceMatchStatus.Voided)
+        {
+            return;
+        }
+
+        if (MatchStatus != SupplierInvoiceMatchStatus.PaymentHeld)
+        {
+            throw new InvalidOperationException("Only held supplier invoices can be voided.");
+        }
+
+        MatchStatus = SupplierInvoiceMatchStatus.Voided;
     }
 
     private static bool IsWithinTolerance(

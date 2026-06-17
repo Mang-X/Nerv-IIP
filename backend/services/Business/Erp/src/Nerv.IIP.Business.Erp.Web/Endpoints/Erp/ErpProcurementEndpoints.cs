@@ -108,6 +108,22 @@ public sealed record RecordSupplierInvoiceRequest(
 
 public sealed record RecordSupplierInvoiceResponse(SupplierInvoiceId SupplierInvoiceId);
 
+public sealed record ReleaseSupplierInvoicePaymentHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string InvoiceNo,
+    string? PayableNo = null,
+    string? IdempotencyKey = null);
+
+public sealed record ReleaseSupplierInvoicePaymentHoldResponse(SupplierInvoiceId SupplierInvoiceId);
+
+public sealed record VoidSupplierInvoicePaymentHoldRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string InvoiceNo);
+
+public sealed record VoidSupplierInvoicePaymentHoldResponse(SupplierInvoiceId SupplierInvoiceId);
+
 public sealed record ListPurchaseOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -252,6 +268,46 @@ public sealed class RecordSupplierInvoiceEndpoint(ISender sender)
     }
 }
 
+public sealed class ReleaseSupplierInvoicePaymentHoldEndpoint(ISender sender)
+    : ErpEndpoint<ReleaseSupplierInvoicePaymentHoldRequest, ResponseData<ReleaseSupplierInvoicePaymentHoldResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ReleaseSupplierInvoicePaymentHoldEndpoint>());
+    }
+
+    public override async Task HandleAsync(ReleaseSupplierInvoicePaymentHoldRequest req, CancellationToken ct)
+    {
+        var invoiceNo = Route<string>("invoiceNo") ?? req.InvoiceNo;
+        var id = await sender.Send(new ReleaseSupplierInvoicePaymentHoldCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            invoiceNo,
+            req.PayableNo,
+            req.IdempotencyKey ?? $"supplier-invoice-release:{req.OrganizationId}:{req.EnvironmentId}:{invoiceNo}"), ct);
+        await Send.OkAsync(new ReleaseSupplierInvoicePaymentHoldResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class VoidSupplierInvoicePaymentHoldEndpoint(ISender sender)
+    : ErpEndpoint<VoidSupplierInvoicePaymentHoldRequest, ResponseData<VoidSupplierInvoicePaymentHoldResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<VoidSupplierInvoicePaymentHoldEndpoint>());
+    }
+
+    public override async Task HandleAsync(VoidSupplierInvoicePaymentHoldRequest req, CancellationToken ct)
+    {
+        var invoiceNo = Route<string>("invoiceNo") ?? req.InvoiceNo;
+        var id = await sender.Send(new VoidSupplierInvoicePaymentHoldCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            invoiceNo), ct);
+        await Send.OkAsync(new VoidSupplierInvoicePaymentHoldResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListPurchaseOrdersEndpoint(ISender sender)
     : ErpEndpoint<ListPurchaseOrdersRequest, ResponseData<ListPurchaseOrdersResponse>>
 {
@@ -286,6 +342,8 @@ public static class ErpProcurementEndpointContracts
         new(typeof(CreatePurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseOrder"),
         new(typeof(RecordPurchaseReceiptEndpoint), "POST", "/api/business/v1/erp/purchase-receipts", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "recordErpPurchaseReceipt"),
         new(typeof(RecordSupplierInvoiceEndpoint), "POST", "/api/business/v1/erp/supplier-invoices", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "recordErpSupplierInvoice"),
+        new(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "releaseErpSupplierInvoicePaymentHold"),
+        new(typeof(VoidSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "voidErpSupplierInvoicePaymentHold"),
         new(typeof(ListPurchaseOrdersEndpoint), "GET", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseOrders"),
     ];
 

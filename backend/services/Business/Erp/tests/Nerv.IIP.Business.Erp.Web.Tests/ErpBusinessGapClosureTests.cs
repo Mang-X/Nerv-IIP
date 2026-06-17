@@ -5,11 +5,14 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +35,8 @@ public sealed class ErpBusinessGapClosureTests
                 new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5)),
                 new PurchaseOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 7m, 8m, new DateOnly(2026, 6, 5)),
             ]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
         var receipt = PurchaseReceipt.Record(
             order,
             "RCV-001",
@@ -98,7 +103,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await new CreatePurchaseOrderCommandHandler(dbContext).Handle(
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
             new CreatePurchaseOrderCommand(
                 "org-001",
                 "env-dev",
@@ -106,6 +112,10 @@ public sealed class ErpBusinessGapClosureTests
                 "SUP-001",
                 "SITE-01",
                 [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
@@ -149,7 +159,8 @@ public sealed class ErpBusinessGapClosureTests
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
-        await new CreatePurchaseOrderCommandHandler(dbContext).Handle(
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
             new CreatePurchaseOrderCommand(
                 "org-001",
                 "env-dev",
@@ -157,6 +168,10 @@ public sealed class ErpBusinessGapClosureTests
                 "SUP-001",
                 "SITE-01",
                 [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
@@ -206,6 +221,160 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldInvoice.MatchStatus);
         Assert.Single(dbContext.AccountPayables);
         Assert.Single(dbContext.JournalVouchers);
+    }
+
+    [Fact]
+    public async Task Purchase_order_creation_starts_business_approval_and_blocks_receipts_until_approved()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))],
+                "po-idem-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var order = dbContext.PurchaseOrders.Single();
+        Assert.Equal(PurchaseOrderStatus.PendingApproval, order.Status);
+        Assert.Equal("PO-001", approvalClient.LastRequest!.DocumentId);
+        Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
+        Assert.Equal("business-erp", approvalClient.LastRequest.SourceService);
+        await Assert.ThrowsAsync<KnownException>(() => new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-001",
+                "PO-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted")]),
+            CancellationToken.None));
+
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest.ChainId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(PurchaseOrderStatus.Released, dbContext.PurchaseOrders.Single().Status);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-001",
+                "PO-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted")]),
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Held_supplier_invoice_can_be_released_or_voided()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
+            CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-001",
+                "PO-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01", "LOT-001")]),
+            CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-002",
+                "PO-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-02", "LOT-002")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordSupplierInvoiceCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-HELD-RELEASE",
+                "PO-001",
+                "RCV-001",
+                new DateOnly(2026, 6, 10),
+                new DateOnly(2026, 7, 10),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2.1m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new ReleaseSupplierInvoicePaymentHoldCommandHandler(dbContext).Handle(
+            new ReleaseSupplierInvoicePaymentHoldCommand("org-001", "env-dev", "INV-HELD-RELEASE", null, "review-release-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(SupplierInvoiceMatchStatus.Matched, dbContext.SupplierInvoices.Single(x => x.InvoiceNo == "INV-HELD-RELEASE").MatchStatus);
+        Assert.Single(dbContext.AccountPayables);
+        Assert.Single(dbContext.JournalVouchers);
+
+        await handler.Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-HELD-VOID",
+                "PO-001",
+                "RCV-002",
+                new DateOnly(2026, 6, 11),
+                new DateOnly(2026, 7, 11),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2.1m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new VoidSupplierInvoicePaymentHoldCommandHandler(dbContext).Handle(
+            new VoidSupplierInvoicePaymentHoldCommand("org-001", "env-dev", "INV-HELD-VOID"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(SupplierInvoiceMatchStatus.Voided, dbContext.SupplierInvoices.Single(x => x.InvoiceNo == "INV-HELD-VOID").MatchStatus);
+        await handler.Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-AFTER-VOID",
+                "PO-001",
+                "RCV-002",
+                new DateOnly(2026, 6, 12),
+                new DateOnly(2026, 7, 12),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(SupplierInvoiceMatchStatus.Matched, dbContext.SupplierInvoices.Single(x => x.InvoiceNo == "INV-AFTER-VOID").MatchStatus);
     }
 
     [Fact]
@@ -275,6 +444,39 @@ public sealed class ErpBusinessGapClosureTests
         await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(dbContext).Handle(
             new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", CustomerCreditLimit: 100m),
             CancellationToken.None));
+    }
+
+    private static ApprovalCompletedIntegrationEvent ApprovedPurchaseOrderEvent(string purchaseOrderNo, string chainId)
+    {
+        return new ApprovalCompletedIntegrationEvent(
+            "evt-approval-approved-001",
+            ApprovalIntegrationEventTypes.ApprovalApproved,
+            ApprovalIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ApprovalIntegrationEventSources.BusinessApproval,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:approval",
+            $"business-approval:approved:org-001:env-dev:{chainId}",
+            new ApprovalCompletedPayload(
+                chainId,
+                ApprovalResults.Approved,
+                "user",
+                "u-manager",
+                new ApprovalDocumentReferencePayload("business-erp", "purchase-order", purchaseOrderNo, null)));
+    }
+
+    private sealed class CapturingPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
+    {
+        public PurchaseOrderApprovalRequest? LastRequest { get; private set; }
+
+        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(PurchaseOrderApprovalRequest request, CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            return Task.FromResult(new PurchaseOrderApprovalResult(request.ChainId));
+        }
     }
 
     [Fact]

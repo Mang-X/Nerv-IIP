@@ -71,3 +71,10 @@ This plan intentionally closes the P0/P1 gaps named by #411 and leaves P2 tax/mu
 5. AP/AR list responses expose due dates and aging buckets.
 6. Sales order creation rejects customers whose credit limit is exceeded by open AR plus active released order exposure.
 7. AP/AR/cost candidate creation posts balanced subledger vouchers without direct cross-service writes.
+
+## Review Follow-up Scope
+
+The post-review correction keeps two #411 P1 items inside this PR instead of documenting them as risks:
+
+1. Purchase orders must start as approval-gated documents, not directly `Released`. ERP creates a pending PO, requests BusinessApproval through a public service contract, rejects receipts before release, and consumes Approval completed events to release or cancel the PO.
+2. Supplier invoices in `PaymentHeld` must have a minimal reachable path. ERP supports releasing a held invoice to create the AP/voucher after review, and voiding a held invoice so its quantities no longer consume cumulative invoiced quantity.
