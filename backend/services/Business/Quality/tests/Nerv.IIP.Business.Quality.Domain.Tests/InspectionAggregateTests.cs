@@ -175,6 +175,49 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Planned_attribute_without_sampling_fails_when_defect_is_reported()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "appearance",
+            "Appearance",
+            "visual",
+            "major",
+            required: true,
+            samplingRule: "zero-defect",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: null);
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            inspectedQuantity: 5m,
+            batchNo: "BATCH-001",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Attribute("appearance", observedText: "scratch observed", defectReason: "scratch", defectQuantity: 1m, attachmentFileIds: []),
+            ],
+            dispositionReason: "Attribute defect observed",
+            dispositionAttachmentFileIds: []);
+
+        var line = Assert.Single(record.ResultLines);
+        Assert.Equal("rejected", record.Result);
+        Assert.Equal("failed", line.Result);
+        Assert.Equal("scratch", line.DefectReason);
+        Assert.Equal(1m, line.DefectQuantity);
+    }
+
+    [Fact]
     public void Activated_inspection_plan_cannot_change_execution_characteristics()
     {
         var plan = NewPlan();

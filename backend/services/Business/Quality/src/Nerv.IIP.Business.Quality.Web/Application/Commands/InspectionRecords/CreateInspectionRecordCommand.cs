@@ -91,7 +91,11 @@ public sealed class CreateInspectionRecordCommandHandler(
         InspectionRecord record;
         if (request.InspectionPlanId is not null)
         {
-            var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(request.InspectionPlanId, cancellationToken)
+            var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.InspectionPlanId,
+                    cancellationToken)
                 ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
             record = InspectionRecord.CreateFromPlan(
                 plan,

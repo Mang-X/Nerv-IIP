@@ -11,6 +11,7 @@ using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -263,6 +264,69 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == "quality" && x.LocationCode == "LOC-B-02").OnHandQuantity);
         Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked" && x.LocationCode == "LOC-B-02").OnHandQuantity);
         Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_stock_release_from_non_quality_status()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "unrestricted",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-unrestricted-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "unrestricted",
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            sender,
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-A-01",
+                    "LOT-001",
+                    null,
+                    "unrestricted",
+                    "company",
+                    "owner-001")),
+            CancellationToken.None));
+
+        Assert.Contains("quality status", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Single(dbContext.StockLedgers);
+        Assert.Equal(5m, ledger.OnHandQuantity);
     }
 
     [Fact]

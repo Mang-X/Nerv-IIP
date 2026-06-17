@@ -326,6 +326,16 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     {
         if (characteristic.SamplingPlan is null)
         {
+            if (input.Result == InspectionLineResults.Passed
+                && (input.DefectQuantity.GetValueOrDefault() > 0m || !string.IsNullOrWhiteSpace(input.DefectReason)))
+            {
+                return input with
+                {
+                    Result = InspectionLineResults.Failed,
+                    DefectReason = input.DefectReason ?? "attribute-defect-observed",
+                };
+            }
+
             return input;
         }
 
