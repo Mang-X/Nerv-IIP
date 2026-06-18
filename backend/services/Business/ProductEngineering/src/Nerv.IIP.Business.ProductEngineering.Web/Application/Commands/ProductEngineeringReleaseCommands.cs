@@ -326,6 +326,8 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
 
+        ProductEngineeringReleaseValidation.ValidateManufacturingBomMaterialContinuity(ebom, request.SkuCode, request.MaterialLines);
+
         var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
             var draft = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
@@ -472,6 +474,42 @@ public sealed class ReleaseRoutingCommandHandler(
 
 internal static class ProductEngineeringReleaseValidation
 {
+    public static void ValidateManufacturingBomMaterialContinuity(
+        EngineeringBom engineeringBom,
+        string manufacturingBomSkuCode,
+        IReadOnlyCollection<ManufacturingBomMaterialLineCommand> materialLines)
+    {
+        if (!string.Equals(engineeringBom.ParentItemCode, manufacturingBomSkuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Manufacturing BOM SKU '{manufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+        }
+
+        var ebomChildSkuCodes = engineeringBom.Lines
+            .Select(line => line.ChildItemCode)
+            .ToHashSet(StringComparer.Ordinal);
+        var mbomMaterialSkuCodes = materialLines
+            .Select(line => line.SkuCode.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingMaterialSkuCodes = ebomChildSkuCodes
+            .Where(code => !mbomMaterialSkuCodes.Contains(code))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (missingMaterialSkuCodes.Length > 0)
+        {
+            throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
+        }
+
+        var orphanMaterialSkuCodes = mbomMaterialSkuCodes
+            .Where(code => !ebomChildSkuCodes.Contains(code))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (orphanMaterialSkuCodes.Length > 0)
+        {
+            throw new KnownException($"Manufacturing BOM contains material SKU(s) not present in the referenced EBOM: {string.Join(", ", orphanMaterialSkuCodes)}.");
+        }
+    }
+
     public static T AsKnownException<T>(Func<T> action)
     {
         try

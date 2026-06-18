@@ -149,7 +149,7 @@ CAD file / design package
   -> MES.WorkOrder
 ```
 
-ProductEngineering 是 EBOM、MBOM、工艺路线版本、ProductionVersion 和工程变更事实源。MRP/MES 使用 ProductionVersion resolve API 以 SKU、有效日期和批量解析 productionVersionId 以及对应的已发布 MBOM/路线，MES 新工单引用 productionVersionId。
+ProductEngineering 是 EBOM、MBOM、工艺路线版本、ProductionVersion 和工程变更事实源。兼容字段名 `EngineeringItem.ItemCode`、EBOM `ParentItemCode` 和 `ChildItemCode` 在当前实现中表示 MasterData SKU code，不再表示独立于 SKU 的工程件号；真实 SKU/material identity 仍由 BusinessMasterData 拥有。MBOM release 必须引用已发布 EBOM，且 MBOM 产出 `SkuCode` 必须等于 EBOM parent SKU，MBOM material line SKU 集合必须与 EBOM child SKU 集合一致。MRP/MES 使用 ProductionVersion resolve API 以 SKU、有效日期和批量解析 productionVersionId 以及对应的已发布 MBOM/路线，MES 新工单引用 productionVersionId。
 
 ### 计划到采购/生产
 
@@ -295,7 +295,7 @@ ADR 0012、本架构文档、业务 spec、README/repo layout/权限矩阵入口
 
 ### Slice 2. ProductEngineering MVP
 
-建立 CAD 文件引用、工程物料、EBOM、MBOM、工艺路线版本、ProductionVersion、ECO/ECN 和发布状态。ProductionVersion 绑定已发布 MBOM + Routing，并为 MRP/MES 提供 productionVersionId 解析契约。
+建立 CAD 文件引用、工程物料、EBOM、MBOM、工艺路线版本、ProductionVersion、ECO/ECN 和发布状态。工程物料和 EBOM 的兼容 `itemCode` 字段按 SKU code 使用；MBOM 发布时校验 EBOM parent/child SKU 与 MBOM 产出/物料 SKU 连续。ProductionVersion 绑定已发布 MBOM + Routing，并为 MRP/MES 提供 productionVersionId 解析契约。
 
 ### Slice 3. Common Capability Foundation
 

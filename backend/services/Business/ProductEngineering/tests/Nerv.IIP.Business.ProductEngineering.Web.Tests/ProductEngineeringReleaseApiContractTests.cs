@@ -486,8 +486,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-1000", "A", "ENG-1000")
-            .AddLine("ENG-1001", 2m, "EA");
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-1000", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-1000", 2m, "EA");
         ebom.Release(new DateOnly(2026, 6, 1));
         dbContext.EngineeringBoms.Add(ebom);
         dbContext.ManufacturingBoms.Add(ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-1000", "A", "SKU-FG-1000"));
@@ -518,6 +518,112 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         var created = await dbContext.ManufacturingBoms.SingleAsync(x => x.BomCode == "MBOM-1000" && x.Revision == "B", CancellationToken.None);
         Assert.Equal("EBOM-1000:A", created.EngineeringBomVersionId);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_rejects_missing_ebom_child_sku_material_line()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CONTINUITY", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-1000", 1m, "EA")
+            .AddLine("SKU-RM-2000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-CONTINUITY",
+                "A",
+                "SKU-FG-1000",
+                "EBOM-CONTINUITY",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-1000", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("SKU-RM-2000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("missing", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_rejects_ebom_parent_sku_mismatch()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CONTINUITY", "A", "SKU-FG-OTHER")
+            .AddLine("SKU-RM-1000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-CONTINUITY",
+                "A",
+                "SKU-FG-1000",
+                "EBOM-CONTINUITY",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-1000", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("SKU-FG-OTHER", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_rejects_orphan_material_line_not_in_ebom()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CONTINUITY", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-1000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-CONTINUITY",
+                "A",
+                "SKU-FG-1000",
+                "EBOM-CONTINUITY",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [
+                    new ManufacturingBomMaterialLineCommand("SKU-RM-1000", 1m, "EA", 0m),
+                    new ManufacturingBomMaterialLineCommand("SKU-RM-9999", 1m, "EA", 0m)
+                ],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("SKU-RM-9999", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("not present", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -647,8 +753,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-2000", "A", "ENG-2000")
-            .AddLine("ENG-2001", 1m, "EA");
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-2000", "A", "SKU-FG-2000")
+            .AddLine("SKU-RM-2000", 1m, "EA");
         ebom.Release(new DateOnly(2026, 6, 1));
         dbContext.EngineeringBoms.Add(ebom);
         await dbContext.SaveChangesAsync(CancellationToken.None);
