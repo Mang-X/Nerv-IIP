@@ -315,30 +315,25 @@ const nav = ref('总览')
 
 /* ── rhythm: give first-level items the same breathing room as sub-items ── */
 .ds-sb [data-slot='sidebar-menu'] { gap: 0.1875rem; }
-.ds-sb [data-slot='sidebar-menu-button'] { transition: background-color 0.15s ease, color 0.15s ease; }
-.ds-sb [data-slot='sidebar-menu-button']:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+.ds-sb [data-slot='sidebar-menu'] :is(a, button) {
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* ── premium active state: brand-tinted fill + accent bar + brand glyph ──── */
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true'],
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true']:hover {
-  position: relative;
-  background: color-mix(in oklch, var(--brand) 15%, transparent);
-  color: var(--brand-strong);
-  font-weight: 600;
+/* ── ONE unified selected state across levels + demos ─────────────────────
+   The active row may be a sidebar-menu-button OR — when it carries a tooltip —
+   a reka tooltip-trigger (reka overwrites data-slot). Matching on [data-active]
+   inside any sidebar-menu is the only selector that styles BOTH demos the same.
+   Readable: near-white text on a muted brand-tinted surface (high contrast),
+   brand glyph for accent. NO side stripe (our anti-references ban 侧边色条) —
+   selection reads through fill + weight + glyph. The ancestor selector also
+   out-specifies shadcn's default `data-[active]:bg-sidebar-accent`. */
+.ds-sb [data-slot='sidebar-menu'] [data-active='true'] {
+  background: color-mix(in oklch, var(--brand) 26%, var(--sidebar));
+  color: var(--sidebar-foreground);
+  font-weight: 500;
 }
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true'] svg { color: var(--brand); }
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true']::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  height: 1.15rem;
-  width: 3px;
-  transform: translateY(-50%);
-  border-radius: 0 3px 3px 0;
-  background: var(--brand);
+.ds-sb [data-slot='sidebar-menu'] [data-active='true'] svg {
+  color: var(--brand-strong);
 }
 
 /* ── animated submenu (grid-rows 0fr→1fr) + clearer indent guide ────────── */
@@ -356,13 +351,7 @@ const nav = ref('总览')
   margin-top: 0.1875rem;
   margin-left: 0.9rem;
   padding-left: 0.8rem;
-  border-left: 1.5px solid color-mix(in oklch, var(--foreground) 16%, transparent);
-}
-.ds-sb [data-slot='sidebar-menu-sub-button'][data-active='true'],
-.ds-sb [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
-  background: color-mix(in oklch, var(--brand) 15%, transparent);
-  color: var(--brand-strong);
-  font-weight: 600;
+  border-left: 1px solid var(--sidebar-border); /* hairline indent guide, neutral */
 }
 
 /* ── workspace brand lockup ─────────────────────────────────────────────── */
@@ -470,7 +459,9 @@ const nav = ref('总览')
 .ds-sb-chevron {
   width: 1rem;
   height: 1rem;
-  transition: transform 0.2s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+  /* Tailwind v4 `rotate-90` animates the `rotate` property (not `transform`), so
+     transition `rotate` — transitioning `transform` here would never fire. */
+  transition: rotate 0.2s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-sb-chevron, .ds-sb-sub { transition: none; }
