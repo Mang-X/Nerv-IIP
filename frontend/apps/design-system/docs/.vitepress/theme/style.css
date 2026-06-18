@@ -97,7 +97,11 @@
  * the sidebar sits near the left edge and component demos have real room.
  * ------------------------------------------------------------------------- */
 :root {
-  --vp-layout-max-width: 2048px;
+  /* effectively no centering cap — fill the viewport edge-to-edge so the sidebar
+     sits flush-left and content/phone reach the right edge on any monitor width.
+     (VitePress offsets the fixed sidebar by the centering margin; a huge cap
+     makes that margin 0.) */
+  --vp-layout-max-width: 100vw;
   --vp-sidebar-width: 248px;
 }
 @media (min-width: 1440px) {
