@@ -18,10 +18,14 @@ import {
   GaugeIcon, ActivityIcon,
 } from 'lucide-vue-next'
 
-// collapsible submenu open state (atomic Sidebar has no built-in accordion —
-// drive SidebarMenuSub visibility with your own state)
+// 一级导航选择（点击即切换激活项）
+const nav = ref('总览')
+// 二级菜单展开 + 选中产线/工位
 const press = ref(true)
 const weld = ref(false)
+const line = ref('L01')
+// 待办选中
+const todo = ref('待派工单')
 </script>
 
 # Sidebar 侧栏
@@ -30,7 +34,7 @@ const weld = ref(false)
 
 ## 完整控制台侧栏
 
-工作区品牌头 + 分组导航（计数徽标、在线状态点、激活强调条）+ 用户区，`collapsible="icon"` 折叠为图标条：折叠后标题文本隐藏（非压缩），悬停图标显示 Tooltip。拖右缘 Rail 或点顶部按钮切换。
+工作区品牌头 + 分组导航（计数徽标、在线状态点、品牌强调）+ 用户区。点击任意项即切换激活态；`collapsible="icon"` 折叠为图标条，标题文本隐藏（非压缩），悬停图标显示 Tooltip。
 
 <Demo>
 <div class="ds-sb ds-sb-collapse ds-sb-tall">
@@ -51,13 +55,13 @@ const weld = ref(false)
         <SidebarGroup>
           <SidebarGroupLabel>生产</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem><SidebarMenuButton :is-active="true" tooltip="总览"><LayoutDashboardIcon /><span>总览</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton :is-active="nav === '总览'" tooltip="总览" @click="nav = '总览'"><LayoutDashboardIcon /><span>总览</span></SidebarMenuButton></SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="工单"><BoxesIcon /><span>工单</span></SidebarMenuButton>
+              <SidebarMenuButton :is-active="nav === '工单'" tooltip="工单" @click="nav = '工单'"><BoxesIcon /><span>工单</span></SidebarMenuButton>
               <SidebarMenuBadge>24</SidebarMenuBadge>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="质检"><ClipboardCheckIcon /><span>质检</span></SidebarMenuButton>
+              <SidebarMenuButton :is-active="nav === '质检'" tooltip="质检" @click="nav = '质检'"><ClipboardCheckIcon /><span>质检</span></SidebarMenuButton>
               <SidebarMenuBadge>3</SidebarMenuBadge>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -66,18 +70,18 @@ const weld = ref(false)
           <SidebarGroupLabel>资源</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="设备 · 在线">
+              <SidebarMenuButton :is-active="nav === '设备'" tooltip="设备 · 在线" @click="nav = '设备'">
                 <WrenchIcon /><span>设备</span>
                 <span class="ds-sb-dot ds-sb-dot-ok" aria-hidden="true" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton tooltip="告警 · 2 条未读">
+              <SidebarMenuButton :is-active="nav === '告警'" tooltip="告警 · 2 条未读" @click="nav = '告警'">
                 <BellIcon /><span>告警</span>
                 <span class="ds-sb-dot ds-sb-dot-warn" aria-hidden="true" />
               </SidebarMenuButton>
             </SidebarMenuItem>
-            <SidebarMenuItem><SidebarMenuButton tooltip="设置"><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton :is-active="nav === '设置'" tooltip="设置" @click="nav = '设置'"><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
@@ -103,7 +107,7 @@ const weld = ref(false)
         <span class="ds-sb-topbar-divider" aria-hidden="true" />
         <span class="text-sm text-muted-foreground">控制台</span>
         <ChevronRightIcon class="size-3.5 text-muted-foreground/50" />
-        <span class="text-sm font-medium">工单总览</span>
+        <span class="text-sm font-medium">{{ nav }}</span>
       </header>
       <div class="ds-sb-body">
         <div class="ds-sb-tiles">
@@ -119,32 +123,28 @@ const weld = ref(false)
 </Demo>
 
 ```vue
-<Sidebar collapsible="icon">
-  <SidebarHeader><!-- 工作区：logo + 名称 + 厂区，折叠时隐藏文字 --></SidebarHeader>
-  <SidebarContent>
-    <SidebarGroup>
-      <SidebarGroupLabel>生产</SidebarGroupLabel>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton :is-active="true" tooltip="总览">
-            <LayoutDashboardIcon /><span>总览</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton tooltip="工单"><BoxesIcon /><span>工单</span></SidebarMenuButton>
-          <SidebarMenuBadge>24</SidebarMenuBadge>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </SidebarGroup>
-  </SidebarContent>
-  <SidebarFooter><!-- 用户：头像 + 在线点 + 姓名/角色 --></SidebarFooter>
-  <SidebarRail />
-</Sidebar>
+<script setup>
+const nav = ref('总览')
+</script>
+
+<SidebarMenu>
+  <SidebarMenuItem>
+    <SidebarMenuButton :is-active="nav === '总览'" tooltip="总览" @click="nav = '总览'">
+      <LayoutDashboardIcon /><span>总览</span>
+    </SidebarMenuButton>
+  </SidebarMenuItem>
+  <SidebarMenuItem>
+    <SidebarMenuButton :is-active="nav === '工单'" tooltip="工单" @click="nav = '工单'">
+      <BoxesIcon /><span>工单</span>
+    </SidebarMenuButton>
+    <SidebarMenuBadge>24</SidebarMenuBadge>
+  </SidebarMenuItem>
+</SidebarMenu>
 ```
 
 ## 子菜单 · 徽标 · 操作
 
-`SidebarMenuSub` 承载二级菜单（展开状态用你自己的 `ref` 驱动）；`SidebarMenuBadge` 显示计数；`SidebarMenuAction` 是仅在悬停时浮现的行内操作；`SidebarGroupAction` 是分组级操作。
+`SidebarMenuSub` 承载二级菜单（展开状态用你自己的 `ref` 驱动，并配合高度过渡动画）；二级项缩进并带导引线；`SidebarMenuBadge` 显示计数；`SidebarMenuAction` 是仅在悬停时浮现的行内操作；`SidebarGroupAction` 是分组级操作。
 
 <Demo>
 <div class="ds-sb">
@@ -160,21 +160,29 @@ const weld = ref(false)
                 <FactoryIcon /><span>冲压车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="press && 'rotate-90'" />
               </SidebarMenuButton>
-              <SidebarMenuSub v-show="press">
-                <SidebarMenuSubItem><SidebarMenuSubButton :is-active="true">L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-                <SidebarMenuSubItem><SidebarMenuSubButton>L02 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-                <SidebarMenuSubItem><SidebarMenuSubButton>L03 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-              </SidebarMenuSub>
+              <div class="ds-sb-sub" :class="press && 'is-open'">
+                <div class="ds-sb-sub-clip">
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L02'" @click="line = 'L02'">L02 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L03'" @click="line = 'L03'">L03 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                </div>
+              </div>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton @click="weld = !weld">
                 <FactoryIcon /><span>焊接车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="weld && 'rotate-90'" />
               </SidebarMenuButton>
-              <SidebarMenuSub v-show="weld">
-                <SidebarMenuSubItem><SidebarMenuSubButton>W01 工位</SidebarMenuSubButton></SidebarMenuSubItem>
-                <SidebarMenuSubItem><SidebarMenuSubButton>W02 工位</SidebarMenuSubButton></SidebarMenuSubItem>
-              </SidebarMenuSub>
+              <div class="ds-sb-sub" :class="weld && 'is-open'">
+                <div class="ds-sb-sub-clip">
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W01'" @click="line = 'W01'">W01 工位</SidebarMenuSubButton></SidebarMenuSubItem>
+                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W02'" @click="line = 'W02'">W02 工位</SidebarMenuSubButton></SidebarMenuSubItem>
+                  </SidebarMenuSub>
+                </div>
+              </div>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -183,15 +191,15 @@ const weld = ref(false)
           <SidebarGroupLabel>待办</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton><BoxesIcon /><span>待派工单</span></SidebarMenuButton>
+              <SidebarMenuButton :is-active="todo === '待派工单'" @click="todo = '待派工单'"><BoxesIcon /><span>待派工单</span></SidebarMenuButton>
               <SidebarMenuBadge>12</SidebarMenuBadge>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton><GaugeIcon /><span>OEE 异常</span></SidebarMenuButton>
+              <SidebarMenuButton :is-active="todo === 'OEE 异常'" @click="todo = 'OEE 异常'"><GaugeIcon /><span>OEE 异常</span></SidebarMenuButton>
               <SidebarMenuBadge>3</SidebarMenuBadge>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton><BellIcon /><span>设备告警</span></SidebarMenuButton>
+              <SidebarMenuButton :is-active="todo === '设备告警'" @click="todo = '设备告警'"><BellIcon /><span>设备告警</span></SidebarMenuButton>
               <SidebarMenuAction title="全部标记已读" show-on-hover><PlusIcon /></SidebarMenuAction>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -199,7 +207,7 @@ const weld = ref(false)
       </SidebarContent>
     </Sidebar>
     <main class="ds-sb-main">
-      <span class="ds-sb-hint"><ActivityIcon class="size-4" />点击车间展开 / 收起二级产线</span>
+      <span class="ds-sb-hint"><ActivityIcon class="size-4" />点击车间展开 / 收起，二级带高度动画</span>
     </main>
   </SidebarProvider>
 </div>
@@ -207,19 +215,26 @@ const weld = ref(false)
 
 ```vue
 <SidebarMenuItem>
-  <SidebarMenuButton @click="open = !open">
+  <SidebarMenuButton :is-active="open" @click="open = !open">
     <FactoryIcon /><span>冲压车间</span>
     <ChevronRightIcon class="ml-auto transition-transform" :class="open && 'rotate-90'" />
   </SidebarMenuButton>
-  <SidebarMenuSub v-show="open">
-    <SidebarMenuSubItem><SidebarMenuSubButton>L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-  </SidebarMenuSub>
+  <!-- 高度过渡：grid-template-rows 0fr → 1fr -->
+  <div class="sub" :class="open && 'is-open'">
+    <div style="overflow:hidden">
+      <SidebarMenuSub>
+        <SidebarMenuSubItem>
+          <SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton>
+        </SidebarMenuSubItem>
+      </SidebarMenuSub>
+    </div>
+  </div>
 </SidebarMenuItem>
+```
 
-<SidebarMenuItem>
-  <SidebarMenuButton><BoxesIcon /><span>待派工单</span></SidebarMenuButton>
-  <SidebarMenuBadge>12</SidebarMenuBadge>
-</SidebarMenuItem>
+```css
+.sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .26s cubic-bezier(.25,1,.5,1); }
+.sub.is-open { grid-template-rows: 1fr; }
 ```
 
 ## 搜索头
@@ -240,9 +255,9 @@ const weld = ref(false)
         <SidebarGroup>
           <SidebarGroupLabel>最近</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem><SidebarMenuButton><BoxesIcon /><span>WO-2406-0413</span></SidebarMenuButton></SidebarMenuItem>
-            <SidebarMenuItem><SidebarMenuButton><BoxesIcon /><span>WO-2406-0421</span></SidebarMenuButton></SidebarMenuItem>
-            <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>工位 CNC-07</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton :is-active="todo === 'a'" @click="todo = 'a'"><BoxesIcon /><span>WO-2406-0413</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton :is-active="todo === 'b'" @click="todo = 'b'"><BoxesIcon /><span>WO-2406-0421</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton :is-active="todo === 'c'" @click="todo = 'c'"><WrenchIcon /><span>工位 CNC-07</span></SidebarMenuButton></SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
@@ -295,26 +310,59 @@ const weld = ref(false)
 .ds-sb.ds-sb-tall { height: 460px; }
 .ds-sb [data-slot='sidebar-wrapper'],
 .ds-sb .group\/sidebar-wrapper { min-height: 0 !important; height: 100% !important; }
-/* only the collapsible="icon" demo uses the Sidebar's fixed `h-svh` container, so
-   only it needs a containing block (transform) + height cap to stay in-frame. */
 .ds-sb-collapse { transform: translateZ(0); }
 .ds-sb-collapse [data-slot='sidebar-container'] { height: 100% !important; }
 
-/* placeholder canvas next to a non-collapsible sidebar */
-.ds-sb-main {
-  display: flex;
-  flex: 1 1 0;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
+/* ── rhythm: give first-level items the same breathing room as sub-items ── */
+.ds-sb [data-slot='sidebar-menu'] { gap: 0.1875rem; }
+.ds-sb [data-slot='sidebar-menu-button'] { transition: background-color 0.15s ease, color 0.15s ease; }
+.ds-sb [data-slot='sidebar-menu-button']:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
-.ds-sb-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
+
+/* ── premium active state: brand-tinted fill + accent bar + brand glyph ──── */
+.ds-sb [data-slot='sidebar-menu-button'][data-active='true'],
+.ds-sb [data-slot='sidebar-menu-button'][data-active='true']:hover {
+  position: relative;
+  background: color-mix(in oklch, var(--brand) 15%, transparent);
+  color: var(--brand-strong);
+  font-weight: 600;
+}
+.ds-sb [data-slot='sidebar-menu-button'][data-active='true'] svg { color: var(--brand); }
+.ds-sb [data-slot='sidebar-menu-button'][data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1.15rem;
+  width: 3px;
+  transform: translateY(-50%);
+  border-radius: 0 3px 3px 0;
+  background: var(--brand);
+}
+
+/* ── animated submenu (grid-rows 0fr→1fr) + clearer indent guide ────────── */
+.ds-sb-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+}
+.ds-sb-sub.is-open { grid-template-rows: 1fr; }
+/* indent + guide line live on the wrapper div, not the <ul> — Tailwind preflight
+   resets `ul { margin:0; padding:0 }` and wins over a same-target rule, so the
+   component's mx-3.5/px-2.5 never indent here. */
+.ds-sb-sub-clip {
+  overflow: hidden;
+  margin-top: 0.1875rem;
+  margin-left: 0.9rem;
+  padding-left: 0.8rem;
+  border-left: 1.5px solid color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+.ds-sb [data-slot='sidebar-menu-sub-button'][data-active='true'],
+.ds-sb [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
+  background: color-mix(in oklch, var(--brand) 15%, transparent);
+  color: var(--brand-strong);
+  font-weight: 600;
 }
 
 /* ── workspace brand lockup ─────────────────────────────────────────────── */
@@ -346,20 +394,6 @@ const weld = ref(false)
 .ds-sb-brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600; }
 .ds-sb-brand-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--muted-foreground); }
 .ds-sb-brand-caret { width: 1rem; height: 1rem; flex-shrink: 0; color: var(--muted-foreground); }
-
-/* ── active accent bar on the current item ─────────────────────────────── */
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true'] { position: relative; font-weight: 600; }
-.ds-sb [data-slot='sidebar-menu-button'][data-active='true']::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  height: 1.05rem;
-  width: 3px;
-  transform: translateY(-50%);
-  border-radius: 0 3px 3px 0;
-  background: var(--brand);
-}
 
 /* ── status dots trailing a menu label ─────────────────────────────────── */
 .ds-sb-dot {
@@ -439,6 +473,6 @@ const weld = ref(false)
   transition: transform 0.2s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 @media (prefers-reduced-motion: reduce) {
-  .ds-sb-chevron { transition: none; }
+  .ds-sb-chevron, .ds-sb-sub { transition: none; }
 }
 </style>
