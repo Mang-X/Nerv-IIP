@@ -242,13 +242,16 @@ var businessDemandPlanning = WithNervIipTelemetry(WithLocalDevelopmentEnvironmen
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
     .WaitFor(businessDemandPlanningDatabase)
+    .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
 businessDemandPlanning = WithRedisMessagingTransport(businessDemandPlanning);

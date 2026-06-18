@@ -129,7 +129,7 @@ public sealed class DemandPlanningEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), "MRP-001");
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
         dbContext.PlanningSuggestions.Add(suggestion);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
@@ -247,8 +247,10 @@ public sealed class DemandPlanningEndpointContractTests
 
     private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)
     {
+        builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
         builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
         builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+        builder.UseSetting("Erp:BaseUrl", "http://erp.local");
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

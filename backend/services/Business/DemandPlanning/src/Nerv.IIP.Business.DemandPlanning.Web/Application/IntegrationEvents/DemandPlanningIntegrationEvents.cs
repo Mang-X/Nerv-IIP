@@ -46,6 +46,7 @@ public sealed record PlanningSuggestionPayload(
     string SiteCode,
     decimal Quantity,
     DateOnly RequiredDate,
+    DateOnly ReleaseDate,
     IReadOnlyCollection<PlanningSuggestionPeggingPayload> Pegging);
 
 public sealed record PlanningSuggestionPeggingPayload(
