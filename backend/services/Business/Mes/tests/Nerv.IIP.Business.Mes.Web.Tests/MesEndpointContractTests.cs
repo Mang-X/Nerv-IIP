@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -275,6 +276,32 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1m, wipRow.ScrapQuantity);
         Assert.Equal("Ready", material.ReadinessStatus);
         Assert.Empty(material.Items);
+    }
+
+    [Fact]
+    public void Operation_task_status_filters_do_not_depend_on_enum_ToString_provider_translation()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var query = InvokeOperationTaskEntityQuery(
+            dbContext,
+            "org-001",
+            "env-dev",
+            null,
+            "inProgress",
+            "progress",
+            null,
+            null,
+            null);
+
+        Assert.DoesNotContain("ToString", query.Expression.ToString(), StringComparison.Ordinal);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("operation_tasks", sql, StringComparison.Ordinal);
+        Assert.Contains("status", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1016,6 +1043,35 @@ public sealed class MesEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> InvokeOperationTaskEntityQuery(
+        Infrastructure.ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string? workOrderId,
+        string? status,
+        string? keyword,
+        string? workCenterId,
+        string? shiftId,
+        string? deviceAssetId)
+    {
+        var method = typeof(GetMesWorkOrderDetailQueryHandler).GetMethod(
+            "QueryOperationTaskEntities",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return Assert.IsAssignableFrom<IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask>>(
+            method.Invoke(null, [
+                dbContext,
+                organizationId,
+                environmentId,
+                workOrderId,
+                status,
+                keyword,
+                workCenterId,
+                shiftId,
+                deviceAssetId,
+            ]));
     }
 }
 

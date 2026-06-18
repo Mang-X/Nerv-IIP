@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -557,20 +558,29 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            var normalizedStatus = status.Trim().ToLowerInvariant();
-            query = query.Where(x => x.Status.ToString().ToLower() == normalizedStatus);
+            query = TryParseOperationTaskStatus(status, out var parsedStatus)
+                ? query.Where(x => x.Status == parsedStatus)
+                : query.Where(_ => false);
         }
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            var normalizedKeyword = keyword.Trim().ToLower();
-            query = query.Where(x =>
-                x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
-                x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
-                x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
-                (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
-                (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)) ||
-                x.Status.ToString().ToLower().Contains(normalizedKeyword));
+            var normalizedKeyword = keyword.Trim().ToLowerInvariant();
+            var matchingStatuses = MatchingOperationTaskStatuses(normalizedKeyword);
+            query = matchingStatuses.Length > 0
+                ? query.Where(x =>
+                    x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
+                    (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
+                    (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)) ||
+                    matchingStatuses.Contains(x.Status))
+                : query.Where(x =>
+                    x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
+                    (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
+                    (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)));
         }
 
         if (!string.IsNullOrWhiteSpace(workCenterId))
@@ -592,6 +602,18 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         }
 
         return query;
+    }
+
+    private static bool TryParseOperationTaskStatus(string status, out OperationTaskLifecycleStatus parsedStatus)
+    {
+        return Enum.TryParse(status.Trim(), ignoreCase: true, out parsedStatus);
+    }
+
+    private static OperationTaskLifecycleStatus[] MatchingOperationTaskStatuses(string normalizedKeyword)
+    {
+        return Enum.GetValues<OperationTaskLifecycleStatus>()
+            .Where(status => status.ToString().Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 }
 
