@@ -2141,7 +2141,8 @@ public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleRequest(
     int Length,
     string ChecksumRule,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
-    string Status);
+    string Status,
+    int? Gs1CompanyPrefixLength = null);
 
 public sealed record BusinessConsoleCreateOrUpdateBarcodeRuleResponse(string BarcodeRuleId);
 
@@ -2164,6 +2165,7 @@ public sealed record BusinessConsoleBarcodeRuleItem(
     string Prefix,
     int Length,
     string ChecksumRule,
+    int? Gs1CompanyPrefixLength,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
     string Status);
 

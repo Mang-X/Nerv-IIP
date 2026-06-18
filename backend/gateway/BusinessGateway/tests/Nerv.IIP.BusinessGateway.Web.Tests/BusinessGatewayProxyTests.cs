@@ -1068,6 +1068,23 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", barcode.LastInternalToken);
         Assert.Equal("WO-001", barcode.LastPrintBatchRequest?.SourceDocumentId);
         Assert.Equal("BC-001", barcode.LastScanRequest?.ScannedValue);
+
+        var rule = await client.PostAsJsonAsync("/api/business-console/v1/barcode/rules?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleCode = "GS1-FG",
+            barcodeType = "gs1-128",
+            prefix = "0950600013435",
+            length = 80,
+            checksumRule = "gs1-mod10",
+            allowedSourceDocumentTypes = new[] { "wms.inbound" },
+            status = "active",
+            gs1CompanyPrefixLength = 7,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, rule.StatusCode);
+        Assert.Equal(7, barcode.LastRuleRequest?.Gs1CompanyPrefixLength);
     }
 
     [Fact]
@@ -5228,6 +5245,8 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
 
     public BusinessConsoleBarcodeRuleListRequest? LastRuleListRequest { get; private set; }
 
+    public BusinessConsoleCreateOrUpdateBarcodeRuleRequest? LastRuleRequest { get; private set; }
+
     public BusinessConsoleBarcodeTemplateListRequest? LastTemplateListRequest { get; private set; }
 
     public BusinessConsoleCreateBarcodePrintBatchRequest? LastPrintBatchRequest { get; private set; }
@@ -5247,7 +5266,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
         LastRuleListRequest = request;
         return Task.FromResult(new BusinessConsoleBarcodeRuleListResponse(
         [
-            new BusinessConsoleBarcodeRuleItem("rule-001", "FG", "code128", "FG", 40, "none", ["work-order"], "active"),
+            new BusinessConsoleBarcodeRuleItem("rule-001", "FG", "code128", "FG", 40, "none", null, ["work-order"], "active"),
         ], 1));
     }
 
@@ -5257,6 +5276,7 @@ internal sealed class RecordingBarcodeLabelClient : IBusinessBarcodeLabelClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastRuleRequest = request;
         return Task.FromResult(new BusinessConsoleCreateOrUpdateBarcodeRuleResponse("rule-001"));
     }
 

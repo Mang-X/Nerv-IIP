@@ -278,14 +278,17 @@ Source:
 1. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/ApplicationDbContext.cs`
 2. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/EntityConfigurations/*.cs`
 3. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260523103022_InitialBarcodeLabelSchema.cs`
+4. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260615073431_AddGs1ScanTraceability.cs`
+5. `backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Migrations/20260616015829_AddGs1CompanyPrefixLength.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
-| `barcode_rules` | business | 条码规则定义，描述编码范围、前缀、序列和业务对象绑定。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + rule_code` 是业务唯一键。 | rule code 唯一索引防重复；对象类型/状态索引用于选择可用规则。 | 规则版本作为配置事实保留；停用后不再用于新标签生成。 |
+| `barcode_rules` | business | 条码规则定义，描述编码范围、前缀、序列和业务对象绑定；GS1 规则额外保存显式 `gs1_company_prefix_length`，用于正确拆分 SGTIN EPC URI。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + rule_code` 是业务唯一键；GS1 规则要求 13 位 GTIN root 和 6-12 位 company prefix length。 | rule code 唯一索引防重复；对象类型/状态索引用于选择可用规则。 | 规则版本作为配置事实保留；停用后不再用于新标签生成。 |
 | `label_templates` | business | 标签模板引用，绑定 FileStorage file id、模板名称和变量 schema。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + template_code` 是业务唯一键；`template_file_id` 是 FileStorage 公开引用。 | template code 唯一索引防重复；状态索引用于筛选可用模板。 | 模板登记后保留；文件本体和下载授权仍由 FileStorage 管理。 |
 | `label_print_batches` | business | 标签打印批次，记录模板、规则、业务来源和打印状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + batch_code` 是业务唯一键。 | batch code 唯一索引防重复；来源单据索引用于追踪打印来源。 | 批次创建后生成打印项，完成后作为追溯事实保留。 |
-| `label_print_items` | business | 打印批次内单张标签项，保存条码值和打印结果。 | `id` 为 Guid v7 强类型 ID；`label_print_batch_id` 归属批次；`barcode_value` 是标签值。 | barcode value 唯一索引防止重复标签；batch 索引用于加载批次明细。 | 生命周期跟随打印批次；不会拥有库存数量或业务单据状态。 |
-| `scan_records` | business | 扫码记录事实，记录扫码对象、结果、设备/人员和幂等键。 | `id` 为 Guid v7 强类型 ID；记录 barcode value、scan context、result 和 idempotency key。 | 幂等键索引用于 PDA/Connector 重试去重；barcode value 索引用于追溯。 | append-only 扫码事实；业务含义由调用方服务解释。 |
+| `label_print_items` | business | 打印批次内单张标签项，保存条码值、GS1 GTIN、批次、序列号和 EPC URI。 | `id` 为 Guid v7 强类型 ID；`label_print_batch_id` 归属批次；`label_value` 是标签值；`gtin + lot_no + serial_number` 记录序列化追溯键。 | label value 索引用于扫码反查；batch+sequence 唯一索引用于批次内顺序；GTIN/lot/serial 索引用于序列化追溯。 | 生命周期跟随打印批次；不会拥有库存数量或业务单据状态。 |
+| `scan_records` | business | 扫码记录事实，记录扫码对象、结果、设备/人员、幂等键、GS1 解析字段和下游业务动作选择。 | `id` 为 Guid v7 强类型 ID；记录 scanned value、source workflow、source document、result、idempotency key、GTIN、lot、serial、quantity、SKU/UOM/site/location 和 downstream event id。 | 幂等键索引用于 PDA/Connector 重试去重；scanned value 索引用于原始扫描追溯；source workflow/document 和 GTIN/lot/serial 索引用于业务追溯。 | append-only 扫码事实；仅受支持的 `inventory.receipt`、`inventory.issue`、`inventory.adjustment` 会发布 Inventory movement-requested 事件，库存事实仍归 Inventory。 |
+| `epcis_events` | business | BarcodeLabel 生成的 EPCIS 最小追溯事件，覆盖 serialized label commissioning 和 accepted scan object event。 | `id` 为 Guid v7 强类型 ID；记录 event type、action、business step、disposition、label value、GTIN、lot、serial、EPC URI、source workflow/document、可选 print item 或 scan record id。 | GTIN/lot/serial 索引用于序列化追溯；source workflow/document 索引用于按业务单据回放；print item/scan record 索引用于从标签或扫码事实跳转。 | append-only 追溯事实；不建立跨 schema FK，不替代 MES/WMS/Inventory 自有业务状态。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -662,7 +665,7 @@ Known gaps:
 | BusinessQuality | `quality` | Implemented | Yes | Yes | No | 已有 NCR、InspectionPlan、InspectionRecord schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、物料需求快照、领料/线边接收、报工、报工物料批次消耗、不良记录、完工入库请求、排产结果、工作中心不可用窗口、设备映射、班次交接、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging、计划建议和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项和扫码记录 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项、扫码记录、GS1 序列化字段和 EPCIS 最小追溯事件 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤、审批决定和审批委托 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | WMS | `wms` | Implemented | Yes | Yes | No | 已有入库、出库、仓库任务、盘点执行、WCS 任务和库存移动请求元数据 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |

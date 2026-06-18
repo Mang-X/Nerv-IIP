@@ -4043,6 +4043,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     prefix?: string;
     length?: number;
     checksumRule?: string;
+    gs1CompanyPrefixLength?: number | null;
     allowedSourceDocumentTypes?: Array<string>;
     status?: string;
 };
@@ -4069,6 +4070,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     checksumRule?: string;
     allowedSourceDocumentTypes?: Array<string>;
     status?: string;
+    gs1CompanyPrefixLength?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateListResponse = NetCorePalExtensionsDtoResponseData & {
