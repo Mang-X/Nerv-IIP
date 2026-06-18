@@ -247,6 +247,7 @@ public sealed class DemandPlanningEndpointContractTests
 
     private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)
     {
+        builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
         builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
         builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
         builder.UseSetting("Erp:BaseUrl", "http://erp.local");

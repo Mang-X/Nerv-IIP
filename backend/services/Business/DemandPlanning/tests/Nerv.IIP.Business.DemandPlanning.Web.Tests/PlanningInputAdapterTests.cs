@@ -58,7 +58,7 @@ public sealed class PlanningInputAdapterTests
             CancellationToken.None);
 
         Assert.Equal("product-engineering-http:2", snapshot.ProductionEngineeringSnapshotSource);
-        Assert.Equal("inventory-http:2;scheduled-receipts:none", snapshot.InventorySnapshotSource);
+        Assert.Equal("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:none", snapshot.InventorySnapshotSource);
         Assert.Contains(snapshot.ProductionVersions, x => x.ParentSkuCode == "SKU-FG-1000" && x.ProductionVersionReference == "PV-REAL-001");
         Assert.Contains(snapshot.ProductionVersions, x => x.ParentSkuCode == "SKU-FG-1000" && x.LotSizeMin == 10m && x.LotSizeMax == 50m);
         Assert.Contains(snapshot.BomComponents, x => x.ParentSkuCode == "SKU-FG-1000" && x.ComponentSkuCode == "SKU-RM-1000" && x.QuantityPerParent == 3m);
@@ -67,6 +67,47 @@ public sealed class PlanningInputAdapterTests
         Assert.Empty(snapshot.ScheduledReceipts);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], engineering.RequestedParentSkuCodes);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_adds_master_data_planning_parameters_for_requested_items()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var planningParameters = new FakePlanningParameterClient();
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            planningParameters);
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.Equal("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:2", snapshot.InventorySnapshotSource);
+        Assert.Contains(snapshot.PlanningParameters, x =>
+            x.SkuCode == "SKU-FG-1000"
+            && x.LeadTimeDays == 6
+            && x.SafetyStockQuantity == 4m
+            && x.LotSizeMin == 10m
+            && x.LotSizeMax == 50m
+            && x.LotSizeMultiple == 5m);
+        Assert.Contains(snapshot.PlanningParameters, x =>
+            x.SkuCode == "SKU-RM-1000"
+            && x.LeadTimeDays == 3
+            && x.SafetyStockQuantity == 2m
+            && x.LotSizeMultiple == 10m);
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], planningParameters.RequestedSkuCodes);
     }
 
     [Fact]
@@ -189,6 +230,115 @@ public sealed class PlanningInputAdapterTests
             && x.ExpectedReceiptDate == new DateOnly(2026, 5, 24));
     }
 
+    [Fact]
+    public async Task Master_data_planning_parameter_client_maps_sku_planning_attributes()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal("token", request.Headers.Authorization?.Parameter);
+            Assert.Contains("organizationId=org-001", request.RequestUri!.Query, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("environmentId=env-dev", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+
+            if (request.RequestUri.AbsolutePath.EndsWith("/sku/SKU-FG-1000", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "resourceType": "sku",
+                        "code": "SKU-FG-1000",
+                        "displayName": "Finished good",
+                        "active": true,
+                        "snapshotVersion": "v1",
+                        "organizationId": "org-001",
+                        "environmentId": "env-dev",
+                        "baseUomCode": "pcs",
+                        "plannedDeliveryTimeDays": 4,
+                        "inHouseProductionTimeDays": 5,
+                        "goodsReceiptProcessingTimeDays": 1,
+                        "safetyStockQuantity": 4,
+                        "minimumLotSize": 10,
+                        "maximumLotSize": 50,
+                        "lotSizeMultiple": 5
+                      }
+                    }
+                    """);
+            }
+
+            if (request.RequestUri.AbsolutePath.EndsWith("/sku/SKU-BLOCKED", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "resourceType": "sku",
+                        "code": "SKU-BLOCKED",
+                        "displayName": "Blocked item",
+                        "active": true,
+                        "snapshotVersion": "v1",
+                        "organizationId": "org-001",
+                        "environmentId": "env-dev",
+                        "baseUomCode": "pcs",
+                        "lifecycleStatus": "blocked",
+                        "plannedDeliveryTimeDays": 30,
+                        "safetyStockQuantity": 99,
+                        "lotSizeMultiple": 99
+                      }
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-RM-1000",
+                    "displayName": "Raw material",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs",
+                    "plannedDeliveryTimeDays": 3,
+                    "goodsReceiptProcessingTimeDays": 0,
+                    "safetyStockQuantity": 2,
+                    "lotSizeMultiple": 10
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [
+                    new PlanningParameterSnapshotItem("sku-fg-1000", "pcs", "SITE-01"),
+                    new PlanningParameterSnapshotItem("SKU-RM-1000", "pcs", "SITE-01"),
+                    new PlanningParameterSnapshotItem("SKU-FG-1000", "pcs", "SITE-02"),
+                    new PlanningParameterSnapshotItem("SKU-BLOCKED", "pcs", "SITE-01"),
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal("master-data-planning-parameters:3", snapshot.SnapshotSource);
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "sku-fg-1000" && x.SiteCode == "SITE-01" && x.LeadTimeDays == 6);
+        Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-FG-1000" && x.SiteCode == "SITE-02" && x.LotSizeMultiple == 5m);
+        Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-RM-1000" && x.LeadTimeDays == 3 && x.SafetyStockQuantity == 2m);
+        Assert.DoesNotContain(snapshot.PlanningParameters, x => x.SkuCode == "SKU-BLOCKED");
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -253,6 +403,25 @@ public sealed class PlanningInputAdapterTests
                 "erp-purchase-orders:1",
                 [
                     new ScheduledReceiptSnapshot("SKU-RM-1000", "pcs", "SITE-01", 7m, new DateOnly(2026, 5, 30), "erp", "purchase-order", "PO-1000:10"),
+                ]));
+        }
+    }
+
+    private sealed class FakePlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        public IReadOnlyCollection<string> RequestedSkuCodes { get; private set; } = [];
+
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            RequestedSkuCodes = request.Items.Select(x => x.SkuCode).ToArray();
+            return Task.FromResult(new PlanningParameterSnapshotResult(
+                "master-data-planning-parameters:2",
+                [
+                    new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 6, 4m, 10m, 50m, 5m),
+                    new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 3, 2m, null, null, 10m),
                 ]));
         }
     }

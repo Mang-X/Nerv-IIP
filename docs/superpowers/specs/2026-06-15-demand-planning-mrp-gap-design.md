@@ -10,7 +10,9 @@ Close GitHub issue #409 for the DemandPlanning MRP calculation path by making ne
 
 ERP purchase orders expose line-level `SkuCode`, `UomCode`, `OrderedQuantity`, `ReceivedQuantity`, and `PromisedDate`; these can become purchase scheduled receipts. MES work orders expose `SkuId`, `Quantity`, `DueUtc`, and `Status`, but not UOM, so this PR must not fabricate MES scheduled receipt UOM. MES scheduled receipts require a dedicated MES receipt snapshot or a UOM field before live adapter wiring.
 
-Lead time, safety stock, and lot-size multiple have no authoritative production source until MasterData issue #407 adds planning attributes. DemandPlanning keeps `PlanningParameterSnapshot` as the algorithm contract and defaults those values to zero/null in the live upstream provider. ProductEngineering `LotSizeMin` and `LotSizeMax` are available today and flow through production-version snapshots.
+Late-merge adaptation note: #409 was rebased after #407, #408, #410, #412, #413, #414, and related execution-chain PRs had already landed on `main`. MasterData now exposes SKU planning attributes through the stable resource detail API, so the live upstream provider consumes lead time, safety stock, and lot-size values from MasterData snapshots. DemandPlanning still owns only MRP input snapshots and suggestions; Inventory/WMS/MES/Quality status and event semantics remain owned by their services.
+
+ProductEngineering production-version list DTOs expose `LotSizeMin` and `LotSizeMax`; these continue to flow through production-version snapshots. MasterData SKU detail provides `Active`, `LifecycleStatus`, usage flags, UOM fields, `MinimumLotSize`, `MaximumLotSize`, `LotSizeMultiple`, `SafetyStockQuantity`, `PlannedDeliveryTimeDays`, `InHouseProductionTimeDays`, and `GoodsReceiptProcessingTimeDays`. DemandPlanning uses active SKU planning defaults only; blocked/inactive SKU detail produces an explicit empty/default-safe planning-parameter snapshot instead of inventing a lifecycle rule. If a live upstream source has no stable UOM-safe MRP snapshot, DemandPlanning keeps an explicit empty/default-safe snapshot instead of fabricating cross-domain facts.
 
 ## Scope
 
@@ -28,7 +30,7 @@ Lead time, safety stock, and lot-size multiple have no authoritative production 
 ## Non-Goals
 
 1. No MPS/RCCP implementation; issue #409 includes that as a separate P1 but this slice focuses on the requested net-requirement hardening items.
-2. No new MasterData planning-attribute schema; safety stock and lead-time values enter through snapshot parameters and default to zero until MasterData issue #407 provides authoritative fields.
+2. No new MasterData planning-attribute schema; safety stock, lead-time, and lot-size values enter DemandPlanning only through MasterData snapshot parameters.
 3. No live MES scheduled-receipt adapter until MES exposes a UOM-safe work-order receipt snapshot.
 4. No ERP/MES document creation; planning suggestions remain DemandPlanning facts.
 5. No cross-schema foreign keys or service-internal project references.
@@ -55,4 +57,4 @@ Focused calculator tests cover:
 4. daily bucket aggregation plus min/max lot sizing,
 5. safety stock creates protected net requirement.
 
-Adapter tests cover ProductEngineering lot-size field preservation and ERP purchase-order scheduled receipts. Existing fixture behavior remains green for the original MVP example.
+Adapter tests cover ProductEngineering lot-size field preservation, ERP purchase-order scheduled receipts, and MasterData SKU planning-attribute mapping. Existing fixture behavior remains green for the original MVP example.

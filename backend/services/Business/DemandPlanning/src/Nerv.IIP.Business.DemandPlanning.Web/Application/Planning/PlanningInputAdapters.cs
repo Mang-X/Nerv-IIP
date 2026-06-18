@@ -87,11 +87,31 @@ public interface IPlanningScheduledReceiptSnapshotClient
         CancellationToken cancellationToken);
 }
 
+public sealed record PlanningParameterSnapshotItem(string SkuCode, string UomCode, string SiteCode);
+
+public sealed record PlanningParameterSnapshotRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<PlanningParameterSnapshotItem> Items);
+
+public sealed record PlanningParameterSnapshotResult(
+    string SnapshotSource,
+    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters);
+
+public interface IPlanningParameterSnapshotClient
+{
+    Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+        string internalBearerToken,
+        PlanningParameterSnapshotRequest request,
+        CancellationToken cancellationToken);
+}
+
 public sealed class DemandPlanningUpstreamInputSnapshotProvider(
     ApplicationDbContext dbContext,
     IPlanningProductEngineeringSnapshotClient productEngineering,
     IPlanningInventorySnapshotClient inventory,
     IPlanningScheduledReceiptSnapshotClient? scheduledReceiptClient = null,
+    IPlanningParameterSnapshotClient? planningParameterClient = null,
     IInternalServiceTokenProvider? internalTokenProvider = null) : IPlanningInputSnapshotProvider
 {
     public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
@@ -140,17 +160,25 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                     horizonEnd,
                     availabilityItems.Select(x => new PlanningScheduledReceiptSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
                 cancellationToken);
+        var planningParameters = planningParameterClient is null
+            ? new PlanningParameterSnapshotResult("master-data-planning-parameters:none", [])
+            : await planningParameterClient.GetPlanningParametersAsync(
+                internalBearerToken,
+                new PlanningParameterSnapshotRequest(
+                    organizationId,
+                    environmentId,
+                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
+                cancellationToken);
 
         return new PlanningInputSnapshotResult(
             engineering.SnapshotSource,
-            $"{inventorySnapshot.SnapshotSource};{scheduledReceipts.SnapshotSource}",
+            $"{inventorySnapshot.SnapshotSource};{scheduledReceipts.SnapshotSource};{planningParameters.SnapshotSource}",
             demands,
             inventorySnapshot.Availability,
             engineering.ProductionVersions,
             engineering.BomComponents,
             scheduledReceipts.ScheduledReceipts,
-            // Lead time, safety stock, and lot multiple await #407 MasterData planning attributes.
-            []);
+            planningParameters.PlanningParameters);
     }
 
     private async Task<PlanningProductEngineeringSnapshot> LoadEngineeringClosureAsync(
@@ -392,6 +420,102 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
     }
 }
 
+public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpClient httpClient) : IPlanningParameterSnapshotClient
+{
+    public async Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+        string internalBearerToken,
+        PlanningParameterSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Items.Count == 0)
+        {
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:0", []);
+        }
+
+        var details = await Task.WhenAll(request.Items
+            .Select(x => x.SkuCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(skuCode => GetSkuPlanningDetailAsync(internalBearerToken, request.OrganizationId, request.EnvironmentId, skuCode, cancellationToken)));
+        var detailBySku = details
+            .Where(x => x is not null)
+            .Where(x => IsPlanningParameterEligible(x!))
+            .ToDictionary(x => x!.Code, x => x!, StringComparer.OrdinalIgnoreCase);
+        var parameters = request.Items
+            .Where(x => detailBySku.ContainsKey(x.SkuCode))
+            .Select(x =>
+            {
+                var detail = detailBySku[x.SkuCode];
+                return new PlanningParameterSnapshot(
+                    x.SkuCode,
+                    x.UomCode,
+                    x.SiteCode,
+                    ComputeLeadTimeDays(detail),
+                    Math.Max(0, detail.SafetyStockQuantity ?? 0m),
+                    detail.MinimumLotSize,
+                    detail.MaximumLotSize,
+                    detail.LotSizeMultiple);
+            })
+            .ToArray();
+
+        return new PlanningParameterSnapshotResult($"master-data-planning-parameters:{parameters.Length}", parameters);
+    }
+
+    private async Task<MasterDataSkuPlanningDetail?> GetSkuPlanningDetailAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        string skuCode,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/business/v1/master-data/resources/sku/" + Uri.EscapeDataString(skuCode) + "?" + Query(
+                ("organizationId", organizationId),
+                ("environmentId", environmentId)));
+        if (!string.IsNullOrWhiteSpace(internalBearerToken))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        }
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MasterDataSkuPlanningDetail>>(cancellationToken);
+        return envelope?.Data;
+    }
+
+    private static int ComputeLeadTimeDays(MasterDataSkuPlanningDetail detail)
+    {
+        var goodsReceiptDays = Math.Max(0, detail.GoodsReceiptProcessingTimeDays ?? 0);
+        var sourceLeadTimes = new[]
+            {
+                detail.PlannedDeliveryTimeDays,
+                detail.InHouseProductionTimeDays,
+            }
+            .Where(x => x is > 0)
+            .Select(x => x!.Value)
+            .ToArray();
+        return goodsReceiptDays + (sourceLeadTimes.Length == 0 ? 0 : sourceLeadTimes.Max());
+    }
+
+    private static bool IsPlanningParameterEligible(MasterDataSkuPlanningDetail detail)
+    {
+        var lifecycleStatus = string.IsNullOrWhiteSpace(detail.LifecycleStatus)
+            ? "active"
+            : detail.LifecycleStatus.Trim();
+        var hasPlanningUsage = (detail.PurchasingEnabled ?? true)
+            || (detail.ManufacturingEnabled ?? true)
+            || (detail.SalesEnabled ?? true);
+        return detail.Active
+            && string.Equals(lifecycleStatus, "active", StringComparison.OrdinalIgnoreCase)
+            && hasPlanningUsage;
+    }
+}
+
 public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) : IPlanningInventorySnapshotClient
 {
     public async Task<PlanningInventorySnapshot> GetAvailabilitySnapshotAsync(
@@ -505,6 +629,29 @@ internal sealed record ErpPurchaseOrderLineItem(
     decimal ReceivedQuantity,
     decimal UnitPrice,
     DateOnly PromisedDate);
+
+internal sealed record MasterDataSkuPlanningDetail(
+    string Code,
+    bool Active,
+    string? BaseUomCode,
+    string? InventoryUomCode,
+    string? PurchaseUomCode,
+    string? ManufacturingUomCode,
+    string? ProcurementType,
+    string? MrpType,
+    string? LotSizingPolicy,
+    decimal? MinimumLotSize,
+    decimal? MaximumLotSize,
+    decimal? LotSizeMultiple,
+    decimal? SafetyStockQuantity,
+    decimal? ReorderPointQuantity,
+    int? PlannedDeliveryTimeDays,
+    int? InHouseProductionTimeDays,
+    int? GoodsReceiptProcessingTimeDays,
+    string? LifecycleStatus,
+    bool? PurchasingEnabled,
+    bool? ManufacturingEnabled,
+    bool? SalesEnabled);
 
 public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbContext dbContext) : IPlanningInputSnapshotProvider
 {
