@@ -39,8 +39,8 @@ const current = ref(0)
     </Swiper>
   </section>
   <section>
-    <p class="ds-mdoc-label">数据驱动 · 工单卡片</p>
-    <Swiper v-model:index="current" :items="orders">
+    <p class="ds-mdoc-label">数据驱动 · 工单卡片（可交互，指示器外置避让）</p>
+    <Swiper v-model:index="current" :items="orders" indicator="outside">
       <template #default="{ item }">
         <div class="w-full shrink-0 px-1">
           <div class="rounded-2xl border border-border bg-card p-4">
@@ -93,6 +93,7 @@ const current = ref(0)
 | `autoplay` | 自动切换间隔（毫秒，0 关闭） | `number` | `0` |
 | `loop` | 首尾循环 | `boolean` | `false` |
 | `dots` | 显示圆点指示器 | `boolean` | `true` |
+| `indicator` | 指示器位置：`overlay` 浮于幻灯片上 / `outside` 外置于下方(可交互内容避让) | `'overlay' \| 'outside'` | `'overlay'` |
 | `v-model:index` | 当前页索引 | `number` | `0` |
 
 ## 事件

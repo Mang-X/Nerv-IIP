@@ -20,9 +20,15 @@ const props = withDefaults(
     loop?: boolean
     /** Show the dot indicator. */
     dots?: boolean
+    /**
+     * Indicator placement. `overlay` floats dots over the bottom of the slide
+     * (good for image / banner carousels). `outside` puts them in their own row
+     * below the slide so they never cover interactive content (buttons, links).
+     */
+    indicator?: 'overlay' | 'outside'
     class?: HTMLAttributes['class']
   }>(),
-  { autoplay: 0, loop: false, dots: true },
+  { autoplay: 0, loop: false, dots: true, indicator: 'overlay' },
 )
 const emit = defineEmits<{ change: [index: number] }>()
 
@@ -148,36 +154,51 @@ watch(() => props.autoplay, startAutoplay)
 </script>
 
 <template>
-  <div
-    ref="viewportEl"
-    data-slot="swiper"
-    :class="cn('ds-swiper relative w-full overflow-hidden rounded-2xl bg-muted', $props.class)"
-  >
+  <div class="ds-swiper w-full" data-slot="swiper">
     <div
-      ref="trackEl"
-      class="ds-swiper-track flex"
-      :class="!dragging && 'ds-swiper-snap'"
-      :style="trackStyle"
-      @pointerdown="onDown"
-      @pointermove="onMove"
-      @pointerup="onUp"
-      @pointercancel="onUp"
+      ref="viewportEl"
+      :class="
+        cn('ds-swiper-viewport relative w-full overflow-hidden rounded-2xl bg-muted', $props.class)
+      "
     >
-      <template v-if="items">
-        <div
-          v-for="(item, i) in items"
+      <!-- h-full + items-stretch make every slide fill the viewport height -->
+      <div
+        ref="trackEl"
+        class="ds-swiper-track flex h-full items-stretch"
+        :class="!dragging && 'ds-swiper-snap'"
+        :style="trackStyle"
+        @pointerdown="onDown"
+        @pointermove="onMove"
+        @pointerup="onUp"
+        @pointercancel="onUp"
+      >
+        <template v-if="items">
+          <div v-for="(item, i) in items" :key="i" class="ds-swiper-item w-full shrink-0">
+            <slot :item="item" :index="i" />
+          </div>
+        </template>
+        <slot v-else />
+      </div>
+
+      <!-- overlay dots float over the slide (banner / image carousels) -->
+      <div
+        v-if="dots && count > 1 && indicator === 'overlay'"
+        class="ds-swiper-dots pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
+        aria-hidden="true"
+      >
+        <span
+          v-for="i in count"
           :key="i"
-          class="ds-swiper-item w-full shrink-0"
-        >
-          <slot :item="item" :index="i" />
-        </div>
-      </template>
-      <slot v-else />
+          class="ds-swiper-dot"
+          :class="i - 1 === active ? 'ds-swiper-dot-active' : ''"
+        />
+      </div>
     </div>
 
+    <!-- outside dots sit below the slide so they never cover interactive content -->
     <div
-      v-if="dots && count > 1"
-      class="ds-swiper-dots pointer-events-none absolute inset-x-0 bottom-3 flex justify-center gap-1.5"
+      v-if="dots && count > 1 && indicator === 'outside'"
+      class="ds-swiper-dots ds-swiper-dots-outside mt-2.5 flex justify-center gap-1.5"
       aria-hidden="true"
     >
       <span
@@ -209,6 +230,14 @@ watch(() => props.autoplay, startAutoplay)
 }
 .ds-swiper-dot-active {
   width: 16px;
+  background: var(--brand);
+}
+/* outside dots sit on the page surface, not over an image — use a muted fill */
+.ds-swiper-dots-outside .ds-swiper-dot {
+  background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
+  box-shadow: none;
+}
+.ds-swiper-dots-outside .ds-swiper-dot-active {
   background: var(--brand);
 }
 @media (prefers-reduced-motion: reduce) {

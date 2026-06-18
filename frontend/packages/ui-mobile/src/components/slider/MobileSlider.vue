@@ -105,7 +105,8 @@ function nudge(delta: number) {
         @keydown.up.prevent="nudge(1)"
       >
         <span
-          class="block size-5 rounded-full border-2 border-brand bg-card shadow-[0_1px_4px_rgb(0_0_0/0.25)]"
+          class="ds-slider-dot block size-5 rounded-full border-2 border-brand bg-card shadow-[0_1px_4px_rgb(0_0_0/0.25)]"
+          :class="dragging && 'is-active'"
         />
         <span
           v-if="showBubble && dragging"
@@ -124,5 +125,27 @@ function nudge(delta: number) {
 }
 .ds-slider-thumb {
   touch-action: none;
+}
+/* WinUI3-style thumb micro-interaction: small at rest, grows on hover, then
+   shrinks below rest while pressed/dragging — the order below makes is-active win. */
+.ds-slider-dot {
+  transform: scale(0.7);
+  transition: transform 0.18s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+}
+.ds-slider-thumb:hover .ds-slider-dot {
+  transform: scale(1);
+}
+.ds-slider-thumb:focus-visible .ds-slider-dot {
+  transform: scale(1);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.ds-slider-dot.is-active {
+  transform: scale(0.62);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-slider-dot {
+    transition: none;
+  }
 }
 </style>
