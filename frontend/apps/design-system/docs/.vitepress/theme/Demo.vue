@@ -66,11 +66,11 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boole
   justify-content: center;
 }
 /* let a panel that opens below the demo (NavigationMenu mega-menu) ESCAPE the
-   box: drop the clip and reserve empty space below so the floating panel doesn't
-   cover the next section. The control is pinned top-left. */
+   box and float OVER the content below (like a real dropdown) — drop the clip so
+   it isn't cut off; it overlays via z-index, so no reserved gap is needed. The
+   control is pinned top-left. */
 .ds-demo-popout-box {
   overflow: visible;
-  margin-bottom: 11rem;
 }
 .ds-demo-popout {
   align-items: flex-start;

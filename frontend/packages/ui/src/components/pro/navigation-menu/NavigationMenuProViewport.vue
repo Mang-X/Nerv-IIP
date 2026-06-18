@@ -23,44 +23,68 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
 const instance = getCurrentInstance()
 let root: HTMLElement | null = null
 let observer: MutationObserver | undefined
+// Track whether a panel was already open: when opening from closed we place the
+// panel/indicator WITHOUT a transition (so it appears centred under its trigger,
+// never sliding in from the left); moving between open triggers keeps the glide.
+let wasOpen = false
+
+/** Apply `left`/`transform` with the `left`/`transform` transition suppressed for one frame. */
+function placeInstant(el: HTMLElement, apply: () => void) {
+  const prev = el.style.transition
+  el.style.transition = 'none'
+  apply()
+  void el.offsetWidth // force reflow so the no-transition value is committed
+  el.style.transition = prev
+}
 
 function alignToTrigger() {
   if (!root) return
   const list = root.querySelector('[data-slot="navigation-menu-pro-list"]')
   const active = (root.querySelector('[data-slot="navigation-menu-pro-trigger"][data-state="open"]') ??
     root.querySelector('button[aria-expanded="true"]')) as HTMLElement | null
-  if (!list || !active) return
+  if (!list || !active) {
+    wasOpen = false
+    return
+  }
   const listRect = list.getBoundingClientRect()
   const tr = active.getBoundingClientRect()
   const triggerCenter = tr.left + tr.width / 2
+  const instant = !wasOpen
 
   // Indicator: glide under the active trigger (reka's own position var is stuck
   // here, so drive it ourselves). Width = trigger width; the diamond is
-  // centre-justified, so it ends up pointing at the trigger centre. Inline styles
-  // win over the (stuck) reka vars; the scoped transition makes it slide.
+  // centre-justified, so it points at the trigger centre.
   const indicator = root.querySelector<HTMLElement>('[data-slot="navigation-menu-pro-indicator"]')
   if (indicator) {
-    indicator.style.width = `${Math.round(tr.width)}px`
-    indicator.style.transform = `translateX(${Math.round(tr.left - listRect.left)}px)`
+    const setInd = () => {
+      indicator.style.width = `${Math.round(tr.width)}px`
+      indicator.style.transform = `translateX(${Math.round(tr.left - listRect.left)}px)`
+    }
+    instant ? placeInstant(indicator, setInd) : setInd()
   }
 
-  // Panel: centre under the trigger (like a popover), then clamp to the viewport
-  // so a wide panel under an edge trigger stays on screen. The indicator keeps
-  // pointing at the trigger even when the panel is clamped off-centre.
+  // Panel: centre under the trigger (like a popover), clamped to the viewport so a
+  // wide panel under an edge trigger stays on screen. Measure width from the
+  // CONTENT (its natural width is available immediately; the viewport's own
+  // width var is still the previous panel's value at this instant).
   const viewport = root.querySelector<HTMLElement>('[data-slot="navigation-menu-pro-viewport"]')
   const wrap = viewport?.parentElement
   if (viewport && wrap) {
     const wrapLeft = wrap.getBoundingClientRect().left
-    // use reka's TARGET width var, not offsetWidth — the panel width is still
-    // animating when this runs, so offsetWidth would mis-centre it.
+    const content = viewport.querySelector<HTMLElement>('[data-slot="navigation-menu-pro-content"]')
     const panelW =
+      content?.offsetWidth ||
       Number.parseFloat(getComputedStyle(viewport).getPropertyValue('--reka-navigation-menu-viewport-width')) ||
       viewport.offsetWidth
     const gutter = 8
     let pageLeft = triggerCenter - panelW / 2
     pageLeft = Math.min(Math.max(pageLeft, gutter), window.innerWidth - panelW - gutter)
-    viewport.style.left = `${Math.round(pageLeft - wrapLeft)}px`
+    const setLeft = () => {
+      viewport.style.left = `${Math.round(pageLeft - wrapLeft)}px`
+    }
+    instant ? placeInstant(viewport, setLeft) : setLeft()
   }
+  wasOpen = true
 }
 
 onMounted(() => {
@@ -68,9 +92,14 @@ onMounted(() => {
   root = (el && el.nodeType === 1 ? el.closest('[data-slot="navigation-menu-pro"]') : null) as HTMLElement | null
   if (!root) return
   // reka flips data-state / aria-expanded on the trigger when a panel opens;
-  // defer the align with setTimeout (not rAF — throttled in headless renderers)
-  // so reka has set the new panel's measured width var before we centre on it.
-  observer = new MutationObserver(() => setTimeout(alignToTrigger, 60))
+  // align on those mutations. Two passes: one synchronous (so the first paint is
+  // already centred — no left→centre snap) and one deferred (setTimeout, not rAF
+  // which is throttled in headless renderers) to correct once reka has finished
+  // measuring the new panel.
+  observer = new MutationObserver(() => {
+    alignToTrigger()
+    setTimeout(alignToTrigger, 60)
+  })
   observer.observe(root, { attributes: true, attributeFilter: ['data-state', 'aria-expanded'], subtree: true })
   alignToTrigger()
 })
