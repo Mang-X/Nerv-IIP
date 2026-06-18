@@ -34,7 +34,7 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class', 'chevron'))
     <slot />
     <ChevronDownIcon
       v-if="props.chevron"
-      class="ds-nav-chevron relative top-px text-muted-foreground/80 group-data-[state=open]/trigger:rotate-180 group-data-[state=open]/trigger:text-foreground"
+      class="ds-nav-chevron relative top-px text-muted-foreground/80 group-data-[state=open]/trigger:-rotate-180 group-data-[state=open]/trigger:text-foreground"
       aria-hidden="true"
     />
   </NavigationMenuTrigger>
