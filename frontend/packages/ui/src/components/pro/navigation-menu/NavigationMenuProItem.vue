@@ -13,7 +13,7 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
   <NavigationMenuItem
     data-slot="navigation-menu-pro-item"
     v-bind="forwarded"
-    :class="cn('relative', props.class)"
+    :class="cn(props.class)"
   >
     <slot />
   </NavigationMenuItem>
