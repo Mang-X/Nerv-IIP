@@ -969,6 +969,22 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("id"));
 
+                            b1.Property<string>("AlternateGroup")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("alternate_group")
+                                .HasComment("Optional alternate item group for interchangeable EBOM components.");
+
+                            b1.Property<int?>("AlternatePriority")
+                                .HasColumnType("integer")
+                                .HasColumnName("alternate_priority")
+                                .HasComment("Optional priority within the alternate component group.");
+
+                            b1.Property<bool>("Backflush")
+                                .HasColumnType("boolean")
+                                .HasColumnName("backflush")
+                                .HasComment("Whether this component is normally backflushed during execution.");
+
                             b1.Property<string>("ChildItemCode")
                                 .IsRequired()
                                 .HasMaxLength(100)
@@ -976,11 +992,28 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("child_item_code")
                                 .HasComment("Child engineering item code.");
 
+                            b1.Property<bool>("IsPhantom")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_phantom")
+                                .HasComment("Whether this component is a phantom item exploded during planning or execution.");
+
                             b1.Property<decimal>("Quantity")
                                 .HasPrecision(18, 6)
                                 .HasColumnType("numeric(18,6)")
                                 .HasColumnName("quantity")
                                 .HasComment("Component quantity.");
+
+                            b1.Property<string>("ReferenceDesignators")
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("reference_designators")
+                                .HasComment("Optional reference designators or positions for this component line.");
+
+                            b1.Property<decimal>("ScrapRate")
+                                .HasPrecision(18, 6)
+                                .HasColumnType("numeric(18,6)")
+                                .HasColumnName("scrap_rate")
+                                .HasComment("Expected component scrap rate for engineering planning.");
 
                             b1.Property<string>("UnitOfMeasureCode")
                                 .IsRequired()
@@ -988,6 +1021,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnType("character varying(50)")
                                 .HasColumnName("unit_of_measure_code")
                                 .HasComment("Quantity unit of measure code.");
+
+                            b1.Property<decimal>("YieldRate")
+                                .HasPrecision(18, 6)
+                                .HasColumnType("numeric(18,6)")
+                                .HasColumnName("yield_rate")
+                                .HasComment("Expected component yield rate for engineering planning.");
 
                             b1.Property<Guid>("engineering_bom_id")
                                 .HasColumnType("uuid")
@@ -1067,11 +1106,38 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("id"));
 
+                            b1.Property<string>("AlternateGroup")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("alternate_group")
+                                .HasComment("Optional alternate material group.");
+
+                            b1.Property<int?>("AlternatePriority")
+                                .HasColumnType("integer")
+                                .HasColumnName("alternate_priority")
+                                .HasComment("Optional priority within the alternate material group.");
+
+                            b1.Property<bool>("Backflush")
+                                .HasColumnType("boolean")
+                                .HasColumnName("backflush")
+                                .HasComment("Whether this material is normally backflushed during execution.");
+
+                            b1.Property<bool>("IsPhantom")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_phantom")
+                                .HasComment("Whether this consumed material is a phantom component exploded during planning or execution.");
+
                             b1.Property<decimal>("Quantity")
                                 .HasPrecision(18, 6)
                                 .HasColumnType("numeric(18,6)")
                                 .HasColumnName("quantity")
                                 .HasComment("Consumed material quantity.");
+
+                            b1.Property<string>("ReferenceDesignators")
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("reference_designators")
+                                .HasComment("Optional reference designators or positions for this material line.");
 
                             b1.Property<decimal>("ScrapRate")
                                 .HasPrecision(18, 6)
@@ -1086,12 +1152,24 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("sku_code")
                                 .HasComment("Consumed SKU code.");
 
+                            b1.Property<string>("SubstituteSkuCodes")
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("substitute_sku_codes")
+                                .HasComment("Semicolon-delimited substitute SKU codes captured at MBOM release.");
+
                             b1.Property<string>("UnitOfMeasureCode")
                                 .IsRequired()
                                 .HasMaxLength(50)
                                 .HasColumnType("character varying(50)")
                                 .HasColumnName("unit_of_measure_code")
                                 .HasComment("Quantity unit of measure code.");
+
+                            b1.Property<decimal>("YieldRate")
+                                .HasPrecision(18, 6)
+                                .HasColumnType("numeric(18,6)")
+                                .HasColumnName("yield_rate")
+                                .HasComment("Expected material yield rate.");
 
                             b1.Property<Guid>("manufacturing_bom_id")
                                 .HasColumnType("uuid")
@@ -1175,6 +1253,18 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("id"));
 
+                            b1.Property<string>("ControlKey")
+                                .IsRequired()
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("control_key")
+                                .HasComment("Standard operation control key snapshot.");
+
+                            b1.Property<bool>("IsOutsourced")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_outsourced")
+                                .HasComment("Whether this routing operation is outsourced.");
+
                             b1.Property<string>("OperationCode")
                                 .IsRequired()
                                 .HasMaxLength(100)
@@ -1189,15 +1279,40 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("operation_name")
                                 .HasComment("Operation display name submitted with routing release.");
 
+                            b1.Property<bool>("RequiresQualityInspection")
+                                .HasColumnType("boolean")
+                                .HasColumnName("requires_quality_inspection")
+                                .HasComment("Whether quality inspection is expected for this routing operation.");
+
+                            b1.Property<bool>("RequiresReporting")
+                                .HasColumnType("boolean")
+                                .HasColumnName("requires_reporting")
+                                .HasComment("Whether MES reporting is expected for this routing operation.");
+
+                            b1.Property<int>("RunMinutes")
+                                .HasColumnType("integer")
+                                .HasColumnName("run_minutes")
+                                .HasComment("Run duration snapshot in minutes.");
+
                             b1.Property<int>("Sequence")
                                 .HasColumnType("integer")
                                 .HasColumnName("sequence")
                                 .HasComment("Positive operation sequence number.");
 
+                            b1.Property<int>("SetupMinutes")
+                                .HasColumnType("integer")
+                                .HasColumnName("setup_minutes")
+                                .HasComment("Setup duration snapshot in minutes.");
+
                             b1.Property<int>("StandardMinutes")
                                 .HasColumnType("integer")
                                 .HasColumnName("standard_minutes")
                                 .HasComment("Standard operation duration in minutes.");
+
+                            b1.Property<int>("TeardownMinutes")
+                                .HasColumnType("integer")
+                                .HasColumnName("teardown_minutes")
+                                .HasComment("Teardown duration snapshot in minutes.");
 
                             b1.Property<string>("WorkCenterCode")
                                 .IsRequired()

@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Coding;
@@ -52,6 +53,7 @@ public sealed class ErpSchemaConventionTests
             typeof(SupplierQuotation),
             typeof(PurchaseOrder),
             typeof(PurchaseReceipt),
+            typeof(SupplierInvoice),
             typeof(Opportunity),
             typeof(Quotation),
             typeof(SalesOrder),

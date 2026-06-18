@@ -7,7 +7,11 @@ namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 public partial record DeliveryOrderId : IGuidStronglyTypedId;
 public partial record DeliveryOrderLineId : IGuidStronglyTypedId;
 
-public sealed record DeliveryOrderLineDraft(string SalesOrderLineNo, decimal Quantity);
+public sealed record DeliveryOrderLineDraft(
+    string SalesOrderLineNo,
+    decimal Quantity,
+    string? LocationCode = null,
+    string? LotNo = null);
 
 public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
 {
@@ -27,8 +31,8 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
         ReleasedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
-            order.RegisterDelivery(draft.SalesOrderLineNo, draft.Quantity);
-            lines.Add(DeliveryOrderLine.Create(draft));
+            var orderLine = order.RegisterDelivery(draft.SalesOrderLineNo, draft.Quantity);
+            lines.Add(DeliveryOrderLine.Create(draft, orderLine));
         }
 
         if (lines.Count == 0)
@@ -63,13 +67,36 @@ public sealed class DeliveryOrderLine : Entity<DeliveryOrderLineId>
     {
         SalesOrderLineNo = ErpText.Required(draft.SalesOrderLineNo, nameof(draft.SalesOrderLineNo));
         Quantity = ErpText.Positive(draft.Quantity, nameof(draft.Quantity));
+        SkuCode = string.Empty;
+        UomCode = string.Empty;
+        LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? string.Empty : draft.LocationCode.Trim();
+        LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
+    }
+
+    private DeliveryOrderLine(DeliveryOrderLineDraft draft, SalesOrderLine orderLine)
+    {
+        SalesOrderLineNo = ErpText.Required(draft.SalesOrderLineNo, nameof(draft.SalesOrderLineNo));
+        Quantity = ErpText.Positive(draft.Quantity, nameof(draft.Quantity));
+        SkuCode = orderLine.SkuCode;
+        UomCode = orderLine.UomCode;
+        LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? "default" : draft.LocationCode.Trim();
+        LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
     }
 
     public string SalesOrderLineNo { get; private set; } = string.Empty;
+    public string SkuCode { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = string.Empty;
+    public string LocationCode { get; private set; } = string.Empty;
+    public string? LotNo { get; private set; }
     public decimal Quantity { get; private set; }
 
     public static DeliveryOrderLine Create(DeliveryOrderLineDraft draft)
     {
         return new DeliveryOrderLine(draft);
+    }
+
+    public static DeliveryOrderLine Create(DeliveryOrderLineDraft draft, SalesOrderLine orderLine)
+    {
+        return new DeliveryOrderLine(draft, orderLine);
     }
 }

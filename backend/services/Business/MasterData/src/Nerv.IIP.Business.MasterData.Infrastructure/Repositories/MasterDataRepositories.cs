@@ -130,6 +130,7 @@ public sealed class BusinessPartnerRepository(ApplicationDbContext context)
         return await DbContext.BusinessPartners.AnyAsync(x =>
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
+            !x.Disabled &&
             x.TaxId == taxId,
             cancellationToken);
     }

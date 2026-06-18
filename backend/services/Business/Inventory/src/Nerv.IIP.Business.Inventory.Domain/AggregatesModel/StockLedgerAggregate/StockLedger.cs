@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -34,7 +35,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         LocationCode = InventoryText.Required(locationCode);
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
-        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
+        QualityStatus = StockQualityStatus.Normalize(qualityStatus);
         OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
         OwnerId = InventoryText.Optional(ownerId);
         UpdatedAtUtc = DateTime.UtcNow;
@@ -54,6 +55,10 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
     public decimal OnHandQuantity { get; private set; }
     public decimal ReservedQuantity { get; private set; }
     public decimal AvailableQuantity => OnHandQuantity - ReservedQuantity;
+    public decimal MovingAverageUnitCost { get; private set; }
+    public decimal InventoryValue { get; private set; }
+    public bool IsFrozenForCount { get; private set; }
+    public string? FrozenCountTaskCode { get; private set; }
     public long LedgerVersion { get; private set; }
     public RowVersion RowVersion { get; private set; } = new(0);
     public DateTime UpdatedAtUtc { get; private set; }
@@ -110,12 +115,114 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             throw new InvalidOperationException("Stock movement would make on-hand quantity negative.");
         }
 
+        if (IsFrozenForCount && movement.MovementType != "count-adjustment")
+        {
+            throw new InvalidOperationException($"Stock ledger is frozen for count task '{FrozenCountTaskCode}'.");
+        }
+
+        ApplyValuation(movement, nextOnHand);
         OnHandQuantity = nextOnHand;
+        if (movement.MovementType == "count-adjustment")
+        {
+            ReleaseCountFreeze();
+        }
+
         LedgerVersion++;
         UpdatedAtUtc = DateTime.UtcNow;
         appliedMovements.Add(movement);
         this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
         return movement;
+    }
+
+    public void Reserve(StockReservation reservation)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        EnsureSameDimension(reservation);
+        if (IsFrozenForCount)
+        {
+            throw new InvalidOperationException($"Stock ledger is frozen for count task '{FrozenCountTaskCode}'.");
+        }
+
+        if (reservation.ReservedQuantity > AvailableQuantity)
+        {
+            throw new InvalidOperationException("Reservation quantity exceeds available stock.");
+        }
+
+        ReservedQuantity += reservation.ReservedQuantity;
+        LedgerVersion++;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
+    }
+
+    public void ReleaseReservation(StockReservation reservation, decimal quantity)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        EnsureSameDimension(reservation);
+        reservation.Release(quantity);
+        ReservedQuantity -= quantity;
+        if (ReservedQuantity < 0)
+        {
+            throw new InvalidOperationException("Reserved quantity cannot be negative.");
+        }
+
+        LedgerVersion++;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
+    }
+
+    public void AllocateReservation(StockReservation reservation, decimal quantity)
+    {
+        ArgumentNullException.ThrowIfNull(reservation);
+        EnsureSameDimension(reservation);
+        reservation.Allocate(quantity);
+        ReservedQuantity -= quantity;
+        if (ReservedQuantity < 0)
+        {
+            throw new InvalidOperationException("Reserved quantity cannot be negative.");
+        }
+
+        LedgerVersion++;
+        UpdatedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockAvailabilityChangedDomainEvent(this));
+    }
+
+    public void FreezeForCount(string countTaskCode)
+    {
+        if (IsFrozenForCount && FrozenCountTaskCode != countTaskCode)
+        {
+            throw new InvalidOperationException($"Stock ledger is already frozen for count task '{FrozenCountTaskCode}'.");
+        }
+
+        IsFrozenForCount = true;
+        FrozenCountTaskCode = InventoryText.Required(countTaskCode);
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    public void ReleaseCountFreeze()
+    {
+        IsFrozenForCount = false;
+        FrozenCountTaskCode = null;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private void ApplyValuation(StockMovement movement, decimal nextOnHand)
+    {
+        if (movement.Quantity > 0)
+        {
+            var inboundUnitCost = movement.UnitCost ?? MovingAverageUnitCost;
+            movement.ApplyValuation(inboundUnitCost);
+            InventoryValue += movement.MovementAmount ?? 0m;
+            MovingAverageUnitCost = nextOnHand == 0 ? 0m : InventoryValue / nextOnHand;
+            return;
+        }
+
+        movement.ApplyValuation(MovingAverageUnitCost);
+        InventoryValue += movement.MovementAmount ?? 0m;
+        if (nextOnHand == 0)
+        {
+            MovingAverageUnitCost = 0m;
+            InventoryValue = 0m;
+        }
     }
 
     private void EnsureSameDimension(StockMovement movement)
@@ -133,6 +240,24 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             || OwnerId != movement.OwnerId)
         {
             throw new InvalidOperationException("Stock movement dimensions do not match the ledger dimensions.");
+        }
+    }
+
+    private void EnsureSameDimension(StockReservation reservation)
+    {
+        if (OrganizationId != reservation.OrganizationId
+            || EnvironmentId != reservation.EnvironmentId
+            || SkuCode != reservation.SkuCode
+            || UomCode != reservation.UomCode
+            || SiteCode != reservation.SiteCode
+            || LocationCode != reservation.LocationCode
+            || LotNo != reservation.LotNo
+            || SerialNo != reservation.SerialNo
+            || QualityStatus != reservation.QualityStatus
+            || OwnerType != reservation.OwnerType
+            || OwnerId != reservation.OwnerId)
+        {
+            throw new InvalidOperationException("Stock reservation dimensions do not match the ledger dimensions.");
         }
     }
 }

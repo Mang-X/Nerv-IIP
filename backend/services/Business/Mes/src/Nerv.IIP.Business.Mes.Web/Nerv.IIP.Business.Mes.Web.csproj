@@ -33,7 +33,10 @@
     <ProjectReference Include="..\Nerv.IIP.Business.Mes.Domain\Nerv.IIP.Business.Mes.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.Mes.Infrastructure\Nerv.IIP.Business.Mes.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Localization\Nerv.IIP.Localization\Nerv.IIP.Localization.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />

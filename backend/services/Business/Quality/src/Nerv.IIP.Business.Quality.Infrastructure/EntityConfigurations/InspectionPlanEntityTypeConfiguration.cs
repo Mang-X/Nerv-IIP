@@ -50,6 +50,19 @@ public sealed class InspectionPlanCharacteristicEntityTypeConfiguration : IEntit
         builder.Property(x => x.Severity).HasColumnName("severity").IsRequired().HasMaxLength(50).HasComment("Quality severity classification.");
         builder.Property(x => x.IsRequired).HasColumnName("is_required").IsRequired().HasComment("Whether this characteristic is required for plan execution.");
         builder.Property(x => x.SamplingRule).HasColumnName("sampling_rule").IsRequired().HasMaxLength(200).HasComment("Sampling rule or sample size expression.");
+        builder.Property(x => x.CharacteristicType).HasColumnName("characteristic_type").IsRequired().HasMaxLength(50).HasDefaultValue(InspectionCharacteristicTypes.Attribute).HasComment("Characteristic type: variable or attribute.");
+        builder.Property(x => x.NominalValue).HasColumnName("nominal_value").HasPrecision(18, 6).HasComment("Nominal target value for variable inspection characteristics.");
+        builder.Property(x => x.LowerSpecLimit).HasColumnName("lower_spec_limit").HasPrecision(18, 6).HasComment("Lower specification limit for variable inspection characteristics.");
+        builder.Property(x => x.UpperSpecLimit).HasColumnName("upper_spec_limit").HasPrecision(18, 6).HasComment("Upper specification limit for variable inspection characteristics.");
+        builder.Property(x => x.UnitCode).HasColumnName("unit_code").HasMaxLength(50).HasComment("Unit of measure code for measured characteristic values.");
+        builder.OwnsOne(x => x.SamplingPlan, owned =>
+        {
+            owned.Property(x => x.InspectionLevel).HasColumnName("sampling_inspection_level").HasMaxLength(50).HasComment("AQL sampling inspection level such as general-ii.");
+            owned.Property(x => x.Aql).HasColumnName("sampling_aql").HasMaxLength(50).HasComment("Acceptable quality limit value used for attribute sampling.");
+            owned.Property(x => x.SampleSize).HasColumnName("sampling_sample_size").HasComment("Required sample size resolved from the sampling plan.");
+            owned.Property(x => x.AcceptanceNumber).HasColumnName("sampling_acceptance_number").HasComment("Maximum defect count that accepts the lot.");
+            owned.Property(x => x.RejectionNumber).HasColumnName("sampling_rejection_number").HasComment("Minimum defect count that rejects the lot.");
+        });
         builder.HasIndex(x => new { x.InspectionPlanId, x.CharacteristicCode }).IsUnique();
     }
 }

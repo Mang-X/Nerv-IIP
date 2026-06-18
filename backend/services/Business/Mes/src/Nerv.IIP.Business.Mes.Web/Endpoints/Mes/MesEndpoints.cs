@@ -68,7 +68,12 @@ public sealed record RecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -93,7 +98,9 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
@@ -108,7 +115,8 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListCapacityImpactsRequest(
     string OrganizationId,
@@ -118,7 +126,8 @@ public sealed record ListCapacityImpactsRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record FoundationReadinessAreaRequest(
     string OrganizationId,
@@ -196,6 +205,7 @@ public sealed record CreateMaterialIssueRequestRequest(
     [property: RouteParam] string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     decimal? Quantity,
     DateTimeOffset? RequestedAtUtc,
     string? IdempotencyKey = null);
@@ -209,7 +219,8 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -254,7 +265,8 @@ public sealed record ListRelatedQualityItemsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListDowntimeEventsRequest(
     string OrganizationId,
@@ -264,7 +276,8 @@ public sealed record ListDowntimeEventsRequest(
     int Skip = 0,
     int Take = 100,
     string? Keyword = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -294,7 +307,8 @@ public sealed record ListShiftHandoversRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
@@ -570,6 +584,7 @@ public sealed class CreateMaterialIssueRequestEndpoint(ISender sender, TimeProvi
             req.WorkOrderId,
             req.OperationTaskId,
             req.MaterialId,
+            req.UomCode,
             req.Quantity,
             req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey), ct);
@@ -754,7 +769,12 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.CompletesOperation,
             req.ReportedAtUtc,
             req.IdempotencyKey,
-            req.ConsumedMaterialLots), ct);
+            req.ConsumedMaterialLots,
+            req.ReworkQuantity,
+            req.ScrapReasonCode,
+            req.DefectRecordNo,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }
@@ -837,7 +857,9 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.Quantity,
             req.UomCode,
             req.RequestedAtUtc,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }
@@ -878,7 +900,8 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Skip,
             req.Take,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -936,7 +959,8 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
             req.Take,
             req.Keyword,
             req.WorkCenterId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1026,7 +1050,8 @@ public sealed class ListCapacityImpactsEndpoint(ISender sender)
             req.Take,
             req.WorkCenterId,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }

@@ -24,6 +24,186 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("CAPA aggregate id.");
+
+                    b.Property<string>("CapaCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("capa_code")
+                        .HasComment("Human-readable CAPA code.");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when CAPA was closed.");
+
+                    b.Property<string>("ClosedByUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("closed_by_user_id")
+                        .HasComment("User id that closed the CAPA.");
+
+                    b.Property<string>("ContainmentAction")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("containment_action")
+                        .HasComment("Immediate containment action taken to control nonconforming output.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when CAPA was opened.");
+
+                    b.Property<DateTimeOffset>("DueAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at_utc")
+                        .HasComment("UTC due time for CAPA completion.");
+
+                    b.Property<string>("EffectivenessResult")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("effectiveness_result")
+                        .HasComment("Effectiveness verification result.");
+
+                    b.Property<DateTimeOffset?>("EffectivenessVerifiedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effectiveness_verified_at_utc")
+                        .HasComment("UTC time when effectiveness was verified.");
+
+                    b.Property<string>("EffectivenessVerifiedByUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("effectiveness_verified_by_user_id")
+                        .HasComment("User id that verified CAPA effectiveness.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the CAPA is managed.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the CAPA.");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("owner_user_id")
+                        .HasComment("CAPA owner user public id.");
+
+                    b.Property<string>("RootCause")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("root_cause")
+                        .HasComment("Root cause analysis summary such as 5Why or fishbone result.");
+
+                    b.Property<string>("SourceNcrId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_ncr_id")
+                        .HasComment("Optional source NCR id that triggered this CAPA.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("CAPA lifecycle status.");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when CAPA was last changed.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CapaCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceNcrId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Status");
+
+                    b.ToTable("corrective_actions", "quality", t =>
+                        {
+                            t.HasComment("Quality CAPA corrective and preventive action lifecycle facts.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveActionItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("CAPA action item id.");
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("action_type")
+                        .HasComment("CAPA action type: containment, corrective or preventive.");
+
+                    b.Property<Guid>("CorrectiveActionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corrective_action_id")
+                        .HasComment("Owning CAPA id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when this action item was created.");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description")
+                        .HasComment("CAPA action description.");
+
+                    b.Property<DateTimeOffset>("DueAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at_utc")
+                        .HasComment("UTC due time for this CAPA action.");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("owner_user_id")
+                        .HasComment("Action owner user public id.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("CAPA action item status.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrectiveActionId", "ActionType");
+
+                    b.ToTable("corrective_action_items", "quality", t =>
+                        {
+                            t.HasComment("Quality CAPA containment, corrective and preventive action items.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate.InspectionPlan", b =>
                 {
                     b.Property<Guid>("Id")
@@ -150,6 +330,15 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("characteristic_code")
                         .HasComment("Stable characteristic code within the plan.");
 
+                    b.Property<string>("CharacteristicType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("attribute")
+                        .HasColumnName("characteristic_type")
+                        .HasComment("Characteristic type: variable or attribute.");
+
                     b.Property<Guid>("InspectionPlanId")
                         .HasColumnType("uuid")
                         .HasColumnName("inspection_plan_id")
@@ -159,6 +348,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_required")
                         .HasComment("Whether this characteristic is required for plan execution.");
+
+                    b.Property<decimal?>("LowerSpecLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("lower_spec_limit")
+                        .HasComment("Lower specification limit for variable inspection characteristics.");
 
                     b.Property<string>("Method")
                         .IsRequired()
@@ -174,6 +369,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("name")
                         .HasComment("Characteristic display name.");
 
+                    b.Property<decimal?>("NominalValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("nominal_value")
+                        .HasComment("Nominal target value for variable inspection characteristics.");
+
                     b.Property<string>("SamplingRule")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -187,6 +388,18 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("severity")
                         .HasComment("Quality severity classification.");
+
+                    b.Property<string>("UnitCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("unit_code")
+                        .HasComment("Unit of measure code for measured characteristic values.");
+
+                    b.Property<decimal?>("UpperSpecLimit")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("upper_spec_limit")
+                        .HasComment("Upper specification limit for variable inspection characteristics.");
 
                     b.HasKey("Id");
 
@@ -247,6 +460,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("inspection_plan_id")
                         .HasComment("Optional inspection plan version id used for this record.");
 
+                    b.Property<string>("LocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Optional stock release location code for Inventory quality-status transfer.");
+
                     b.Property<string>("NonconformanceReportId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
@@ -260,6 +479,18 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the record.");
 
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Optional stock owner reference id for Inventory quality-status transfer.");
+
+                    b.Property<string>("OwnerType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Optional stock owner type for Inventory quality-status transfer.");
+
                     b.Property<string>("Result")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -272,6 +503,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("serial_no")
                         .HasComment("Optional serial number reference.");
+
+                    b.Property<string>("SiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Optional stock release site code for Inventory quality-status transfer.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
@@ -287,6 +524,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("source_document_id")
                         .HasComment("Source document or operation public id.");
 
+                    b.Property<string>("SourceQualityStatus")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("source_quality_status")
+                        .HasComment("Optional source Inventory quality status to transfer from after inspection.");
+
                     b.Property<string>("SourceService")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -300,6 +543,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("source_type")
                         .HasComment("Inspection source type: receiving, operation, final, maintenance or customer-return.");
+
+                    b.Property<string>("UomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Optional stock release UOM code for Inventory quality-status transfer.");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -357,6 +606,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("inspection_record_id")
                         .HasComment("Owning inspection record id.");
 
+                    b.Property<decimal?>("MeasuredValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("measured_value")
+                        .HasComment("Numeric measured value for variable characteristics.");
+
                     b.Property<string>("ObservedValue")
                         .IsRequired()
                         .HasMaxLength(500)
@@ -384,6 +639,53 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("inspection_result_lines", "quality", t =>
                         {
                             t.HasComment("Quality inspection result line measurements and defect facts.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.MrbReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("MRB review entry id.");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("comment")
+                        .HasComment("Optional MRB reviewer comment.");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("decision")
+                        .HasComment("MRB reviewer decision such as approved or rejected.");
+
+                    b.Property<Guid>("NonconformanceReportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nonconformance_report_id")
+                        .HasComment("Owning NCR id.");
+
+                    b.Property<DateTimeOffset>("ReviewedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at_utc")
+                        .HasComment("UTC time when this MRB review was recorded.");
+
+                    b.Property<string>("ReviewerId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("reviewer_id")
+                        .HasComment("Reviewer user or committee member public id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NonconformanceReportId", "ReviewerId");
+
+                    b.ToTable("ncr_mrb_reviews", "quality", t =>
+                        {
+                            t.HasComment("Quality NCR material review board decisions captured before disposition execution.");
                         });
                 });
 
@@ -867,6 +1169,15 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.ToTable("cap_received_messages", "quality");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveActionItem", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveAction", null)
+                        .WithMany("Actions")
+                        .HasForeignKey("CorrectiveActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate.InspectionPlanCharacteristic", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate.InspectionPlan", null)
@@ -874,6 +1185,50 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasForeignKey("InspectionPlanId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.OwnsOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate.InspectionSamplingPlan", "SamplingPlan", b1 =>
+                        {
+                            b1.Property<Guid>("InspectionPlanCharacteristicId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<int>("AcceptanceNumber")
+                                .HasColumnType("integer")
+                                .HasColumnName("sampling_acceptance_number")
+                                .HasComment("Maximum defect count that accepts the lot.");
+
+                            b1.Property<string>("Aql")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("sampling_aql")
+                                .HasComment("Acceptable quality limit value used for attribute sampling.");
+
+                            b1.Property<string>("InspectionLevel")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("sampling_inspection_level")
+                                .HasComment("AQL sampling inspection level such as general-ii.");
+
+                            b1.Property<int>("RejectionNumber")
+                                .HasColumnType("integer")
+                                .HasColumnName("sampling_rejection_number")
+                                .HasComment("Minimum defect count that rejects the lot.");
+
+                            b1.Property<int>("SampleSize")
+                                .HasColumnType("integer")
+                                .HasColumnName("sampling_sample_size")
+                                .HasComment("Required sample size resolved from the sampling plan.");
+
+                            b1.HasKey("InspectionPlanCharacteristicId");
+
+                            b1.ToTable("inspection_plan_characteristics", "quality");
+
+                            b1.WithOwner()
+                                .HasForeignKey("InspectionPlanCharacteristicId");
+                        });
+
+                    b.Navigation("SamplingPlan");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionResultLine", b =>
@@ -885,6 +1240,20 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.MrbReview", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport", null)
+                        .WithMany("MrbReviews")
+                        .HasForeignKey("NonconformanceReportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate.CorrectiveAction", b =>
+                {
+                    b.Navigation("Actions");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate.InspectionPlan", b =>
                 {
                     b.Navigation("Characteristics");
@@ -893,6 +1262,11 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
             modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate.InspectionRecord", b =>
                 {
                     b.Navigation("ResultLines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport", b =>
+                {
+                    b.Navigation("MrbReviews");
                 });
 #pragma warning restore 612, 618
         }

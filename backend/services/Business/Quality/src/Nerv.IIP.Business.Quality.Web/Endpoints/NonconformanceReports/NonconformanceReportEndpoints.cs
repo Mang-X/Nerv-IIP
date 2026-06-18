@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Endpoints.CorrectiveActions;
 using Nerv.IIP.ServiceAuth;
 using static Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports.NonconformanceReportEndpointMapping;
 
@@ -92,7 +93,8 @@ public sealed record SubmitNonconformanceReportDispositionRequest(
     NonconformanceReportId NcrId,
     string DispositionType,
     string? DispositionApprovalChainId,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    IReadOnlyCollection<MrbReviewInput>? MrbReviews);
 
 public sealed record CloseNonconformanceReportRequest(
     NonconformanceReportId NcrId,
@@ -203,7 +205,8 @@ public sealed class SubmitNonconformanceReportDispositionEndpoint(ISender sender
             req.NcrId,
             req.DispositionType,
             req.DispositionApprovalChainId,
-            req.AttachmentFileIds ?? []), ct);
+            req.AttachmentFileIds ?? [],
+            req.MrbReviews ?? []), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }
@@ -243,6 +246,10 @@ public static class QualityEndpointContracts
         new(typeof(GetNonconformanceReportEndpoint), "GET", "/api/business/v1/quality/ncrs/{ncrId}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityNcr"),
         new(typeof(SubmitNonconformanceReportDispositionEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/disposition", BusinessPermissionCodes.QualityNcrManage, "submitBusinessQualityNcrDisposition"),
         new(typeof(CloseNonconformanceReportEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityNcr"),
+        new(typeof(OpenCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrManage, "openBusinessQualityCapa"),
+        new(typeof(AddCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions", BusinessPermissionCodes.QualityNcrManage, "addBusinessQualityCapaAction"),
+        new(typeof(VerifyCorrectiveActionEffectivenessEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/effectiveness", BusinessPermissionCodes.QualityNcrManage, "verifyBusinessQualityCapaEffectiveness"),
+        new(typeof(CloseCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityCapa"),
     ];
 
     public static QualityEndpointContract Get<TEndpoint>()

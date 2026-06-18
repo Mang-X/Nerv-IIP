@@ -725,16 +725,16 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesProductionReportListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListWithoutStatusRequest, BusinessConsoleMesProductionReportListResponse>(
         auth,
         BusinessGatewayPermissions.MesReportingRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesListWithoutStatusRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesListWithoutStatusRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesProductionReportListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesListWithoutStatusRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);

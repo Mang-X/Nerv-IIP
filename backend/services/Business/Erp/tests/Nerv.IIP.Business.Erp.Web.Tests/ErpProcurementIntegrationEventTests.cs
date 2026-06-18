@@ -65,6 +65,8 @@ public sealed class ErpProcurementIntegrationEventTests
             "SUP-001",
             "SITE-01",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
         var receipt = PurchaseReceipt.Record(order, "RCV-001", [new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted")]);
         var converter = new PurchaseReceiptRecordedIntegrationEventConverter();
 

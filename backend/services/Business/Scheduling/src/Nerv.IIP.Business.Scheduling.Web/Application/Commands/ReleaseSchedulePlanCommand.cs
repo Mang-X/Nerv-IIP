@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -32,6 +33,18 @@ public sealed class ReleaseSchedulePlanCommandHandler(ApplicationDbContext dbCon
                     x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
             ?? throw new KnownException($"Schedule plan was not found, PlanId = {request.PlanId}");
+
+        var hasErrorConflict = await dbContext.Set<SchedulePlanConflict>()
+            .AnyAsync(
+                x => x.SchedulePlanId == plan.Id &&
+                    x.Severity == ScheduleConflictSeverity.Error,
+                cancellationToken);
+        var hasUnscheduledOperation = await dbContext.Set<SchedulePlanUnscheduledOperation>()
+            .AnyAsync(x => x.SchedulePlanId == plan.Id, cancellationToken);
+        if (hasErrorConflict || hasUnscheduledOperation)
+        {
+            throw new KnownException("Schedule plan cannot be released because it contains error conflicts or unscheduled operations.");
+        }
 
         plan.Release(timeProvider.GetUtcNow());
         return new ReleaseSchedulePlanResponse(

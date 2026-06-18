@@ -48,12 +48,22 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("currency_code")
                         .HasComment("Currency code.");
 
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date")
+                        .HasComment("Payment due date.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
+
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("invoice_date")
+                        .HasComment("Supplier invoice date.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -74,6 +84,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("payable_no")
                         .HasComment("AP document number.");
+
+                    b.Property<string>("PaymentTermCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("payment_term_code")
+                        .HasComment("Payment term code snapshot.");
 
                     b.Property<string>("SourceDocumentNo")
                         .IsRequired()
@@ -138,6 +155,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("customer_code")
                         .HasComment("MasterData customer code.");
 
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date")
+                        .HasComment("Collection due date.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -145,12 +167,24 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("invoice_date")
+                        .HasComment("Customer invoice date.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PaymentTermCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("payment_term_code")
+                        .HasComment("Payment term code snapshot.");
 
                     b.Property<string>("ReceivableNo")
                         .IsRequired()
@@ -318,6 +352,19 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("delivery_order_id")
                         .HasComment("Owning delivery order id.");
 
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Outbound source location code.");
+
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Optional outbound lot number.");
+
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -330,6 +377,20 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sales_order_line_no")
                         .HasComment("Referenced sales order line number.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("MasterData SKU code copied from sales order line for WMS outbound execution.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("MasterData UOM code copied from sales order line for WMS outbound execution.");
 
                     b.HasKey("Id");
 
@@ -509,6 +570,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Purchase order aggregate id.");
+
+                    b.Property<string>("ApprovalChainId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("approval_chain_id")
+                        .HasComment("BusinessApproval chain id that gates purchase order release.");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -726,6 +793,19 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Purchase receipt line id.");
 
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Inventory receipt location code.");
+
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Optional received lot number.");
+
                     b.Property<string>("PurchaseOrderLineNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -750,6 +830,20 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("received_quantity")
                         .HasComment("Received quantity.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("MasterData SKU code copied from purchase order line for stock posting.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("MasterData UOM code copied from purchase order line for stock posting.");
 
                     b.HasKey("Id");
 
@@ -1264,6 +1358,163 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Supplier invoice aggregate id.");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Invoice currency code.");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("due_date")
+                        .HasComment("Payment due date.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<DateOnly>("InvoiceDate")
+                        .HasColumnType("date")
+                        .HasColumnName("invoice_date")
+                        .HasComment("Supplier invoice date.");
+
+                    b.Property<string>("InvoiceNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("invoice_no")
+                        .HasComment("Supplier invoice number.");
+
+                    b.Property<string>("MatchStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("match_status")
+                        .HasComment("Three-way match status.");
+
+                    b.Property<DateTime>("MatchedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("matched_at_utc")
+                        .HasComment("UTC match time.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("PurchaseOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_order_no")
+                        .HasComment("Matched purchase order number.");
+
+                    b.Property<string>("PurchaseReceiptNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_receipt_no")
+                        .HasComment("Matched purchase receipt number.");
+
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("supplier_code")
+                        .HasComment("MasterData supplier code.");
+
+                    b.Property<decimal>("TotalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("total_amount")
+                        .HasComment("Matched invoice total amount.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "InvoiceNo")
+                        .IsUnique();
+
+                    b.ToTable("supplier_invoices", "erp", t =>
+                        {
+                            t.HasComment("ERP supplier invoice header matched against purchase order and receipt.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoiceLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Supplier invoice line id.");
+
+                    b.Property<decimal>("InvoiceQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("invoice_quantity")
+                        .HasComment("Supplier invoice quantity.");
+
+                    b.Property<string>("PurchaseOrderLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_order_line_no")
+                        .HasComment("Matched purchase order line number.");
+
+                    b.Property<string>("PurchaseReceiptLineNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_receipt_line_no")
+                        .HasComment("Matched purchase receipt line number.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("Matched SKU code.");
+
+                    b.Property<Guid>("SupplierInvoiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("supplier_invoice_id")
+                        .HasComment("Owning supplier invoice id.");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_price")
+                        .HasComment("Supplier invoice unit price.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Matched UOM code.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierInvoiceId");
+
+                    b.ToTable("supplier_invoice_lines", "erp", t =>
+                        {
+                            t.HasComment("ERP supplier invoice lines used for three-way match.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate.SupplierQuotation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1699,6 +1950,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoiceLine", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", null)
+                        .WithMany("Lines")
+                        .HasForeignKey("SupplierInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate.SupplierQuotationLine", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate.SupplierQuotation", null)
@@ -1741,6 +2001,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate.SalesOrder", b =>
+                {
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate.SupplierInvoice", b =>
                 {
                     b.Navigation("Lines");
                 });

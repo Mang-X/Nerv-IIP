@@ -193,6 +193,30 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AssignedAtUtc = assignedAtUtc;
     }
 
+    public void ApplyScheduleAssignment(
+        string workCenterId,
+        string? deviceAssetId,
+        DateTimeOffset plannedStartUtc,
+        DateTimeOffset plannedEndUtc,
+        DateTimeOffset assignedAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Closed operation task cannot be scheduled.");
+        }
+
+        if (plannedEndUtc <= plannedStartUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(plannedEndUtc), "Planned end must be after planned start.");
+        }
+
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
+        EarliestStartUtc = plannedStartUtc;
+        DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
+        DeviceAssetId = NormalizeOptional(deviceAssetId);
+        AssignedAtUtc = assignedAtUtc;
+    }
+
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)
     {
         return string.Join('|', values.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));

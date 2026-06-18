@@ -6,7 +6,29 @@ namespace Nerv.IIP.Messaging.CAP;
 public sealed record IntegrationEventConsumerOptions(
     string ConsumerName,
     string ExpectedEventType,
-    int SupportedEventVersion);
+    int SupportedEventVersion)
+{
+    public IReadOnlyCollection<string> SupportedEventTypes { get; init; } = [ExpectedEventType];
+
+    public IntegrationEventConsumerOptions(
+        string consumerName,
+        IReadOnlyCollection<string> supportedEventTypes,
+        int supportedEventVersion)
+        : this(
+            consumerName,
+            supportedEventTypes.FirstOrDefault() ?? throw new ArgumentException("At least one supported event type is required.", nameof(supportedEventTypes)),
+            supportedEventVersion)
+    {
+        SupportedEventTypes = supportedEventTypes
+            .Where(eventType => !string.IsNullOrWhiteSpace(eventType))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (SupportedEventTypes.Count == 0)
+        {
+            throw new ArgumentException("At least one supported event type is required.", nameof(supportedEventTypes));
+        }
+    }
+}
 
 public sealed record IntegrationEventEnvelopeValidationResult(
     bool IsValid,
@@ -64,11 +86,11 @@ public sealed class IntegrationEventEnvelopeValidator
                 "Integration event payload is required.");
         }
 
-        if (!string.Equals(integrationEvent.EventType, options.ExpectedEventType, StringComparison.Ordinal))
+        if (!options.SupportedEventTypes.Contains(integrationEvent.EventType, StringComparer.Ordinal))
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
                 "unexpected-event-type",
-                $"Integration event type '{integrationEvent.EventType}' does not match expected '{options.ExpectedEventType}'.");
+                $"Integration event type '{integrationEvent.EventType}' is not supported by consumer '{options.ConsumerName}'.");
         }
 
         if (integrationEvent.EventVersion <= 0)

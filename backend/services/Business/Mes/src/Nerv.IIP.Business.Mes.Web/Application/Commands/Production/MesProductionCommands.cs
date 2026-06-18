@@ -27,7 +27,12 @@ public sealed record RecordProductionReportCommand(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null) : ICommand<ProductionReportCommandResult>;
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null) : ICommand<ProductionReportCommandResult>;
 
 public sealed class RecordProductionReportCommandValidator : AbstractValidator<RecordProductionReportCommand>
 {
@@ -39,7 +44,8 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.GoodQuantity).GreaterThanOrEqualTo(0);
         RuleFor(x => x.ScrapQuantity).GreaterThanOrEqualTo(0);
-        RuleFor(x => x).Must(x => x.GoodQuantity + x.ScrapQuantity > 0)
+        RuleFor(x => x.ReworkQuantity).GreaterThanOrEqualTo(0);
+        RuleFor(x => x).Must(x => x.GoodQuantity + x.ScrapQuantity + x.ReworkQuantity > 0)
             .WithMessage("At least one reported quantity must be positive.");
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
@@ -68,8 +74,13 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 request.OperationTaskId,
                 request.GoodQuantity,
                 request.ScrapQuantity,
+                request.ReworkQuantity,
                 request.CompletesOperation,
                 request.ReportedAtUtc,
+                request.ScrapReasonCode,
+                request.DefectRecordNo,
+                request.ProducedLotNo,
+                request.SerialNo,
                 ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
@@ -91,23 +102,12 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.GoodQuantity,
             request.ScrapQuantity,
             request.CompletesOperation,
-            request.ReportedAtUtc);
-        dbContext.ProductionReports.Add(report);
-        if (request.CompletesOperation)
-        {
-            var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId &&
-                    x.EnvironmentId == request.EnvironmentId &&
-                    x.WorkOrderId == request.WorkOrderId &&
-                    x.OperationTaskIdValue == request.OperationTaskId,
-                cancellationToken);
-            if (operationTask is null)
-            {
-                throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
-            }
-
-            operationTask.Complete(request.ReportedAtUtc);
-        }
+            request.ReportedAtUtc,
+            request.ReworkQuantity,
+            request.ScrapReasonCode,
+            request.DefectRecordNo,
+            request.ProducedLotNo,
+            request.SerialNo);
 
         var duplicateLot = (request.ConsumedMaterialLots ?? [])
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -118,6 +118,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             throw new KnownException($"报工耗料批次重复，MaterialId = {lot.MaterialId}, MaterialLotId = {lot.MaterialLotId}");
         }
 
+        var materialConsumptions = new List<ProductionReportMaterialConsumption>();
         foreach (var lot in request.ConsumedMaterialLots ?? [])
         {
             if (string.IsNullOrWhiteSpace(lot.MaterialIssueRequestNo))
@@ -135,7 +136,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
                     x.MaterialId == lot.MaterialId &&
                     x.MaterialLotId == lot.MaterialLotId)
-                .Select(x => new { x.RequestNo, x.ReceivedQuantity })
+                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity })
                 .SingleOrDefaultAsync(cancellationToken);
             if (materialIssueRequest is null)
             {
@@ -156,7 +157,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 throw new KnownException($"累计耗料超过线边接收数量，MaterialLotId = {lot.MaterialLotId}");
             }
 
-            dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+            materialConsumptions.Add(ProductionReportMaterialConsumption.Record(
                 request.OrganizationId,
                 request.EnvironmentId,
                 report.ReportNo,
@@ -164,10 +165,44 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 request.OperationTaskId,
                 lot.MaterialId,
                 lot.MaterialLotId,
+                materialIssueRequest.UomCode,
                 lot.ConsumedQuantity,
                 lot.MaterialIssueRequestNo));
         }
 
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == request.WorkOrderId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+        try
+        {
+            workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
+        if (request.CompletesOperation)
+        {
+            var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == request.WorkOrderId &&
+                    x.OperationTaskIdValue == request.OperationTaskId,
+                cancellationToken);
+            if (operationTask is null)
+            {
+                throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+            }
+
+            operationTask.Complete(request.ReportedAtUtc);
+        }
+
+        dbContext.ProductionReports.Add(report);
+        dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
         await Task.CompletedTask;
         return new ProductionReportCommandResult(report.Id, report.ReportNo);
     }
@@ -190,7 +225,9 @@ public sealed record CreateFinishedGoodsReceiptRequestCommand(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string? IdempotencyKey = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
+    string? IdempotencyKey = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
 
 public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : AbstractValidator<CreateFinishedGoodsReceiptRequestCommand>
 {
@@ -217,7 +254,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -237,7 +274,9 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.SkuId,
             request.Quantity,
             request.UomCode,
-            request.RequestedAtUtc);
+            request.RequestedAtUtc,
+            request.ProducedLotNo,
+            request.SerialNo);
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
         await Task.CompletedTask;
         return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);

@@ -125,7 +125,15 @@ public sealed record BomReleasedPayload(
 public sealed record BomReleasedLine(
     string ComponentCode,
     decimal Quantity,
-    string UnitOfMeasureCode);
+    string UnitOfMeasureCode,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteCodes = null,
+    string? ReferenceDesignators = null,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record RoutingReleasedPayload(
     string RoutingVersionId,
@@ -138,7 +146,14 @@ public sealed record RoutingReleasedOperation(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    int SetupMinutes = 0,
+    int RunMinutes = 0,
+    int TeardownMinutes = 0,
+    string ControlKey = "",
+    bool RequiresReporting = true,
+    bool RequiresQualityInspection = false,
+    bool IsOutsourced = false);
 
 public sealed record ProductionVersionCreatedPayload(
     string ProductionVersionId,

@@ -5,6 +5,8 @@ namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportA
 
 public partial record NonconformanceReportId : IGuidStronglyTypedId;
 
+public partial record MrbReviewId : IGuidStronglyTypedId;
+
 public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggregateRoot
 {
     private static readonly HashSet<string> SourceTypes =
@@ -76,6 +78,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public string? ScrapMovementId { get; private set; }
     public string? ReturnDocumentId { get; private set; }
     public InspectionRecordId? SourceInspectionRecordId { get; private set; }
+    public List<MrbReview> MrbReviews { get; private set; } = [];
     public List<string> AttachmentFileIds { get; private set; } = [];
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -153,15 +156,31 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         string? dispositionApprovalChainId,
         IReadOnlyCollection<string> attachmentFileIds)
     {
+        SubmitDisposition(dispositionType, dispositionApprovalChainId, attachmentFileIds, []);
+    }
+
+    public void SubmitDisposition(
+        string dispositionType,
+        string? dispositionApprovalChainId,
+        IReadOnlyCollection<string> attachmentFileIds,
+        IReadOnlyCollection<MrbReviewInput> mrbReviews)
+    {
         EnsureNotClosed();
         if (Status == "disposition-in-progress")
         {
             throw new InvalidOperationException("NCR disposition has already been submitted.");
         }
 
-        DispositionType = Supported(dispositionType, DispositionTypes, nameof(dispositionType));
+        var normalizedDisposition = Supported(dispositionType, DispositionTypes, nameof(dispositionType));
+        if (RequiresMrbReview(normalizedDisposition) && mrbReviews.Count == 0)
+        {
+            throw new InvalidOperationException("MRB review is required before this NCR disposition can be submitted.");
+        }
+
+        DispositionType = normalizedDisposition;
         DispositionApprovalChainId = Optional(dispositionApprovalChainId);
         AddAttachments(attachmentFileIds);
+        MrbReviews.AddRange(mrbReviews.Select(MrbReview.FromInput));
         Status = "disposition-in-progress";
         Touch();
         this.AddDomainEvent(new NonconformanceReportDispositionDecidedDomainEvent(this));
@@ -200,6 +219,11 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         {
             throw new InvalidOperationException("Return-to-supplier disposition requires a return document id before closing.");
         }
+    }
+
+    private static bool RequiresMrbReview(string dispositionType)
+    {
+        return dispositionType is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
     }
 
     private void EnsureNotClosed()
@@ -247,5 +271,56 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         return supportedValues.Contains(normalized)
             ? normalized
             : throw new ArgumentException($"Unsupported value '{value}'.", parameterName);
+    }
+}
+
+public sealed class MrbReview : Entity<MrbReviewId>
+{
+    private MrbReview()
+    {
+    }
+
+    private MrbReview(string reviewerId, string decision, string? comment, DateTimeOffset reviewedAtUtc)
+    {
+        Id = new MrbReviewId(Guid.CreateVersion7());
+        ReviewerId = Required(reviewerId);
+        Decision = Required(decision).ToLowerInvariant();
+        Comment = Optional(comment);
+        ReviewedAtUtc = reviewedAtUtc == default
+            ? throw new ArgumentException("MRB review time is required.", nameof(reviewedAtUtc))
+            : reviewedAtUtc;
+    }
+
+    public NonconformanceReportId NonconformanceReportId { get; private set; } = null!;
+    public string ReviewerId { get; private set; } = string.Empty;
+    public string Decision { get; private set; } = string.Empty;
+    public string? Comment { get; private set; }
+    public DateTimeOffset ReviewedAtUtc { get; private set; }
+
+    public static MrbReview FromInput(MrbReviewInput input)
+    {
+        return new MrbReview(input.ReviewerId, input.Decision, input.Comment, input.ReviewedAtUtc);
+    }
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}
+
+public sealed record MrbReviewInput(
+    string ReviewerId,
+    string Decision,
+    string? Comment,
+    DateTimeOffset ReviewedAtUtc)
+{
+    public static MrbReviewInput Approve(string reviewerId, string? comment, DateTimeOffset reviewedAtUtc)
+    {
+        return new MrbReviewInput(reviewerId, "approved", comment, reviewedAtUtc);
     }
 }

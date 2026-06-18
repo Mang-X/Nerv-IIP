@@ -15,7 +15,9 @@ public enum PurchaseReceiptStatus
 public sealed record PurchaseReceiptLineDraft(
     string PurchaseOrderLineNo,
     decimal ReceivedQuantity,
-    string QualityStatus);
+    string QualityStatus,
+    string? LocationCode = null,
+    string? LotNo = null);
 
 public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
 {
@@ -38,8 +40,9 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         RecordedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
-            order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity);
-            lines.Add(PurchaseReceiptLine.Create(draft));
+            var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity);
+            var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
+            lines.Add(line);
         }
 
         if (lines.Count == 0)
@@ -50,6 +53,10 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         var qualityStatuses = lines.Select(x => x.QualityStatus).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         QualityStatus = qualityStatuses.Length == 1 ? qualityStatuses[0] : "mixed";
         this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
+        foreach (var line in lines)
+        {
+            this.AddDomainEvent(new PurchaseReceiptInventoryMovementRequestedDomainEvent(this, line));
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -85,14 +92,38 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
         QualityStatus = ErpText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+        SkuCode = string.Empty;
+        UomCode = string.Empty;
+        LocationCode = string.Empty;
+        LotNo = draft.LotNo;
+    }
+
+    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    {
+        PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
+        ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
+        QualityStatus = ErpText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+        SkuCode = orderLine.SkuCode;
+        UomCode = orderLine.UomCode;
+        LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? siteCode : draft.LocationCode.Trim();
+        LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
     }
 
     public string PurchaseOrderLineNo { get; private set; } = string.Empty;
+    public string SkuCode { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = string.Empty;
+    public string LocationCode { get; private set; } = string.Empty;
+    public string? LotNo { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
 
     public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft)
     {
         return new PurchaseReceiptLine(draft);
+    }
+
+    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    {
+        return new PurchaseReceiptLine(draft, orderLine, siteCode);
     }
 }

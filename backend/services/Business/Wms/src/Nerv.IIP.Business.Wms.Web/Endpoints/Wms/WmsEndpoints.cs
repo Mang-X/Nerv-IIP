@@ -49,6 +49,8 @@ public sealed record ListWarehouseTasksRequest(
     string? OperatorUserId = null,
     string? Keyword = null);
 public sealed record CreateWarehouseTaskResponse(WarehouseTaskId WarehouseTaskId);
+public sealed record RecordWarehouseTaskProgressRequest(WarehouseTaskId WarehouseTaskId, decimal ExecutedQuantity);
+public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskId);
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId RequestId, string? InventoryMovementId);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
@@ -69,8 +71,8 @@ public sealed record ListCountExecutionsRequest(
 public sealed record CompleteCountExecutionRequest(CountExecutionId CountExecutionId, decimal CountedQuantity, string IdempotencyKey);
 public sealed record DispatchWcsTaskRequest(WarehouseTaskId WarehouseTaskId, string AdapterType, string ExternalTaskId, string PayloadJson);
 public sealed record DispatchWcsTaskResponse(WcsTaskId WcsTaskId);
-public sealed record CompleteWcsTaskRequest(string ExternalTaskId, string CompletionPayloadJson);
-public sealed record FailWcsTaskRequest(string ExternalTaskId, string FailureCode, string FailureMessage);
+public sealed record CompleteWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson);
+public sealed record FailWcsTaskRequest(string OrganizationId, string EnvironmentId, string ExternalTaskId, string FailureCode, string FailureMessage);
 public sealed record ListWcsTasksRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -172,6 +174,26 @@ public sealed class ListPickingTasksEndpoint(ISender sender) : WmsEndpoint<ListW
     }
 }
 
+public sealed class RecordWarehouseTaskProgressEndpoint(ISender sender) : WmsEndpoint<RecordWarehouseTaskProgressRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RecordWarehouseTaskProgressEndpoint>());
+    public override async Task HandleAsync(RecordWarehouseTaskProgressRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RecordWarehouseTaskProgressCommand(req.WarehouseTaskId, req.ExecutedQuantity), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CompleteWarehouseTaskEndpoint(ISender sender) : WmsEndpoint<CompleteWarehouseTaskRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteWarehouseTaskEndpoint>());
+    public override async Task HandleAsync(CompleteWarehouseTaskRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CompleteWarehouseTaskCommand(req.WarehouseTaskId), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CompleteOutboundOrderRequest, ResponseData<CompleteMovementResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteOutboundOrderEndpoint>());
@@ -227,7 +249,7 @@ public sealed class CompleteWcsTaskEndpoint(ISender sender) : WmsEndpoint<Comple
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CompleteWcsTaskEndpoint>());
     public override async Task HandleAsync(CompleteWcsTaskRequest req, CancellationToken ct)
     {
-        await sender.Send(new CompleteWcsTaskCommand(req.ExternalTaskId, req.CompletionPayloadJson), ct);
+        await sender.Send(new CompleteWcsTaskCommand(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.CompletionPayloadJson), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }
@@ -237,7 +259,7 @@ public sealed class FailWcsTaskEndpoint(ISender sender) : WmsEndpoint<FailWcsTas
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<FailWcsTaskEndpoint>());
     public override async Task HandleAsync(FailWcsTaskRequest req, CancellationToken ct)
     {
-        await sender.Send(new FailWcsTaskCommand(req.ExternalTaskId, req.FailureCode, req.FailureMessage), ct);
+        await sender.Send(new FailWcsTaskCommand(req.OrganizationId, req.EnvironmentId, req.ExternalTaskId, req.FailureCode, req.FailureMessage), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }
@@ -267,6 +289,8 @@ public static class WmsEndpointContracts
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),
         new(typeof(ListPickingTasksEndpoint), "GET", "/api/business/v1/wms/picking-tasks", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPickingTasks"),
+        new(typeof(RecordWarehouseTaskProgressEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsWarehouseTaskProgress"),
+        new(typeof(CompleteWarehouseTaskEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWarehouseTask"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
         new(typeof(CreateCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsCountExecution"),
         new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
