@@ -87,6 +87,34 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Component_pegging_quantities_are_apportioned_by_source_demand_share()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 4m, new DateOnly(2026, 6, 1)),
+                new DemandSnapshot("DEMAND-002", "SKU-FG-1000", "pcs", "SITE-01", 6m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            productionVersions:
+            [
+                new ProductionVersionSnapshot("SKU-FG-1000", "PV-FG", "MBOM-FG", "ROUTING-FG"),
+            ],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var purchase = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase" && x.SkuCode == "SKU-RM-1000");
+        Assert.Equal(30m, purchase.Quantity);
+        Assert.Contains(purchase.PeggingLinks, x => x.DemandSourceReference == "DEMAND-001" && x.Quantity == 12m);
+        Assert.Contains(purchase.PeggingLinks, x => x.DemandSourceReference == "DEMAND-002" && x.Quantity == 18m);
+        Assert.Equal(30m, purchase.PeggingLinks.Where(x => x.PeggingType == "demand").Sum(x => x.Quantity));
+    }
+
+    [Fact]
     public void Lead_time_offsets_release_date_without_changing_required_date()
     {
         var input = NewInput(

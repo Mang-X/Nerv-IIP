@@ -14,6 +14,8 @@ Late-merge adaptation note: #409 was rebased after #407, #408, #410, #412, #413,
 
 ProductEngineering production-version list DTOs expose `LotSizeMin` and `LotSizeMax`; these continue to flow through production-version snapshots. MasterData SKU detail provides `Active`, `LifecycleStatus`, usage flags, UOM fields, `MinimumLotSize`, `MaximumLotSize`, `LotSizeMultiple`, `SafetyStockQuantity`, `PlannedDeliveryTimeDays`, `InHouseProductionTimeDays`, and `GoodsReceiptProcessingTimeDays`. DemandPlanning uses active SKU planning defaults only; blocked/inactive SKU detail produces an explicit empty/default-safe planning-parameter snapshot instead of inventing a lifecycle rule. If a live upstream source has no stable UOM-safe MRP snapshot, DemandPlanning keeps an explicit empty/default-safe snapshot instead of fabricating cross-domain facts.
 
+Follow-up review adaptation: ERP scheduled receipts and MasterData planning parameters are optional MRP enrichment sources. If either source is unavailable, the upstream snapshot provider logs a warning and continues with an explicit `scheduled-receipts:error` or `master-data-planning-parameters:error` empty snapshot so ProductEngineering/Inventory-backed core planning can still run. The Aspire AppHost wires BusinessDemandPlanning to BusinessERP with `Erp__BaseUrl`, resource reference, and `WaitFor`; the adapter must not rely on hardcoded localhost ports in Aspire. MasterData SKU detail reads are bounded to avoid unbounded fan-out.
+
 ## Scope
 
 1. Add internal MRP snapshot records for scheduled receipts and item planning parameters.
@@ -43,7 +45,7 @@ The calculator normalizes inputs into daily buckets. For each bucket and SKU/UOM
 
 `gross demand - max(0, available - safety stock) - scheduled receipts due on or before the required date`
 
-Positive requirements are lot-sized. If an item has a production version, the calculator emits a planned work-order suggestion, pegs the demand and scheduled receipts used, offsets `ReleaseDate`, and creates component demand for the child SKU. If an item has no production version, the calculator emits a planned-purchase suggestion and stops explosion. A visited path guard prevents recursive BOM cycles from hanging the run.
+Positive requirements are lot-sized. If an item has a production version, the calculator emits a planned work-order suggestion, pegs the demand and scheduled receipts used, offsets `ReleaseDate`, and creates component demand for the child SKU. Component demand pegging is apportioned by each source demand's share of the parent bucket gross requirement so multi-source buckets do not duplicate the full component quantity on every pegging link. If an item has no production version, the calculator emits a planned-purchase suggestion and stops explosion. A visited path guard prevents recursive BOM cycles from hanging the run.
 
 `PlanningSuggestion` gains `ReleaseDate` while retaining `RequiredDate` as the due/need-by date. The list API and integration event payload add `ReleaseDate` as an additive v1 field. The database migration adds `planning_suggestions.release_date` with a backfill default equal to `required_date`.
 
@@ -57,4 +59,4 @@ Focused calculator tests cover:
 4. daily bucket aggregation plus min/max lot sizing,
 5. safety stock creates protected net requirement.
 
-Adapter tests cover ProductEngineering lot-size field preservation, ERP purchase-order scheduled receipts, and MasterData SKU planning-attribute mapping. Existing fixture behavior remains green for the original MVP example.
+Adapter tests cover ProductEngineering lot-size field preservation, ERP purchase-order scheduled receipts, optional upstream degradation, bounded MasterData SKU detail concurrency, and MasterData SKU planning-attribute mapping. Existing fixture behavior remains green for the original MVP example.
