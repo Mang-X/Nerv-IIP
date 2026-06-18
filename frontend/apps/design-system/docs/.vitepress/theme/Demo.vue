@@ -5,15 +5,16 @@
 // never break the SSR build.
 // `mobile` renders the demo in a narrow, centered phone-width column so PDA
 // components are previewed at a realistic width.
-// `popout` reserves vertical room and top-aligns the demo so a component that
-// opens a panel below itself (NavigationMenu mega-menu, dropdowns) isn't clipped
-// by the preview box.
+// `popout` lets a panel that opens below the demo (NavigationMenu mega-menu,
+// dropdowns) escape the preview box: the box drops `overflow:hidden`, top-aligns
+// its control, and reserves empty space underneath so the floating panel doesn't
+// cover the next section.
 defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boolean }>()
 </script>
 
 <template>
   <ClientOnly>
-    <div class="ds-demo">
+    <div class="ds-demo" :class="{ 'ds-demo-popout-box': popout }">
       <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout }">
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
@@ -64,12 +65,15 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boole
 .ds-demo-center {
   justify-content: center;
 }
-/* room for a panel that opens below the demo (e.g. NavigationMenu mega-menu):
-   pin the control to the top-left and reserve space underneath so the dropdown
-   stays inside the preview box instead of being clipped by overflow:hidden. */
+/* let a panel that opens below the demo (NavigationMenu mega-menu) ESCAPE the
+   box: drop the clip and reserve empty space below so the floating panel doesn't
+   cover the next section. The control is pinned top-left. */
+.ds-demo-popout-box {
+  overflow: visible;
+  margin-bottom: 11rem;
+}
 .ds-demo-popout {
   align-items: flex-start;
-  padding-bottom: 12rem;
 }
 .ds-demo-mobile {
   justify-content: center;

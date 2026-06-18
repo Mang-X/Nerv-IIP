@@ -10,7 +10,8 @@ import NavigationMenuProViewport from './NavigationMenuProViewport.vue'
  * Pro — navigation menu root: a horizontal control-plane menu bar whose
  * triggers open an animated mega-menu panel below. Rebuilt on reka primitives,
  * styled with our tokens; never edits原版 shadcn. The viewport (rendered here by
- * default) escapes clipping and animates its size/position to the open panel.
+ * default) escapes clipping and animates its size/position to follow the open
+ * trigger.
  */
 const props = withDefaults(
   defineProps<
