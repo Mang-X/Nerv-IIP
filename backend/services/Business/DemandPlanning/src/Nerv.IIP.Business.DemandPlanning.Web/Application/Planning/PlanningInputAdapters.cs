@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.ServiceAuth;
 using static Nerv.IIP.Business.DemandPlanning.Web.Application.Planning.PlanningHttpQuery;
 
@@ -112,7 +113,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
     IPlanningInventorySnapshotClient inventory,
     IPlanningScheduledReceiptSnapshotClient? scheduledReceiptClient = null,
     IPlanningParameterSnapshotClient? planningParameterClient = null,
-    IInternalServiceTokenProvider? internalTokenProvider = null) : IPlanningInputSnapshotProvider
+    IInternalServiceTokenProvider? internalTokenProvider = null,
+    ILogger<DemandPlanningUpstreamInputSnapshotProvider>? logger = null) : IPlanningInputSnapshotProvider
 {
     public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
         string organizationId,
@@ -149,26 +151,20 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             internalBearerToken,
             new PlanningInventorySnapshotRequest(organizationId, environmentId, availabilityItems),
             cancellationToken);
-        var scheduledReceipts = scheduledReceiptClient is null
-            ? new PlanningScheduledReceiptSnapshot("scheduled-receipts:none", [])
-            : await scheduledReceiptClient.GetScheduledReceiptsAsync(
-                internalBearerToken,
-                new PlanningScheduledReceiptSnapshotRequest(
-                    organizationId,
-                    environmentId,
-                    horizonStart,
-                    horizonEnd,
-                    availabilityItems.Select(x => new PlanningScheduledReceiptSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
-                cancellationToken);
-        var planningParameters = planningParameterClient is null
-            ? new PlanningParameterSnapshotResult("master-data-planning-parameters:none", [])
-            : await planningParameterClient.GetPlanningParametersAsync(
-                internalBearerToken,
-                new PlanningParameterSnapshotRequest(
-                    organizationId,
-                    environmentId,
-                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
-                cancellationToken);
+        var scheduledReceipts = await LoadScheduledReceiptsOrEmptyAsync(
+            internalBearerToken,
+            organizationId,
+            environmentId,
+            horizonStart,
+            horizonEnd,
+            availabilityItems,
+            cancellationToken);
+        var planningParameters = await LoadPlanningParametersOrEmptyAsync(
+            internalBearerToken,
+            organizationId,
+            environmentId,
+            availabilityItems,
+            cancellationToken);
 
         return new PlanningInputSnapshotResult(
             engineering.SnapshotSource,
@@ -179,6 +175,83 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             engineering.BomComponents,
             scheduledReceipts.ScheduledReceipts,
             planningParameters.PlanningParameters);
+    }
+
+    private async Task<PlanningScheduledReceiptSnapshot> LoadScheduledReceiptsOrEmptyAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        DateOnly horizonStart,
+        DateOnly horizonEnd,
+        IReadOnlyCollection<PlanningInventorySnapshotItem> availabilityItems,
+        CancellationToken cancellationToken)
+    {
+        if (scheduledReceiptClient is null)
+        {
+            return new PlanningScheduledReceiptSnapshot("scheduled-receipts:none", []);
+        }
+
+        try
+        {
+            return await scheduledReceiptClient.GetScheduledReceiptsAsync(
+                internalBearerToken,
+                new PlanningScheduledReceiptSnapshotRequest(
+                    organizationId,
+                    environmentId,
+                    horizonStart,
+                    horizonEnd,
+                    availabilityItems.Select(x => new PlanningScheduledReceiptSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (IsOptionalPlanningSourceFailure(ex))
+        {
+            logger?.LogWarning(ex, "DemandPlanning MRP scheduled receipt snapshot failed; continuing with an empty optional snapshot.");
+            return new PlanningScheduledReceiptSnapshot("scheduled-receipts:error", []);
+        }
+    }
+
+    private async Task<PlanningParameterSnapshotResult> LoadPlanningParametersOrEmptyAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<PlanningInventorySnapshotItem> availabilityItems,
+        CancellationToken cancellationToken)
+    {
+        if (planningParameterClient is null)
+        {
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:none", []);
+        }
+
+        try
+        {
+            return await planningParameterClient.GetPlanningParametersAsync(
+                internalBearerToken,
+                new PlanningParameterSnapshotRequest(
+                    organizationId,
+                    environmentId,
+                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (IsOptionalPlanningSourceFailure(ex))
+        {
+            logger?.LogWarning(ex, "DemandPlanning MRP planning parameter snapshot failed; continuing with an empty optional snapshot.");
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:error", []);
+        }
+    }
+
+    private static bool IsOptionalPlanningSourceFailure(Exception exception)
+    {
+        return exception is HttpRequestException
+            or InvalidOperationException
+            or TaskCanceledException;
     }
 
     private async Task<PlanningProductEngineeringSnapshot> LoadEngineeringClosureAsync(
@@ -422,6 +495,8 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
 
 public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpClient httpClient) : IPlanningParameterSnapshotClient
 {
+    private const int MaxConcurrentSkuDetailRequests = 8;
+
     public async Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
         string internalBearerToken,
         PlanningParameterSnapshotRequest request,
@@ -432,10 +507,17 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             return new PlanningParameterSnapshotResult("master-data-planning-parameters:0", []);
         }
 
+        using var throttle = new SemaphoreSlim(MaxConcurrentSkuDetailRequests);
         var details = await Task.WhenAll(request.Items
             .Select(x => x.SkuCode)
             .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(skuCode => GetSkuPlanningDetailAsync(internalBearerToken, request.OrganizationId, request.EnvironmentId, skuCode, cancellationToken)));
+            .Select(skuCode => GetSkuPlanningDetailThrottledAsync(
+                internalBearerToken,
+                request.OrganizationId,
+                request.EnvironmentId,
+                skuCode,
+                throttle,
+                cancellationToken)));
         var detailBySku = details
             .Where(x => x is not null)
             .Where(x => IsPlanningParameterEligible(x!))
@@ -458,6 +540,25 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             .ToArray();
 
         return new PlanningParameterSnapshotResult($"master-data-planning-parameters:{parameters.Length}", parameters);
+    }
+
+    private async Task<MasterDataSkuPlanningDetail?> GetSkuPlanningDetailThrottledAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        string skuCode,
+        SemaphoreSlim throttle,
+        CancellationToken cancellationToken)
+    {
+        await throttle.WaitAsync(cancellationToken);
+        try
+        {
+            return await GetSkuPlanningDetailAsync(internalBearerToken, organizationId, environmentId, skuCode, cancellationToken);
+        }
+        finally
+        {
+            throttle.Release();
+        }
     }
 
     private async Task<MasterDataSkuPlanningDetail?> GetSkuPlanningDetailAsync(

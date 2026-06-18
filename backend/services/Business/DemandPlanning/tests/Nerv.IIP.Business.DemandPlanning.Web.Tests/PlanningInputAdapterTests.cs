@@ -146,6 +146,37 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Upstream_adapter_degrades_optional_planning_sources_when_they_fail()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            new ThrowingPlanningErpScheduledReceiptClient(),
+            new ThrowingPlanningParameterClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        Assert.Equal("inventory-http:2;scheduled-receipts:error;master-data-planning-parameters:error", snapshot.InventorySnapshotSource);
+        Assert.Empty(snapshot.ScheduledReceipts);
+        Assert.Empty(snapshot.PlanningParameters);
+        Assert.Contains(snapshot.Availability, x => x.SkuCode == "SKU-FG-1000");
+        Assert.Contains(snapshot.ProductionVersions, x => x.ParentSkuCode == "SKU-FG-1000");
+    }
+
+    [Fact]
     public async Task Erp_scheduled_receipt_client_maps_open_purchase_order_lines_across_pages()
     {
         var handler = new StubHttpMessageHandler(request =>
@@ -339,6 +370,57 @@ public sealed class PlanningInputAdapterTests
         Assert.DoesNotContain(snapshot.PlanningParameters, x => x.SkuCode == "SKU-BLOCKED");
     }
 
+    [Fact]
+    public async Task Master_data_planning_parameter_client_limits_sku_detail_concurrency()
+    {
+        var current = 0;
+        var observedMax = 0;
+        var handler = new StubHttpMessageHandler(async request =>
+        {
+            var running = Interlocked.Increment(ref current);
+            int snapshot;
+            while (running > (snapshot = Volatile.Read(ref observedMax)))
+            {
+                Interlocked.CompareExchange(ref observedMax, running, snapshot);
+            }
+
+            await Task.Delay(50);
+            Interlocked.Decrement(ref current);
+            var skuCode = request.RequestUri!.AbsolutePath.Split('/').Last();
+            return JsonResponse($$"""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "{{skuCode}}",
+                    "displayName": "{{skuCode}}",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs",
+                    "plannedDeliveryTimeDays": 1
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+        var items = Enumerable.Range(1, 20)
+            .Select(x => new PlanningParameterSnapshotItem($"SKU-{x:000}", "pcs", "SITE-01"))
+            .ToArray();
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest("org-001", "env-dev", items),
+            CancellationToken.None);
+
+        Assert.Equal(20, snapshot.PlanningParameters.Count);
+        Assert.True(observedMax <= 8, $"Expected at most 8 concurrent MasterData SKU requests, observed {observedMax}.");
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -426,14 +508,53 @@ public sealed class PlanningInputAdapterTests
         }
     }
 
-    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
+    private sealed class ThrowingPlanningErpScheduledReceiptClient : IPlanningScheduledReceiptSnapshotClient
     {
+        public Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+            string internalBearerToken,
+            PlanningScheduledReceiptSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new HttpRequestException("ERP unavailable");
+        }
+    }
+
+    private sealed class ThrowingPlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("MasterData unavailable");
+        }
+    }
+
+    private sealed class StubHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send;
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send)
+            : this((request, _) => Task.FromResult(send(request)))
+        {
+        }
+
+        public StubHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send)
+            : this((request, _) => send(request))
+        {
+        }
+
+        private StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        {
+            this.send = send;
+        }
+
         public List<HttpRequestMessage> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.FromResult(send(request));
+            return send(request, cancellationToken);
         }
     }
 

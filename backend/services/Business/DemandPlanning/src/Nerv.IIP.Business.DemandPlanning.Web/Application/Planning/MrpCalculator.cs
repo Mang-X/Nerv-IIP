@@ -216,18 +216,19 @@ public static class MrpCalculator
                         continue;
                     }
 
+                    var componentRequirement = plannedQuantity * component.QuantityPerParent;
                     pending.Add(new Requirement(
                         component.ComponentSkuCode,
                         component.ComponentUomCode,
                         first.SiteCode,
-                        plannedQuantity * component.QuantityPerParent,
+                        componentRequirement,
                         releaseDate,
                         demandPegging
                             .Select(x => x with
                             {
                                 ParentSkuCode = first.SkuCode,
                                 ComponentSkuCode = component.ComponentSkuCode,
-                                Quantity = plannedQuantity * component.QuantityPerParent,
+                                Quantity = ApportionByGrossRequirement(componentRequirement, x.Quantity, grossRequirement),
                             })
                             .ToArray(),
                         [.. first.Path, normalizedComponent]));
@@ -297,6 +298,8 @@ public static class MrpCalculator
         {
             var split = new List<decimal>();
             var remaining = quantity;
+            // Preserve the exact planned total. If min/multiple/max rules conflict, master data
+            // should reject the rule set rather than inflate the final split here.
             while (remaining > lotSizeMax.Value)
             {
                 split.Add(lotSizeMax.Value);
@@ -312,6 +315,11 @@ public static class MrpCalculator
         }
 
         return [quantity];
+    }
+
+    private static decimal ApportionByGrossRequirement(decimal totalQuantity, decimal sourceQuantity, decimal grossRequirement)
+    {
+        return grossRequirement <= 0m ? 0m : totalQuantity * sourceQuantity / grossRequirement;
     }
 
     private static string Normalize(string value) => value.Trim().ToUpperInvariant();

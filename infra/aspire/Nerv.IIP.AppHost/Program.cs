@@ -363,6 +363,11 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+businessDemandPlanning = businessDemandPlanning
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp)
+    .WaitFor(businessErp);
+
 var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")))
     .WithHttpEndpoint(port: 5120, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
