@@ -109,7 +109,7 @@ function nudge(delta: number) {
         <span
           class="ds-slider-ring grid size-5 place-items-center rounded-full border-2 border-brand bg-card shadow-[0_1px_4px_rgb(0_0_0/0.25)]"
         >
-          <span class="ds-slider-dot block size-2.5 rounded-full bg-foreground" :class="dragging && 'is-active'" />
+          <span class="ds-slider-dot block size-3 rounded-full bg-foreground" :class="dragging && 'is-active'" />
         </span>
         <span
           v-if="showBubble && dragging"
@@ -135,18 +135,22 @@ function nudge(delta: number) {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-/* WinUI3-style inner dot: small at rest, grows on hover, then shrinks below rest
-   while pressed/dragging — the order below makes is-active win. */
+/* WinUI3-style inner dot: visible at rest, grows a touch on hover, then shrinks
+   below rest the instant the pointer goes down. The pressed rule is qualified
+   with `.ds-slider-thumb` so it OUT-SPECIFIES the hover rule (0,4,0 / 0,3,0) —
+   otherwise hover (still active while pressing) would keep it big. */
 .ds-slider-dot {
-  transform: scale(0.6);
-  transition: transform 0.18s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+  transform: scale(0.85);
+  transition: transform 0.16s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 .ds-slider-thumb:hover .ds-slider-dot,
 .ds-slider-thumb:focus-visible .ds-slider-dot {
   transform: scale(1);
 }
-.ds-slider-dot.is-active {
-  transform: scale(0.45);
+.ds-slider-thumb .ds-slider-dot.is-active,
+.ds-slider-thumb:hover .ds-slider-dot.is-active,
+.ds-slider-thumb:focus-visible .ds-slider-dot.is-active {
+  transform: scale(0.66);
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-slider-dot {
