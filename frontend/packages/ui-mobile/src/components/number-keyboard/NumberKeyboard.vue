@@ -52,7 +52,9 @@ function confirm() {
 </script>
 
 <template>
-  <Teleport :to="overlayTarget">
+  <!-- `defer` lets the target resolve after the tree mounts, so a scoped target
+       that is an ancestor (docs phone sim) is found instead of erroring. -->
+  <Teleport defer :to="overlayTarget">
     <Transition name="ds-nk-fade">
       <div
         v-if="show"
