@@ -5,13 +5,16 @@
 // never break the SSR build.
 // `mobile` renders the demo in a narrow, centered phone-width column so PDA
 // components are previewed at a realistic width.
-defineProps<{ title?: string; center?: boolean; mobile?: boolean }>()
+// `popout` reserves vertical room and top-aligns the demo so a component that
+// opens a panel below itself (NavigationMenu mega-menu, dropdowns) isn't clipped
+// by the preview box.
+defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boolean }>()
 </script>
 
 <template>
   <ClientOnly>
     <div class="ds-demo">
-      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile }">
+      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout }">
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
       </div>
@@ -60,6 +63,13 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean }>()
 }
 .ds-demo-center {
   justify-content: center;
+}
+/* room for a panel that opens below the demo (e.g. NavigationMenu mega-menu):
+   pin the control to the top-left and reserve space underneath so the dropdown
+   stays inside the preview box instead of being clipped by overflow:hidden. */
+.ds-demo-popout {
+  align-items: flex-start;
+  padding-bottom: 12rem;
 }
 .ds-demo-mobile {
   justify-content: center;

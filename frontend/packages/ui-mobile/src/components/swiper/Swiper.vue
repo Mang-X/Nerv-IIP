@@ -26,9 +26,16 @@ const props = withDefaults(
      * below the slide so they never cover interactive content (buttons, links).
      */
     indicator?: 'overlay' | 'outside'
+    /**
+     * Rounded muted backing for the viewport — right for image/banner slides that
+     * should be clipped to a card shape. Turn OFF for slides that are already
+     * self-surfaced cards, so the carousel doesn't wrap a second, mismatched
+     * rounded frame around them.
+     */
+    frame?: boolean
     class?: HTMLAttributes['class']
   }>(),
-  { autoplay: 0, loop: false, dots: true, indicator: 'overlay' },
+  { autoplay: 0, loop: false, dots: true, indicator: 'overlay', frame: true },
 )
 const emit = defineEmits<{ change: [index: number] }>()
 
@@ -158,7 +165,11 @@ watch(() => props.autoplay, startAutoplay)
     <div
       ref="viewportEl"
       :class="
-        cn('ds-swiper-viewport relative w-full overflow-hidden rounded-2xl bg-muted', $props.class)
+        cn(
+          'ds-swiper-viewport relative w-full overflow-hidden',
+          frame && 'rounded-2xl bg-muted',
+          $props.class,
+        )
       "
     >
       <!-- h-full + items-stretch make every slide fill the viewport height -->
@@ -222,8 +233,11 @@ watch(() => props.autoplay, startAutoplay)
   height: 6px;
   width: 6px;
   border-radius: 9999px;
-  background: color-mix(in oklch, var(--card) 65%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+  /* foreground-based so the dots read on both image banners and flat surfaces
+     (a --card fill vanishes against a dark page); soft halo keeps them legible
+     over busy imagery. */
+  background: color-mix(in oklch, var(--foreground) 38%, transparent);
+  box-shadow: 0 0 2px color-mix(in oklch, var(--background) 55%, transparent);
   transition:
     width 0.3s var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)),
     background-color 0.3s ease;

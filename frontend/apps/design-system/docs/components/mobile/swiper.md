@@ -39,10 +39,10 @@ const current = ref(0)
     </Swiper>
   </section>
   <section>
-    <p class="ds-mdoc-label">数据驱动 · 工单卡片（可交互，指示器外置避让）</p>
-    <Swiper v-model:index="current" :items="orders" indicator="outside">
+    <p class="ds-mdoc-label">数据驱动 · 工单卡片（可交互，指示器内置底部）</p>
+    <Swiper v-model:index="current" :items="orders" :frame="false">
       <template #default="{ item }">
-        <div class="w-full shrink-0 px-1">
+        <div class="w-full shrink-0 px-1 pb-7">
           <div class="rounded-2xl border border-border bg-card p-4">
             <div class="flex items-center justify-between">
               <span class="text-sm text-muted-foreground">{{ item.code }}</span>
@@ -55,7 +55,6 @@ const current = ref(0)
         </div>
       </template>
     </Swiper>
-    <p class="mt-2 text-center text-xs text-muted-foreground">当前第 {{ current + 1 }} / {{ orders.length }} 张</p>
   </section>
 </template>
 
@@ -94,6 +93,7 @@ const current = ref(0)
 | `loop` | 首尾循环 | `boolean` | `false` |
 | `dots` | 显示圆点指示器 | `boolean` | `true` |
 | `indicator` | 指示器位置：`overlay` 浮于幻灯片上 / `outside` 外置于下方(可交互内容避让) | `'overlay' \| 'outside'` | `'overlay'` |
+| `frame` | 视口圆角灰底背板（图片/横幅用）；幻灯片本身是卡片时关闭，避免内外圆角不一致 | `boolean` | `true` |
 | `v-model:index` | 当前页索引 | `number` | `0` |
 
 ## 事件
