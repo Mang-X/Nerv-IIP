@@ -225,7 +225,7 @@ export default defineConfig({
         },
       ],
     },
-    socialLinks: [{ icon: 'github', link: 'https://github.com/nuxt-content/docus' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/Mang-X/Nerv-IIP' }],
     search: { provider: 'local' },
     outline: { level: [2, 3], label: '本页目录' },
     docFooter: { prev: '上一页', next: '下一页' },
