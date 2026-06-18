@@ -318,17 +318,21 @@ const nav = ref('总览')
 .ds-sb [data-slot='sidebar-menu'] :is(a, button) {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
+/* hover: clean neutral wash — white-over-dark, no hue, so it never reads muddy */
+.ds-sb [data-slot='sidebar-menu'] :is(a, button):hover {
+  background: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
+}
 
-/* ── ONE unified selected state across levels + demos ─────────────────────
-   The active row may be a sidebar-menu-button OR — when it carries a tooltip —
-   a reka tooltip-trigger (reka overwrites data-slot). Matching on [data-active]
-   inside any sidebar-menu is the only selector that styles BOTH demos the same.
-   Readable: near-white text on a muted brand-tinted surface (high contrast),
-   brand glyph for accent. NO side stripe (our anti-references ban 侧边色条) —
-   selection reads through fill + weight + glyph. The ancestor selector also
-   out-specifies shadcn's default `data-[active]:bg-sidebar-accent`. */
-.ds-sb [data-slot='sidebar-menu'] [data-active='true'] {
-  background: color-mix(in oklch, var(--brand) 26%, var(--sidebar));
+/* ── ONE unified selected state (Linear / Vercel form) ────────────────────
+   Clean NEUTRAL elevated fill (white-over-dark, no hue — a tinted dark fill is
+   what read as muddy/诡异 at any accent hue), near-white text, and the glyph in
+   the brand accent: that single accent touch carries identity without coloring
+   the surface. Matches [data-active] in any sidebar-menu so level-1, sub, and
+   tooltip-wrapped rows are identical, and out-specifies shadcn's gray default.
+   The :hover twin keeps the active fill from reverting when hovered. */
+.ds-sb [data-slot='sidebar-menu'] [data-active='true'],
+.ds-sb [data-slot='sidebar-menu'] [data-active='true']:hover {
+  background: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
   color: var(--sidebar-foreground);
   font-weight: 500;
 }
