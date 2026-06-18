@@ -27,15 +27,40 @@ let observer: MutationObserver | undefined
 function alignToTrigger() {
   if (!root) return
   const list = root.querySelector('[data-slot="navigation-menu-pro-list"]')
-  const active =
-    root.querySelector('[data-slot="navigation-menu-pro-trigger"][data-state="open"]') ??
-    root.querySelector('button[aria-expanded="true"]')
+  const active = (root.querySelector('[data-slot="navigation-menu-pro-trigger"][data-state="open"]') ??
+    root.querySelector('button[aria-expanded="true"]')) as HTMLElement | null
+  if (!list || !active) return
+  const listRect = list.getBoundingClientRect()
+  const tr = active.getBoundingClientRect()
+  const triggerCenter = tr.left + tr.width / 2
+
+  // Indicator: glide under the active trigger (reka's own position var is stuck
+  // here, so drive it ourselves). Width = trigger width; the diamond is
+  // centre-justified, so it ends up pointing at the trigger centre. Inline styles
+  // win over the (stuck) reka vars; the scoped transition makes it slide.
+  const indicator = root.querySelector<HTMLElement>('[data-slot="navigation-menu-pro-indicator"]')
+  if (indicator) {
+    indicator.style.width = `${Math.round(tr.width)}px`
+    indicator.style.transform = `translateX(${Math.round(tr.left - listRect.left)}px)`
+  }
+
+  // Panel: centre under the trigger (like a popover), then clamp to the viewport
+  // so a wide panel under an edge trigger stays on screen. The indicator keeps
+  // pointing at the trigger even when the panel is clamped off-centre.
   const viewport = root.querySelector<HTMLElement>('[data-slot="navigation-menu-pro-viewport"]')
-  if (!list || !active || !viewport) return
-  const left = (active as HTMLElement).getBoundingClientRect().left - list.getBoundingClientRect().left
-  // set `left` inline (not via a Tailwind arbitrary class — those aren't always
-  // generated for this package in the docs build); the scoped transition glides it
-  viewport.style.left = `${Math.max(0, Math.round(left))}px`
+  const wrap = viewport?.parentElement
+  if (viewport && wrap) {
+    const wrapLeft = wrap.getBoundingClientRect().left
+    // use reka's TARGET width var, not offsetWidth — the panel width is still
+    // animating when this runs, so offsetWidth would mis-centre it.
+    const panelW =
+      Number.parseFloat(getComputedStyle(viewport).getPropertyValue('--reka-navigation-menu-viewport-width')) ||
+      viewport.offsetWidth
+    const gutter = 8
+    let pageLeft = triggerCenter - panelW / 2
+    pageLeft = Math.min(Math.max(pageLeft, gutter), window.innerWidth - panelW - gutter)
+    viewport.style.left = `${Math.round(pageLeft - wrapLeft)}px`
+  }
 }
 
 onMounted(() => {
@@ -43,9 +68,9 @@ onMounted(() => {
   root = (el && el.nodeType === 1 ? el.closest('[data-slot="navigation-menu-pro"]') : null) as HTMLElement | null
   if (!root) return
   // reka flips data-state / aria-expanded on the trigger when a panel opens;
-  // align synchronously on those mutations (no rAF — it can be throttled in
-  // headless/background renderers) so the panel follows the active trigger.
-  observer = new MutationObserver(alignToTrigger)
+  // defer the align with setTimeout (not rAF — throttled in headless renderers)
+  // so reka has set the new panel's measured width var before we centre on it.
+  observer = new MutationObserver(() => setTimeout(alignToTrigger, 60))
   observer.observe(root, { attributes: true, attributeFilter: ['data-state', 'aria-expanded'], subtree: true })
   alignToTrigger()
 })
