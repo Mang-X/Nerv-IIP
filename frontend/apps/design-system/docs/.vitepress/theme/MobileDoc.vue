@@ -48,8 +48,6 @@
 }
 .ds-mdoc-main {
   min-width: 0;
-  /* keep prose/code readable even when the page column is very wide */
-  max-width: 760px;
 }
 .ds-mdoc-sticky {
   position: static;

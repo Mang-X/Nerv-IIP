@@ -97,7 +97,7 @@
  * the sidebar sits near the left edge and component demos have real room.
  * ------------------------------------------------------------------------- */
 :root {
-  --vp-layout-max-width: 1760px;
+  --vp-layout-max-width: 2048px;
   --vp-sidebar-width: 248px;
 }
 @media (min-width: 1440px) {
