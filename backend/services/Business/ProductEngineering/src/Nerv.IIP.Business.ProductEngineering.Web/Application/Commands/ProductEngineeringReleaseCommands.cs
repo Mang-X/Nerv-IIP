@@ -7,6 +7,9 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVers
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.ServiceAuth;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
@@ -518,10 +521,12 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     IManufacturingBomRepository manufacturingBomRepository,
     IRoutingRepository routingRepository,
     IProductionVersionRepository productionVersionRepository,
+    IEngineeringApprovalVerifier? approvalVerifier = null,
     ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IEngineeringApprovalVerifier _approvalVerifier = approvalVerifier ?? new RejectingEngineeringApprovalVerifier();
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
@@ -536,6 +541,13 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             return new EntityCommandResult(allocation.Code);
         }
+
+        await _approvalVerifier.EnsureApprovedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ApprovalReferenceId,
+            allocation.Code,
+            cancellationToken);
 
         var affectedVersions = new List<Action<string>>();
         var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Reason)
@@ -614,4 +626,83 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"Production version '{versionId}' was not found.")
             : reason => version.Archive(reason);
     }
+}
+
+public interface IEngineeringApprovalVerifier
+{
+    Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class RejectingEngineeringApprovalVerifier : IEngineeringApprovalVerifier
+{
+    public Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        throw new KnownException("Engineering change release requires a verified approved BusinessApproval chain.");
+    }
+}
+
+public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInternalServiceTokenProvider tokenProvider)
+    : IEngineeringApprovalVerifier
+{
+    public async Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(approvalReferenceId, out _))
+        {
+            throw new KnownException("Engineering change approvalReferenceId must be a BusinessApproval chain id.");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalReferenceId)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' could not be verified.");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApprovalChainEnvelope>(cancellationToken);
+        var chain = envelope?.Data ?? throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' returned an empty response.");
+        ValidateApprovedChain(chain, organizationId, environmentId, changeNumber);
+    }
+
+    private static void ValidateApprovedChain(
+        ApprovalChainResponse chain,
+        string organizationId,
+        string environmentId,
+        string changeNumber)
+    {
+        if (!string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
+            || !string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.SourceService, "product-engineering", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentType, "engineering-change-order", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentId, changeNumber, StringComparison.Ordinal))
+        {
+            throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+        }
+    }
+
+    private sealed record ApprovalChainEnvelope(ApprovalChainResponse? Data);
+
+    private sealed record ApprovalChainResponse(
+        string OrganizationId,
+        string EnvironmentId,
+        string Status,
+        string SourceService,
+        string DocumentType,
+        string DocumentId);
 }

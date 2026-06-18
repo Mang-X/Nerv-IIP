@@ -818,12 +818,15 @@ public sealed class ProductEngineeringReleaseApiContractTests
             EngineeringVersionStatus.Published);
         dbContext.AddRange(ebom, mbom, routing, productionVersion);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalReferenceId = Guid.NewGuid().ToString("D");
+        var approvalVerifier = new RecordingApprovalVerifier();
         var handler = new ReleaseEngineeringChangeCommandHandler(
             new EngineeringChangeRepository(dbContext),
             new EngineeringBomRepository(dbContext),
             new ManufacturingBomRepository(dbContext),
             new RoutingRepository(dbContext),
-            new ProductionVersionRepository(dbContext));
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
 
         await handler.Handle(
             new ReleaseEngineeringChangeCommand(
@@ -831,7 +834,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "env-dev",
                 "ECO-3000",
                 "Supersede first release",
-                "approval-3000",
+                approvalReferenceId,
                 new DateOnly(2026, 6, 1),
                 [
                     new AffectedVersionCommand("engineering-bom", "EBOM-3000:A"),
@@ -847,6 +850,37 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(EngineeringVersionStatus.Archived, routing.Status);
         Assert.Equal(ProductionVersionStatus.Archived, productionVersion.Status);
         Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+        Assert.Equal((approvalReferenceId, "ECO-3000"), approvalVerifier.Calls.Single());
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_requires_matching_approved_business_approval_chain()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalVerifier = new RecordingApprovalVerifier(shouldApprove: false);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-APPROVAL-GATE",
+                "Cannot release without approved chain",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-404:A")]),
+            CancellationToken.None));
+
+        Assert.Contains("approved BusinessApproval chain", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.EngineeringChanges);
     }
 
     [Fact]
@@ -871,12 +905,14 @@ public sealed class ProductEngineeringReleaseApiContractTests
             EngineeringVersionStatus.Published);
         dbContext.ProductionVersions.Add(foreignProductionVersion);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalVerifier = new RecordingApprovalVerifier();
         var handler = new ReleaseEngineeringChangeCommandHandler(
             new EngineeringChangeRepository(dbContext),
             new EngineeringBomRepository(dbContext),
             new ManufacturingBomRepository(dbContext),
             new RoutingRepository(dbContext),
-            new ProductionVersionRepository(dbContext));
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new ReleaseEngineeringChangeCommand(
@@ -884,7 +920,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "env-dev",
                 "ECO-CROSS-TENANT",
                 "Attempt cross-tenant supersede",
-                "approval-3000",
+                Guid.NewGuid().ToString("D"),
                 new DateOnly(2026, 6, 1),
                 [new AffectedVersionCommand("production-version", foreignProductionVersion.Id.Id.ToString("D"))]),
             CancellationToken.None));
@@ -1057,5 +1093,26 @@ public sealed class ProductEngineeringReleaseApiContractTests
             requiresQualityInspection: false,
             isOutsourced: false,
             description: null);
+    }
+
+    private sealed class RecordingApprovalVerifier(bool shouldApprove = true) : IEngineeringApprovalVerifier
+    {
+        public List<(string ApprovalReferenceId, string ChangeNumber)> Calls { get; } = [];
+
+        public Task EnsureApprovedAsync(
+            string organizationId,
+            string environmentId,
+            string approvalReferenceId,
+            string changeNumber,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add((approvalReferenceId, changeNumber));
+            if (!shouldApprove)
+            {
+                throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+            }
+
+            return Task.CompletedTask;
+        }
     }
 }
