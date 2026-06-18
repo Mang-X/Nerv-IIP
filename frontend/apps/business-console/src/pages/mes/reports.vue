@@ -7,11 +7,9 @@ import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
   SectionCard,
   SectionCards,
-  Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -19,7 +17,7 @@ import { computed } from 'vue'
 definePage({ meta: { requiresAuth: true, title: '报工与完工' } })
 
 const { filters, productionReports, productionReportsError, productionReportsPending, productionReportsTotal, refreshProductionReports } = useMesProductionReports()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { page, pageSize } = usePagedList(filters)
 
 const goodTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
@@ -28,8 +26,8 @@ const errorMessage = computed(() => formatError(productionReportsError.value))
 type ReportRow = (typeof productionReports)['value'][number]
 const columns: DataTableColumn<ReportRow>[] = [
   { key: 'productionReportId', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单' },
-  { key: 'operationTaskId', header: '工序任务' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
   { key: 'goodQuantity', header: '合格数', align: 'end', width: 'w-20' },
   { key: 'scrapQuantity', header: '不良数', align: 'end', width: 'w-20' },
   { key: 'reworkQuantity', header: '返工数', align: 'end', width: 'w-20' },
@@ -62,12 +60,6 @@ function formatError(error: unknown) {
       <SectionCard description="本页合格总数" :value="goodTotal" hint="当前页合计" />
       <SectionCard description="本页不良总数" :value="scrapTotal" hint="当前页合计" />
     </SectionCards>
-
-    <Toolbar :show-search="false">
-      <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="报工状态" />
-      </template>
-    </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 

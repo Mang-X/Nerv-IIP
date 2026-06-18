@@ -6554,7 +6554,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -6809,7 +6837,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -7222,7 +7278,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -7403,7 +7487,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -7584,7 +7696,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -7978,7 +8118,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -8081,14 +8249,6 @@
             "required": true,
             "schema": {
               "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true
             }
           },
           {
@@ -8286,7 +8446,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -8396,7 +8584,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -8549,7 +8765,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -8773,7 +9017,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -9171,7 +9443,35 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "enum": [
+                "accepted",
+                "active",
+                "blocked",
+                "cancelled",
+                "closed",
+                "completed",
+                "created",
+                "dispositionAccepted",
+                "hold",
+                "inProgress",
+                "open",
+                "partiallyReceived",
+                "paused",
+                "posted",
+                "queued",
+                "ready",
+                "received",
+                "recovered",
+                "released",
+                "returnAccepted",
+                "reworkPending",
+                "scrapAccepted",
+                "scrapped",
+                "requested",
+                "started",
+                "warning"
+              ]
             }
           },
           {
@@ -23502,13 +23802,49 @@
             "format": "date-time"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "operationTasks": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem"
             }
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -23520,7 +23856,35 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "operationSequence": {
             "type": "integer",
@@ -23551,6 +23915,18 @@
           "existingEndUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterName": {
+            "type": "string",
             "nullable": true
           }
         }
@@ -23637,7 +24013,35 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "operationSequence": {
             "type": "integer",
@@ -23670,6 +24074,30 @@
           },
           "qualityStatus": {
             "type": "string"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterName": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24043,7 +24471,35 @@
             "format": "decimal"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "wmsRequestId": {
             "type": "string",
@@ -24052,6 +24508,18 @@
           "requestedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "materialCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24128,7 +24596,35 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "workCenterId": {
             "type": "string"
@@ -24155,6 +24651,30 @@
             "items": {
               "type": "string"
             }
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterName": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24317,7 +24837,35 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "plannedQuantity": {
             "type": "number",
@@ -24336,6 +24884,22 @@
             "items": {
               "type": "string"
             }
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24407,8 +24971,20 @@
           "reportedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse": {
         "allOf": [
@@ -24613,7 +25189,35 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "defectCode": {
             "type": "string",
@@ -24683,11 +25287,47 @@
             "format": "decimal"
           },
           "receiptStatus": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "requestedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "skuCode": {
+            "type": "string",
+            "nullable": true
           },
           "producedLotNo": {
             "type": "string",
@@ -24837,7 +25477,35 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "startedAtUtc": {
             "type": "string",
@@ -24846,6 +25514,22 @@
           "recoveredAtUtc": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationTaskNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetName": {
+            "type": "string",
             "nullable": true
           }
         }
@@ -25132,7 +25816,35 @@
             "nullable": true
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "accepted",
+              "active",
+              "blocked",
+              "cancelled",
+              "closed",
+              "completed",
+              "created",
+              "dispositionAccepted",
+              "hold",
+              "inProgress",
+              "open",
+              "partiallyReceived",
+              "paused",
+              "posted",
+              "queued",
+              "ready",
+              "received",
+              "recovered",
+              "released",
+              "returnAccepted",
+              "reworkPending",
+              "scrapAccepted",
+              "scrapped",
+              "requested",
+              "started",
+              "warning"
+            ]
           },
           "effectiveFromUtc": {
             "type": "string",
@@ -25145,6 +25857,22 @@
           },
           "reasonCode": {
             "type": "string"
+          },
+          "workCenterCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workCenterName": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "deviceAssetName": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -2304,6 +2304,16 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMesListWithoutStatusRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMesProductionPlanListRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -2329,7 +2339,9 @@ public sealed record BusinessConsoleMesWorkOrderItem(
     int Priority,
     DateTimeOffset DueUtc,
     string Status,
-    IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks);
+    IReadOnlyCollection<BusinessConsoleMesOperationTaskItem> OperationTasks,
+    string? WorkOrderNo = null,
+    string? SkuCode = null);
 
 public sealed record BusinessConsoleMesOperationTaskItem(
     string OperationTaskId,
@@ -2340,7 +2352,10 @@ public sealed record BusinessConsoleMesOperationTaskItem(
     DateTimeOffset EarliestStartUtc,
     long DurationTicks,
     DateTimeOffset? ExistingStartUtc,
-    DateTimeOffset? ExistingEndUtc);
+    DateTimeOffset? ExistingEndUtc,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null);
 
 public sealed record BusinessConsoleCreateRushWorkOrderRequest(
     string OrganizationId,
@@ -2574,7 +2589,10 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     decimal ReceivedQuantity,
     string Status,
     string? WmsRequestId,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? MaterialCode = null);
 
 public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: RouteParam] string RequestId,
@@ -2598,7 +2616,13 @@ public sealed record BusinessConsoleMesDispatchTaskRow(
     string? ShiftId,
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed record BusinessConsoleMesAssignDispatchTaskRequest(
     [property: RouteParam] string OperationTaskId,
@@ -2624,7 +2648,13 @@ public sealed record BusinessConsoleMesOperationTaskRow(
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
     DateTimeOffset? StartedAtUtc,
-    string QualityStatus);
+    string QualityStatus,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed record BusinessConsoleMesOperationTaskActionRequest(
     [property: RouteParam] string OperationTaskId,
@@ -2650,7 +2680,11 @@ public sealed record BusinessConsoleMesWipSummaryRow(
     decimal PlannedQuantity,
     decimal GoodQuantity,
     decimal ScrapQuantity,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null);
 
 public sealed record BusinessConsoleMesProductionReportListResponse(
     IReadOnlyCollection<BusinessConsoleMesProductionReportRow> Items,
@@ -2664,7 +2698,9 @@ public sealed record BusinessConsoleMesProductionReportRow(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     decimal ReworkQuantity,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null);
 
 public sealed record BusinessConsoleMesRecordDefectRequest(
     string OrganizationId,
@@ -2701,6 +2737,8 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     decimal Quantity,
     string ReceiptStatus,
     DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? SkuCode = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string? PostedInventoryMovementId = null,
@@ -2731,7 +2769,11 @@ public sealed record BusinessConsoleMesDowntimeEventRow(
     string? DeviceAssetId,
     string Status,
     DateTimeOffset StartedAtUtc,
-    DateTimeOffset? RecoveredAtUtc);
+    DateTimeOffset? RecoveredAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed record BusinessConsoleMesRecordDowntimeEventRequest(
     string OrganizationId,
@@ -2810,4 +2852,8 @@ public sealed record BusinessConsoleMesCapacityImpactRow(
     string Status,
     DateTimeOffset EffectiveFromUtc,
     DateTimeOffset? EffectiveToUtc,
-    string ReasonCode);
+    string ReasonCode,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);

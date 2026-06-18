@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -223,7 +224,7 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = request.Status.Trim().ToLowerInvariant();
-            query = query.Where(x => x.Status == status);
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -433,7 +434,13 @@ public sealed record MesOperationTaskRow(
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
     DateTimeOffset? StartedAtUtc,
-    string QualityStatus);
+    string QualityStatus,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetMesWorkOrderDetailQuery, MesWorkOrderDetailResponse>
@@ -520,7 +527,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
                 x.AssignedUserId,
                 x.EarliestStartUtc,
                 x.ExistingStartUtc,
-                "Ready"));
+                "Ready",
+                x.WorkOrderId,
+                x.OperationTaskIdValue,
+                x.WorkCenterId,
+                null,
+                x.DeviceAssetId,
+                null));
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -545,19 +558,29 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            query = query.Where(x => x.Status.ToString() == status);
+            query = TryParseOperationTaskStatus(status, out var parsedStatus)
+                ? query.Where(x => x.Status == parsedStatus)
+                : query.Where(_ => false);
         }
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            var normalizedKeyword = keyword.Trim().ToLower();
-            query = query.Where(x =>
-                x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
-                x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
-                x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
-                (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
-                (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)) ||
-                x.Status.ToString().ToLower().Contains(normalizedKeyword));
+            var normalizedKeyword = keyword.Trim().ToLowerInvariant();
+            var matchingStatuses = MatchingOperationTaskStatuses(normalizedKeyword);
+            query = matchingStatuses.Length > 0
+                ? query.Where(x =>
+                    x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
+                    (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
+                    (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)) ||
+                    matchingStatuses.Contains(x.Status))
+                : query.Where(x =>
+                    x.OperationTaskIdValue.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkOrderId.ToLower().Contains(normalizedKeyword) ||
+                    x.WorkCenterId.ToLower().Contains(normalizedKeyword) ||
+                    (x.DeviceAssetId != null && x.DeviceAssetId.ToLower().Contains(normalizedKeyword)) ||
+                    (x.ShiftId != null && x.ShiftId.ToLower().Contains(normalizedKeyword)));
         }
 
         if (!string.IsNullOrWhiteSpace(workCenterId))
@@ -579,6 +602,18 @@ public sealed class GetMesWorkOrderDetailQueryHandler(ApplicationDbContext dbCon
         }
 
         return query;
+    }
+
+    private static bool TryParseOperationTaskStatus(string status, out OperationTaskLifecycleStatus parsedStatus)
+    {
+        return Enum.TryParse(status.Trim(), ignoreCase: true, out parsedStatus);
+    }
+
+    private static OperationTaskLifecycleStatus[] MatchingOperationTaskStatuses(string normalizedKeyword)
+    {
+        return Enum.GetValues<OperationTaskLifecycleStatus>()
+            .Where(status => status.ToString().Contains(normalizedKeyword, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 }
 
@@ -641,7 +676,8 @@ public sealed record ListMaterialIssueRequestsQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesMaterialIssueRequestListResponse>;
+    string? DeviceAssetId = null,
+    string? Status = null) : IQuery<MesMaterialIssueRequestListResponse>;
 
 public sealed record MesMaterialIssueRequestListResponse(
     IReadOnlyCollection<MesMaterialIssueRequestRow> Items,
@@ -657,7 +693,10 @@ public sealed record MesMaterialIssueRequestRow(
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
     string Status,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? MaterialCode = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -683,6 +722,12 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.MaterialId.ToLower().Contains(keyword) ||
                 (x.MaterialLotId != null && x.MaterialLotId.ToLower().Contains(keyword)) ||
                 x.Status.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLower();
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
@@ -717,7 +762,10 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
                 x.Status,
-                x.RequestedAtUtc))
+                x.RequestedAtUtc,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.MaterialId))
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total);
     }
@@ -747,7 +795,13 @@ public sealed record MesDispatchTaskRow(
     string? ShiftId,
     string? AssignedUserId,
     DateTimeOffset? PlannedStartUtc,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDispatchTasksQuery, MesDispatchTaskListResponse>
@@ -788,7 +842,13 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
                 x.ShiftId,
                 x.AssignedUserId,
                 x.PlannedStartUtc,
-                Array.Empty<string>()))
+                Array.Empty<string>(),
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.WorkCenterId,
+                null,
+                x.DeviceAssetId,
+                null))
             .ToArrayAsync(cancellationToken);
         return new MesDispatchTaskListResponse(tasks, total);
     }
@@ -933,7 +993,11 @@ public sealed record MesWipSummaryRow(
     decimal PlannedQuantity,
     decimal GoodQuantity,
     decimal ScrapQuantity,
-    IReadOnlyCollection<string> BlockingReasons);
+    IReadOnlyCollection<string> BlockingReasons,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null);
 
 public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetWipSummaryQuery, MesWipSummaryResponse>
@@ -1004,7 +1068,11 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
                 quantities.GetValueOrDefault(task.WorkOrderId),
                 report?.GoodQuantity ?? 0m,
                 report?.ScrapQuantity ?? 0m,
-                []);
+                [],
+                task.WorkOrderId,
+                task.OperationTaskId,
+                task.WorkCenterId,
+                null);
         }).ToArray();
 
         return new MesWipSummaryResponse(items, total);
@@ -1021,7 +1089,8 @@ public sealed record ListRelatedQualityItemsQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesRelatedQualityItemListResponse>;
+    string? DeviceAssetId = null,
+    string? Status = null) : IQuery<MesRelatedQualityItemListResponse>;
 
 public sealed record MesRelatedQualityItemListResponse(
     IReadOnlyCollection<MesRelatedQualityItemRow> Items,
@@ -1063,6 +1132,12 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
                 (x.OperationTaskId != null && x.OperationTaskId.ToLower().Contains(keyword)) ||
                 x.Status.ToLower().Contains(keyword) ||
                 x.DefectCode.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLower();
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
@@ -1108,7 +1183,8 @@ public sealed record ListDowntimeEventsQuery(
     int Skip = 0,
     int Take = 100,
     string? Keyword = null,
-    string? ShiftId = null) : IQuery<MesDowntimeEventListResponse>;
+    string? ShiftId = null,
+    string? Status = null) : IQuery<MesDowntimeEventListResponse>;
 
 public sealed record MesDowntimeEventListResponse(
     IReadOnlyCollection<MesDowntimeEventRow> Items,
@@ -1123,7 +1199,11 @@ public sealed record MesDowntimeEventRow(
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? RecoveredAtUtc,
     string WorkCenterId,
-    string ReasonCode);
+    string ReasonCode,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListDowntimeEventsQuery, MesDowntimeEventListResponse>
@@ -1154,6 +1234,17 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.Reason.ToLower().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = status switch
+            {
+                "open" => query.Where(x => x.ToUtc == null),
+                "recovered" => query.Where(x => x.ToUtc != null),
+                _ => query.Where(_ => false),
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ShiftId))
         {
             var shiftId = request.ShiftId.Trim();
@@ -1179,7 +1270,11 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.FromUtc,
                 x.ToUtc,
                 x.WorkCenterId,
-                x.Reason))
+                x.Reason,
+                null,
+                null,
+                x.DeviceAssetId,
+                null))
             .ToArrayAsync(cancellationToken);
         return new MesDowntimeEventListResponse(items, total);
     }
@@ -1193,7 +1288,8 @@ public sealed record ListShiftHandoversQuery(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? DeviceAssetId = null) : IQuery<MesShiftHandoverListResponse>;
+    string? DeviceAssetId = null,
+    string? Status = null) : IQuery<MesShiftHandoverListResponse>;
 
 public sealed record MesShiftHandoverListResponse(
     IReadOnlyCollection<MesShiftHandoverRow> Items,
@@ -1229,6 +1325,12 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.ShiftId.ToLower().Contains(keyword) ||
                 x.TeamId.ToLower().Contains(keyword) ||
                 x.HandoverStatus.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLower();
+            query = query.Where(x => x.HandoverStatus.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||

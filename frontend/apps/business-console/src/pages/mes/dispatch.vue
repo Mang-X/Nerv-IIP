@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -11,16 +12,25 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '派工看板' } })
 
 const { dispatchTasks, dispatchTasksError, dispatchTasksPending, dispatchTasksTotal, filters, refreshDispatchTasks } = useMesDispatchTasks()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 const blockedCount = computed(() => dispatchTasks.value.filter((x) => x.blockingReasons?.length).length)
 const dispatchableCount = computed(() => dispatchTasks.value.filter((x) => !x.blockingReasons?.length).length)
@@ -28,11 +38,11 @@ const errorMessage = computed(() => formatError(dispatchTasksError.value))
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
 const columns: DataTableColumn<DispatchRow>[] = [
-  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
+  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
-  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '未指定' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },
   { key: 'blockingReasons', header: '阻塞处理' },
@@ -70,7 +80,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="派工状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="派工状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 
