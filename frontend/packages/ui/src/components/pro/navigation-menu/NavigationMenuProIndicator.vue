@@ -29,7 +29,9 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
   </NavigationMenuIndicator>
 </template>
 
-<style scoped>
+<!-- NOT scoped: reka teleports the indicator out of this component, so Vue's
+     scoped data-v attribute never reaches it and scoped rules wouldn't apply. -->
+<style>
 .ds-nav-indicator {
   width: var(--reka-navigation-menu-indicator-size);
   transform: translateX(var(--reka-navigation-menu-indicator-position));
