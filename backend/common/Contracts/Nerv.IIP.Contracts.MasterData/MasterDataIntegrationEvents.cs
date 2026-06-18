@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.MasterData;
 
 public static class MasterDataIntegrationEventTypes
@@ -34,7 +36,10 @@ public sealed record SkuChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataChangedPayload Payload);
+    MasterDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record SkuDisabledIntegrationEvent(
     string EventId,
@@ -48,7 +53,10 @@ public sealed record SkuDisabledIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataDisabledPayload Payload);
+    MasterDataDisabledPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record UnitOfMeasureChangedIntegrationEvent(
     string EventId,
@@ -62,7 +70,10 @@ public sealed record UnitOfMeasureChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataChangedPayload Payload);
+    MasterDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record BusinessPartnerChangedIntegrationEvent(
     string EventId,
@@ -76,7 +87,10 @@ public sealed record BusinessPartnerChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataChangedPayload Payload);
+    MasterDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ResourceChangedIntegrationEvent(
     string EventId,
@@ -90,7 +104,10 @@ public sealed record ResourceChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    ResourceChangedPayload Payload);
+    ResourceChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record WorkCalendarChangedIntegrationEvent(
     string EventId,
@@ -104,7 +121,10 @@ public sealed record WorkCalendarChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataChangedPayload Payload);
+    MasterDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record DeviceAssetChangedIntegrationEvent(
     string EventId,
@@ -118,7 +138,10 @@ public sealed record DeviceAssetChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    MasterDataChangedPayload Payload);
+    MasterDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ReferenceDataCodeChangedIntegrationEvent(
     string EventId,
@@ -132,7 +155,10 @@ public sealed record ReferenceDataCodeChangedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    ReferenceDataChangedPayload Payload);
+    ReferenceDataChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record MasterDataChangedPayload(
     string ResourceType,

@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,10 +21,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.BarcodeLabel\Nerv.IIP.Contracts.BarcodeLabel.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.MasterData\Nerv.IIP.Contracts.MasterData.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.ProductEngineering\Nerv.IIP.Contracts.ProductEngineering.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Quality\Nerv.IIP.Contracts.Quality.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Wms\Nerv.IIP.Contracts.Wms.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.IntegrationEvents\Nerv.IIP.Contracts.IntegrationEvents.csproj" />
   </ItemGroup>

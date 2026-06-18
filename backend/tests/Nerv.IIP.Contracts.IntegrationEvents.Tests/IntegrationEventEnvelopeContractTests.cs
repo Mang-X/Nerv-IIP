@@ -1,10 +1,15 @@
 using System.Reflection;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.BarcodeLabel;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Contracts.ProductEngineering;
+using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Contracts.IntegrationEvents.Tests;
@@ -27,34 +32,38 @@ public sealed class IntegrationEventEnvelopeContractTests
         "Payload"
     ];
 
+    private static readonly Assembly[] PublicContractAssemblies =
+    [
+        typeof(OperationTaskCompletedIntegrationEvent).Assembly,
+        typeof(InventoryMovementRequestedIntegrationEvent).Assembly,
+        typeof(AssetUnavailableIntegrationEvent).Assembly,
+        typeof(DeviceStateChangedIntegrationEvent).Assembly,
+        typeof(WmsIntegrationEvent).Assembly,
+        typeof(SkuChangedIntegrationEvent).Assembly,
+        typeof(BomReleasedIntegrationEvent).Assembly,
+        typeof(NcrOpenedIntegrationEvent).Assembly,
+        typeof(ApprovalStartedIntegrationEvent).Assembly,
+        typeof(BarcodeScanAcceptedIntegrationEvent).Assembly,
+        typeof(SchedulePlanReleasedIntegrationEvent).Assembly
+    ];
+
     public static TheoryData<Type> IntegrationEventTypes()
     {
-        return new TheoryData<Type>
+        var data = new TheoryData<Type>();
+
+        foreach (var eventType in PublicContractAssemblies
+            .SelectMany(assembly => assembly.ExportedTypes)
+            .Where(type =>
+                type.IsClass &&
+                !type.IsAbstract &&
+                !type.ContainsGenericParameters &&
+                type.Name.EndsWith("IntegrationEvent", StringComparison.Ordinal))
+            .OrderBy(type => type.FullName, StringComparer.Ordinal))
         {
-            typeof(OperationTaskCompletedIntegrationEvent),
-            typeof(OperationTaskFailedIntegrationEvent),
-            typeof(OperationTaskRequestedIntegrationEvent),
-            typeof(OperationApprovalRequestedIntegrationEvent),
-            typeof(OperationApprovalApprovedIntegrationEvent),
-            typeof(OperationApprovalRejectedIntegrationEvent),
-            typeof(OperationTaskClaimedIntegrationEvent),
-            typeof(AuditRecordedIntegrationEvent),
-            typeof(InventoryMovementRequestedIntegrationEvent),
-            typeof(StockMovementPostedIntegrationEvent),
-            typeof(StockMovementPostingFailedIntegrationEvent),
-            typeof(StockCountVarianceConfirmedIntegrationEvent),
-            typeof(StockAvailabilityChangedIntegrationEvent),
-            typeof(ApprovalStartedIntegrationEvent),
-            typeof(ApprovalStepResolvedIntegrationEvent),
-            typeof(ApprovalStepOverdueIntegrationEvent),
-            typeof(ApprovalCompletedIntegrationEvent),
-            typeof(AssetUnavailableIntegrationEvent),
-            typeof(AssetRestoredIntegrationEvent),
-            typeof(WmsIntegrationEvent),
-            typeof(DeviceStateChangedIntegrationEvent),
-            typeof(AlarmRaisedIntegrationEvent),
-            typeof(AlarmClearedIntegrationEvent)
-        };
+            data.Add(eventType);
+        }
+
+        return data;
     }
 
     [Theory]
