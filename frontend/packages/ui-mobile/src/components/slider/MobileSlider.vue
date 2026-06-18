@@ -110,7 +110,7 @@ function nudge(delta: number) {
         <span
           class="ds-slider-ring grid size-5 place-items-center rounded-full bg-brand shadow-[0_1px_5px_rgb(0_0_0/0.35)]"
         >
-          <span class="ds-slider-dot block size-2.5 rounded-full bg-background" :class="dragging && 'is-active'" />
+          <span class="ds-slider-dot block size-3.5 rounded-full bg-background" :class="dragging && 'is-active'" />
         </span>
         <span
           v-if="showBubble && dragging"
@@ -141,7 +141,7 @@ function nudge(delta: number) {
    with `.ds-slider-thumb` so it OUT-SPECIFIES the hover rule (0,4,0 / 0,3,0) —
    otherwise hover (still active while pressing) would keep it big. */
 .ds-slider-dot {
-  transform: scale(0.85);
+  transform: scale(0.92);
   transition: transform 0.16s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
 }
 .ds-slider-thumb:hover .ds-slider-dot,
@@ -151,7 +151,7 @@ function nudge(delta: number) {
 .ds-slider-thumb .ds-slider-dot.is-active,
 .ds-slider-thumb:hover .ds-slider-dot.is-active,
 .ds-slider-thumb:focus-visible .ds-slider-dot.is-active {
-  transform: scale(0.66);
+  transform: scale(0.7);
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-slider-dot {
