@@ -104,12 +104,13 @@ function nudge(delta: number) {
         @keydown.right.prevent="nudge(1)"
         @keydown.up.prevent="nudge(1)"
       >
-        <!-- Two layers (WinUI3): a fixed outer ring (brand border) + an inner dot
-             that is small at rest, grows on hover, and shrinks while pressed. -->
+        <!-- Two concentric discs (WinUI3): a solid brand outer circle with a
+             smaller dark circle sitting directly inside it (no ring/gap). The
+             inner disc is small at rest, grows on hover, shrinks while pressed. -->
         <span
-          class="ds-slider-ring grid size-5 place-items-center rounded-full border-2 border-brand bg-card shadow-[0_1px_4px_rgb(0_0_0/0.25)]"
+          class="ds-slider-ring grid size-5 place-items-center rounded-full bg-brand shadow-[0_1px_5px_rgb(0_0_0/0.35)]"
         >
-          <span class="ds-slider-dot block size-3 rounded-full bg-foreground" :class="dragging && 'is-active'" />
+          <span class="ds-slider-dot block size-2.5 rounded-full bg-background" :class="dragging && 'is-active'" />
         </span>
         <span
           v-if="showBubble && dragging"
