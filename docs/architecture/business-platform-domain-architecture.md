@@ -149,7 +149,7 @@ CAD file / design package
   -> MES.WorkOrder
 ```
 
-ProductEngineering 是 EBOM、MBOM、工艺路线版本、ProductionVersion 和工程变更事实源。兼容字段名 `EngineeringItem.ItemCode`、EBOM `ParentItemCode` 和 `ChildItemCode` 在当前实现中表示 MasterData SKU code，不再表示独立于 SKU 的工程件号；真实 SKU/material identity 仍由 BusinessMasterData 拥有。MBOM release 必须引用已发布 EBOM，且 MBOM 产出 `SkuCode` 必须等于 EBOM parent SKU，MBOM material line SKU 集合必须与 EBOM child SKU 集合一致。MRP/MES 使用 ProductionVersion resolve API 以 SKU、有效日期和批量解析 productionVersionId 以及对应的已发布 MBOM/路线，MES 新工单引用 productionVersionId。
+ProductEngineering 是 EBOM、MBOM、工艺路线版本、ProductionVersion 和工程变更事实源。兼容字段名 `EngineeringItem.ItemCode`、EBOM `ParentItemCode` 和 `ChildItemCode` 在当前实现中表示 MasterData SKU code，不再表示独立于 SKU 的工程件号；真实 SKU/material identity 仍由 BusinessMasterData 拥有。MBOM release 必须引用已发布 EBOM，且 MBOM 产出 `SkuCode` 必须等于 EBOM parent SKU；每个非 phantom EBOM child SKU 必须被 MBOM material line 覆盖，phantom EBOM child SKU 可省略，MBOM 可包含 EBOM 未列出的制造端追加物料。MRP/MES 使用 ProductionVersion resolve API 以 SKU、有效日期和批量解析 productionVersionId 以及对应的已发布 MBOM/路线，MES 新工单引用 productionVersionId。
 
 ### 计划到采购/生产
 

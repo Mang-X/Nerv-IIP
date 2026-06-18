@@ -283,6 +283,13 @@ public sealed class ReleaseManufacturingBomCommandValidator : AbstractValidator<
         RuleFor(x => x.EngineeringBomCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EngineeringBomRevision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.MaterialLines).NotEmpty();
+        RuleForEach(x => x.MaterialLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(50);
+            line.RuleFor(x => x.ScrapRate).GreaterThanOrEqualTo(0);
+        });
     }
 }
 
@@ -479,34 +486,28 @@ internal static class ProductEngineeringReleaseValidation
         string manufacturingBomSkuCode,
         IReadOnlyCollection<ManufacturingBomMaterialLineCommand> materialLines)
     {
-        if (!string.Equals(engineeringBom.ParentItemCode, manufacturingBomSkuCode, StringComparison.Ordinal))
+        var normalizedManufacturingBomSkuCode = manufacturingBomSkuCode.Trim();
+        if (!string.Equals(engineeringBom.ParentItemCode, normalizedManufacturingBomSkuCode, StringComparison.Ordinal))
         {
-            throw new KnownException($"Manufacturing BOM SKU '{manufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+            throw new KnownException($"Manufacturing BOM SKU '{normalizedManufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
         }
 
-        var ebomChildSkuCodes = engineeringBom.Lines
+        var requiredEbomChildSkuCodes = engineeringBom.Lines
+            .Where(line => !line.IsPhantom)
             .Select(line => line.ChildItemCode)
             .ToHashSet(StringComparer.Ordinal);
         var mbomMaterialSkuCodes = materialLines
-            .Select(line => line.SkuCode.Trim())
+            .Select(line => line.SkuCode?.Trim() ?? string.Empty)
+            .Where(code => code.Length > 0)
             .ToHashSet(StringComparer.Ordinal);
 
-        var missingMaterialSkuCodes = ebomChildSkuCodes
+        var missingMaterialSkuCodes = requiredEbomChildSkuCodes
             .Where(code => !mbomMaterialSkuCodes.Contains(code))
             .Order(StringComparer.Ordinal)
             .ToArray();
         if (missingMaterialSkuCodes.Length > 0)
         {
             throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
-        }
-
-        var orphanMaterialSkuCodes = mbomMaterialSkuCodes
-            .Where(code => !ebomChildSkuCodes.Contains(code))
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        if (orphanMaterialSkuCodes.Length > 0)
-        {
-            throw new KnownException($"Manufacturing BOM contains material SKU(s) not present in the referenced EBOM: {string.Join(", ", orphanMaterialSkuCodes)}.");
         }
     }
 

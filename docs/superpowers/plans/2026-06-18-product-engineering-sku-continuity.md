@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close issue #405 by making ProductEngineering treat EngineeringItem and EBOM codes as SKU codes and by requiring EBOM lines to match MBOM material lines.
+**Goal:** Close issue #405 by making ProductEngineering treat EngineeringItem and EBOM codes as SKU codes and by requiring non-phantom EBOM lines to be covered by MBOM material lines.
 
-**Architecture:** Keep existing public field names (`ItemCode`, `ParentItemCode`, `ChildItemCode`) as compatibility names, but freeze their meaning as MasterData SKU codes. Do not add a ProductEngineering item-to-SKU mapping table. Add command-handler validation so MBOM release cannot publish a manufacturing BOM whose material lines drift from the referenced EBOM.
+**Architecture:** Keep existing public field names (`ItemCode`, `ParentItemCode`, `ChildItemCode`) as compatibility names, but freeze their meaning as MasterData SKU codes. Do not add a ProductEngineering item-to-SKU mapping table. Add command-handler validation so MBOM release cannot publish a manufacturing BOM whose output SKU differs from the referenced EBOM parent SKU or omits a required non-phantom EBOM child SKU. Phantom EBOM children may be omitted or expanded by MBOM, and MBOM may include manufacturing-only material lines.
 
 **Tech Stack:** .NET 10, CleanDDD, FastEndpoints, MediatR, EF Core, xUnit.
 
@@ -25,11 +25,11 @@
 
 **Interfaces:**
 - Consumes: existing `ReleaseManufacturingBomCommandHandler`
-- Produces: tests that require MBOM material lines to match referenced EBOM child SKU codes.
+- Produces: tests that require MBOM material lines to cover referenced non-phantom EBOM child SKU codes while allowing phantom omissions and manufacturing-only additions.
 
-- [ ] Add failing tests for missing EBOM material line and orphan MBOM material line.
-- [ ] Update existing EBOM/MBOM fixtures so compatibility field names use SKU-like codes.
-- [ ] Run ProductEngineering Web tests and confirm the new tests fail for missing continuity validation.
+- [x] Add failing tests for missing EBOM material line, parent SKU trim, phantom omission, manufacturing-only MBOM additions, and invalid material line inputs.
+- [x] Update existing EBOM/MBOM fixtures so compatibility field names use SKU-like codes.
+- [x] Run ProductEngineering Web tests and confirm the new tests fail for missing continuity validation.
 
 ### Task 2: ProductEngineering Continuity Validation
 
@@ -38,10 +38,10 @@
 
 **Interfaces:**
 - Consumes: `EngineeringBom.Lines` and `ReleaseManufacturingBomCommand.MaterialLines`
-- Produces: deterministic `KnownException` failures when EBOM child SKU codes and MBOM material SKU codes diverge.
+- Produces: deterministic `KnownException` failures when MBOM output SKU differs from the EBOM parent SKU or required non-phantom EBOM child SKU codes are missing from MBOM material lines.
 
-- [ ] Add minimal release-handler validation for MBOM release against the EBOM parent SKU and child SKU code set.
-- [ ] Run ProductEngineering Domain and Web tests.
+- [x] Add minimal release-handler validation for MBOM release against the trimmed EBOM parent SKU and required non-phantom child SKU coverage.
+- [x] Run ProductEngineering Domain and Web tests.
 
 ### Task 3: Documentation
 
@@ -54,6 +54,6 @@
 - Consumes: code diff from Tasks 1-2.
 - Produces: docs that state existing `itemCode` compatibility names now represent SKU codes.
 
-- [ ] Document the compatibility semantic: EngineeringItem itemCode and EBOM parent/child codes are SKU codes.
-- [ ] Document MBOM release line continuity validation.
-- [ ] Run focused tests again after doc updates.
+- [x] Document the compatibility semantic: EngineeringItem itemCode and EBOM parent/child codes are SKU codes.
+- [x] Document MBOM release line continuity validation.
+- [x] Run focused tests again after doc updates.

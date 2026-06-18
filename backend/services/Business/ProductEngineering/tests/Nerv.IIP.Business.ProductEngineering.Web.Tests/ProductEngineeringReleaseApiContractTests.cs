@@ -481,6 +481,28 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public void Release_manufacturing_bom_validator_rejects_invalid_material_lines()
+    {
+        var result = new ReleaseManufacturingBomCommandValidator().Validate(new ReleaseManufacturingBomCommand(
+            "org-001",
+            "env-dev",
+            "MBOM-1000",
+            "A",
+            "SKU-FG-1000",
+            "EBOM-1000",
+            "A",
+            new DateOnly(2026, 6, 1),
+            [new ManufacturingBomMaterialLineCommand(null!, 0m, "", -0.01m)],
+            []));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => IsValidationFailureMessageFor(x, nameof(ManufacturingBomMaterialLineCommand.SkuCode)));
+        Assert.Contains(result.Errors, x => IsValidationFailureMessageFor(x, nameof(ManufacturingBomMaterialLineCommand.Quantity)));
+        Assert.Contains(result.Errors, x => IsValidationFailureMessageFor(x, nameof(ManufacturingBomMaterialLineCommand.UnitOfMeasureCode)));
+        Assert.Contains(result.Errors, x => IsValidationFailureMessageFor(x, nameof(ManufacturingBomMaterialLineCommand.ScrapRate)));
+    }
+
+    [Fact]
     public async Task Release_manufacturing_bom_rejects_duplicate_business_key_and_stores_unique_ebom_version_reference()
     {
         await using var provider = CreateInMemoryProvider();
@@ -556,6 +578,41 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_manufacturing_bom_trims_parent_sku_for_continuity_validation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CONTINUITY", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-1000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-CONTINUITY",
+                "A",
+                " SKU-FG-1000 ",
+                "EBOM-CONTINUITY",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-1000", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await dbContext.ManufacturingBoms.SingleAsync(x => x.BomCode == "MBOM-CONTINUITY", CancellationToken.None);
+        Assert.Equal("SKU-FG-1000", created.SkuCode);
+    }
+
+    [Fact]
     public async Task Release_manufacturing_bom_rejects_ebom_parent_sku_mismatch()
     {
         await using var provider = CreateInMemoryProvider();
@@ -590,7 +647,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
-    public async Task Release_manufacturing_bom_rejects_orphan_material_line_not_in_ebom()
+    public async Task Release_manufacturing_bom_allows_manufacturing_only_material_line_not_in_ebom()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -605,7 +662,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             new EngineeringBomRepository(dbContext),
             new ManufacturingBomRepository(dbContext));
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        await handler.Handle(
             new ReleaseManufacturingBomCommand(
                 "org-001",
                 "env-dev",
@@ -620,10 +677,51 @@ public sealed class ProductEngineeringReleaseApiContractTests
                     new ManufacturingBomMaterialLineCommand("SKU-RM-9999", 1m, "EA", 0m)
                 ],
                 []),
-            CancellationToken.None));
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Contains("SKU-RM-9999", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("not present", exception.Message, StringComparison.OrdinalIgnoreCase);
+        var created = await dbContext.ManufacturingBoms
+            .Include(x => x.MaterialLines)
+            .SingleAsync(x => x.BomCode == "MBOM-CONTINUITY", CancellationToken.None);
+        Assert.Contains(created.MaterialLines, x => x.SkuCode == "SKU-RM-9999");
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_allows_omitting_phantom_ebom_child_sku()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CONTINUITY", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-1000", 1m, "EA")
+            .AddLine("SKU-PHANTOM-1000", 1m, "EA", isPhantom: true);
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext));
+
+        await handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-CONTINUITY",
+                "A",
+                "SKU-FG-1000",
+                "EBOM-CONTINUITY",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-1000", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await dbContext.ManufacturingBoms
+            .Include(x => x.MaterialLines)
+            .SingleAsync(x => x.BomCode == "MBOM-CONTINUITY", CancellationToken.None);
+        Assert.DoesNotContain(created.MaterialLines, x => x.SkuCode == "SKU-PHANTOM-1000");
     }
 
     [Fact]
@@ -1152,6 +1250,11 @@ public sealed class ProductEngineeringReleaseApiContractTests
     private static bool IsValidationFailureFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
     {
         return NormalizeValidationPropertyName(failure.PropertyName) == NormalizeValidationPropertyName(propertyName);
+    }
+
+    private static bool IsValidationFailureMessageFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
+    {
+        return NormalizeValidationPropertyName(failure.ErrorMessage).Contains(NormalizeValidationPropertyName(propertyName), StringComparison.Ordinal);
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
