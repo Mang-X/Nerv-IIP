@@ -109,22 +109,30 @@
     --vp-sidebar-width: 272px;
   }
 }
-/* Doc pages: drop the 688px body cap, let the content column fill the space
-   between sidebar and the right outline (cap generously for prose readability). */
+/* Doc pages: VitePress caps the body at a cramped 688px (its VPDoc component
+   style loads after this file, so a same-specificity override loses — we add a
+   `.Layout` ancestor to win the cascade without !important). Give content a
+   generous Arco-like column: wide enough for demos, capped for prose readability.
+   The `.container` padding then keeps it off the sidebar / right edge. */
 @media (min-width: 960px) {
-  .VPDoc:not(.has-sidebar) .container {
+  .Layout .VPDoc:not(.has-sidebar) .container {
     max-width: 1152px;
   }
-  .VPDoc .content-container {
-    max-width: none;
+  .Layout .VPDoc .content-container,
+  .Layout .VPDoc.has-aside .content-container {
+    max-width: 992px;
   }
-  .VPDoc.has-aside .content-container {
-    max-width: none;
+  /* Comfortable side gutters so content doesn't hug the sidebar or right edge. */
+  .VPDoc .container {
+    padding-inline: 3rem;
   }
 }
-/* Nudge the doc gutters in a touch so content breathes without hugging edges. */
-@media (min-width: 960px) {
+@media (min-width: 1440px) {
+  .Layout .VPDoc .content-container,
+  .Layout .VPDoc.has-aside .content-container {
+    max-width: 1088px;
+  }
   .VPDoc .container {
-    padding-inline: 2.5rem;
+    padding-inline: 4rem;
   }
 }

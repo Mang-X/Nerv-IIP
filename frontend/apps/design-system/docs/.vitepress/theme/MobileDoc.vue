@@ -37,6 +37,9 @@
   display: grid;
   gap: 2.5rem;
   align-items: start;
+  /* generous gutters (Arco docs style): breathing room above + on both sides so
+     content/phone don't hug the sidebar and right edge. */
+  padding: 1.75rem 2rem 3rem;
 }
 /* Two columns only when there's real room (≥1200px); below that the phone
    stacks under the docs at full width instead of cramping a narrow split. */
@@ -44,6 +47,12 @@
   .ds-mdoc {
     grid-template-columns: minmax(0, 1fr) 380px;
     gap: 3.5rem;
+    padding: 2.25rem 3rem 3.5rem;
+  }
+}
+@media (min-width: 1600px) {
+  .ds-mdoc {
+    padding: 2.5rem 4rem 4rem;
   }
 }
 .ds-mdoc-main {
