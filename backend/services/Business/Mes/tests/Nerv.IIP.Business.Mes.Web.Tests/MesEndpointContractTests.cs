@@ -490,9 +490,9 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.MaterialIssueRequests.AddRange(
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", 1m, now.AddMinutes(1)),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", 1m, now.AddMinutes(2)),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-003", "WO-MAT", "OP-MAT-30", "MAT-OIL", 1m, now.AddMinutes(3)));
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", "L", 1m, now.AddMinutes(1)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", "L", 1m, now.AddMinutes(2)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-003", "WO-MAT", "OP-MAT-30", "MAT-OIL", "L", 1m, now.AddMinutes(3)));
         dbContext.WorkCenterUnavailabilities.AddRange(
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-001", "WC-MIX", now.AddMinutes(1), null, "breakdown", "ASSET-001"),
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-002", "WC-MIX", now.AddMinutes(2), null, "breakdown", "ASSET-001"),
@@ -619,8 +619,8 @@ public sealed class MesEndpointContractTests
             Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-FILTER", "WO-FILTER", "SKU-FILTER", 1m, "PCS", now),
             Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-OTHER", "WO-OTHER", "SKU-OTHER", 1m, "PCS", now.AddMinutes(1)));
         dbContext.MaterialIssueRequests.AddRange(
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-FILTER", "WO-FILTER", "OP-FILTER", "MAT-FILTER", 1m, now),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OTHER", "WO-OTHER", "OP-OTHER", "MAT-OTHER", 1m, now.AddMinutes(1)));
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-FILTER", "WO-FILTER", "OP-FILTER", "MAT-FILTER", "PCS", 1m, now),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OTHER", "WO-OTHER", "OP-OTHER", "MAT-OTHER", "PCS", 1m, now.AddMinutes(1)));
         dbContext.WorkCenterUnavailabilities.AddRange(
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-FILTER", "WC-FILTER", now, null, "filter-reason", "DEV-FILTER"),
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-OTHER", "WC-OTHER", now.AddMinutes(1), null, "other-reason", "DEV-OTHER"));
@@ -728,7 +728,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal(expectedQualityItem.ReferenceId, qualityItem.QualityItemId);
         Assert.Equal("Defect", qualityItem.SourceType);
         Assert.Equal("OP-20", qualityItem.SourceDocumentId);
-        Assert.Equal("NcrRequested", qualityItem.Status);
+        Assert.Equal("Open", qualityItem.Status);
         Assert.Equal("DEF-MIX", qualityItem.DefectCode);
         Assert.Null(qualityItem.NcrId);
         Assert.Equal(3, handovers.Total);

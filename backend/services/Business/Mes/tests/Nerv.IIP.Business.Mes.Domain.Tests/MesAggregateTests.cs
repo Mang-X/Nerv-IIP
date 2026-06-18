@@ -248,6 +248,35 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void WorkOrder_allows_scrap_without_consuming_good_quantity_target()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-SCRAP",
+            "SKU-001",
+            "PV-001",
+            100m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            overReceiptTolerancePercent: 0m);
+        workOrder.MarkReleased();
+        workOrder.Start(DateTimeOffset.Parse("2026-05-23T08:00:00Z"));
+
+        workOrder.RecordProductionProgress(95m, 10m, DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
+
+        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
+        Assert.Equal(95m, workOrder.CompletedQuantity);
+        Assert.Equal(10m, workOrder.ScrapQuantity);
+
+        workOrder.RecordProductionProgress(5m, 0m, DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+
+        Assert.Equal(WorkOrder.CompletedStatus, workOrder.Status);
+        Assert.Equal(100m, workOrder.CompletedQuantity);
+        Assert.Equal(10m, workOrder.ScrapQuantity);
+    }
+
+    [Fact]
     public void MaterialIssueRequest_creation_raises_downstream_issue_event()
     {
         var request = MaterialIssueRequest.Create(
@@ -278,7 +307,7 @@ public sealed class MesAggregateTests
             1m,
             DateTimeOffset.Parse("2026-05-23T09:20:00Z"));
 
-        Assert.Equal(DefectRecord.NcrRequestedStatus, defect.Status);
+        Assert.Equal(DefectRecord.OpenStatus, defect.Status);
         Assert.IsType<DefectRaisedDomainEvent>(defect.GetDomainEvents().Single());
 
         defect.AcceptDisposition("NCR-001", "NCR-2026-001", "Rework", "RW-WO-001", DateTimeOffset.Parse("2026-05-23T10:00:00Z"));

@@ -230,14 +230,14 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         var maxQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
-        if (CompletedQuantity + ScrapQuantity + goodQuantity + scrapQuantity > maxQuantity)
+        if (CompletedQuantity + goodQuantity > maxQuantity)
         {
             throw new InvalidOperationException("Reported quantity exceeds work order tolerance.");
         }
 
         CompletedQuantity += goodQuantity;
         ScrapQuantity += scrapQuantity;
-        Status = CompletedQuantity + ScrapQuantity >= Quantity ? CompletedStatus : StartedStatus;
+        Status = CompletedQuantity >= Quantity ? CompletedStatus : StartedStatus;
     }
 
     public void Close(DateTimeOffset closedAtUtc)

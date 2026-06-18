@@ -74,25 +74,4 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         return consumption;
     }
 
-    public static ProductionReportMaterialConsumption Record(
-        string organizationId,
-        string environmentId,
-        string reportNo,
-        string workOrderId,
-        string operationTaskId,
-        string materialId,
-        string materialLotId,
-        decimal consumedQuantity,
-        string materialIssueRequestNo) =>
-        Record(
-            organizationId,
-            environmentId,
-            reportNo,
-            workOrderId,
-            operationTaskId,
-            materialId,
-            materialLotId,
-            UnspecifiedUomCode,
-            consumedQuantity,
-            materialIssueRequestNo);
 }

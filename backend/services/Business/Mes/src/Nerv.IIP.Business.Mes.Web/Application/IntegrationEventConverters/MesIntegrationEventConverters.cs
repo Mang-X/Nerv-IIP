@@ -29,6 +29,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         return NewInventoryMovementRequested(
             consumption.OrganizationId,
             consumption.EnvironmentId,
+            consumption.ReportNo,
             idempotencyKey,
             consumption.ReportNo,
             consumption.MaterialIssueRequestNo,
@@ -44,6 +45,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
     internal static InventoryMovementRequestedIntegrationEvent NewInventoryMovementRequested(
         string organizationId,
         string environmentId,
+        string correlationId,
         string idempotencyKey,
         string sourceDocumentId,
         string? sourceDocumentLineId,
@@ -62,7 +64,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             InventoryIntegrationEventVersions.V1,
             requestedAtUtc,
             InventoryIntegrationEventSources.BusinessMes,
-            idempotencyKey,
+            correlationId,
             sourceDocumentId,
             organizationId,
             environmentId,
@@ -99,6 +101,7 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
+            request.WorkOrderId,
             idempotencyKey,
             request.RequestNo,
             request.WorkOrderId,
@@ -124,6 +127,7 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
+            request.WorkOrderId,
             idempotencyKey,
             request.RequestNo,
             request.OperationTaskId,

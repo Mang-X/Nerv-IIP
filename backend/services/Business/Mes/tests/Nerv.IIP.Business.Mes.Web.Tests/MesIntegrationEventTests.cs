@@ -38,6 +38,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("LOT-OIL-A", integrationEvent.Payload.LotNo);
         Assert.Equal(-2.5m, integrationEvent.Payload.Quantity);
+        Assert.Equal("PRPT-001", integrationEvent.CorrelationId);
         Assert.Contains("MIR-001", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
     }
 
@@ -65,6 +66,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("SKU-FG", integrationEvent.Payload.SkuCode);
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
+        Assert.Equal("WO-001", integrationEvent.CorrelationId);
     }
 
     [Fact]
@@ -90,6 +92,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("MAT-OIL", integrationEvent.Payload.SkuCode);
         Assert.Equal("L", integrationEvent.Payload.UomCode);
         Assert.Equal(-3m, integrationEvent.Payload.Quantity);
+        Assert.Equal("WO-001", integrationEvent.CorrelationId);
     }
 
     [Fact]

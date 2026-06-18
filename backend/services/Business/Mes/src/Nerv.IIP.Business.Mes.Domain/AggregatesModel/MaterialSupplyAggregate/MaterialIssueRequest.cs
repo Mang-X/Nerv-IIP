@@ -78,26 +78,6 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         return request;
     }
 
-    public static MaterialIssueRequest Create(
-        string organizationId,
-        string environmentId,
-        string requestNo,
-        string workOrderId,
-        string? operationTaskId,
-        string materialId,
-        decimal requestedQuantity,
-        DateTimeOffset requestedAtUtc) =>
-        Create(
-            organizationId,
-            environmentId,
-            requestNo,
-            workOrderId,
-            operationTaskId,
-            materialId,
-            UnspecifiedUomCode,
-            requestedQuantity,
-            requestedAtUtc);
-
     public void ConfirmLineSideReceipt(DateTimeOffset receivedAtUtc, decimal? receivedQuantity = null, string? materialLotId = null)
     {
         var quantity = receivedQuantity ?? RequestedQuantity - ReceivedQuantity;

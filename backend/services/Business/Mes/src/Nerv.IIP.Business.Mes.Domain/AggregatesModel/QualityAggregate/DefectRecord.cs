@@ -7,7 +7,6 @@ public partial record DefectRecordId : IGuidStronglyTypedId;
 public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
 {
     public const string OpenStatus = "Open";
-    public const string NcrRequestedStatus = "NcrRequested";
     public const string ReworkPendingStatus = "ReworkPending";
     public const string ScrapAcceptedStatus = "ScrapAccepted";
     public const string ReturnAcceptedStatus = "ReturnAccepted";
@@ -34,7 +33,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
         DefectCode = DomainGuard.Required(defectCode, nameof(defectCode));
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
-        Status = NcrRequestedStatus;
+        Status = OpenStatus;
         RecordedAtUtc = recordedAtUtc;
     }
 
