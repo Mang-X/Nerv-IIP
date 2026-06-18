@@ -39,7 +39,7 @@ function toggle() {
     <span
       :class="
         cn(
-          'grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition-colors',
+          'ds-mcheck-box grid size-[22px] shrink-0 place-items-center rounded-md border-2 transition-[colors,transform]',
           model
             ? 'border-brand bg-brand text-brand-foreground'
             : 'border-muted-foreground/40 bg-transparent',
@@ -61,6 +61,16 @@ function toggle() {
 .ds-mcheck {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+/* WinUI3-style press: the box depresses (shrinks) while held, then springs back. */
+.ds-mcheck-box {
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.2s var(--ease-out-back, cubic-bezier(0.34, 1.4, 0.64, 1));
+}
+.ds-mcheck:active:not(:disabled) .ds-mcheck-box {
+  transform: scale(0.88);
 }
 .ds-mcheck-tick {
   transition:

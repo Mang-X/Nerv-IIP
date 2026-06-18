@@ -84,7 +84,22 @@ function onBlur(e: Event) {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
+.ds-stepper-btn {
+  transition: background-color 0.16s ease;
+}
+.ds-stepper-btn :deep(svg) {
+  transition: transform 0.18s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+}
 .ds-stepper-btn:active:not(:disabled) {
   background: var(--muted);
+}
+/* WinUI3-style press: the glyph shrinks while held, then springs back. */
+.ds-stepper-btn:active:not(:disabled) :deep(svg) {
+  transform: scale(0.8);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-stepper-btn :deep(svg) {
+    transition: none;
+  }
 }
 </style>
