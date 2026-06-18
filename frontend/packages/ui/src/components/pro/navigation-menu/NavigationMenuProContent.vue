@@ -23,9 +23,10 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
     :class="
       cn(
         'ds-nav-content absolute top-0 left-0 w-full p-3 sm:w-auto',
+        // fade only (no directional left/right slide — the panel is a popover that
+        // drops from its trigger; the viewport handles the position/size glide)
         'data-[motion=from-start]:animate-in data-[motion=from-end]:animate-in data-[motion=to-start]:animate-out data-[motion=to-end]:animate-out',
         'data-[motion=from-start]:fade-in data-[motion=from-end]:fade-in data-[motion=to-start]:fade-out data-[motion=to-end]:fade-out',
-        'data-[motion=from-start]:slide-in-from-left-8 data-[motion=from-end]:slide-in-from-right-8 data-[motion=to-start]:slide-out-to-left-8 data-[motion=to-end]:slide-out-to-right-8',
         'duration-200',
         props.class,
       )

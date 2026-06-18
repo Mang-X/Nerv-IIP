@@ -20,7 +20,7 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class'))
     v-bind="forwarded"
     :class="
       cn(
-        'ds-nav-indicator data-[state=visible]:animate-in data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:fade-in top-full z-[1] flex h-2 items-end justify-center overflow-hidden',
+        'ds-nav-indicator data-[state=visible]:animate-in data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:fade-in absolute top-full left-0 z-[1] flex h-2 items-end justify-center overflow-hidden',
         props.class,
       )
     "
