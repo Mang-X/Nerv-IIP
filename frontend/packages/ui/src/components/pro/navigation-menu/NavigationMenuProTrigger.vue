@@ -47,8 +47,13 @@ const forwarded = useForwardProps(reactiveOmit(props, 'class', 'chevron'))
     background-color 0.18s var(--ease-out-quart, ease-out);
 }
 .ds-nav-chevron {
+  /* Tailwind v4 `rotate-180` animates the `rotate` property (not `transform`),
+     so transition `rotate`. An explicit `0deg` base is required: the default
+     `rotate: none` is a keyword that won't interpolate to `180deg` (it would
+     jump), whereas `0deg → 180deg` animates. */
+  rotate: 0deg;
   transition:
-    transform 0.25s var(--ease-out-expo, ease-out),
+    rotate 0.25s var(--ease-out-expo, ease-out),
     color 0.18s var(--ease-out-quart, ease-out);
 }
 @media (prefers-reduced-motion: reduce) {
