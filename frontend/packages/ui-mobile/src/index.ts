@@ -1,4 +1,5 @@
 export { cn } from './lib/utils'
+export { MOBILE_OVERLAY_TARGET } from './lib/overlay-target'
 export { default as AppShellMobile } from './components/app-shell-mobile/AppShellMobile.vue'
 export { default as ScanBar } from './components/scan-bar/ScanBar.vue'
 export { default as ListRow } from './components/list-row/ListRow.vue'

@@ -6,6 +6,14 @@
 //     <template #phone> …live components… </template>
 //     …markdown prose / code / props… (default slot)
 //   </MobileDoc>
+import { provide } from 'vue'
+import { MOBILE_OVERLAY_TARGET } from '@nerv-iip/ui-mobile'
+
+// Keep mobile overlays (BottomSheet, Picker, DatePicker, ActionSheet, Dialog,
+// NumberKeyboard, Toast) inside the phone frame instead of covering the page.
+// `.ds-mdoc-screen` is given a containing block (transform) below so their
+// `position: fixed` anchors to the phone, not the viewport.
+provide(MOBILE_OVERLAY_TARGET, '.ds-mdoc-screen')
 </script>
 
 <template>
@@ -110,6 +118,13 @@
   overflow-y: auto;
   background: var(--background);
   scrollbar-width: thin;
+  /* containing block for overlays teleported here (MOBILE_OVERLAY_TARGET): a
+     transform makes this element the containing block for `position: fixed`
+     descendants, so sheets/dialogs/keypads/toasts anchor to the phone screen
+     (clipped by overflow) instead of the viewport. (`contain: paint` is the
+     non-GPU alternative but Chromium doesn't reliably anchor fixed children to
+     it here, so we use transform.) */
+  transform: translateZ(0);
 }
 /* tidy default rhythm for stacked demos inside the phone */
 .ds-mdoc-screen :where(section) {

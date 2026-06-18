@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
+import { inject, onBeforeUnmount, watch } from 'vue'
 import { CheckIcon, Loader2Icon, XIcon } from 'lucide-vue-next'
+import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
+
+// Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.
+const overlayTarget = inject(MOBILE_OVERLAY_TARGET, 'body')
 
 /**
  * MobileToast — a centered HUD toast (居中提示), distinct from the top message
@@ -44,7 +48,7 @@ onBeforeUnmount(clearTimer)
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="overlayTarget">
     <Transition name="ds-toast">
       <div v-if="show" class="ds-toast-layer" :class="overlay && 'ds-toast-blocking'">
         <div

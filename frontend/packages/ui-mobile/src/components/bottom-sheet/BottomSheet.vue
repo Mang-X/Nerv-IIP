@@ -8,8 +8,12 @@ import {
   DialogRoot,
   DialogTitle,
 } from 'reka-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
+import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
 import { cn, rubberband } from '../../lib/utils'
+
+// Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.
+const overlayTarget = inject(MOBILE_OVERLAY_TARGET, undefined)
 
 const props = defineProps<{
   open: boolean
@@ -120,7 +124,7 @@ watch(
 
 <template>
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
-    <DialogPortal>
+    <DialogPortal :to="overlayTarget">
       <DialogOverlay
         class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-40 bg-black/50 backdrop-blur-[6px] duration-300"
       />

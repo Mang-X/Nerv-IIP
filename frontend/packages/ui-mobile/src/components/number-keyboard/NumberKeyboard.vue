@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { Delete } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
+import { MOBILE_OVERLAY_TARGET } from '../../lib/overlay-target'
 import { cn } from '../../lib/utils'
+
+// Defaults to body (full-screen PDA); a host (e.g. docs phone sim) can scope it.
+const overlayTarget = inject(MOBILE_OVERLAY_TARGET, 'body')
 
 /**
  * NumberKeyboard — on-screen numeric keypad for PDA entry (Arco form). Bottom
@@ -48,7 +52,7 @@ function confirm() {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="overlayTarget">
     <Transition name="ds-nk-fade">
       <div
         v-if="show"
