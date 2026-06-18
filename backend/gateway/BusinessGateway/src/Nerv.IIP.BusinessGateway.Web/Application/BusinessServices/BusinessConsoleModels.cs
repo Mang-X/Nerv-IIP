@@ -2304,6 +2304,16 @@ public sealed record BusinessConsoleMesListRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record BusinessConsoleMesListWithoutStatusRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record BusinessConsoleMesProductionPlanListRequest(
     string OrganizationId,
     string EnvironmentId,

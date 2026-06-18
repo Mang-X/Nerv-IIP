@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesCapacityImpacts } from '@/composables/useBusinessMes'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesCapacityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -36,7 +36,7 @@ const {
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const statusFilter = shallowRef('all')
 
-const activeCount = computed(() => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'active').length)
+const openCount = computed(() => capacityImpacts.value.filter((item) => item.status?.toLowerCase() === 'open').length)
 const errorMessage = computed(() => formatError(capacityImpactsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -76,8 +76,8 @@ function formatError(error: unknown) {
 
     <SectionCards :columns="3">
       <SectionCard description="影响记录" :value="capacityImpactsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页生效中" :value="activeCount" hint="当前页统计" />
-      <SectionCard description="本页已结束" :value="capacityImpacts.length - activeCount" hint="当前页统计" />
+      <SectionCard description="本页未恢复" :value="openCount" hint="当前页统计" />
+      <SectionCard description="本页已恢复" :value="capacityImpacts.length - openCount" hint="当前页统计" />
     </SectionCards>
 
     <Toolbar :show-search="false">
@@ -85,7 +85,7 @@ function formatError(error: unknown) {
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="影响状态"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+            <SelectItem v-for="option in mesCapacityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
           </SelectContent>
         </Select>
       </template>

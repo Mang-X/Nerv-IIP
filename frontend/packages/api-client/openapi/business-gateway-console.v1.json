@@ -8252,42 +8252,6 @@
             }
           },
           {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "nullable": true,
-              "enum": [
-                "accepted",
-                "active",
-                "blocked",
-                "cancelled",
-                "closed",
-                "completed",
-                "created",
-                "dispositionAccepted",
-                "hold",
-                "inProgress",
-                "open",
-                "partiallyReceived",
-                "paused",
-                "posted",
-                "queued",
-                "ready",
-                "received",
-                "recovered",
-                "released",
-                "returnAccepted",
-                "reworkPending",
-                "scrapAccepted",
-                "scrapped",
-                "requested",
-                "started",
-                "warning"
-              ]
-            }
-          },
-          {
             "name": "keyword",
             "in": "query",
             "schema": {
@@ -25017,6 +24981,10 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProductionReportResponse": {
         "allOf": [

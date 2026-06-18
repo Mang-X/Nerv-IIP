@@ -115,7 +115,8 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListCapacityImpactsRequest(
     string OrganizationId,
@@ -125,7 +126,8 @@ public sealed record ListCapacityImpactsRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record FoundationReadinessAreaRequest(
     string OrganizationId,
@@ -217,7 +219,8 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -262,7 +265,8 @@ public sealed record ListRelatedQualityItemsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListDowntimeEventsRequest(
     string OrganizationId,
@@ -272,7 +276,8 @@ public sealed record ListDowntimeEventsRequest(
     int Skip = 0,
     int Take = 100,
     string? Keyword = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -302,7 +307,8 @@ public sealed record ListShiftHandoversRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
@@ -894,7 +900,8 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Skip,
             req.Take,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -952,7 +959,8 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
             req.Take,
             req.Keyword,
             req.WorkCenterId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1042,7 +1050,8 @@ public sealed class ListCapacityImpactsEndpoint(ISender sender)
             req.Take,
             req.WorkCenterId,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -86,7 +86,7 @@ function formatError(error: unknown) {
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="质量状态"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+            <SelectItem v-for="option in mesQualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
           </SelectContent>
         </Select>
       </template>

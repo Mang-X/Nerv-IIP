@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -76,7 +76,7 @@ function formatError(error: unknown) {
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="交接状态"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+            <SelectItem v-for="option in mesHandoverStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
           </SelectContent>
         </Select>
       </template>

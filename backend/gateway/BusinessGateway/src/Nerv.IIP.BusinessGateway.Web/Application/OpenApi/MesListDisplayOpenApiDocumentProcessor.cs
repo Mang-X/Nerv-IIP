@@ -59,7 +59,6 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
         "/api/business-console/v1/mes/dispatch-tasks",
         "/api/business-console/v1/mes/operation-tasks",
         "/api/business-console/v1/mes/wip",
-        "/api/business-console/v1/mes/production-reports",
         "/api/business-console/v1/mes/related-quality-items",
         "/api/business-console/v1/mes/finished-goods-receipt-requests",
         "/api/business-console/v1/mes/downtime-events",

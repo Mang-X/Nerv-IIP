@@ -109,7 +109,8 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
+    string? DeviceAssetId = null,
+    string? Status = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
 
 public sealed record ListFinishedGoodsReceiptRequestsResponse(
     IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items,
@@ -152,6 +153,12 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLower();
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
@@ -202,7 +209,8 @@ public sealed record ListCapacityImpactsQuery(
     int Take = 100,
     string? WorkCenterId = null,
     string? Keyword = null,
-    string? ShiftId = null) : IQuery<ListCapacityImpactsResponse>;
+    string? ShiftId = null,
+    string? Status = null) : IQuery<ListCapacityImpactsResponse>;
 
 public sealed record ListCapacityImpactsResponse(
     IReadOnlyCollection<CapacityImpactFact> Items,
@@ -251,6 +259,17 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.Reason.ToLower().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = status switch
+            {
+                "open" => query.Where(x => x.ToUtc == null),
+                "recovered" => query.Where(x => x.ToUtc != null),
+                _ => query.Where(_ => false),
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ShiftId))
         {
             var shiftId = request.ShiftId.Trim();
@@ -276,9 +295,9 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.ToUtc,
                 x.Reason,
                 x.WorkCenterId,
-                x.WorkCenterId,
+                null,
                 x.DeviceAssetId,
-                x.DeviceAssetId))
+                null))
             .ToArrayAsync(cancellationToken);
         return new ListCapacityImpactsResponse(items, total);
     }

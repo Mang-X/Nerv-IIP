@@ -575,25 +575,25 @@ public sealed class MesEndpointContractTests
         Assert.Equal("WO-FILTER-001", operationTask.WorkOrderNo);
         Assert.Equal("OP-FILTER-10", operationTask.OperationTaskNo);
         Assert.Equal("WC-FILTER", operationTask.WorkCenterCode);
-        Assert.Equal("WC-FILTER", operationTask.WorkCenterName);
+        Assert.Null(operationTask.WorkCenterName);
         Assert.Equal("DEV-FILTER", operationTask.DeviceAssetCode);
-        Assert.Equal("DEV-FILTER", operationTask.DeviceAssetName);
+        Assert.Null(operationTask.DeviceAssetName);
         Assert.Equal(1, dispatchTasks.Total);
         var dispatchTask = Assert.Single(dispatchTasks.Items);
         Assert.Equal("OP-FILTER-10", dispatchTask.OperationTaskId);
         Assert.Equal("WO-FILTER-001", dispatchTask.WorkOrderNo);
         Assert.Equal("OP-FILTER-10", dispatchTask.OperationTaskNo);
         Assert.Equal("WC-FILTER", dispatchTask.WorkCenterCode);
-        Assert.Equal("WC-FILTER", dispatchTask.WorkCenterName);
+        Assert.Null(dispatchTask.WorkCenterName);
         Assert.Equal("DEV-FILTER", dispatchTask.DeviceAssetCode);
-        Assert.Equal("DEV-FILTER", dispatchTask.DeviceAssetName);
+        Assert.Null(dispatchTask.DeviceAssetName);
         Assert.Equal(1, wip.Total);
         var wipItem = Assert.Single(wip.Items);
         Assert.Equal("OP-FILTER-10", wipItem.OperationTaskId);
         Assert.Equal("WO-FILTER-001", wipItem.WorkOrderNo);
         Assert.Equal("OP-FILTER-10", wipItem.OperationTaskNo);
         Assert.Equal("WC-FILTER", wipItem.WorkCenterCode);
-        Assert.Equal("WC-FILTER", wipItem.WorkCenterName);
+        Assert.Null(wipItem.WorkCenterName);
     }
 
     [Fact]
@@ -679,6 +679,24 @@ public sealed class MesEndpointContractTests
         var handovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
             new ListShiftHandoversQuery("org-001", "env-dev", "SHIFT-FILTER", Skip: 0, Take: 10, Keyword: "TEAM-FILTER", WorkCenterId: "WC-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
+        var nonMatchingReceipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "posted"),
+            CancellationToken.None);
+        var nonMatchingMaterialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "received"),
+            CancellationToken.None);
+        var nonMatchingQualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
+            new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "reworkPending"),
+            CancellationToken.None);
+        var nonMatchingDowntimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+            new ListDowntimeEventsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "recovered"),
+            CancellationToken.None);
+        var nonMatchingCapacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
+            new ListCapacityImpactsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "recovered"),
+            CancellationToken.None);
+        var nonMatchingHandovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
+            new ListShiftHandoversQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "accepted"),
+            CancellationToken.None);
 
         Assert.Equal("PRPT-FILTER", Assert.Single(reports.Items).ReportNo);
         Assert.Equal("WO-FILTER", Assert.Single(reports.Items).WorkOrderNo);
@@ -702,17 +720,23 @@ public sealed class MesEndpointContractTests
         Assert.Null(downtime.WorkOrderNo);
         Assert.Null(downtime.OperationTaskNo);
         Assert.Equal("DEV-FILTER", downtime.DeviceAssetCode);
-        Assert.Equal("DEV-FILTER", downtime.DeviceAssetName);
+        Assert.Null(downtime.DeviceAssetName);
         Assert.Equal(1, downtimeEvents.Total);
         var capacityImpact = Assert.Single(capacityImpacts.Items);
         Assert.Equal("DOWNTIME-FILTER", capacityImpact.ImpactId);
         Assert.Equal("WC-FILTER", capacityImpact.WorkCenterCode);
-        Assert.Equal("WC-FILTER", capacityImpact.WorkCenterName);
+        Assert.Null(capacityImpact.WorkCenterName);
         Assert.Equal("DEV-FILTER", capacityImpact.DeviceAssetCode);
-        Assert.Equal("DEV-FILTER", capacityImpact.DeviceAssetName);
+        Assert.Null(capacityImpact.DeviceAssetName);
         Assert.Equal(1, capacityImpacts.Total);
         Assert.Equal("SHIFT-FILTER", Assert.Single(handovers.Items).ShiftId);
         Assert.Equal(1, handovers.Total);
+        Assert.Equal(0, nonMatchingReceipts.Total);
+        Assert.Equal(0, nonMatchingMaterialIssues.Total);
+        Assert.Equal(0, nonMatchingQualityItems.Total);
+        Assert.Equal(0, nonMatchingDowntimeEvents.Total);
+        Assert.Equal(0, nonMatchingCapacityImpacts.Total);
+        Assert.Equal(0, nonMatchingHandovers.Total);
     }
 
     [Fact]

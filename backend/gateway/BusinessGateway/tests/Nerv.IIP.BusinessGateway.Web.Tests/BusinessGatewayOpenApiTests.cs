@@ -370,7 +370,6 @@ public sealed class BusinessGatewayOpenApiTests
             "/api/business-console/v1/mes/dispatch-tasks",
             "/api/business-console/v1/mes/operation-tasks",
             "/api/business-console/v1/mes/wip",
-            "/api/business-console/v1/mes/production-reports",
             "/api/business-console/v1/mes/related-quality-items",
             "/api/business-console/v1/mes/finished-goods-receipt-requests",
             "/api/business-console/v1/mes/downtime-events",
@@ -393,6 +392,20 @@ public sealed class BusinessGatewayOpenApiTests
                 "take");
             AssertMesStatusQueryEnum(paths, mesListPath);
         }
+
+        AssertQueryParameters(
+            paths,
+            "/api/business-console/v1/mes/production-reports",
+            "get",
+            "organizationId",
+            "environmentId",
+            "keyword",
+            "workCenterId",
+            "shiftId",
+            "deviceAssetId",
+            "skip",
+            "take");
+        AssertNoQueryParameter(paths, "/api/business-console/v1/mes/production-reports", "get", "status");
 
         AssertMesListDisplayContract(document);
 
@@ -557,6 +570,18 @@ public sealed class BusinessGatewayOpenApiTests
         Assert.False(parameter.TryGetProperty("required", out var required) && required.GetBoolean());
         Assert.Equal("integer", parameter.GetProperty("schema").GetProperty("type").GetString());
         Assert.Equal("int32", parameter.GetProperty("schema").GetProperty("format").GetString());
+    }
+
+    private static void AssertNoQueryParameter(JsonElement paths, string path, string method, string name)
+    {
+        var parameters = paths.GetProperty(path)
+            .GetProperty(method)
+            .GetProperty("parameters")
+            .EnumerateArray()
+            .Where(parameter => parameter.GetProperty("in").GetString() == "query")
+            .Select(parameter => parameter.GetProperty("name").GetString());
+
+        Assert.DoesNotContain(name, parameters);
     }
 
     private static void AssertJwtBearerSecurity(JsonElement paths, string path, string method)

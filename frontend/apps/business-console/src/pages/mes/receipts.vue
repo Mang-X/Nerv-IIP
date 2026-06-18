@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -61,7 +61,7 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
 })
-const statusOptions = mesStatusOptions
+const statusOptions = mesReceiptStatusOptions
 
 const form = reactive({
   organizationId: filters.organizationId,

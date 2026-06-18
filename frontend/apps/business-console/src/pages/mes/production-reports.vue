@@ -1,26 +1,18 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, shallowRef, watch } from 'vue'
+import { computed } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '报工记录' } })
 
@@ -32,15 +24,11 @@ const {
   productionReportsTotal,
   refreshProductionReports,
 } = useMesProductionReports()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
-const statusFilter = shallowRef('all')
+const { page, pageSize } = usePagedList(filters)
 
 const goodTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => productionReports.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
 const errorMessage = computed(() => formatError(productionReportsError.value))
-watch(statusFilter, (value) => {
-  filters.status = value === 'all' ? undefined : value
-})
 
 type ReportRow = (typeof productionReports)['value'][number]
 const columns: DataTableColumn<ReportRow>[] = [
@@ -82,17 +70,6 @@ function formatError(error: unknown) {
       <SectionCard description="本页良品数" :value="formatQuantity(goodTotal)" hint="当前页合计" />
       <SectionCard description="本页报废数" :value="formatQuantity(scrapTotal)" hint="当前页合计" />
     </SectionCards>
-
-    <Toolbar :show-search="false">
-      <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="报工状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-      </template>
-    </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 

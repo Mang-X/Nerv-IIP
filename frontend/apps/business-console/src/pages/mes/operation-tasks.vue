@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -65,7 +65,7 @@ watch(shiftFilter, (value) => {
   filters.shiftId = value === 'all' ? undefined : value
 })
 
-const statusOptions = mesStatusOptions
+const statusOptions = mesOperationTaskStatusOptions
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 

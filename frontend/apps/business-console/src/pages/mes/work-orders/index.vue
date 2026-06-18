@@ -6,7 +6,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -101,7 +101,7 @@ watch(workCenterFilter, (value) => {
   filters.workCenterId = value === 'all' ? undefined : value
 })
 
-const statusOptions = mesStatusOptions
+const statusOptions = mesWorkOrderStatusOptions
 const demandEntries = [
   { title: '正常订单', description: '销售订单进入计划池', action: '去生产计划', path: '/mes/plans?source=sales' },
   { title: '备货生产', description: '主生产计划确认后下达', action: '查看计划来源', path: '/mes/plans?source=stock' },

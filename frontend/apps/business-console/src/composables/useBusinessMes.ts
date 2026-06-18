@@ -78,6 +78,7 @@ import {
   type BusinessConsoleMesWorkOrderListEnvelope,
   type BusinessConsoleRecordProductionReportRequest,
   type BusinessConsoleRunScheduleRequest,
+  type ListBusinessConsoleMesWorkOrdersData,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
@@ -85,33 +86,7 @@ import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } f
 
 const DEFAULT_TAKE = 100
 
-type MesListStatus =
-  | 'accepted'
-  | 'active'
-  | 'blocked'
-  | 'cancelled'
-  | 'closed'
-  | 'completed'
-  | 'created'
-  | 'dispositionAccepted'
-  | 'hold'
-  | 'inProgress'
-  | 'open'
-  | 'partiallyReceived'
-  | 'paused'
-  | 'posted'
-  | 'queued'
-  | 'ready'
-  | 'received'
-  | 'recovered'
-  | 'released'
-  | 'returnAccepted'
-  | 'reworkPending'
-  | 'scrapAccepted'
-  | 'scrapped'
-  | 'requested'
-  | 'started'
-  | 'warning'
+type MesListStatus = NonNullable<NonNullable<ListBusinessConsoleMesWorkOrdersData['query']>['status']>
 
 export interface MesReadinessReasonDisplay {
   code: string
@@ -280,6 +255,19 @@ function toListQuery(filters: MesListFilters) {
     ...optionalQuery('deviceAssetId', filters.deviceAssetId),
     ...optionalQuery('source', filters.source),
     ...optionalQuery('readinessStatus', filters.readinessStatus),
+    skip: filters.skip,
+    take: filters.take,
+  }
+}
+
+function toListQueryWithoutStatus(filters: MesListFilters) {
+  return {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    ...optionalQuery('keyword', filters.keyword),
+    ...optionalQuery('workCenterId', filters.workCenterId),
+    ...optionalQuery('shiftId', filters.shiftId),
+    ...optionalQuery('deviceAssetId', filters.deviceAssetId),
     skip: filters.skip,
     take: filters.take,
   }
@@ -760,7 +748,7 @@ export function useMesProductionReports() {
 
   const reportsQuery = useQuery(() =>
     listBusinessConsoleMesProductionReportsQueryOptions({
-      query: toListQuery(filters),
+      query: toListQueryWithoutStatus(filters),
     }),
   )
 

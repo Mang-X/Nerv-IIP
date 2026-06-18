@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
-import { mesStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -83,7 +83,7 @@ function formatError(error: unknown) {
         <Select v-model="statusFilter">
           <SelectTrigger class="h-9 w-32" aria-label="派工状态"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="option in mesStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
           </SelectContent>
         </Select>
       </template>

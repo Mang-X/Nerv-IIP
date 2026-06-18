@@ -1044,7 +1044,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesScheduleResult> RunScheduleAsync(
@@ -4428,12 +4428,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesListWithoutStatusRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesProductionReportListResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/production-reports?" + ListQuery(request),
+            "/api/business/v1/mes/production-reports?" + ListQueryWithoutStatus(request),
             null,
             cancellationToken);
 
@@ -4659,6 +4659,17 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
             ("status", request.Status),
+            ("keyword", request.Keyword),
+            ("workCenterId", request.WorkCenterId),
+            ("shiftId", request.ShiftId),
+            ("deviceAssetId", request.DeviceAssetId),
+            ("skip", request.Skip),
+            ("take", request.Take));
+
+    private static string ListQueryWithoutStatus(BusinessConsoleMesListWithoutStatusRequest request) =>
+        Query(
+            ("organizationId", request.OrganizationId),
+            ("environmentId", request.EnvironmentId),
             ("keyword", request.Keyword),
             ("workCenterId", request.WorkCenterId),
             ("shiftId", request.ShiftId),

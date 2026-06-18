@@ -146,7 +146,7 @@ public sealed class ListMesWorkOrdersQueryHandler(ApplicationDbContext dbContext
                     task.ExistingEndUtc,
                     task.OperationTaskIdValue,
                     task.WorkCenterId,
-                    task.WorkCenterId)).ToArray(),
+                    null)).ToArray(),
                 StringComparer.OrdinalIgnoreCase);
         var items = workOrders.Select(x => new MesWorkOrderExecutionFact(
             x.WorkOrderIdValue,
