@@ -21,9 +21,9 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 <div class="ds-shell-demo w-full">
   <AppShellInset collapsible="icon">
     <template #sidebar-header>
-      <div class="flex items-center gap-2 px-1 py-1">
-        <div class="flex size-7 items-center justify-center rounded-md bg-brand text-sm font-bold text-brand-foreground">N</div>
-        <span class="text-sm font-semibold">Nerv-IIP</span>
+      <div class="flex items-center gap-2 px-1 py-1 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
+        <div class="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-bold text-brand-foreground">N</div>
+        <span class="truncate text-sm font-semibold group-data-[collapsible=icon]:hidden">Nerv-IIP</span>
       </div>
     </template>
     <template #sidebar>

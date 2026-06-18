@@ -92,7 +92,10 @@ export default defineConfig({
         },
         {
           text: '仪表盘 / 外壳',
-          items: [{ text: 'AppShellInset 应用外壳', link: '/components/desktop/dashboard' }],
+          items: [
+            { text: 'Sidebar 侧栏', link: '/components/desktop/sidebar' },
+            { text: 'AppShellInset 应用外壳', link: '/components/desktop/dashboard' },
+          ],
         },
         {
           text: '表单',
