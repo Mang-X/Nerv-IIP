@@ -36,7 +36,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(17, contracts.Length);
+        Assert.Equal(19, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
@@ -46,6 +46,8 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/outbound-orders" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsOutboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "createWmsPickingTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/picking-tasks" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "listWmsPickingTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "recordWmsWarehouseTaskProgress");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsWarehouseTask");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ShipmentsManage && x.OperationId == "completeWmsOutboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsCountExecution");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/count-executions" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsCountExecutions");
@@ -140,6 +142,8 @@ public sealed class WmsEndpointContractTests
         });
         await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{externalTaskId}/fail", new
         {
+            organizationId = "org-acceptance",
+            environmentId = "env-acceptance",
             externalTaskId,
             failureCode = "PLC_TIMEOUT",
             failureMessage = "PLC timeout",
@@ -153,6 +157,8 @@ public sealed class WmsEndpointContractTests
         });
         await PostJsonAndAssertOkAsync(client, $"/api/business/v1/wms/wcs-tasks/{retryExternalTaskId}/complete", new
         {
+            organizationId = "org-acceptance",
+            environmentId = "env-acceptance",
             externalTaskId = retryExternalTaskId,
             completionPayloadJson = """{"ok":true}""",
         });
@@ -177,11 +183,11 @@ public sealed class WmsEndpointContractTests
         var commandHandler = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-001", """{"step":1}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
+        await new Application.Commands.FailWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.FailWcsTaskCommand("org-001", "env-dev", "EXT-001", "PLC_TIMEOUT", "PLC timeout"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(warehouseTask.Id, "agv", "EXT-002", """{"step":2}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("EXT-002", """{"ok":true}"""), CancellationToken.None);
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-002", """{"ok":true}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await commandHandler.Handle(new Application.Commands.DispatchWcsTaskCommand(otherTenantTask.Id, "agv", "EXT-003", """{"step":3}"""), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -199,6 +205,57 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("org-001", fact.OrganizationId);
         Assert.Equal("env-dev", fact.EnvironmentId);
         Assert.NotNull(fact.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Warehouse_task_progress_and_completion_commands_drive_execution_status()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = WarehouseTask.CreatePicking("org-001", "env-dev", "PICK-001", "OUT-001", "10", "SKU-001", "pcs", "SITE-01", "BIN-A", "PACK-01", 6m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new Application.Commands.RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
+            new Application.Commands.RecordWarehouseTaskProgressCommand(warehouseTask.Id, 2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.CompleteWarehouseTaskCommandHandler(dbContext).Handle(
+            new Application.Commands.CompleteWarehouseTaskCommand(warehouseTask.Id),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persisted = await dbContext.WarehouseTasks.SingleAsync(CancellationToken.None);
+        Assert.Equal(6m, persisted.ExecutedQuantity);
+        Assert.Equal("Completed", persisted.Status.ToString());
+        Assert.NotNull(persisted.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Wcs_complete_and_fail_callbacks_are_scoped_by_tenant_context()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var orgOneTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-ORG1", "IN-001", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-A", 1m);
+        var orgTwoTask = WarehouseTask.CreatePutaway("org-002", "env-dev", "WT-ORG2", "IN-002", "10", "SKU-001", "pcs", "SITE-01", "RECV-01", "BIN-B", 1m);
+        dbContext.WarehouseTasks.AddRange(orgOneTask, orgTwoTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var dispatch = new Application.Commands.DispatchWcsTaskCommandHandler(dbContext);
+        await dispatch.Handle(new Application.Commands.DispatchWcsTaskCommand(orgOneTask.Id, "agv", "EXT-SHARED", "{}"), CancellationToken.None);
+        await dispatch.Handle(new Application.Commands.DispatchWcsTaskCommand(orgTwoTask.Id, "agv", "EXT-SHARED", "{}"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new Application.Commands.CompleteWcsTaskCommand("org-002", "env-dev", "EXT-SHARED", """{"ok":true}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var orgOne = await dbContext.WcsTasks.SingleAsync(x => x.OrganizationId == "org-001", CancellationToken.None);
+        var orgTwo = await dbContext.WcsTasks.SingleAsync(x => x.OrganizationId == "org-002", CancellationToken.None);
+        Assert.Equal("Dispatched", orgOne.Status.ToString());
+        Assert.Equal("Completed", orgTwo.Status.ToString());
     }
 
     [Fact]

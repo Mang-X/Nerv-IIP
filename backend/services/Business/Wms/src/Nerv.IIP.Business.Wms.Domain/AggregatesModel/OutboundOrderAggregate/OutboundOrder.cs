@@ -12,6 +12,7 @@ public enum OutboundOrderStatus
 {
     Open = 0,
     Completed = 1,
+    InventoryPostingFailed = 2,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -92,15 +93,14 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string lineNo,
         string fromLocationCode,
         string toLocationCode,
-        decimal quantity)
+        decimal quantity,
+        string? inventoryReservationId = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
-        if (quantity > line.RequestedQuantity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Pick quantity cannot exceed outbound line quantity.");
-        }
+        EnsurePickingQuantity(line, quantity);
 
+        line.MarkInventoryReserved(inventoryReservationId);
         return WarehouseTask.CreatePicking(
             OrganizationId,
             EnvironmentId,
@@ -113,6 +113,25 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             fromLocationCode,
             toLocationCode,
             quantity);
+    }
+
+    public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
+    {
+        EnsureOpen();
+        EnsurePickingQuantity(FindLine(lineNo), quantity);
+    }
+
+    private static void EnsurePickingQuantity(OutboundOrderLine line, decimal quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new KnownException("Pick quantity must be positive.");
+        }
+
+        if (quantity > line.RequestedQuantity)
+        {
+            throw new KnownException("Pick quantity cannot exceed outbound line quantity.");
+        }
     }
 
     public InventoryMovementRequest CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
@@ -145,9 +164,25 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             line.QualityStatus,
             line.OwnerType,
             line.OwnerId,
-            line.RequestedQuantity);
+            line.RequestedQuantity,
+            line.InventoryReservationId);
         this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
         return request;
+    }
+
+    public void MarkInventoryPostingFailed()
+    {
+        if (Status == OutboundOrderStatus.InventoryPostingFailed)
+        {
+            return;
+        }
+
+        if (Status != OutboundOrderStatus.Completed)
+        {
+            throw new InvalidOperationException("Only completed outbound orders can be marked as Inventory posting failed.");
+        }
+
+        Status = OutboundOrderStatus.InventoryPostingFailed;
     }
 
     private OutboundOrderLine FindLine(string lineNo)
@@ -158,9 +193,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
     private void EnsureOpen()
     {
-        if (Status == OutboundOrderStatus.Completed)
+        if (Status != OutboundOrderStatus.Open)
         {
-            throw new InvalidOperationException("Completed outbound orders are immutable.");
+            throw new InvalidOperationException("Completed or failed outbound orders are immutable.");
         }
     }
 }
@@ -195,9 +230,26 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public string? InventoryReservationId { get; private set; }
 
     public static OutboundOrderLine Create(OutboundOrderLineDraft draft)
     {
         return new OutboundOrderLine(draft);
+    }
+
+    public void MarkInventoryReserved(string? inventoryReservationId)
+    {
+        if (string.IsNullOrWhiteSpace(inventoryReservationId))
+        {
+            return;
+        }
+
+        var normalizedReservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
+        if (InventoryReservationId is not null && InventoryReservationId != normalizedReservationId)
+        {
+            throw new InvalidOperationException("Outbound line already has a different Inventory reservation id.");
+        }
+
+        InventoryReservationId = normalizedReservationId;
     }
 }

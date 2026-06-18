@@ -52,8 +52,7 @@ builder.Services.AddSingleton(new MesRescheduleOptions
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
     AutoRescheduleOnAssetRestored = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetRestored", true),
 });
-builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>();
-builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
+builder.Services.AddMesIntegrationEventConsumers();
 
 var app = builder.Build();
 app.UseNervIipCorrelation();

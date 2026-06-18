@@ -34,5 +34,26 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceInspectionRecordId });
+        builder.HasMany(x => x.MrbReviews)
+            .WithOne()
+            .HasForeignKey(x => x.NonconformanceReportId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class MrbReviewEntityTypeConfiguration : IEntityTypeConfiguration<MrbReview>
+{
+    public void Configure(EntityTypeBuilder<MrbReview> builder)
+    {
+        builder.ToTable("ncr_mrb_reviews", tableBuilder =>
+            tableBuilder.HasComment("Quality NCR material review board decisions captured before disposition execution."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("MRB review entry id.");
+        builder.Property(x => x.NonconformanceReportId).HasColumnName("nonconformance_report_id").IsRequired().HasComment("Owning NCR id.");
+        builder.Property(x => x.ReviewerId).HasColumnName("reviewer_id").IsRequired().HasMaxLength(150).HasComment("Reviewer user or committee member public id.");
+        builder.Property(x => x.Decision).HasColumnName("decision").IsRequired().HasMaxLength(50).HasComment("MRB reviewer decision such as approved or rejected.");
+        builder.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(500).HasComment("Optional MRB reviewer comment.");
+        builder.Property(x => x.ReviewedAtUtc).HasColumnName("reviewed_at_utc").IsRequired().HasComment("UTC time when this MRB review was recorded.");
+        builder.HasIndex(x => new { x.NonconformanceReportId, x.ReviewerId });
     }
 }

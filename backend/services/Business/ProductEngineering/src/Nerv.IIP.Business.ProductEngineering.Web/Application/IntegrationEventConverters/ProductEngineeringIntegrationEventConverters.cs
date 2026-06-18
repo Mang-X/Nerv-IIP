@@ -27,7 +27,18 @@ public sealed class EngineeringBomReleasedIntegrationEventConverter(IProductEngi
                 EventIds.AggregateId(bom.Id?.Id, bom.BomCode, bom.Revision),
                 "engineering",
                 bom.ParentItemCode,
-                bom.Lines.Select(x => new BomReleasedLine(x.ChildItemCode, x.Quantity, x.UnitOfMeasureCode)).ToArray(),
+                bom.Lines.Select(x => new BomReleasedLine(
+                    x.ChildItemCode,
+                    x.Quantity,
+                    x.UnitOfMeasureCode,
+                    x.IsPhantom,
+                    x.AlternateGroup,
+                    x.AlternatePriority,
+                    null,
+                    x.ReferenceDesignators,
+                    x.ScrapRate,
+                    x.YieldRate,
+                    x.Backflush)).ToArray(),
                 bom.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
     }
 }
@@ -56,7 +67,18 @@ public sealed class ManufacturingBomReleasedIntegrationEventConverter(IProductEn
                 EventIds.AggregateId(bom.Id?.Id, bom.BomCode, bom.Revision),
                 "manufacturing",
                 bom.SkuCode,
-                bom.MaterialLines.Select(x => new BomReleasedLine(x.SkuCode, x.Quantity, x.UnitOfMeasureCode)).ToArray(),
+                bom.MaterialLines.Select(x => new BomReleasedLine(
+                    x.SkuCode,
+                    x.Quantity,
+                    x.UnitOfMeasureCode,
+                    x.IsPhantom,
+                    x.AlternateGroup,
+                    x.AlternatePriority,
+                    x.SubstituteSkuCodes,
+                    x.ReferenceDesignators,
+                    x.ScrapRate,
+                    x.YieldRate,
+                    x.Backflush)).ToArray(),
                 bom.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
     }
 }
@@ -84,7 +106,19 @@ public sealed class RoutingReleasedIntegrationEventConverter(IProductEngineering
             new RoutingReleasedPayload(
                 EventIds.AggregateId(routing.Id?.Id, routing.RoutingCode, routing.Revision),
                 routing.SkuCode,
-                routing.Operations.Select(x => new RoutingReleasedOperation(x.Sequence, x.WorkCenterCode, x.OperationCode, x.OperationName, x.StandardMinutes)).ToArray(),
+                routing.Operations.Select(x => new RoutingReleasedOperation(
+                    x.Sequence,
+                    x.WorkCenterCode,
+                    x.OperationCode,
+                    x.OperationName,
+                    x.StandardMinutes,
+                    x.SetupMinutes,
+                    x.RunMinutes,
+                    x.TeardownMinutes,
+                    x.ControlKey,
+                    x.RequiresReporting,
+                    x.RequiresQualityInspection,
+                    x.IsOutsourced)).ToArray(),
                 routing.EffectiveDate ?? DateOnly.FromDateTime(occurredAtUtc.UtcDateTime)));
     }
 }

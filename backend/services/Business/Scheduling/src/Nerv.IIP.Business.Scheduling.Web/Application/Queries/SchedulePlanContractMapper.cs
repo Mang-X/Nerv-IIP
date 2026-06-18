@@ -59,6 +59,15 @@ public static class SchedulePlanContractMapper
             AlgorithmVersion: plan.AlgorithmVersion,
             Status: status,
             GeneratedAtUtc: plan.GeneratedAtUtc,
+            Metrics: new SchedulePlanMetricsContract(
+                plan.ScheduledOperationCount,
+                plan.UnscheduledOperationCount,
+                plan.AssignedMinutes,
+                plan.MakespanMinutes,
+                plan.TotalTardinessMinutes,
+                plan.LateOperationCount,
+                plan.OnTimeRate,
+                plan.AverageResourceUtilization),
             Assignments: assignments,
             ResourceLoads: plan.ResourceLoads
                 .OrderBy(x => x.WindowStartUtc)
@@ -161,6 +170,15 @@ public static class SchedulePlanContractMapper
             plan.ContractVersion,
             plan.GeneratedAtUtc,
             ToDomainStatus(plan.Status),
+            new GeneratedSchedulePlanMetricsSnapshot(
+                plan.Metrics.ScheduledOperationCount,
+                plan.Metrics.UnscheduledOperationCount,
+                plan.Metrics.AssignedMinutes,
+                plan.Metrics.MakespanMinutes,
+                plan.Metrics.TotalTardinessMinutes,
+                plan.Metrics.LateOperationCount,
+                plan.Metrics.OnTimeRate,
+                plan.Metrics.AverageResourceUtilization),
             plan.Assignments
                 .Select(x => new GeneratedScheduleAssignmentSnapshot(
                     x.AssignmentId,

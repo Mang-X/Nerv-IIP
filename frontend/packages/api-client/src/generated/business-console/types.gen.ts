@@ -658,6 +658,7 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     algorithmVersion?: string;
     status?: NervIipContractsSchedulingSchedulePlanStatusContract;
     generatedAtUtc?: string;
+    metrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
     assignments?: Array<NervIipContractsSchedulingScheduleAssignmentContract>;
     resourceLoads?: Array<NervIipContractsSchedulingScheduleResourceLoadContract>;
     conflicts?: Array<NervIipContractsSchedulingScheduleConflictContract>;
@@ -667,6 +668,17 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released';
+
+export type NervIipContractsSchedulingSchedulePlanMetricsContract = {
+    scheduledOperationCount?: number;
+    unscheduledOperationCount?: number;
+    assignedMinutes?: number;
+    makespanMinutes?: number;
+    totalTardinessMinutes?: number;
+    lateOperationCount?: number;
+    onTimeRate?: number;
+    averageResourceUtilization?: number;
+};
 
 export type NervIipContractsSchedulingScheduleAssignmentContract = {
     assignmentId?: string;
@@ -780,6 +792,9 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     materialReadyUtc?: string | null;
     qualityBlockReason?: string | null;
     sourceReference?: string | null;
+    setupMinutes?: number;
+    requiredSkillCodes?: Array<string> | null;
+    requiredToolingIds?: Array<string> | null;
 };
 
 export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
@@ -929,6 +944,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     resultLines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult> | null;
     dispositionReason?: string | null;
     dispositionAttachmentFileIds?: Array<string> | null;
+    stockRelease?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionCharacteristicResult = {
@@ -939,6 +955,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     defectReason?: string | null;
     defectQuantity?: number | null;
     attachmentFileIds?: Array<string> | null;
+    measuredValue?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInspectionStockRelease = {
+    uomCode?: string;
+    siteCode?: string;
+    locationCode?: string;
+    sourceQualityStatus?: string;
+    ownerType?: string | null;
+    ownerId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -998,6 +1024,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleN
     dispositionType?: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
+    mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
+    reviewerId?: string;
+    decision?: string;
+    comment?: string | null;
+    reviewedAtUtc?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {
@@ -1770,7 +1804,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     priority?: number;
     dueUtc?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem>;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -1778,7 +1812,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
     operationTaskId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     operationSequence?: number;
     workCenterId?: string;
     alternativeWorkCenterIds?: Array<string>;
@@ -1814,7 +1848,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     operationSequence?: number;
     workCenterId?: string;
     deviceAssetId?: string | null;
@@ -1919,6 +1953,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
     operationTaskId?: string | null;
     materialId?: string;
+    uomCode?: string;
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
@@ -1938,10 +1973,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string | null;
     materialId?: string;
+    uomCode?: string;
     materialLotId?: string | null;
     requestedQuantity?: number;
     receivedQuantity?: number;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
     workOrderNo?: string | null;
@@ -1968,7 +2004,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     workCenterId?: string;
     deviceAssetId?: string | null;
     shiftId?: string | null;
@@ -2027,7 +2063,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string;
     workCenterId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     plannedQuantity?: number;
     goodQuantity?: number;
     scrapQuantity?: number;
@@ -2080,6 +2116,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     reportedAtUtc?: string;
     idempotencyKey?: string | null;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput> | null;
+    reworkQuantity?: number;
+    scrapReasonCode?: string | null;
+    defectRecordNo?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
@@ -2114,7 +2155,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     qualityItemId?: string;
     sourceType?: string;
     sourceDocumentId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     defectCode?: string | null;
     ncrId?: string | null;
 };
@@ -2134,10 +2175,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
-    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
     skuCode?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
+    postedInventoryMovementId?: string | null;
+    postedAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceiptResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2158,6 +2203,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     uomCode?: string;
     requestedAtUtc?: string;
     idempotencyKey?: string;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEventListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2174,7 +2221,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     startedAtUtc?: string;
     recoveredAtUtc?: string | null;
     workOrderNo?: string | null;
@@ -2277,7 +2324,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     impactId?: string;
     workCenterId?: string;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     effectiveFromUtc?: string;
     effectiveToUtc?: string | null;
     reasonCode?: string;
@@ -3121,6 +3168,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     startsOn?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse = {
+    generatedCount?: number;
+    workOrderIds?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersRequest = {
+    organizationId: string;
+    environmentId: string;
+    businessDate?: string;
+    requestedBy: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordMaintenanceInspectionResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordMaintenanceInspectionResponse | null;
 };
@@ -3194,6 +3257,26 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     skuCode: string;
     quantity?: number;
     uomCode?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssetReliabilityResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAssetReliabilityResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    deviceAssetId?: string;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    failureCount?: number;
+    repairCount?: number;
+    mtbfHours?: number | null;
+    mttrMinutes?: number | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceAssetReliabilityRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryAvailabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7452,7 +7535,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7555,7 +7638,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7747,7 +7830,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7816,7 +7899,7 @@ export type ListBusinessConsoleMesDispatchTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -7885,7 +7968,7 @@ export type ListBusinessConsoleMesOperationTasksData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8050,7 +8133,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8087,7 +8170,7 @@ export type ListBusinessConsoleMesProductionReportsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8178,7 +8261,7 @@ export type ListBusinessConsoleMesRelatedQualityItemsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8215,7 +8298,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8279,7 +8362,7 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8375,7 +8458,7 @@ export type ListBusinessConsoleMesShiftHandoversData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -8567,7 +8650,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'closed' | 'completed' | 'inProgress' | 'open' | 'paused' | 'queued' | 'ready' | 'recovered' | 'released' | 'requested' | 'warning';
+        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -10306,6 +10389,39 @@ export type CreateBusinessConsoleMaintenancePlanResponses = {
 
 export type CreateBusinessConsoleMaintenancePlanResponse = CreateBusinessConsoleMaintenancePlanResponses[keyof CreateBusinessConsoleMaintenancePlanResponses];
 
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGenerateDueMaintenanceWorkOrdersRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/maintenance/plans/generate-due';
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersError = GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors[keyof GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors];
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleGenerateDueMaintenanceWorkOrdersResponse;
+};
+
+export type GenerateDueBusinessConsoleMaintenanceWorkOrdersResponse = GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses[keyof GenerateDueBusinessConsoleMaintenanceWorkOrdersResponses];
+
 export type ListBusinessConsoleMaintenanceInspectionsData = {
     body?: never;
     path?: never;
@@ -10447,6 +10563,46 @@ export type CreateBusinessConsoleMaintenanceSparePartResponses = {
 };
 
 export type CreateBusinessConsoleMaintenanceSparePartResponse = CreateBusinessConsoleMaintenanceSparePartResponses[keyof CreateBusinessConsoleMaintenanceSparePartResponses];
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityData = {
+    body?: never;
+    path: {
+        deviceAssetId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        windowStartUtc: string;
+        windowEndUtc: string;
+    };
+    url: '/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability';
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityError = QueryBusinessConsoleMaintenanceAssetReliabilityErrors[keyof QueryBusinessConsoleMaintenanceAssetReliabilityErrors];
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse;
+};
+
+export type QueryBusinessConsoleMaintenanceAssetReliabilityResponse = QueryBusinessConsoleMaintenanceAssetReliabilityResponses[keyof QueryBusinessConsoleMaintenanceAssetReliabilityResponses];
 
 export type QueryBusinessConsoleMaintenanceAvailabilityWindowsData = {
     body?: never;

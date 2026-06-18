@@ -76,7 +76,7 @@ const form = reactive({
 
 const listErrorMessage = computed(() => formatError(receiptRequestsError.value))
 const createErrorMessage = computed(() => formatError(createReceiptRequestError.value))
-const pendingCount = computed(() => receiptRequests.value.filter((item) => item.receiptStatus?.toLowerCase() !== 'completed').length)
+const pendingCount = computed(() => receiptRequests.value.filter((item) => !['completed', 'posted'].includes(item.receiptStatus?.toLowerCase() ?? '')).length)
 const hasReceiptContext = computed(() => isNonEmpty(form.workOrderId) && isNonEmpty(form.skuId))
 const canCreate = computed(
   () =>

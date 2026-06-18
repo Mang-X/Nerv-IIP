@@ -713,6 +713,7 @@ public sealed class BusinessGatewayOpenApiTests
         if (property.TryGetProperty("enum", out inlineEnum))
         {
             Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "ready");
+            Assert.Contains(inlineEnum.EnumerateArray(), value => value.GetString() == "posted");
         }
     }
 
@@ -725,6 +726,7 @@ public sealed class BusinessGatewayOpenApiTests
             schema.TryGetProperty("enum", out var values),
             $"{path} status query parameter must be an OpenAPI enum, not a free-form string.");
         Assert.Contains(values.EnumerateArray(), value => value.GetString() == "ready");
+        Assert.Contains(values.EnumerateArray(), value => value.GetString() == "posted");
     }
 
     private static JsonElement FindSchemaBySuffix(JsonDocument document, string schemaNameSuffix)

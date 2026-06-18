@@ -17,6 +17,7 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").IsRequired().HasMaxLength(100).HasComment("MES work order id requesting materials.");
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").HasMaxLength(100).HasComment("Optional MES operation task id requesting materials.");
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("Material SKU id requested for staging or line-side receipt.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasDefaultValue(MaterialIssueRequest.UnspecifiedUomCode).HasComment("Unit of measure code captured for the material issue quantity.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").HasMaxLength(100).HasComment("Actual material lot id received line-side, when known.");
         builder.Property(x => x.RequestedQuantity).HasColumnName("requested_quantity").HasPrecision(18, 6).IsRequired().HasComment("Requested material issue quantity.");
         builder.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").HasPrecision(18, 6).IsRequired().HasComment("Confirmed line-side received quantity.");

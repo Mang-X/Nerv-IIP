@@ -175,7 +175,8 @@ internal static class InventoryMovementRequestEventMapping
             request.OwnerType,
             request.OwnerId,
             quantity,
-            requestedAtUtc);
+            requestedAtUtc,
+            request.InventoryReservationId);
     }
 }
 

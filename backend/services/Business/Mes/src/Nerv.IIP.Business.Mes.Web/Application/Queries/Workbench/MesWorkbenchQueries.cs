@@ -665,6 +665,7 @@ public sealed record MesMaterialIssueRequestRow(
     string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
@@ -727,6 +728,7 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.WorkOrderId,
                 x.OperationTaskId,
                 x.MaterialId,
+                x.UomCode,
                 x.MaterialLotId,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
@@ -1348,7 +1350,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new { Id = x.ReportNo, x.OperationTaskId })
+            .Select(x => new { Id = x.ReportNo, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
             .ToArrayAsync(cancellationToken);
 
         var nodes = new List<MesTraceabilityNode>
@@ -1393,6 +1395,17 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         {
             nodes.Add(new MesTraceabilityNode(report.Id, "ProductionReport", report.Id, "Reported"));
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.Id, "has-report"));
+            if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
+            {
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                edges.Add(new MesTraceabilityEdge(report.Id, report.ProducedLotNo, "produced-lot"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(report.SerialNo))
+            {
+                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
+                edges.Add(new MesTraceabilityEdge(report.Id, report.SerialNo, "produced-serial"));
+            }
         }
 
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
@@ -1447,7 +1460,16 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
-        if (consumptions.Length == 0)
+        var producedReports = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                (x.ProducedLotNo == request.BatchOrSerial || x.SerialNo == request.BatchOrSerial))
+            .Select(x => new { x.ReportNo, x.WorkOrderId, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
+            .ToArrayAsync(cancellationToken);
+
+        if (consumptions.Length == 0 && producedReports.Length == 0)
         {
             return new MesTraceabilityResponse(
                 [new MesTraceabilityNode(request.BatchOrSerial, "BatchOrSerial", request.BatchOrSerial, "Unknown")],
@@ -1456,9 +1478,19 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(request.BatchOrSerial, "MaterialLot", request.BatchOrSerial, "Consumed"),
+            new(request.BatchOrSerial, producedReports.Length > 0 ? "ProducedLotOrSerial" : "MaterialLot", request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"),
         };
         var edges = new List<MesTraceabilityEdge>();
+
+        foreach (var report in producedReports)
+        {
+            nodes.Add(new MesTraceabilityNode(report.WorkOrderId, "WorkOrder", report.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(report.OperationTaskId, "OperationTask", report.OperationTaskId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(report.ReportNo, "ProductionReport", report.ReportNo, "Reported"));
+            edges.Add(new MesTraceabilityEdge(report.ReportNo, request.BatchOrSerial, report.SerialNo == request.BatchOrSerial ? "produced-serial" : "produced-lot"));
+            edges.Add(new MesTraceabilityEdge(report.ReportNo, report.OperationTaskId, "reported-operation"));
+            edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.WorkOrderId, "belongs-to-work-order"));
+        }
 
         foreach (var consumption in consumptions)
         {
@@ -1515,6 +1547,15 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
             new(request.MaterialLotId, "MaterialLot", request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
         };
         var edges = new List<MesTraceabilityEdge>();
+        var reportNos = consumptions.Select(x => x.ReportNo).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var producedReports = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                reportNos.Contains(x.ReportNo))
+            .Select(x => new { x.ReportNo, x.ProducedLotNo, x.SerialNo })
+            .ToArrayAsync(cancellationToken);
 
         foreach (var consumption in consumptions)
         {
@@ -1530,6 +1571,21 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
             {
                 nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
+            }
+        }
+
+        foreach (var report in producedReports)
+        {
+            if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
+            {
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
+            }
+
+            if (!string.IsNullOrWhiteSpace(report.SerialNo))
+            {
+                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
+                edges.Add(new MesTraceabilityEdge(report.ReportNo, report.SerialNo, "produced-serial"));
             }
         }
 

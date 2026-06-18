@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Inventory.Domain.Tests;
@@ -24,6 +25,42 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Stock_status_is_normalized_to_canonical_values()
+    {
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+
+        Assert.Equal("unrestricted", ledger.QualityStatus);
+    }
+
+    [Fact]
+    public void Unsupported_stock_status_is_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "random-text",
+            "company",
+            "owner-001"));
+    }
+
+    [Fact]
     public void Outbound_movement_decreases_on_hand_quantity()
     {
         var ledger = NewLedger();
@@ -34,6 +71,102 @@ public sealed class InventoryAggregateTests
 
         Assert.Equal(16.75m, ledger.OnHandQuantity);
         Assert.Equal(16.75m, ledger.AvailableQuantity);
+    }
+
+    [Fact]
+    public void Reservation_reduces_available_quantity_and_release_restores_it()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            4m);
+
+        ledger.Reserve(reservation);
+
+        Assert.Equal(4m, ledger.ReservedQuantity);
+        Assert.Equal(6m, ledger.AvailableQuantity);
+
+        ledger.ReleaseReservation(reservation, 1.5m);
+
+        Assert.Equal(2.5m, ledger.ReservedQuantity);
+        Assert.Equal(7.5m, ledger.AvailableQuantity);
+        Assert.Equal("partially-released", reservation.Status);
+    }
+
+    [Fact]
+    public void Reservation_cannot_exceed_available_quantity()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            3m);
+
+        Assert.Throws<InvalidOperationException>(() => ledger.Reserve(reservation));
+    }
+
+    [Fact]
+    public void Outbound_allocation_consumes_reserved_quantity()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            4m);
+        ledger.Reserve(reservation);
+
+        ledger.AllocateReservation(reservation, 3m);
+        ledger.ApplyMovement(NewMovement("outbound", -3m, "idem-out-001"));
+
+        Assert.Equal(7m, ledger.OnHandQuantity);
+        Assert.Equal(1m, ledger.ReservedQuantity);
+        Assert.Equal(6m, ledger.AvailableQuantity);
+        Assert.Equal("partially-allocated", reservation.Status);
+    }
+
+    [Fact]
+    public void Moving_average_valuation_updates_ledger_value()
+    {
+        var ledger = NewLedger();
+
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001", unitCost: 2m));
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-002", unitCost: 4m));
+        var outbound = NewMovement("outbound", -5m, "idem-out-001");
+        ledger.ApplyMovement(outbound);
+
+        Assert.Equal(3m, ledger.MovingAverageUnitCost);
+        Assert.Equal(45m, ledger.InventoryValue);
+        Assert.Equal(3m, outbound.UnitCost);
+        Assert.Equal(-15m, outbound.MovementAmount);
+    }
+
+    [Fact]
+    public void Outbound_movement_ignores_external_unit_cost_and_uses_moving_average()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001", unitCost: 2m));
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-002", unitCost: 4m));
+        var outbound = NewMovement("outbound", -5m, "idem-out-001", unitCost: 99m);
+
+        ledger.ApplyMovement(outbound);
+
+        Assert.Equal(3m, outbound.UnitCost);
+        Assert.Equal(-15m, outbound.MovementAmount);
+        Assert.Equal(45m, ledger.InventoryValue);
+        Assert.Equal(3m, ledger.MovingAverageUnitCost);
     }
 
     [Fact]
@@ -142,6 +275,50 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Open_count_task_freezes_ledger_against_regular_movements()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        ledger.FreezeForCount("COUNT-001");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ledger.ApplyMovement(NewMovement("outbound", -1m, "idem-out-001")));
+
+        Assert.Contains("frozen", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Count_adjustment_requires_expected_ledger_version()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-002"));
+
+        var exception = Assert.Throws<StockCountRecountRequiredException>(() =>
+            task.ConfirmAdjustment(ledger, countedQuantity: 9m, "idem-count-001"));
+
+        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("recount-required", task.Status);
+    }
+
+    [Fact]
+    public void Count_task_cancel_releases_ledger_freeze()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var task = NewCountTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+
+        task.Cancel(ledger, "operator-cancelled");
+
+        Assert.Equal("cancelled", task.Status);
+        Assert.False(ledger.IsFrozenForCount);
+        ledger.ApplyMovement(NewMovement("outbound", -1m, "idem-out-001"));
+        Assert.Equal(9m, ledger.OnHandQuantity);
+    }
+
+    [Fact]
     public void Count_adjustment_fact_requires_assigned_movement_id()
     {
         var ledger = NewLedger();
@@ -168,7 +345,7 @@ public sealed class InventoryAggregateTests
             "owner-001");
     }
 
-    private static StockMovement NewMovement(string movementType, decimal quantity, string idempotencyKey)
+    private static StockMovement NewMovement(string movementType, decimal quantity, string idempotencyKey, decimal? unitCost = null)
     {
         return StockMovement.Post(
             "org-001",
@@ -187,7 +364,8 @@ public sealed class InventoryAggregateTests
             "qualified",
             "company",
             "owner-001",
-            quantity);
+            quantity,
+            unitCost);
     }
 
     private static StockCountTask NewCountTask(StockLedger ledger)

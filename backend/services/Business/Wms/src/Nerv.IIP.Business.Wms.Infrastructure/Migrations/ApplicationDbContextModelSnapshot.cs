@@ -331,6 +331,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("inventory_movement_id")
                         .HasComment("Public Inventory movement id returned after posting.");
 
+                    b.Property<string>("InventoryReservationId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inventory_reservation_id")
+                        .HasComment("Optional Inventory reservation id used to allocate outbound stock.");
+
                     b.Property<string>("LocationCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -541,6 +547,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Outbound order line id.");
+
+                    b.Property<string>("InventoryReservationId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inventory_reservation_id")
+                        .HasComment("Public Inventory reservation id allocated for this outbound line.");
 
                     b.Property<string>("LineNo")
                         .IsRequired()
@@ -839,13 +851,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalTaskId")
-                        .IsUnique();
-
                     b.HasIndex("WarehouseTaskId", "AdapterType")
                         .IsUnique();
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "ExternalTaskId");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ExternalTaskId")
+                        .IsUnique();
 
                     b.ToTable("wcs_tasks", "wms", t =>
                         {

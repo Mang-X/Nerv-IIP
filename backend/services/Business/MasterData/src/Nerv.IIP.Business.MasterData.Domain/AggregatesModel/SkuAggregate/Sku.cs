@@ -26,7 +26,27 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string storageConditionCode,
         string defaultBarcodeRuleCode,
         bool qualityRequired,
-        IEnumerable<string> complianceTags)
+        IEnumerable<string> complianceTags,
+        string? inventoryUomCode,
+        string? purchaseUomCode,
+        string? salesUomCode,
+        string? manufacturingUomCode,
+        string? procurementType,
+        string? mrpType,
+        string? lotSizingPolicy,
+        decimal? minimumLotSize,
+        decimal? maximumLotSize,
+        decimal? lotSizeMultiple,
+        decimal? safetyStockQuantity,
+        decimal? reorderPointQuantity,
+        int? plannedDeliveryTimeDays,
+        int? inHouseProductionTimeDays,
+        int? goodsReceiptProcessingTimeDays,
+        string? abcClass,
+        string? lifecycleStatus,
+        bool purchasingEnabled,
+        bool manufacturingEnabled,
+        bool salesEnabled)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -34,10 +54,10 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         Name = Required(name);
         Unit = Required(unit);
         BaseUomCode = Unit;
-        InventoryUomCode = Unit;
-        PurchaseUomCode = Unit;
-        SalesUomCode = Unit;
-        ManufacturingUomCode = Unit;
+        InventoryUomCode = UomOrBase(inventoryUomCode, Unit);
+        PurchaseUomCode = UomOrBase(purchaseUomCode, Unit);
+        SalesUomCode = UomOrBase(salesUomCode, Unit);
+        ManufacturingUomCode = UomOrBase(manufacturingUomCode, Unit);
         Category = Required(category);
         MaterialType = Required(materialType);
         BatchTrackingPolicy = Required(batchTrackingPolicy);
@@ -46,6 +66,23 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
+        SetPlanningProfile(
+            procurementType,
+            mrpType,
+            lotSizingPolicy,
+            minimumLotSize,
+            maximumLotSize,
+            lotSizeMultiple,
+            safetyStockQuantity,
+            reorderPointQuantity,
+            plannedDeliveryTimeDays,
+            inHouseProductionTimeDays,
+            goodsReceiptProcessingTimeDays,
+            abcClass);
+        LifecycleStatus = NormalizeLifecycleStatus(lifecycleStatus);
+        PurchasingEnabled = purchasingEnabled;
+        ManufacturingEnabled = manufacturingEnabled;
+        SalesEnabled = salesEnabled;
         this.complianceTags.AddRange(complianceTags.Select(Required).Distinct(StringComparer.OrdinalIgnoreCase));
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
@@ -71,6 +108,22 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     public string StorageConditionCode { get; private set; } = string.Empty;
     public string DefaultBarcodeRuleCode { get; private set; } = string.Empty;
     public bool QualityRequired { get; private set; }
+    public string ProcurementType { get; private set; } = string.Empty;
+    public string MrpType { get; private set; } = string.Empty;
+    public string LotSizingPolicy { get; private set; } = string.Empty;
+    public decimal? MinimumLotSize { get; private set; }
+    public decimal? MaximumLotSize { get; private set; }
+    public decimal? LotSizeMultiple { get; private set; }
+    public decimal? SafetyStockQuantity { get; private set; }
+    public decimal? ReorderPointQuantity { get; private set; }
+    public int? PlannedDeliveryTimeDays { get; private set; }
+    public int? InHouseProductionTimeDays { get; private set; }
+    public int? GoodsReceiptProcessingTimeDays { get; private set; }
+    public string AbcClass { get; private set; } = string.Empty;
+    public string LifecycleStatus { get; private set; } = "active";
+    public bool PurchasingEnabled { get; private set; } = true;
+    public bool ManufacturingEnabled { get; private set; } = true;
+    public bool SalesEnabled { get; private set; } = true;
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -78,7 +131,7 @@ public class Sku : Entity<SkuId>, IAggregateRoot
 
     public static Sku Create(string organizationId, string environmentId, string code, string name, string unit, string category)
     {
-        return new Sku(organizationId, environmentId, code, name, unit, category, category, "not-tracked", "not-serialized", string.Empty, string.Empty, string.Empty, false, []);
+        return new Sku(organizationId, environmentId, code, name, unit, category, category, "not-tracked", "not-serialized", string.Empty, string.Empty, string.Empty, false, [], null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, "active", true, true, true);
     }
 
     public static Sku CreateIndustrial(
@@ -95,7 +148,27 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string storageConditionCode,
         string defaultBarcodeRuleCode,
         bool qualityRequired,
-        IEnumerable<string> complianceTags)
+        IEnumerable<string> complianceTags,
+        string? inventoryUomCode = null,
+        string? purchaseUomCode = null,
+        string? salesUomCode = null,
+        string? manufacturingUomCode = null,
+        string? procurementType = null,
+        string? mrpType = null,
+        string? lotSizingPolicy = null,
+        decimal? minimumLotSize = null,
+        decimal? maximumLotSize = null,
+        decimal? lotSizeMultiple = null,
+        decimal? safetyStockQuantity = null,
+        decimal? reorderPointQuantity = null,
+        int? plannedDeliveryTimeDays = null,
+        int? inHouseProductionTimeDays = null,
+        int? goodsReceiptProcessingTimeDays = null,
+        string? abcClass = null,
+        string? lifecycleStatus = "active",
+        bool purchasingEnabled = true,
+        bool manufacturingEnabled = true,
+        bool salesEnabled = true)
     {
         return new Sku(
             organizationId,
@@ -111,7 +184,27 @@ public class Sku : Entity<SkuId>, IAggregateRoot
             storageConditionCode,
             defaultBarcodeRuleCode,
             qualityRequired,
-            complianceTags);
+            complianceTags,
+            inventoryUomCode,
+            purchaseUomCode,
+            salesUomCode,
+            manufacturingUomCode,
+            procurementType,
+            mrpType,
+            lotSizingPolicy,
+            minimumLotSize,
+            maximumLotSize,
+            lotSizeMultiple,
+            safetyStockQuantity,
+            reorderPointQuantity,
+            plannedDeliveryTimeDays,
+            inHouseProductionTimeDays,
+            goodsReceiptProcessingTimeDays,
+            abcClass,
+            lifecycleStatus,
+            purchasingEnabled,
+            manufacturingEnabled,
+            salesEnabled);
     }
 
     public void Rename(string name)
@@ -132,16 +225,36 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string shelfLifePolicyCode,
         string storageConditionCode,
         string defaultBarcodeRuleCode,
-        bool qualityRequired)
+        bool qualityRequired,
+        string? inventoryUomCode = null,
+        string? purchaseUomCode = null,
+        string? salesUomCode = null,
+        string? manufacturingUomCode = null,
+        string? procurementType = null,
+        string? mrpType = null,
+        string? lotSizingPolicy = null,
+        decimal? minimumLotSize = null,
+        decimal? maximumLotSize = null,
+        decimal? lotSizeMultiple = null,
+        decimal? safetyStockQuantity = null,
+        decimal? reorderPointQuantity = null,
+        int? plannedDeliveryTimeDays = null,
+        int? inHouseProductionTimeDays = null,
+        int? goodsReceiptProcessingTimeDays = null,
+        string? abcClass = null,
+        string? lifecycleStatus = null,
+        bool? purchasingEnabled = null,
+        bool? manufacturingEnabled = null,
+        bool? salesEnabled = null)
     {
         EnsureEnabled();
         Name = Required(name);
         Unit = Required(baseUomCode);
         BaseUomCode = Unit;
-        InventoryUomCode = Unit;
-        PurchaseUomCode = Unit;
-        SalesUomCode = Unit;
-        ManufacturingUomCode = Unit;
+        InventoryUomCode = UomOrBase(inventoryUomCode, Unit);
+        PurchaseUomCode = UomOrBase(purchaseUomCode, Unit);
+        SalesUomCode = UomOrBase(salesUomCode, Unit);
+        ManufacturingUomCode = UomOrBase(manufacturingUomCode, Unit);
         Category = Required(category);
         MaterialType = Required(materialType);
         BatchTrackingPolicy = Required(batchTrackingPolicy);
@@ -150,6 +263,27 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
+        SetPlanningProfile(
+            procurementType,
+            mrpType,
+            lotSizingPolicy,
+            minimumLotSize,
+            maximumLotSize,
+            lotSizeMultiple,
+            safetyStockQuantity,
+            reorderPointQuantity,
+            plannedDeliveryTimeDays,
+            inHouseProductionTimeDays,
+            goodsReceiptProcessingTimeDays,
+            abcClass);
+        if (lifecycleStatus is not null)
+        {
+            LifecycleStatus = NormalizeLifecycleStatus(lifecycleStatus);
+        }
+
+        PurchasingEnabled = purchasingEnabled ?? PurchasingEnabled;
+        ManufacturingEnabled = manufacturingEnabled ?? ManufacturingEnabled;
+        SalesEnabled = salesEnabled ?? SalesEnabled;
         Touch();
     }
 
@@ -195,8 +329,80 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 
-    private static string Optional(string value)
+    private static string Optional(string? value)
     {
         return value?.Trim() ?? string.Empty;
+    }
+
+    private static string UomOrBase(string? value, string baseUomCode)
+    {
+        return string.IsNullOrWhiteSpace(value) ? baseUomCode : value.Trim();
+    }
+
+    private void SetPlanningProfile(
+        string? procurementType,
+        string? mrpType,
+        string? lotSizingPolicy,
+        decimal? minimumLotSize,
+        decimal? maximumLotSize,
+        decimal? lotSizeMultiple,
+        decimal? safetyStockQuantity,
+        decimal? reorderPointQuantity,
+        int? plannedDeliveryTimeDays,
+        int? inHouseProductionTimeDays,
+        int? goodsReceiptProcessingTimeDays,
+        string? abcClass)
+    {
+        ValidateNonNegative(minimumLotSize, nameof(minimumLotSize));
+        ValidateNonNegative(maximumLotSize, nameof(maximumLotSize));
+        ValidateNonNegative(lotSizeMultiple, nameof(lotSizeMultiple));
+        ValidateNonNegative(safetyStockQuantity, nameof(safetyStockQuantity));
+        ValidateNonNegative(reorderPointQuantity, nameof(reorderPointQuantity));
+        ValidateNonNegative(plannedDeliveryTimeDays, nameof(plannedDeliveryTimeDays));
+        ValidateNonNegative(inHouseProductionTimeDays, nameof(inHouseProductionTimeDays));
+        ValidateNonNegative(goodsReceiptProcessingTimeDays, nameof(goodsReceiptProcessingTimeDays));
+        if (minimumLotSize.HasValue && maximumLotSize.HasValue && maximumLotSize.Value < minimumLotSize.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumLotSize), "Maximum lot size cannot be smaller than minimum lot size.");
+        }
+
+        ProcurementType = Optional(procurementType);
+        MrpType = Optional(mrpType);
+        LotSizingPolicy = Optional(lotSizingPolicy);
+        MinimumLotSize = minimumLotSize;
+        MaximumLotSize = maximumLotSize;
+        LotSizeMultiple = lotSizeMultiple;
+        SafetyStockQuantity = safetyStockQuantity;
+        ReorderPointQuantity = reorderPointQuantity;
+        PlannedDeliveryTimeDays = plannedDeliveryTimeDays;
+        InHouseProductionTimeDays = inHouseProductionTimeDays;
+        GoodsReceiptProcessingTimeDays = goodsReceiptProcessingTimeDays;
+        AbcClass = Optional(abcClass);
+    }
+
+    private static string NormalizeLifecycleStatus(string? lifecycleStatus)
+    {
+        var value = string.IsNullOrWhiteSpace(lifecycleStatus) ? "active" : lifecycleStatus.Trim();
+        return value.ToLowerInvariant() switch
+        {
+            "draft" or "active" or "blocked" or "obsolete" => value,
+            _ => throw new ArgumentException("Unsupported SKU lifecycle status.", nameof(lifecycleStatus)),
+        };
+    }
+
+    private static void ValidateNonNegative(decimal? value, string parameterName)
+    {
+        if (value < 0)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Value cannot be negative.");
+        }
+    }
+
+    private static void ValidateNonNegative(int? value, string parameterName)
+    {
+        if (value < 0)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, "Value cannot be negative.");
+        }
     }
 }

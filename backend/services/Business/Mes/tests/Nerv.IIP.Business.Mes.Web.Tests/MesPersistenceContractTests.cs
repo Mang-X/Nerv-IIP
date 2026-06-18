@@ -258,7 +258,7 @@ public sealed class MesPersistenceContractTests
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var createHandler = new CreateMaterialIssueRequestCommandHandler(dbContext);
             var response = await createHandler.Handle(
-                new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-MAT-001", "OP-MAT-10", "MAT-OIL", 4m, now.AddMinutes(5), "issue-001"),
+                new CreateMaterialIssueRequestCommand("org-001", "env-dev", "WO-MAT-001", "OP-MAT-10", "MAT-OIL", "L", 4m, now.AddMinutes(5), "issue-001"),
                 CancellationToken.None);
 
             await dbContext.SaveChangesAsync();
@@ -333,6 +333,7 @@ public sealed class MesPersistenceContractTests
             "WO-LOT-001",
             "OP-LOT-10",
             "MAT-OIL",
+            "L",
             6m,
             now.AddMinutes(1));
         wrongLotRequest.ConfirmLineSideReceipt(now.AddMinutes(2), 6m, "LOT-OIL-B");
@@ -361,6 +362,7 @@ public sealed class MesPersistenceContractTests
             "WO-MIXED-LOT",
             "OP-MIXED-10",
             "MAT-OIL",
+            "L",
             10m,
             now);
 
@@ -1000,6 +1002,7 @@ public sealed class MesPersistenceContractTests
                 "WO-BATCH-001",
                 "OP-BATCH-10",
                 "MAT-OIL",
+                "L",
                 4m,
                 now.AddMinutes(5)));
             await dbContext.SaveChangesAsync();
@@ -1092,6 +1095,7 @@ public sealed class MesPersistenceContractTests
             "WO-PARTIAL-001",
             "OP-PARTIAL-10",
             "MAT-OIL",
+            "L",
             10m,
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
@@ -1142,6 +1146,7 @@ public sealed class MesPersistenceContractTests
                 "WO-TRACE-001",
                 "OP-TRACE-10",
                 "MAT-OIL",
+                "L",
                 4m,
                 now.AddMinutes(5)));
             await dbContext.SaveChangesAsync();
@@ -1253,6 +1258,7 @@ public sealed class MesPersistenceContractTests
             "WO-CUM-001",
             "OP-CUM-10",
             "MAT-OIL",
+            "L",
             10m,
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();
@@ -1323,6 +1329,7 @@ public sealed class MesPersistenceContractTests
             "WO-OTHER-001",
             "OP-OTHER-10",
             "MAT-OIL",
+            "L",
             10m,
             now.AddMinutes(1));
         otherRequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
@@ -1411,9 +1418,9 @@ public sealed class MesPersistenceContractTests
             TimeSpan.FromMinutes(45),
             now,
             now.AddMinutes(45)));
-        var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", 10m, now.AddMinutes(1));
+        var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(1));
         lotARequest.ConfirmLineSideReceipt(now.AddMinutes(5), 10m, "LOT-OIL-A");
-        var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", 10m, now.AddMinutes(2));
+        var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(2));
         lotBRequest.ConfirmLineSideReceipt(now.AddMinutes(6), 10m, "LOT-OIL-B");
         dbContext.MaterialIssueRequests.AddRange(lotARequest, lotBRequest);
         await dbContext.SaveChangesAsync();
@@ -1478,6 +1485,7 @@ public sealed class MesPersistenceContractTests
             "WO-DUP-001",
             "OP-DUP-10",
             "MAT-OIL",
+            "L",
             10m,
             now.AddMinutes(1)));
         await dbContext.SaveChangesAsync();

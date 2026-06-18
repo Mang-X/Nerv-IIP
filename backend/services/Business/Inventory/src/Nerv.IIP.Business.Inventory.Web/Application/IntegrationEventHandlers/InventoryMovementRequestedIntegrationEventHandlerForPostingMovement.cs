@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -9,7 +11,8 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent", ConsumerName)]
 public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
     ISender sender,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IIntegrationEventPublisher integrationEventPublisher)
     : IIntegrationEventHandler<InventoryMovementRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-inventory.movement-requested";
@@ -36,10 +39,67 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
     private async Task HandleValidEventAsync(InventoryMovementRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        await sender.Send(
-            new PostStockMovementCommand(
+        try
+        {
+            await sender.Send(
+                new PostStockMovementCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    payload.MovementType,
+                    payload.SourceService,
+                    payload.SourceDocumentId,
+                    payload.SourceDocumentLineId,
+                    payload.IdempotencyKey,
+                    payload.SkuCode,
+                    payload.UomCode,
+                    payload.SiteCode,
+                    payload.LocationCode,
+                    payload.LotNo,
+                    payload.SerialNo,
+                    payload.QualityStatus,
+                    payload.OwnerType,
+                    payload.OwnerId,
+                    payload.Quantity,
+                    ReservationId: ParseReservationId(payload.InventoryReservationId)),
+                cancellationToken);
+        }
+        catch (InventoryPostingRejectedException ex)
+        {
+            await PublishPostingFailedAsync(integrationEvent, ex.FailureCode, ex.FailureMessage, cancellationToken);
+        }
+        catch (KnownException ex)
+        {
+            await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
+        }
+    }
+
+    private Task PublishPostingFailedAsync(
+        InventoryMovementRequestedIntegrationEvent integrationEvent,
+        string failureCode,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        var failedAtUtc = DateTimeOffset.UtcNow;
+        var failedEvent = new StockMovementPostingFailedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            InventoryIntegrationEventTypes.StockMovementPostingFailed,
+            InventoryIntegrationEventVersions.V1,
+            failedAtUtc,
+            InventoryIntegrationEventSources.BusinessInventory,
+            integrationEvent.CorrelationId,
+            integrationEvent.EventId,
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            "system:business-inventory",
+            EventIds.Idempotency(
+                "stock-movement-posting-failed",
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.IdempotencyKey),
+            new StockMovementPostingFailedPayload(
                 payload.MovementType,
                 payload.SourceService,
                 payload.SourceDocumentId,
@@ -54,7 +114,27 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.QualityStatus,
                 payload.OwnerType,
                 payload.OwnerId,
-                payload.Quantity),
-            cancellationToken);
+                payload.Quantity,
+                failureCode,
+                failureMessage,
+                failedAtUtc));
+        return integrationEventPublisher.PublishAsync(failedEvent, cancellationToken);
+    }
+
+    private static StockReservationId? ParseReservationId(string? reservationId)
+    {
+        if (string.IsNullOrWhiteSpace(reservationId))
+        {
+            return null;
+        }
+
+        if (Guid.TryParse(reservationId, out var parsed))
+        {
+            return new StockReservationId(parsed);
+        }
+
+        throw new InventoryPostingRejectedException(
+            InventoryPostingFailureCodes.InvalidReservationId,
+            "Inventory movement request carried an invalid stock reservation id.");
     }
 }

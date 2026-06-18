@@ -924,7 +924,8 @@ public sealed record BusinessConsoleCreateInspectionRecordRequest(
     string? SerialNo,
     IReadOnlyCollection<BusinessConsoleInspectionCharacteristicResult>? ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string>? DispositionAttachmentFileIds);
+    IReadOnlyCollection<string>? DispositionAttachmentFileIds,
+    BusinessConsoleInspectionStockRelease? StockRelease = null);
 
 public sealed record BusinessConsoleInspectionCharacteristicResult(
     string CharacteristicCode,
@@ -933,7 +934,16 @@ public sealed record BusinessConsoleInspectionCharacteristicResult(
     string Result,
     string? DefectReason,
     decimal? DefectQuantity,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    decimal? MeasuredValue = null);
+
+public sealed record BusinessConsoleInspectionStockRelease(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string SourceQualityStatus,
+    string? OwnerType,
+    string? OwnerId);
 
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
 
@@ -943,7 +953,14 @@ public sealed record BusinessConsoleNcrDispositionRequest(
     [property: QueryParam] string EnvironmentId,
     string DispositionType,
     string? DispositionApprovalChainId,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    IReadOnlyCollection<BusinessConsoleMrbReview>? MrbReviews = null);
+
+public sealed record BusinessConsoleMrbReview(
+    string ReviewerId,
+    string Decision,
+    string? Comment,
+    DateTimeOffset ReviewedAtUtc);
 
 public sealed record BusinessConsoleNcrCloseRequest(
     [property: RouteParam] string NcrId,
@@ -2379,7 +2396,12 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+    IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -2537,6 +2559,7 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: QueryParam] string EnvironmentId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
     string IdempotencyKey);
@@ -2550,6 +2573,7 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
@@ -2704,7 +2728,11 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string ReceiptStatus,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
-    string? SkuCode = null);
+    string? SkuCode = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? PostedInventoryMovementId = null,
+    DateTimeOffset? PostedAtUtc = null);
 
 public sealed record BusinessConsoleMesCreateReceiptRequest(
     string OrganizationId,
@@ -2714,7 +2742,9 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId, string RequestNo);
 

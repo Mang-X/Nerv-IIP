@@ -101,6 +101,90 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
     }
 }
 
+public sealed record MarkMaintenanceWorkOrderAlarmClearedCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceAlarmId,
+    DateTimeOffset ClearedAtUtc) : ICommand;
+
+public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandValidator : AbstractValidator<MarkMaintenanceWorkOrderAlarmClearedCommand>
+{
+    public MarkMaintenanceWorkOrderAlarmClearedCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceAlarmId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<MarkMaintenanceWorkOrderAlarmClearedCommand>
+{
+    public async Task Handle(MarkMaintenanceWorkOrderAlarmClearedCommand request, CancellationToken cancellationToken)
+    {
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.SourceAlarmId == request.SourceAlarmId)
+            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open)
+            .OrderBy(x => x.OpenedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        foreach (var workOrder in workOrders)
+        {
+            workOrder.MarkAlarmCleared(request.ClearedAtUtc);
+        }
+    }
+}
+
+public sealed record GenerateDueMaintenanceWorkOrdersCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly BusinessDate,
+    string OpenedBy) : ICommand<GenerateDueMaintenanceWorkOrdersResult>;
+
+public sealed record GenerateDueMaintenanceWorkOrdersResult(int GeneratedCount, IReadOnlyCollection<MaintenanceWorkOrderId> WorkOrderIds);
+
+public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractValidator<GenerateDueMaintenanceWorkOrdersCommand>
+{
+    public GenerateDueMaintenanceWorkOrdersCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
+{
+    public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
+    {
+        var duePlans = await dbContext.MaintenancePlans
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.NextDueOn <= request.BusinessDate)
+            .OrderBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.PlanCode)
+            .ToArrayAsync(cancellationToken);
+
+        var workOrderIds = new List<MaintenanceWorkOrderId>();
+        foreach (var plan in duePlans)
+        {
+            var workOrder = MaintenanceWorkOrder.OpenFromPlan(
+                plan.OrganizationId,
+                plan.EnvironmentId,
+                plan.DeviceAssetId,
+                plan.PlanCode,
+                request.OpenedBy);
+            dbContext.MaintenanceWorkOrders.Add(workOrder);
+            plan.MarkGenerated(request.BusinessDate);
+            workOrderIds.Add(workOrder.Id);
+        }
+
+        return new GenerateDueMaintenanceWorkOrdersResult(workOrderIds.Count, workOrderIds);
+    }
+}
+
 public sealed record CreateMaintenanceSparePartCommand(
     string OrganizationId,
     string EnvironmentId,

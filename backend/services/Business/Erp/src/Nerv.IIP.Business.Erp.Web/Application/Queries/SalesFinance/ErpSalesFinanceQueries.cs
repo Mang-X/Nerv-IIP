@@ -286,7 +286,8 @@ public sealed record ListAccountPayablesQuery(
     string? Status = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListAccountPayablesResponse>;
+    int Take = 100,
+    DateOnly? AsOfDate = null) : IQuery<ListAccountPayablesResponse>;
 
 public sealed record ListAccountPayablesResponse(IReadOnlyCollection<AccountPayableListItem> Items, int Total);
 
@@ -297,6 +298,10 @@ public sealed record AccountPayableListItem(
     decimal Amount,
     decimal OpenAmount,
     string CurrencyCode,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode,
+    string AgingBucket,
     string Status,
     DateTime CreatedAtUtc);
 
@@ -334,10 +339,13 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
         var take = ErpListPaging.NormalizeTake(request.Take);
-        var items = await query
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+        var items = rows
             .Select(x => new AccountPayableListItem(
                 x.PayableNo,
                 x.SourceDocumentNo,
@@ -345,9 +353,13 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
                 x.Amount,
                 x.Amount - x.PaidAmount,
                 x.CurrencyCode,
+                x.InvoiceDate,
+                x.DueDate,
+                x.PaymentTermCode,
+                x.GetAgingBucket(asOfDate),
                 x.Amount > x.PaidAmount ? "open" : "settled",
                 x.CreatedAtUtc))
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new ListAccountPayablesResponse(items, total);
     }
@@ -359,7 +371,8 @@ public sealed record ListAccountReceivablesQuery(
     string? Status = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListAccountReceivablesResponse>;
+    int Take = 100,
+    DateOnly? AsOfDate = null) : IQuery<ListAccountReceivablesResponse>;
 
 public sealed record ListAccountReceivablesResponse(IReadOnlyCollection<AccountReceivableListItem> Items, int Total);
 
@@ -370,6 +383,10 @@ public sealed record AccountReceivableListItem(
     decimal Amount,
     decimal OpenAmount,
     string CurrencyCode,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode,
+    string AgingBucket,
     string Status,
     DateTime CreatedAtUtc);
 
@@ -407,10 +424,13 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
         var take = ErpListPaging.NormalizeTake(request.Take);
-        var items = await query
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+        var items = rows
             .Select(x => new AccountReceivableListItem(
                 x.ReceivableNo,
                 x.SourceDocumentNo,
@@ -418,9 +438,13 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
                 x.Amount,
                 x.Amount - x.CollectedAmount,
                 x.CurrencyCode,
+                x.InvoiceDate,
+                x.DueDate,
+                x.PaymentTermCode,
+                x.GetAgingBucket(asOfDate),
                 x.Amount > x.CollectedAmount ? "open" : "settled",
                 x.CreatedAtUtc))
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new ListAccountReceivablesResponse(items, total);
     }

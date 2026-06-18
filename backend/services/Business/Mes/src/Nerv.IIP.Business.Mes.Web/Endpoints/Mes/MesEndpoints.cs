@@ -68,7 +68,12 @@ public sealed record RecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -93,7 +98,9 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
@@ -196,6 +203,7 @@ public sealed record CreateMaterialIssueRequestRequest(
     [property: RouteParam] string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     decimal? Quantity,
     DateTimeOffset? RequestedAtUtc,
     string? IdempotencyKey = null);
@@ -570,6 +578,7 @@ public sealed class CreateMaterialIssueRequestEndpoint(ISender sender, TimeProvi
             req.WorkOrderId,
             req.OperationTaskId,
             req.MaterialId,
+            req.UomCode,
             req.Quantity,
             req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey), ct);
@@ -754,7 +763,12 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.CompletesOperation,
             req.ReportedAtUtc,
             req.IdempotencyKey,
-            req.ConsumedMaterialLots), ct);
+            req.ConsumedMaterialLots,
+            req.ReworkQuantity,
+            req.ScrapReasonCode,
+            req.DefectRecordNo,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }
@@ -837,7 +851,9 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.Quantity,
             req.UomCode,
             req.RequestedAtUtc,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }

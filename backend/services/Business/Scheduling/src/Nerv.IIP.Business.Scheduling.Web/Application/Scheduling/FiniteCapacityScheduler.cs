@@ -46,6 +46,12 @@ internal static class SchedulingProblemNormalizer
                                 .ToArray(),
                             EligibleResourceIds = y.EligibleResourceIds
                                 .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredSkillCodes = (y.RequiredSkillCodes ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredToolingIds = (y.RequiredToolingIds ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
                                 .ToArray()
                         })
                         .ToArray()
@@ -179,6 +185,13 @@ internal static class SchedulingProblemNormalizer
                 {
                     throw new ArgumentException(
                         $"DurationMinutes must be greater than zero for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
+                        nameof(problem));
+                }
+
+                if (operation.SetupMinutes < 0)
+                {
+                    throw new ArgumentException(
+                        $"SetupMinutes cannot be negative for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
                         nameof(problem));
                 }
             }
@@ -451,6 +464,8 @@ file sealed class SchedulerState
             .GroupBy(x => new OperationKey(x.OrderId ?? string.Empty, x.OperationId!))
             .ToDictionary(x => x.Key, x => x.First().ReasonCode);
 
+        var resourceLoads = BuildResourceLoads(orderedAssignments);
+
         return new SchedulePlanContract(
             ContractVersion: problem.ContractVersion,
             PlanId: planId,
@@ -459,8 +474,9 @@ file sealed class SchedulerState
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
+            Metrics: BuildMetrics(orderedAssignments, resourceLoads),
             Assignments: orderedAssignments,
-            ResourceLoads: BuildResourceLoads(orderedAssignments),
+            ResourceLoads: resourceLoads,
             Conflicts: conflicts,
             UnscheduledOperations: unscheduledOperations,
             ChangeSummary: changeSummary,
@@ -480,6 +496,52 @@ file sealed class SchedulerState
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
                     ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey));
             }).ToList());
+    }
+
+    private SchedulePlanMetricsContract BuildMetrics(
+        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
+        IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads)
+    {
+        var dueByOperation = problem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (
+                Key: new OperationKey(order.OrderId, operation.OperationId),
+                operation.DueUtc)))
+            .ToDictionary(x => x.Key, x => x.DueUtc);
+        var tardinessMinutes = 0;
+        var lateOperationCount = 0;
+        foreach (var assignment in orderedAssignments)
+        {
+            var key = OperationKey.From(assignment);
+            if (!dueByOperation.TryGetValue(key, out var dueUtc) || assignment.EndUtc <= dueUtc)
+            {
+                continue;
+            }
+
+            lateOperationCount++;
+            tardinessMinutes += (int)Math.Ceiling((assignment.EndUtc - dueUtc).TotalMinutes);
+        }
+
+        var assignedMinutes = orderedAssignments.Sum(x => (int)(x.EndUtc - x.StartUtc).TotalMinutes);
+        var makespanMinutes = orderedAssignments.Count == 0
+            ? 0
+            : (int)(orderedAssignments.Max(x => x.EndUtc) - orderedAssignments.Min(x => x.StartUtc)).TotalMinutes;
+        var totalAvailableMinutes = resourceLoads.Sum(x => x.AvailableMinutes);
+        var onTimeRate = orderedAssignments.Count == 0
+            ? 1m
+            : Math.Round((decimal)(orderedAssignments.Count - lateOperationCount) / orderedAssignments.Count, 4);
+        var averageResourceUtilization = totalAvailableMinutes == 0
+            ? 0m
+            : Math.Round((decimal)resourceLoads.Sum(x => x.AssignedMinutes) / totalAvailableMinutes, 4);
+
+        return new SchedulePlanMetricsContract(
+            ScheduledOperationCount: orderedAssignments.Count,
+            UnscheduledOperationCount: unscheduledOperations.Count,
+            AssignedMinutes: assignedMinutes,
+            MakespanMinutes: makespanMinutes,
+            TotalTardinessMinutes: tardinessMinutes,
+            LateOperationCount: lateOperationCount,
+            OnTimeRate: onTimeRate,
+            AverageResourceUtilization: averageResourceUtilization);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
@@ -573,9 +635,10 @@ file sealed class SchedulerState
     private IEnumerable<SchedulingResourceContract> EligibleResources(OperationWorkItem item)
     {
         var eligibleIds = item.Operation.EligibleResourceIds.ToHashSet(StringComparer.Ordinal);
+        var requiredCodes = RequiredCapabilityCodes(item.Operation).ToArray();
         return resources.Values
             .Where(resource => eligibleIds.Contains(resource.ResourceId))
-            .Where(resource => resource.CapabilityCodes.Contains(item.Operation.RequiredCapabilityCode, StringComparer.Ordinal))
+            .Where(resource => requiredCodes.All(code => resource.CapabilityCodes.Contains(code, StringComparer.Ordinal)))
             .OrderBy(resource => resource.ResourceId == item.Operation.PrimaryResourceId ? 0 : 1)
             .ThenBy(resource => resource.SortKey, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceId, StringComparer.Ordinal);
@@ -640,6 +703,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
+        var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in calendar.ShiftWindows
                      .OrderBy(x => x.StartUtc)
                      .ThenBy(x => x.EndUtc)
@@ -650,6 +714,13 @@ file sealed class SchedulerState
 
             while (candidate + duration <= latestEnd)
             {
+                var setupAdjustedCandidate = ApplySetupGap(resource, candidate, setup);
+                if (setupAdjustedCandidate > candidate)
+                {
+                    candidate = setupAdjustedCandidate;
+                    continue;
+                }
+
                 var end = candidate + duration;
                 var blockingEnd = BlockingEnd(resource, resourceQualityBlocks, candidate, end);
                 if (blockingEnd is null)
@@ -662,6 +733,46 @@ file sealed class SchedulerState
         }
 
         return null;
+    }
+
+    private DateTimeOffset ApplySetupGap(
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate,
+        TimeSpan setup)
+    {
+        if (setup <= TimeSpan.Zero)
+        {
+            return candidate;
+        }
+
+        var previousEnd = assignments
+            .Where(x => x.ResourceId == resource.ResourceId)
+            .Where(x => x.EndUtc <= candidate)
+            .Select(x => (DateTimeOffset?)x.EndUtc)
+            .Max();
+        if (!previousEnd.HasValue)
+        {
+            return candidate;
+        }
+
+        var setupComplete = previousEnd.Value + setup;
+        return candidate < setupComplete ? setupComplete : candidate;
+    }
+
+    private static IEnumerable<string> RequiredCapabilityCodes(SchedulingOperationContract operation)
+    {
+        yield return operation.RequiredCapabilityCode;
+
+        // APS lite models required skills and tooling as resource capability codes; no separate namespace exists yet.
+        foreach (var skillCode in operation.RequiredSkillCodes ?? [])
+        {
+            yield return skillCode;
+        }
+
+        foreach (var toolingId in operation.RequiredToolingIds ?? [])
+        {
+            yield return toolingId;
+        }
     }
 
     private DateTimeOffset? BlockingEnd(

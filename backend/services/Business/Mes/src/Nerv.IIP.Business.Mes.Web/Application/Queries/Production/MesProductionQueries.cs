@@ -28,7 +28,11 @@ public sealed record ProductionReportFact(
     decimal ReworkQuantity,
     DateTimeOffset ReportedAtUtc,
     string? WorkOrderNo = null,
-    string? OperationTaskNo = null);
+    string? OperationTaskNo = null,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -83,10 +87,14 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 x.OperationTaskId,
                 x.GoodQuantity,
                 x.ScrapQuantity,
-                0m,
+                x.ReworkQuantity,
                 x.ReportedAtUtc,
                 x.WorkOrderId,
-                x.OperationTaskId))
+                x.OperationTaskId,
+                x.ScrapReasonCode,
+                x.DefectRecordNo,
+                x.ProducedLotNo,
+                x.SerialNo))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
     }
@@ -116,7 +124,11 @@ public sealed record FinishedGoodsReceiptRequestFact(
     string ReceiptStatus,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
-    string? SkuCode = null);
+    string? SkuCode = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? PostedInventoryMovementId = null,
+    DateTimeOffset? PostedAtUtc = null);
 
 public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListFinishedGoodsReceiptRequestsQuery, ListFinishedGoodsReceiptRequestsResponse>
@@ -169,10 +181,14 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.WorkOrderId,
                 x.SkuId,
                 x.Quantity,
-                "Requested",
+                x.Status,
                 x.RequestedAtUtc,
                 x.WorkOrderId,
-                x.SkuId))
+                x.SkuId,
+                x.ProducedLotNo,
+                x.SerialNo,
+                x.PostedInventoryMovementId,
+                x.PostedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }

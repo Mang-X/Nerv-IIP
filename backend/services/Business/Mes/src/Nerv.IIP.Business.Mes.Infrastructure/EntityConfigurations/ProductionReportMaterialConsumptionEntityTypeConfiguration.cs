@@ -17,6 +17,7 @@ public sealed class ProductionReportMaterialConsumptionEntityTypeConfiguration :
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation task id associated with the material consumption.");
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("Material SKU id consumed by the production report.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").IsRequired().HasMaxLength(100).HasComment("Actual material lot id consumed by the production report.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasDefaultValue(ProductionReportMaterialConsumption.UnspecifiedUomCode).HasComment("Unit of measure code copied from the line-side material issue request.");
         builder.Property(x => x.ConsumedQuantity).HasColumnName("consumed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Consumed material quantity for this lot.");
         builder.Property(x => x.MaterialIssueRequestNo).HasColumnName("material_issue_request_no").IsRequired().HasMaxLength(100).HasComment("MES material issue request number that supplied the consumed lot.");
         builder.HasOne<ProductionReport>()

@@ -1,0 +1,214 @@
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+
+namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
+
+public partial record CorrectiveActionId : IGuidStronglyTypedId;
+
+public partial record CorrectiveActionItemId : IGuidStronglyTypedId;
+
+public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoot
+{
+    private CorrectiveAction()
+    {
+    }
+
+    private CorrectiveAction(
+        string organizationId,
+        string environmentId,
+        string capaCode,
+        string? sourceNcrId,
+        string rootCause,
+        string containmentAction,
+        string ownerUserId,
+        DateTimeOffset dueAtUtc)
+    {
+        Id = new CorrectiveActionId(Guid.CreateVersion7());
+        OrganizationId = Required(organizationId);
+        EnvironmentId = Required(environmentId);
+        CapaCode = Required(capaCode);
+        SourceNcrId = Optional(sourceNcrId);
+        RootCause = Required(rootCause);
+        ContainmentAction = Required(containmentAction);
+        OwnerUserId = Required(ownerUserId);
+        DueAtUtc = dueAtUtc == default ? throw new ArgumentException("CAPA due time is required.", nameof(dueAtUtc)) : dueAtUtc;
+        Status = "open";
+        CreatedAtUtc = DateTimeOffset.UtcNow;
+        UpdatedAtUtc = CreatedAtUtc;
+    }
+
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public string CapaCode { get; private set; } = string.Empty;
+    public string? SourceNcrId { get; private set; }
+    public string RootCause { get; private set; } = string.Empty;
+    public string ContainmentAction { get; private set; } = string.Empty;
+    public string OwnerUserId { get; private set; } = string.Empty;
+    public DateTimeOffset DueAtUtc { get; private set; }
+    public string Status { get; private set; } = string.Empty;
+    public string? EffectivenessVerifiedByUserId { get; private set; }
+    public string? EffectivenessResult { get; private set; }
+    public DateTimeOffset? EffectivenessVerifiedAtUtc { get; private set; }
+    public string? ClosedByUserId { get; private set; }
+    public DateTimeOffset? ClosedAtUtc { get; private set; }
+    public DateTimeOffset CreatedAtUtc { get; private set; }
+    public DateTimeOffset UpdatedAtUtc { get; private set; }
+    public List<CorrectiveActionItem> Actions { get; private set; } = [];
+
+    public static CorrectiveAction OpenFromNcr(
+        string organizationId,
+        string environmentId,
+        string capaCode,
+        NonconformanceReport ncr,
+        string rootCause,
+        string containmentAction,
+        string ownerUserId,
+        DateTimeOffset dueAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(ncr);
+        if (ncr.OrganizationId != organizationId || ncr.EnvironmentId != environmentId)
+        {
+            throw new InvalidOperationException("CAPA scope must match source NCR scope.");
+        }
+
+        return new CorrectiveAction(
+            organizationId,
+            environmentId,
+            capaCode,
+            ncr.Id.ToString(),
+            rootCause,
+            containmentAction,
+            ownerUserId,
+            dueAtUtc);
+    }
+
+    public static CorrectiveAction OpenStandalone(
+        string organizationId,
+        string environmentId,
+        string capaCode,
+        string rootCause,
+        string containmentAction,
+        string ownerUserId,
+        DateTimeOffset dueAtUtc)
+    {
+        return new CorrectiveAction(
+            organizationId,
+            environmentId,
+            capaCode,
+            null,
+            rootCause,
+            containmentAction,
+            ownerUserId,
+            dueAtUtc);
+    }
+
+    public void AddAction(string actionType, string description, string ownerUserId, DateTimeOffset dueAtUtc)
+    {
+        EnsureOpen();
+        Actions.Add(CorrectiveActionItem.Create(actionType, description, ownerUserId, dueAtUtc));
+        Touch();
+    }
+
+    public void VerifyEffectiveness(string verifiedByUserId, string result, DateTimeOffset verifiedAtUtc)
+    {
+        EnsureOpen();
+        if (!Actions.Any(x => x.ActionType is "corrective" or "preventive"))
+        {
+            throw new InvalidOperationException("CAPA requires corrective or preventive action before effectiveness verification.");
+        }
+
+        EffectivenessVerifiedByUserId = Required(verifiedByUserId);
+        EffectivenessResult = Required(result);
+        EffectivenessVerifiedAtUtc = verifiedAtUtc == default
+            ? throw new ArgumentException("Effectiveness verification time is required.", nameof(verifiedAtUtc))
+            : verifiedAtUtc;
+        Status = "effectiveness-verified";
+        Touch();
+    }
+
+    public void Close(string closedByUserId)
+    {
+        if (Status != "effectiveness-verified")
+        {
+            throw new InvalidOperationException("CAPA cannot close before effectiveness is verified.");
+        }
+
+        ClosedByUserId = Required(closedByUserId);
+        ClosedAtUtc = DateTimeOffset.UtcNow;
+        Status = "closed";
+        Touch();
+    }
+
+    private void EnsureOpen()
+    {
+        if (Status == "closed")
+        {
+            throw new InvalidOperationException("Closed CAPA cannot be changed.");
+        }
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}
+
+public sealed class CorrectiveActionItem : Entity<CorrectiveActionItemId>
+{
+    private static readonly HashSet<string> SupportedActionTypes =
+    [
+        "containment",
+        "corrective",
+        "preventive",
+    ];
+
+    private CorrectiveActionItem()
+    {
+    }
+
+    private CorrectiveActionItem(string actionType, string description, string ownerUserId, DateTimeOffset dueAtUtc)
+    {
+        Id = new CorrectiveActionItemId(Guid.CreateVersion7());
+        ActionType = Supported(actionType);
+        Description = Required(description);
+        OwnerUserId = Required(ownerUserId);
+        DueAtUtc = dueAtUtc == default ? throw new ArgumentException("Action due time is required.", nameof(dueAtUtc)) : dueAtUtc;
+        Status = "open";
+        CreatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public CorrectiveActionId CorrectiveActionId { get; private set; } = null!;
+    public string ActionType { get; private set; } = string.Empty;
+    public string Description { get; private set; } = string.Empty;
+    public string OwnerUserId { get; private set; } = string.Empty;
+    public DateTimeOffset DueAtUtc { get; private set; }
+    public string Status { get; private set; } = string.Empty;
+    public DateTimeOffset CreatedAtUtc { get; private set; }
+
+    public static CorrectiveActionItem Create(string actionType, string description, string ownerUserId, DateTimeOffset dueAtUtc)
+    {
+        return new CorrectiveActionItem(actionType, description, ownerUserId, dueAtUtc);
+    }
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string Supported(string value)
+    {
+        var normalized = Required(value).ToLowerInvariant();
+        return SupportedActionTypes.Contains(normalized)
+            ? normalized
+            : throw new ArgumentException($"Unsupported CAPA action type '{value}'.", nameof(value));
+    }
+}
