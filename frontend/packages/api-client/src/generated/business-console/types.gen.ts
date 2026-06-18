@@ -1942,6 +1942,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest = {
     operationTaskId?: string | null;
     materialId?: string;
+    uomCode?: string;
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
@@ -1961,6 +1962,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string | null;
     materialId?: string;
+    uomCode?: string;
     materialLotId?: string | null;
     requestedQuantity?: number;
     receivedQuantity?: number;
@@ -2088,6 +2090,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     reportedAtUtc?: string;
     idempotencyKey?: string | null;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput> | null;
+    reworkQuantity?: number;
+    scrapReasonCode?: string | null;
+    defectRecordNo?: string | null;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
@@ -2144,6 +2151,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     receiptStatus?: string;
     requestedAtUtc?: string;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
+    postedInventoryMovementId?: string | null;
+    postedAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesCreateReceiptResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2164,6 +2175,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     uomCode?: string;
     requestedAtUtc?: string;
     idempotencyKey?: string;
+    producedLotNo?: string | null;
+    serialNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEventListResponse = NetCorePalExtensionsDtoResponseData & {

@@ -6,6 +6,7 @@ public static class QualityIntegrationEventTypes
 {
     public const string InspectionPassed = "quality.InspectionPassed";
     public const string InspectionRejected = "quality.InspectionRejected";
+    public const string DefectRaised = "quality.DefectRaised";
     public const string NcrOpened = "quality.NcrOpened";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
@@ -19,7 +20,33 @@ public static class QualityIntegrationEventVersions
 public static class QualityIntegrationEventSources
 {
     public const string BusinessQuality = "business-quality";
+    public const string BusinessMes = "business-mes";
 }
+
+public sealed record DefectRaisedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    DefectRaisedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record DefectRaisedPayload(
+    string DefectNo,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc);
 
 public sealed record NcrOpenedIntegrationEvent(
     string EventId,

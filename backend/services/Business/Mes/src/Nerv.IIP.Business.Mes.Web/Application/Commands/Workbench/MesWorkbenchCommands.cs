@@ -373,6 +373,7 @@ public sealed record CreateMaterialIssueRequestCommand(
     string WorkOrderId,
     string? OperationTaskId,
     string? MaterialId,
+    string? UomCode,
     decimal? Quantity,
     DateTimeOffset RequestedAtUtc,
     string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
@@ -385,6 +386,7 @@ public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidat
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
     }
 }
@@ -412,7 +414,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.EnvironmentId, "material-issue-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.Quantity, request.RequestedAtUtc),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.UomCode, request.Quantity, request.RequestedAtUtc),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -425,6 +427,9 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         }
 
         var materialId = request.MaterialId.Trim();
+        var uomCode = string.IsNullOrWhiteSpace(request.UomCode)
+            ? throw new KnownException("领料申请必须指定单位，UomCode 不能为空。")
+            : request.UomCode.Trim();
 
         var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
             .AsNoTracking()
@@ -448,6 +453,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.WorkOrderId,
             request.OperationTaskId,
             materialId,
+            uomCode,
             requestedQuantity,
             request.RequestedAtUtc));
         return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
@@ -976,7 +982,7 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
         var openDefects = await dbContext.DefectRecords.CountAsync(
             x => x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
-                x.Status == DomainDefectRecord.OpenStatus,
+                x.ClosedAtUtc == null,
             cancellationToken);
         var openDowntimeEvents = await dbContext.WorkCenterUnavailabilities.CountAsync(
             x => x.OrganizationId == organizationId &&

@@ -2391,7 +2391,12 @@ public sealed record BusinessConsoleRecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+    IReadOnlyCollection<BusinessConsoleConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleConsumedMaterialLotInput(
     string MaterialId,
@@ -2549,6 +2554,7 @@ public sealed record BusinessConsoleMesCreateMaterialIssueRequest(
     [property: QueryParam] string EnvironmentId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     decimal? Quantity,
     IReadOnlyCollection<string>? MaterialIds,
     string IdempotencyKey);
@@ -2562,6 +2568,7 @@ public sealed record BusinessConsoleMesMaterialIssueRequestRow(
     string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     string? MaterialLotId,
     decimal RequestedQuantity,
     decimal ReceivedQuantity,
@@ -2693,7 +2700,11 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string SkuId,
     decimal Quantity,
     string ReceiptStatus,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? PostedInventoryMovementId = null,
+    DateTimeOffset? PostedAtUtc = null);
 
 public sealed record BusinessConsoleMesCreateReceiptRequest(
     string OrganizationId,
@@ -2703,7 +2714,9 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string IdempotencyKey);
+    string IdempotencyKey,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record BusinessConsoleMesCreateReceiptResponse(string FinishedGoodsReceiptRequestId, string RequestNo);
 
