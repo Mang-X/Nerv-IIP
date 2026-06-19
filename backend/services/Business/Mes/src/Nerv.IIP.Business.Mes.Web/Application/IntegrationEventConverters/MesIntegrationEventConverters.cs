@@ -123,6 +123,8 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
     {
         var request = domainEvent.MaterialIssueRequest;
         var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        // Use cumulative received quantity in the idempotency key so repeated partial receipts with
+        // the same delta still produce distinct Inventory movements; movement quantity stays the delta.
         var idempotencyKey = EventIds.Idempotency(
             "material-issue",
             request.OrganizationId,
@@ -155,6 +157,8 @@ public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
     {
         var request = domainEvent.MaterialIssueRequest;
         var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        // Keep this key in lockstep with the warehouse outbound leg: cumulative quantity identifies
+        // the receipt step, while the posted quantity remains this confirmation's delta.
         var idempotencyKey = EventIds.Idempotency(
             "line-side-receipt",
             request.OrganizationId,
