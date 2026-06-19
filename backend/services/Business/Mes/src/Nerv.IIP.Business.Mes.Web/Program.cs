@@ -31,10 +31,20 @@ builder.Services
     });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
-builder.Services.AddHttpClient<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>(client =>
+var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+builder.Services.AddSingleton(new MesMaterialRequirementInventoryOptions
+{
+    DefaultSiteCode = builder.Configuration["Inventory:DefaultSiteCode"] ?? "production",
+});
+builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
 });
+builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
+{
+    client.BaseAddress = inventoryBaseAddress;
+});
+builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
     .AddUnitOfWorkBehaviors());

@@ -65,11 +65,32 @@ public sealed class NullMesMaterialRequirementSnapshotProvider : IMesMaterialReq
     }
 }
 
+public sealed class MesProductEngineeringHttpClient(HttpClient httpClient)
+{
+    public HttpClient HttpClient { get; } = httpClient;
+}
+
+public sealed class MesInventoryHttpClient(HttpClient httpClient)
+{
+    public HttpClient HttpClient { get; } = httpClient;
+}
+
+public sealed class MesMaterialRequirementInventoryOptions
+{
+    public string DefaultSiteCode { get; init; } = "production";
+}
+
 public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
-    HttpClient httpClient,
+    MesProductEngineeringHttpClient productEngineeringClient,
+    MesInventoryHttpClient inventoryClient,
+    MesMaterialRequirementInventoryOptions? inventoryOptions = null,
     IInternalServiceTokenProvider? internalTokenProvider = null)
     : IMesMaterialRequirementSnapshotProvider
 {
+    private const string ActiveProductionVersionStatus = "active";
+    private const string PublishedEngineeringStatus = "published";
+    private readonly MesMaterialRequirementInventoryOptions inventoryOptions = inventoryOptions ?? new MesMaterialRequirementInventoryOptions();
+
     public async Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
         MesMaterialRequirementSnapshotRequest request,
         CancellationToken cancellationToken)
@@ -80,11 +101,13 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         }
 
         var productionVersions = await SendAsync<ListProductionVersionsResponse>(
+            productEngineeringClient.HttpClient,
+            "ProductEngineering",
             "/api/business/v1/engineering/production-versions?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuId),
-                ("status", "active")),
+                ("status", ActiveProductionVersionStatus)),
             cancellationToken);
         var selectedVersion = productionVersions.Items
             .FirstOrDefault(x => string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase));
@@ -93,47 +116,85 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
         }
 
-        var manufacturingBoms = await SendAsync<ListManufacturingBomsResponse>(
-            "/api/business/v1/engineering/manufacturing-boms?" + Query(
-                ("organizationId", request.OrganizationId),
-                ("environmentId", request.EnvironmentId),
-                ("skuCode", request.SkuId),
-                ("status", "Published"),
-                ("take", 500)),
-            cancellationToken);
-        var selectedBom = manufacturingBoms.Items
-            .OrderByDescending(x => string.Equals(x.BomCode, selectedVersion.MbomVersionId, StringComparison.OrdinalIgnoreCase))
-            .ThenBy(x => x.BomCode, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-        if (selectedBom is null || !string.Equals(selectedBom.BomCode, selectedVersion.MbomVersionId, StringComparison.OrdinalIgnoreCase))
+        if (!TryParseVersionReference(selectedVersion.MbomVersionId, out var bomCode, out var revision))
         {
             return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{selectedVersion.MbomVersionId}");
         }
 
-        var lines = selectedBom.MaterialLines
+        var selectedBom = await SendAsync<ManufacturingBomListItem>(
+            productEngineeringClient.HttpClient,
+            "ProductEngineering",
+            $"/api/business/v1/engineering/manufacturing-boms/{EscapePath(bomCode)}/{EscapePath(revision)}?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId)),
+            cancellationToken);
+        if (!string.Equals(selectedBom.SkuCode, request.SkuId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(selectedBom.Status, PublishedEngineeringStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:mbom:{selectedVersion.MbomVersionId}");
+        }
+
+        var requiredLines = SelectMaterialLines(selectedBom.MaterialLines)
             .Where(x => !x.IsPhantom)
             .Select(x =>
             {
                 var yieldRate = x.YieldRate <= 0m ? 1m : x.YieldRate;
                 var requiredQuantity = request.WorkOrderQuantity * x.Quantity * (1m + x.ScrapRate) / yieldRate;
-                return new MesMaterialRequirementSnapshotLine(
-                    null,
-                    x.SkuCode,
-                    null,
-                    requiredQuantity,
-                    x.UnitOfMeasureCode,
-                    0m,
-                    0m,
-                    $"{selectedBom.BomCode}:{selectedBom.Revision}:{x.SkuCode}");
+                return new MaterialRequirementLineDraft(x.SkuCode, x.UnitOfMeasureCode, requiredQuantity);
             })
+            .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.UomCode.ToUpperInvariant()}", StringComparer.Ordinal)
+            .Select(x => new MaterialRequirementLineDraft(
+                x.First().MaterialId,
+                x.First().UomCode,
+                x.Sum(y => y.RequiredQuantity)))
             .ToArray();
+        if (requiredLines.Length == 0)
+        {
+            return MesMaterialRequirementSnapshotResult.NoRequirements($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}");
+        }
 
-        return lines.Length == 0
-            ? MesMaterialRequirementSnapshotResult.NoRequirements($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedBom.BomCode}")
-            : MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedBom.BomCode}", lines);
+        var lines = new List<MesMaterialRequirementSnapshotLine>(requiredLines.Length);
+        foreach (var line in requiredLines)
+        {
+            var availableQuantity = await GetAvailableQuantityAsync(
+                request,
+                line.MaterialId,
+                line.UomCode,
+                cancellationToken);
+            lines.Add(new MesMaterialRequirementSnapshotLine(
+                null,
+                line.MaterialId,
+                null,
+                line.RequiredQuantity,
+                line.UomCode,
+                availableQuantity,
+                0m,
+                $"{selectedVersion.MbomVersionId}:{line.MaterialId}"));
+        }
+
+        return MesMaterialRequirementSnapshotResult.Captured($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}", lines);
     }
 
-    private async Task<T> SendAsync<T>(string requestUri, CancellationToken cancellationToken)
+    private async Task<decimal> GetAvailableQuantityAsync(
+        MesMaterialRequirementSnapshotRequest request,
+        string materialId,
+        string uomCode,
+        CancellationToken cancellationToken)
+    {
+        var availability = await SendAsync<StockAvailabilityResponse>(
+            inventoryClient.HttpClient,
+            "Inventory",
+            "/api/inventory/v1/availability?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", materialId),
+                ("uomCode", uomCode),
+                ("siteCode", inventoryOptions.DefaultSiteCode)),
+            cancellationToken);
+        return Math.Max(0m, availability.AvailableQuantity);
+    }
+
+    private async Task<T> SendAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)
         where T : class
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -143,11 +204,43 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await client.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
-        return envelope?.Data ?? throw new InvalidOperationException("ProductEngineering returned an empty response envelope.");
+        return envelope?.Data ?? throw new InvalidOperationException($"{serviceName} returned an empty response envelope.");
     }
+
+    private static IReadOnlyCollection<ManufacturingBomMaterialLineItem> SelectMaterialLines(
+        IReadOnlyCollection<ManufacturingBomMaterialLineItem> materialLines)
+    {
+        var concreteLines = materialLines.Where(x => !x.IsPhantom).ToArray();
+        var standalone = concreteLines.Where(x => string.IsNullOrWhiteSpace(x.AlternateGroup));
+        var selectedAlternates = concreteLines
+            .Where(x => !string.IsNullOrWhiteSpace(x.AlternateGroup))
+            .GroupBy(x => x.AlternateGroup!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(x => x
+                .OrderBy(line => line.AlternatePriority ?? int.MaxValue)
+                .ThenBy(line => line.SkuCode, StringComparer.OrdinalIgnoreCase)
+                .First());
+        return standalone.Concat(selectedAlternates).ToArray();
+    }
+
+    private static bool TryParseVersionReference(string versionId, out string code, out string revision)
+    {
+        code = string.Empty;
+        revision = string.Empty;
+        var parts = versionId.Split(':', 2, StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+        {
+            return false;
+        }
+
+        code = parts[0];
+        revision = parts[1];
+        return true;
+    }
+
+    private static string EscapePath(string value) => Uri.EscapeDataString(value);
 
     private static string Query(params (string Name, object? Value)[] values)
     {
@@ -210,3 +303,7 @@ internal sealed record ManufacturingBomMaterialLineItem(
     bool Backflush = false);
 
 internal sealed record ManufacturingBomRecipeLineItem(string ParameterCode, string TargetValue, string UnitOfMeasureCode);
+
+internal sealed record StockAvailabilityResponse(decimal AvailableQuantity);
+
+internal sealed record MaterialRequirementLineDraft(string MaterialId, string UomCode, decimal RequiredQuantity);
