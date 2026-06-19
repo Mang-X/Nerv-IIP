@@ -67,17 +67,22 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         }
         catch (InventoryPostingRejectedException ex)
         {
+            logger.LogWarning(
+                ex,
+                "Inventory movement request was rejected. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}, FailureCode={FailureCode}",
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.IdempotencyKey,
+                payload.MovementType,
+                payload.QualityStatus,
+                ex.FailureCode);
             await PublishPostingFailedAsync(integrationEvent, ex.FailureCode, ex.FailureMessage, cancellationToken);
         }
         catch (KnownException ex)
         {
-            await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
-        }
-        catch (ArgumentException ex)
-        {
             logger.LogWarning(
                 ex,
-                "Inventory movement request rejected because the payload contains unsupported input. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}",
+                "Inventory movement request was rejected. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}",
                 payload.SourceService,
                 payload.SourceDocumentId,
                 payload.IdempotencyKey,

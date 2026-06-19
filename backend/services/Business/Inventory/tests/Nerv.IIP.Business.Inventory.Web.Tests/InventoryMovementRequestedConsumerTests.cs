@@ -453,6 +453,21 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Empty(publisher.Published);
     }
 
+    [Fact]
+    public async Task Movement_requested_consumer_leaves_unexpected_argument_exception_for_retry()
+    {
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new FailingSender(new ArgumentNullException("request")),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => handler.HandleAsync(CreateRequestedEvent("evt-argument-bug"), CancellationToken.None));
+
+        Assert.Empty(publisher.Published);
+    }
+
     private static InventoryMovementRequestedIntegrationEvent CreateRequestedEvent(string eventId)
     {
         return new InventoryMovementRequestedIntegrationEvent(

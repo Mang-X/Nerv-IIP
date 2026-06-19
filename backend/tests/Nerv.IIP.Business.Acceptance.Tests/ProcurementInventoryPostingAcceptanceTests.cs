@@ -68,6 +68,29 @@ public sealed class ProcurementInventoryPostingAcceptanceTests
         Assert.Empty(publisher.Published);
     }
 
+    [Fact]
+    public async Task Unknown_erp_purchase_receipt_line_quality_status_is_not_silently_reclassified()
+    {
+        await using var inventoryDb = CreateInventoryContext();
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = CreateInventoryHandler(inventoryDb, publisher);
+        var movementEvent = CreateErpReceiptMovementEvents(
+                [new PurchaseReceiptLineDraft("LINE-001", 2m, "damaged", "RAW-A-01", "LOT-001")],
+                receiptNo: "RCV-DAMAGED")
+            .Single();
+
+        Assert.Equal("damaged", movementEvent.Payload.QualityStatus);
+
+        await handler.HandleAsync(movementEvent, CancellationToken.None);
+
+        Assert.Empty(inventoryDb.StockMovements);
+        Assert.Empty(inventoryDb.StockLedgers);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, failedEvent.Payload.FailureCode);
+        Assert.Equal("damaged", failedEvent.Payload.QualityStatus);
+        Assert.Equal("RCV-DAMAGED", failedEvent.Payload.SourceDocumentId);
+    }
+
     [Theory]
     [InlineData("purchase-receipt", "qualified")]
     [InlineData("inbound", "mixed")]

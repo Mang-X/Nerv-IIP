@@ -111,12 +111,13 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
 
     private static string NormalizeInventoryQualityStatus(string qualityStatus)
     {
-        return qualityStatus.Trim().ToLowerInvariant() switch
+        var normalized = qualityStatus.Trim().ToLowerInvariant();
+        return normalized switch
         {
-            "accepted" or "qualified" or "available" or "unrestricted" => "unrestricted",
-            "inspection" or "quality" or "quality-inspection" => "quality",
+            "accepted" or "unrestricted" => "unrestricted",
+            "inspection" or "quality" => "quality",
             "rejected" or "blocked" => "blocked",
-            _ => "quality",
+            _ => normalized,
         };
     }
 }
