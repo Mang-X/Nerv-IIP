@@ -3,6 +3,7 @@ using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
@@ -29,6 +30,11 @@ builder.Services
         };
     });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+builder.Services.AddHttpClient<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>(client =>
+{
+    client.BaseAddress = productEngineeringBaseAddress;
+});
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
     .AddUnitOfWorkBehaviors());
@@ -87,6 +93,26 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 /// <summary>
