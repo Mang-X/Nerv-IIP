@@ -122,6 +122,75 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal("allocated", reservation.Status);
     }
 
+    [Fact]
+    public async Task Movement_requested_consumer_publishes_posting_failed_when_unreserved_outbound_would_pierce_reserved_stock()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-SEED",
+            "LINE-001",
+            "idem-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-res-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new CommandExecutingSender(dbContext);
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-reserved-pierce") with
+        {
+            Payload = CreateRequestedEvent("evt-reserved-pierce").Payload with
+            {
+                MovementType = "outbound",
+                SourceDocumentId = "OUT-RESERVED-001",
+                IdempotencyKey = "idem-out-reserved-001",
+                Quantity = -3m,
+                InventoryReservationId = null,
+            },
+        }, CancellationToken.None);
+
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(InventoryIntegrationEventTypes.StockMovementPostingFailed, failedEvent.EventType);
+        Assert.Equal(InventoryPostingFailureCodes.ReservationAllocationRejected, failedEvent.Payload.FailureCode);
+        Assert.Contains("reserved", failedEvent.Payload.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(8m, ledger.ReservedQuantity);
+        Assert.Equal(2m, ledger.AvailableQuantity);
+        Assert.DoesNotContain(dbContext.StockMovements, x => x.SourceDocumentId == "OUT-RESERVED-001");
+    }
+
     [Theory]
     [InlineData(QualityIntegrationEventTypes.InspectionPassed, "unrestricted")]
     [InlineData(QualityIntegrationEventTypes.InspectionRejected, "blocked")]

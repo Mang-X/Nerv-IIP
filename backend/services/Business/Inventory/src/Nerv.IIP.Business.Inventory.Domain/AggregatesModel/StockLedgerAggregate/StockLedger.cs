@@ -115,6 +115,11 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
             throw new InvalidOperationException("Stock movement would make on-hand quantity negative.");
         }
 
+        if (movement.Quantity < 0 && nextOnHand < ReservedQuantity)
+        {
+            throw new InvalidOperationException("Stock movement would reduce on-hand quantity below reserved quantity.");
+        }
+
         if (IsFrozenForCount && movement.MovementType != "count-adjustment")
         {
             throw new InvalidOperationException($"Stock ledger is frozen for count task '{FrozenCountTaskCode}'.");

@@ -299,6 +299,54 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Status_transfer_can_move_only_unreserved_source_quantity_without_negative_available_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "qualified",
+                "blocked",
+                "inventory",
+                "BLK-001",
+                null,
+                "idem-status-available-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "company",
+                "owner-001",
+                2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked");
+        Assert.Equal(8m, result.SourceOnHandQuantity);
+        Assert.Equal(2m, result.TargetOnHandQuantity);
+        Assert.Equal(8m, source.OnHandQuantity);
+        Assert.Equal(8m, source.ReservedQuantity);
+        Assert.Equal(0m, source.AvailableQuantity);
+        Assert.Equal(2m, target.OnHandQuantity);
+        Assert.Equal(0m, target.ReservedQuantity);
+        Assert.Equal(2m, target.AvailableQuantity);
+    }
+
+    [Fact]
     public async Task Status_transfer_returns_known_exception_when_source_ledger_is_frozen_for_count()
     {
         await using var provider = CreateInMemoryProvider();
@@ -687,6 +735,67 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Concurrent_reservation_and_unreserved_outbound_does_not_create_overallocated_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ledger = DomainLedgerFactory.NewLedger();
+            ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+            dbContext.StockLedgers.Add(ledger);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var reservationScope = provider.CreateAsyncScope();
+        await using var movementScope = provider.CreateAsyncScope();
+        var reservationDbContext = reservationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var movementDbContext = movementScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var reservationLedger = await reservationDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+        var movementLedger = await movementDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+
+        var reservation = StockReservation.Reserve(
+            reservationLedger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        reservationLedger.Reserve(reservation);
+        reservationDbContext.StockReservations.Add(reservation);
+        movementLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "outbound",
+            "wms",
+            "OUT-001",
+            "LINE-001",
+            "idem-out-concurrent-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            -3m));
+
+        await reservationDbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => movementDbContext.SaveChangesAsync(CancellationToken.None));
+        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var verifyScope = provider.CreateAsyncScope();
+        var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var finalLedger = await verifyDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+        Assert.Equal(10m, finalLedger.OnHandQuantity);
+        Assert.Equal(8m, finalLedger.ReservedQuantity);
+        Assert.Equal(2m, finalLedger.AvailableQuantity);
+    }
+
+    [Fact]
     public async Task Confirm_count_adjustment_command_is_idempotent_for_same_counted_quantity()
     {
         await using var provider = CreateInMemoryProvider();
@@ -711,6 +820,33 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(-2.5m, second.VarianceQuantity);
         Assert.Single(secondDbContext.StockCountAdjustments);
         Assert.Single(secondDbContext.StockMovements.Where(x => x.MovementType == "count-adjustment"));
+    }
+
+    [Fact]
+    public async Task Confirm_count_adjustment_command_rejects_negative_variance_that_would_pierce_reserved_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        dbContext.StockCountTasks.Add(task);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+                new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-reserved-001"),
+                CancellationToken.None));
+
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
+        Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "count-adjustment"));
     }
 
     [Fact]
