@@ -18,6 +18,7 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
     public const string ConsumerName = "business-quality.mes-defect-raised";
 
     private const string MesDefectSourceType = "in-process";
+    private const string UnknownMesSkuCode = "MES-SKU-UNRESOLVED";
 
     private readonly IntegrationEventConsumerGuard<DefectRaisedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -52,7 +53,7 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
                 integrationEvent.EnvironmentId,
                 MesDefectSourceType,
                 payload.DefectNo,
-                payload.WorkOrderId,
+                UnknownMesSkuCode,
                 payload.Quantity,
                 payload.DefectCode,
                 null,

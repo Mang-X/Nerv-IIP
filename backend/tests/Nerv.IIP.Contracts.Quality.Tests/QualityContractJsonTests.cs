@@ -47,5 +47,10 @@ public sealed class QualityContractJsonTests
         Assert.Equal("rework", root.GetProperty("payload").GetProperty("dispositionType").GetString());
         Assert.False(root.GetProperty("payload").TryGetProperty("inventoryAdjustment", out _));
         Assert.False(root.GetProperty("payload").TryGetProperty("workOrderMutation", out _));
+
+        var deserialized = JsonSerializer.Deserialize<NcrDispositionDecidedIntegrationEvent>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal("DEF-001", deserialized.Payload.SourceDocumentId);
     }
 }

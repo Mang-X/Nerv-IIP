@@ -49,6 +49,7 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         var ncr = await qualityDb.NonconformanceReports.SingleAsync();
         Assert.Equal(defect.DefectNo, ncr.SourceDocumentId);
         Assert.Equal("in-process", ncr.SourceType);
+        Assert.Equal("MES-SKU-UNRESOLVED", ncr.SkuCode);
         ncr.ClearDomainEvents();
         ncr.SubmitDisposition(
             "scrap",

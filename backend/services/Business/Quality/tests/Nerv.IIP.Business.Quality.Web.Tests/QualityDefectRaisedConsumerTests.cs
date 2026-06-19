@@ -26,7 +26,7 @@ public sealed class QualityDefectRaisedConsumerTests
         var ncr = await dbContext.NonconformanceReports.SingleAsync();
         Assert.Equal("in-process", ncr.SourceType);
         Assert.Equal("DEF-001", ncr.SourceDocumentId);
-        Assert.Equal("WO-001", ncr.SkuCode);
+        Assert.Equal("MES-SKU-UNRESOLVED", ncr.SkuCode);
         Assert.Equal("SURFACE", ncr.DefectReason);
         Assert.Equal(2m, ncr.DefectQuantity);
     }
