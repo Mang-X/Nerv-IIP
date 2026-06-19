@@ -283,6 +283,13 @@ public sealed class ReleaseManufacturingBomCommandValidator : AbstractValidator<
         RuleFor(x => x.EngineeringBomCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EngineeringBomRevision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.MaterialLines).NotEmpty();
+        RuleForEach(x => x.MaterialLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(50);
+            line.RuleFor(x => x.ScrapRate).GreaterThanOrEqualTo(0);
+        });
     }
 }
 
@@ -325,6 +332,8 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             request.EngineeringBomRevision,
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
+
+        ProductEngineeringReleaseValidation.ValidateManufacturingBomMaterialContinuity(ebom, request.SkuCode, request.MaterialLines);
 
         var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
@@ -472,6 +481,36 @@ public sealed class ReleaseRoutingCommandHandler(
 
 internal static class ProductEngineeringReleaseValidation
 {
+    public static void ValidateManufacturingBomMaterialContinuity(
+        EngineeringBom engineeringBom,
+        string manufacturingBomSkuCode,
+        IReadOnlyCollection<ManufacturingBomMaterialLineCommand> materialLines)
+    {
+        var normalizedManufacturingBomSkuCode = manufacturingBomSkuCode.Trim();
+        if (!string.Equals(engineeringBom.ParentItemCode, normalizedManufacturingBomSkuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Manufacturing BOM SKU '{normalizedManufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+        }
+
+        var requiredEbomChildSkuCodes = engineeringBom.Lines
+            .Where(line => !line.IsPhantom)
+            .Select(line => line.ChildItemCode)
+            .ToHashSet(StringComparer.Ordinal);
+        var mbomMaterialSkuCodes = materialLines
+            .Select(line => line.SkuCode?.Trim() ?? string.Empty)
+            .Where(code => code.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingMaterialSkuCodes = requiredEbomChildSkuCodes
+            .Where(code => !mbomMaterialSkuCodes.Contains(code))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (missingMaterialSkuCodes.Length > 0)
+        {
+            throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
+        }
+    }
+
     public static T AsKnownException<T>(Func<T> action)
     {
         try
