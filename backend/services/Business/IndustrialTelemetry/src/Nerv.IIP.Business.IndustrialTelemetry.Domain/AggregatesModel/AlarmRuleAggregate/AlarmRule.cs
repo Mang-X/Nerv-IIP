@@ -95,4 +95,25 @@ public sealed class AlarmRule : Entity<AlarmRuleId>, IAggregateRoot
         IsEnabled = isEnabled;
         UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
+
+    public bool Evaluate(decimal averageValue, decimal maxValue)
+    {
+        return IsEnabled
+            && (Compare(averageValue, ThresholdValue, ComparisonOperator)
+                || Compare(maxValue, ThresholdValue, ComparisonOperator));
+    }
+
+    private static bool Compare(decimal observedValue, decimal thresholdValue, string comparisonOperator)
+    {
+        return comparisonOperator switch
+        {
+            ">" => observedValue > thresholdValue,
+            ">=" => observedValue >= thresholdValue,
+            "<" => observedValue < thresholdValue,
+            "<=" => observedValue <= thresholdValue,
+            "==" => observedValue == thresholdValue,
+            "!=" => observedValue != thresholdValue,
+            _ => throw new ArgumentOutOfRangeException(nameof(comparisonOperator), "Unsupported alarm rule comparison operator."),
+        };
+    }
 }

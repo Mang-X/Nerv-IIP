@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
@@ -209,10 +210,12 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
                 throw new KnownException("Telemetry summary source sequence has conflicting payload.");
             }
 
+            await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
             return new RecordTelemetrySampleResult(existingSummary.Id, stateId);
         }
 
         dbContext.TelemetrySummaries.Add(incoming);
+        await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
     }
 
@@ -250,6 +253,67 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
         dbContext.DeviceStateSnapshots.Add(incoming);
         return incoming.Id;
+    }
+
+    private async Task EvaluateAlarmRulesAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var rules = await dbContext.AlarmRules
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey
+                && x.IsEnabled)
+            .OrderBy(x => x.RuleCode)
+            .ToListAsync(cancellationToken);
+
+        foreach (var rule in rules)
+        {
+            if (!rule.Evaluate(request.AverageValue, request.MaxValue))
+            {
+                continue;
+            }
+
+            var externalAlarmId = CreateRuleBucketExternalAlarmId(rule, request.BucketEndUtc);
+            var incoming = AlarmEvent.Raise(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                rule.AlarmCode,
+                rule.Severity,
+                request.BucketEndUtc,
+                externalAlarmId);
+            var existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DeviceAssetId == request.DeviceAssetId
+                    && x.AlarmCode == rule.AlarmCode
+                    && x.ExternalAlarmId == externalAlarmId,
+                cancellationToken);
+
+            if (existing is not null)
+            {
+                try
+                {
+                    existing.EnsureCompatibleDuplicate(incoming);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new KnownException(ex.Message);
+                }
+
+                continue;
+            }
+
+            dbContext.AlarmEvents.Add(incoming);
+        }
+    }
+
+    private static string CreateRuleBucketExternalAlarmId(AlarmRule rule, DateTimeOffset bucketEndUtc)
+    {
+        return $"{rule.RuleCode}:{bucketEndUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)}";
     }
 }
 
