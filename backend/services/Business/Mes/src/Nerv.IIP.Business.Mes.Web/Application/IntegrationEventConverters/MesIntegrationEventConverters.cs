@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
+using System.Globalization;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 
@@ -121,8 +122,14 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
     public InventoryMovementRequestedIntegrationEvent Convert(MaterialIssueRequestedDomainEvent domainEvent)
     {
         var request = domainEvent.MaterialIssueRequest;
-        var occurredAtUtc = DateTimeOffset.UtcNow;
-        var idempotencyKey = EventIds.Idempotency("material-issue", request.OrganizationId, request.EnvironmentId, request.RequestNo);
+        var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency(
+            "material-issue",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.RequestNo,
+            request.MaterialLotId,
+            request.ReceivedQuantity.ToString("0.######", CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
@@ -136,7 +143,39 @@ public sealed class MaterialIssueRequestedIntegrationEventConverter
             "warehouse",
             "line-side",
             request.MaterialLotId,
-            -Math.Abs(request.RequestedQuantity),
+            -Math.Abs(domainEvent.IssuedQuantity),
+            occurredAtUtc);
+    }
+}
+
+public sealed class MaterialLineSideReceiptConfirmedIntegrationEventConverter
+    : IIntegrationEventConverter<MaterialLineSideReceiptConfirmedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(MaterialLineSideReceiptConfirmedDomainEvent domainEvent)
+    {
+        var request = domainEvent.MaterialIssueRequest;
+        var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency(
+            "line-side-receipt",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.RequestNo,
+            request.MaterialLotId,
+            request.ReceivedQuantity.ToString("0.######", CultureInfo.InvariantCulture));
+        EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
+        return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            idempotencyKey,
+            request.RequestNo,
+            request.OperationTaskId,
+            request.MaterialId,
+            request.UomCode,
+            "production",
+            "line-side",
+            request.MaterialLotId,
+            Math.Abs(domainEvent.ReceivedQuantity),
             occurredAtUtc);
     }
 }
