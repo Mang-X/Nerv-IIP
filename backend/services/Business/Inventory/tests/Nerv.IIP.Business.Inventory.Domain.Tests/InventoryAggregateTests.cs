@@ -138,6 +138,29 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Unreserved_outbound_cannot_reduce_on_hand_below_reserved_quantity()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        ledger.Reserve(reservation);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ledger.ApplyMovement(NewMovement("outbound", -3m, "idem-out-001")));
+
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(8m, ledger.ReservedQuantity);
+        Assert.Equal(2m, ledger.AvailableQuantity);
+    }
+
+    [Fact]
     public void Moving_average_valuation_updates_ledger_value()
     {
         var ledger = NewLedger();
@@ -272,6 +295,31 @@ public sealed class InventoryAggregateTests
         Assert.Equal(-2.5m, adjustment.Quantity);
         Assert.Equal(7.5m, ledger.OnHandQuantity);
         Assert.IsType<StockCountVarianceConfirmedDomainEvent>(task.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void Negative_count_adjustment_cannot_reduce_on_hand_below_reserved_quantity()
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        ledger.Reserve(reservation);
+        var task = NewCountTask(ledger);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            task.ConfirmAdjustment(ledger, countedQuantity: 7m, "idem-count-001"));
+
+        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(8m, ledger.ReservedQuantity);
+        Assert.Equal(2m, ledger.AvailableQuantity);
+        Assert.Equal("open", task.Status);
     }
 
     [Fact]
