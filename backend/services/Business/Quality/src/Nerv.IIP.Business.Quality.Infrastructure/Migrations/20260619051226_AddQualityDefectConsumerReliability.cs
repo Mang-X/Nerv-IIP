@@ -58,7 +58,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
             migrationBuilder.Sql("""
                 CREATE UNIQUE INDEX ux_ncr_mes_defect_source
                 ON quality.nonconformance_reports (organization_id, environment_id, source_type, source_document_id)
-                WHERE source_type = 'in-process';
+                WHERE source_type = 'in-process' AND sku_code = 'MES-SKU-UNRESOLVED';
                 """);
         }
 
