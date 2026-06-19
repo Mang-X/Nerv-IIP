@@ -277,7 +277,7 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
-    public void MaterialIssueRequest_creation_raises_downstream_issue_event()
+    public void MaterialIssueRequest_creation_tracks_requested_status_without_inventory_movement_event()
     {
         var request = MaterialIssueRequest.Create(
             "org-001",
@@ -291,7 +291,36 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
-        Assert.IsType<MaterialIssueRequestedDomainEvent>(request.GetDomainEvents().Single());
+        Assert.Empty(request.GetDomainEvents());
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_line_side_receipt_raises_transfer_events_with_delta_quantity()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
+        request.ClearDomainEvents();
+
+        request.ConfirmLineSideReceipt(
+            DateTimeOffset.Parse("2026-05-23T08:30:00Z"),
+            2m,
+            "LOT-001");
+
+        var events = request.GetDomainEvents().ToArray();
+        var issueEvent = Assert.IsType<MaterialIssueRequestedDomainEvent>(events[0]);
+        var receiptEvent = Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(events[1]);
+        Assert.Same(request, issueEvent.MaterialIssueRequest);
+        Assert.Equal(2m, issueEvent.IssuedQuantity);
+        Assert.Same(request, receiptEvent.MaterialIssueRequest);
+        Assert.Equal(2m, receiptEvent.ReceivedQuantity);
     }
 
     [Fact]

@@ -15,7 +15,9 @@ public sealed record ProductionReportRecordedDomainEvent(ProductionReport Produc
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;
 
-public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest) : IDomainEvent;
+public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal IssuedQuantity) : IDomainEvent;
+
+public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;
 
 public sealed record FinishedGoodsReceiptRequestedDomainEvent(FinishedGoodsReceiptRequest FinishedGoodsReceiptRequest) : IDomainEvent;
 

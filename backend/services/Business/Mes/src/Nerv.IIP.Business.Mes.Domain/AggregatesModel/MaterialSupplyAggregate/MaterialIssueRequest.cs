@@ -74,7 +74,6 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             uomCode,
             requestedQuantity,
             requestedAtUtc);
-        request.AddDomainEvent(new MaterialIssueRequestedDomainEvent(request));
         return request;
     }
 
@@ -99,5 +98,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         ReceivedQuantity += quantity;
         ReceivedAtUtc = receivedAtUtc;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
+        AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
+        AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
     }
 }
