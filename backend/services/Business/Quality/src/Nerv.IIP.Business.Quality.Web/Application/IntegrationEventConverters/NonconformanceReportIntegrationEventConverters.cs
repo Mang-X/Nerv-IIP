@@ -73,7 +73,10 @@ public sealed class NcrDispositionDecidedIntegrationEventConverter(IQualityInteg
                     x.ReviewerId,
                     x.Decision,
                     x.Comment,
-                    x.ReviewedAtUtc)).ToArray()));
+                    x.ReviewedAtUtc)).ToArray())
+            {
+                SourceDocumentId = ncr.SourceDocumentId
+            });
     }
 }
 

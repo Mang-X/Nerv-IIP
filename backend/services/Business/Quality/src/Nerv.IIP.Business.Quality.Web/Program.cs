@@ -97,6 +97,7 @@ try
     builder.Services.AddQualityPostgreSqlPersistence(qualityConnectionString, builder.Environment.IsDevelopment());
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
+    builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();

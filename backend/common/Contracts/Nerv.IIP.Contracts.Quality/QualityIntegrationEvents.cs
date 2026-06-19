@@ -174,7 +174,10 @@ public sealed record NcrDispositionDecidedPayload(
     string? ScrapMovementId,
     string? ReturnDocumentId,
     DateTimeOffset ChangedAtUtc,
-    IReadOnlyCollection<MrbReviewPayload>? MrbReviews = null);
+    IReadOnlyCollection<MrbReviewPayload>? MrbReviews = null)
+{
+    public string? SourceDocumentId { get; init; }
+}
 
 public sealed record MrbReviewPayload(
     string ReviewerId,

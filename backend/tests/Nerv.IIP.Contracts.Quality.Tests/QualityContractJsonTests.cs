@@ -32,7 +32,10 @@ public sealed class QualityContractJsonTests
                 ReworkWorkOrderId: null,
                 ScrapMovementId: null,
                 ReturnDocumentId: null,
-                ChangedAtUtc: DateTimeOffset.Parse("2026-05-22T12:00:00Z")));
+                ChangedAtUtc: DateTimeOffset.Parse("2026-05-22T12:00:00Z"))
+            {
+                SourceDocumentId = "DEF-001"
+            });
 
         var json = JsonSerializer.Serialize(integrationEvent, JsonOptions);
 
@@ -40,6 +43,7 @@ public sealed class QualityContractJsonTests
         var root = document.RootElement;
         Assert.Equal("quality.DispositionDecided", root.GetProperty("eventType").GetString());
         Assert.Equal("business-quality", root.GetProperty("sourceService").GetString());
+        Assert.Equal("DEF-001", root.GetProperty("payload").GetProperty("sourceDocumentId").GetString());
         Assert.Equal("rework", root.GetProperty("payload").GetProperty("dispositionType").GetString());
         Assert.False(root.GetProperty("payload").TryGetProperty("inventoryAdjustment", out _));
         Assert.False(root.GetProperty("payload").TryGetProperty("workOrderMutation", out _));
