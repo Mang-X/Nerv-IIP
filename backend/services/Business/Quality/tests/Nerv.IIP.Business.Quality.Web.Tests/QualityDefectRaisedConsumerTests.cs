@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
@@ -46,6 +47,36 @@ public sealed class QualityDefectRaisedConsumerTests
 
         var ncr = Assert.Single(dbContext.NonconformanceReports);
         Assert.Equal("DEF-001", ncr.SourceDocumentId);
+    }
+
+    [Fact]
+    public async Task Defect_raised_consumer_treats_mes_source_unique_conflict_as_concurrent_duplicate()
+    {
+        await using var dbContext = CreateDbContext(nameof(Defect_raised_consumer_treats_mes_source_unique_conflict_as_concurrent_duplicate));
+        var handler = new DefectRaisedIntegrationEventHandlerForOpenNcr(
+            dbContext,
+            new UniqueConflictSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateDefectRaisedEvent(defectNo: "DEF-001"), CancellationToken.None);
+
+        Assert.Empty(dbContext.ChangeTracker.Entries<NonconformanceReport>());
+        Assert.Empty(dbContext.NonconformanceReports.Local);
+    }
+
+    [Fact]
+    public async Task Defect_raised_consumer_does_not_swallow_unrelated_database_update_errors()
+    {
+        await using var dbContext = CreateDbContext(nameof(Defect_raised_consumer_does_not_swallow_unrelated_database_update_errors));
+        var handler = new DefectRaisedIntegrationEventHandlerForOpenNcr(
+            dbContext,
+            new UnrelatedDatabaseFailureSender(),
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() =>
+            handler.HandleAsync(CreateDefectRaisedEvent(defectNo: "DEF-001"), CancellationToken.None));
+
+        Assert.DoesNotContain("ux_ncr_mes_defect_source", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static DefectRaisedIntegrationEvent CreateDefectRaisedEvent(string defectNo, string eventId = "evt-defect-001")
@@ -107,6 +138,81 @@ public sealed class QualityDefectRaisedConsumerTests
             }
 
             throw new NotSupportedException($"Request type is not supported by this test sender: {request.GetType().FullName}");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            throw new NotSupportedException("This test sender only supports command requests with responses.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender only supports typed command requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+    }
+
+    private sealed class UniqueConflictSender(ApplicationDbContext dbContext) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            if (request is CreateNonconformanceReportCommand command)
+            {
+                dbContext.NonconformanceReports.Add(NonconformanceReport.Open(
+                    command.OrganizationId,
+                    command.EnvironmentId,
+                    "NCR-TEST-CONFLICT",
+                    command.SourceType,
+                    command.SourceDocumentId,
+                    command.SkuCode,
+                    command.DefectQuantity,
+                    command.DefectReason,
+                    command.BatchNo,
+                    command.SerialNo,
+                    command.AttachmentFileIds));
+                throw new DbUpdateException("duplicate key violates unique constraint \"ux_ncr_mes_defect_source\"");
+            }
+
+            throw new NotSupportedException($"Request type is not supported by this test sender: {request.GetType().FullName}");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            throw new NotSupportedException("This test sender only supports command requests with responses.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender only supports typed command requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+    }
+
+    private sealed class UnrelatedDatabaseFailureSender : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new DbUpdateException("duplicate key violates unique constraint \"ux_quality_unrelated\"");
         }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)

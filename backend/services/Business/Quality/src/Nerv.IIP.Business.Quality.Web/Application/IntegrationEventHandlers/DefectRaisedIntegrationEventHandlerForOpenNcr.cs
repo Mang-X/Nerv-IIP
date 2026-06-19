@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Contracts.Quality;
@@ -47,19 +48,26 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
             return;
         }
 
-        await sender.Send(
-            new CreateNonconformanceReportCommand(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                MesDefectSourceType,
-                payload.DefectNo,
-                UnknownMesSkuCode,
-                payload.Quantity,
-                payload.DefectCode,
-                null,
-                null,
-                []),
-            cancellationToken);
+        try
+        {
+            await sender.Send(
+                new CreateNonconformanceReportCommand(
+                    integrationEvent.OrganizationId,
+                    integrationEvent.EnvironmentId,
+                    MesDefectSourceType,
+                    payload.DefectNo,
+                    UnknownMesSkuCode,
+                    payload.Quantity,
+                    payload.DefectCode,
+                    null,
+                    null,
+                    []),
+                cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsMesDefectSourceUniqueConflict(exception))
+        {
+            DetachPendingMesDefectNcr(integrationEvent, payload.DefectNo);
+        }
     }
 
     private async Task<bool> NcrExistsForMesDefectAsync(
@@ -82,5 +90,35 @@ public sealed class DefectRaisedIntegrationEventHandlerForOpenNcr(
                 x.SourceType == MesDefectSourceType &&
                 x.SourceDocumentId == defectNo,
             cancellationToken);
+    }
+
+    private static bool IsMesDefectSourceUniqueConflict(DbUpdateException exception)
+    {
+        var text = $"{exception.Message} {exception.InnerException?.Message}";
+        if (text.Contains("ux_ncr_mes_defect_source", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var innerException = exception.InnerException;
+        var sqlState = innerException?.GetType().GetProperty("SqlState")?.GetValue(innerException) as string;
+        var constraintName = innerException?.GetType().GetProperty("ConstraintName")?.GetValue(innerException) as string;
+        return string.Equals(sqlState, "23505", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(constraintName, "ux_ncr_mes_defect_source", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void DetachPendingMesDefectNcr(DefectRaisedIntegrationEvent integrationEvent, string defectNo)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries<NonconformanceReport>()
+                     .Where(entry =>
+                         entry.State == EntityState.Added &&
+                         entry.Entity.OrganizationId == integrationEvent.OrganizationId &&
+                         entry.Entity.EnvironmentId == integrationEvent.EnvironmentId &&
+                         entry.Entity.SourceType == MesDefectSourceType &&
+                         entry.Entity.SourceDocumentId == defectNo)
+                     .ToArray())
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 }
