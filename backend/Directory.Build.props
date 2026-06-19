@@ -5,4 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+
+  <ItemGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('.Tests'))">
+    <!-- EF Core Sqlite test dependencies currently resolve SQLitePCLRaw.lib.e_sqlite3 2.1.11,
+         which NuGet audits under GHSA-2m69-gcr7-jv3q but has no patched package version yet. -->
+    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-2m69-gcr7-jv3q" />
+  </ItemGroup>
 </Project>

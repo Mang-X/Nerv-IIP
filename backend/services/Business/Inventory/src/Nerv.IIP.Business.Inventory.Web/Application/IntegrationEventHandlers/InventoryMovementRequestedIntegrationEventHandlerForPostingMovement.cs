@@ -1,4 +1,5 @@
 using DotNetCore.CAP;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
@@ -10,6 +11,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent", ConsumerName)]
 public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+    ILogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement> logger,
     ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IIntegrationEventPublisher integrationEventPublisher)
@@ -65,10 +67,27 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         }
         catch (InventoryPostingRejectedException ex)
         {
+            logger.LogWarning(
+                ex,
+                "Inventory movement request was rejected. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}, FailureCode={FailureCode}",
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.IdempotencyKey,
+                payload.MovementType,
+                payload.QualityStatus,
+                ex.FailureCode);
             await PublishPostingFailedAsync(integrationEvent, ex.FailureCode, ex.FailureMessage, cancellationToken);
         }
         catch (KnownException ex)
         {
+            logger.LogWarning(
+                ex,
+                "Inventory movement request was rejected. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}",
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.IdempotencyKey,
+                payload.MovementType,
+                payload.QualityStatus);
             await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
         }
     }

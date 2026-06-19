@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
@@ -23,6 +24,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         await using var dbContext = CreateContext();
         var sender = new CommandExecutingSender(dbContext);
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             sender,
             new InMemoryIntegrationEventDeadLetterStore(),
             new RecordingIntegrationEventPublisher());
@@ -42,6 +44,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         await using var dbContext = CreateContext();
         var sender = new CommandExecutingSender(dbContext);
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             sender,
             new InMemoryIntegrationEventDeadLetterStore(),
             new RecordingIntegrationEventPublisher());
@@ -96,6 +99,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var sender = new CommandExecutingSender(dbContext);
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             sender,
             new InMemoryIntegrationEventDeadLetterStore(),
             new RecordingIntegrationEventPublisher());
@@ -410,6 +414,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         var sender = new CommandExecutingSender(dbContext);
         var publisher = new RecordingIntegrationEventPublisher();
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             sender,
             new InMemoryIntegrationEventDeadLetterStore(),
             publisher);
@@ -438,11 +443,27 @@ public sealed class InventoryMovementRequestedConsumerTests
     {
         var publisher = new RecordingIntegrationEventPublisher();
         var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
             new FailingSender(new InvalidOperationException("Transient infrastructure failure.")),
             new InMemoryIntegrationEventDeadLetterStore(),
             publisher);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(CreateRequestedEvent("evt-transient"), CancellationToken.None));
+
+        Assert.Empty(publisher.Published);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_leaves_unexpected_argument_exception_for_retry()
+    {
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new FailingSender(new ArgumentNullException("request")),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => handler.HandleAsync(CreateRequestedEvent("evt-argument-bug"), CancellationToken.None));
 
         Assert.Empty(publisher.Published);
     }

@@ -58,25 +58,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 {
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
-        var movement = StockMovement.Post(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.MovementType,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SourceDocumentLineId,
-            request.IdempotencyKey,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.LotNo,
-            request.SerialNo,
-            request.QualityStatus,
-            request.OwnerType,
-            request.OwnerId,
-            request.Quantity,
-            request.UnitCost);
+        var movement = CreateMovementOrReject(request);
         var existingMovement = await dbContext.StockMovements.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
                 && x.EnvironmentId == movement.EnvironmentId
@@ -181,5 +163,44 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
             movement.OwnerId);
         dbContext.StockLedgers.Add(ledger);
         return ledger;
+    }
+
+    private static StockMovement CreateMovementOrReject(PostStockMovementCommand request)
+    {
+        try
+        {
+            return StockMovement.Post(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.MovementType,
+                request.SourceService,
+                request.SourceDocumentId,
+                request.SourceDocumentLineId,
+                request.IdempotencyKey,
+                request.SkuCode,
+                request.UomCode,
+                request.SiteCode,
+                request.LocationCode,
+                request.LotNo,
+                request.SerialNo,
+                request.QualityStatus,
+                request.OwnerType,
+                request.OwnerId,
+                request.Quantity,
+                request.UnitCost);
+        }
+        catch (ArgumentException exception) when (IsUnsupportedMovementOrQuality(exception))
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                exception.Message,
+                exception);
+        }
+    }
+
+    private static bool IsUnsupportedMovementOrQuality(ArgumentException exception)
+    {
+        // Keep these names aligned with StockMovement.Post movementType and StockQualityStatus.Normalize qualityStatus.
+        return exception.ParamName is "movementType" or "qualityStatus";
     }
 }
