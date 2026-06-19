@@ -56,13 +56,14 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Equal(2, movementEvents.Length);
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal(InventoryIntegrationEventSources.BusinessErp, integrationEvent.SourceService);
-        Assert.Equal("purchase-receipt", integrationEvent.Payload.MovementType);
+        Assert.Equal("inbound", integrationEvent.Payload.MovementType);
         Assert.Equal("RCV-001", integrationEvent.Payload.SourceDocumentId);
         Assert.Equal("LINE-001", integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("SKU-RM-1000", integrationEvent.Payload.SkuCode);
         Assert.Equal("kg", integrationEvent.Payload.UomCode);
         Assert.Equal("SITE-01", integrationEvent.Payload.SiteCode);
         Assert.Equal("RAW-A-01", integrationEvent.Payload.LocationCode);
+        Assert.Equal("unrestricted", integrationEvent.Payload.QualityStatus);
         Assert.Equal(2m, integrationEvent.Payload.Quantity);
     }
 

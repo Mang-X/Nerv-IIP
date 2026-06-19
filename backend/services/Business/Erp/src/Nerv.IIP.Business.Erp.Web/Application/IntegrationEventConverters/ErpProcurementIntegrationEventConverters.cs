@@ -91,7 +91,7 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
             "system:erp",
             idempotencyKey,
             new InventoryMovementRequestedPayload(
-                "purchase-receipt",
+                "inbound",
                 InventoryIntegrationEventSources.BusinessErp,
                 receipt.PurchaseReceiptNo,
                 line.PurchaseOrderLineNo,
@@ -102,11 +102,22 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
                 line.LocationCode,
                 line.LotNo,
                 null,
-                line.QualityStatus,
+                NormalizeInventoryQualityStatus(line.QualityStatus),
                 "company",
                 null,
                 line.ReceivedQuantity,
                 occurredAtUtc));
+    }
+
+    private static string NormalizeInventoryQualityStatus(string qualityStatus)
+    {
+        return qualityStatus.Trim().ToLowerInvariant() switch
+        {
+            "accepted" or "qualified" or "available" or "unrestricted" => "unrestricted",
+            "inspection" or "quality" or "quality-inspection" => "quality",
+            "rejected" or "blocked" => "blocked",
+            _ => "quality",
+        };
     }
 }
 

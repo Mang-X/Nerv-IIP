@@ -1,4 +1,5 @@
 using DotNetCore.CAP;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
@@ -10,6 +11,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.InventoryMovementRequestedIntegrationEvent", ConsumerName)]
 public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+    ILogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement> logger,
     ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IIntegrationEventPublisher integrationEventPublisher)
@@ -69,6 +71,18 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         }
         catch (KnownException ex)
         {
+            await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Inventory movement request rejected because the payload contains unsupported input. SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, IdempotencyKey={IdempotencyKey}, MovementType={MovementType}, QualityStatus={QualityStatus}",
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.IdempotencyKey,
+                payload.MovementType,
+                payload.QualityStatus);
             await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
         }
     }
