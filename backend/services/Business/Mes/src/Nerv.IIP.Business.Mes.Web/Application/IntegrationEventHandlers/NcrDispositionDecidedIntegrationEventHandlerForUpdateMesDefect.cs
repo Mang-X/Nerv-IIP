@@ -43,9 +43,13 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             return;
         }
 
-        var defectNo = string.IsNullOrWhiteSpace(integrationEvent.CausationId)
-            ? integrationEvent.Payload.NcrCode
-            : integrationEvent.CausationId;
+        var defectNo = integrationEvent.Payload.SourceDocumentId;
+        if (string.IsNullOrWhiteSpace(defectNo))
+        {
+            return;
+        }
+
+        defectNo = defectNo.Trim();
         var defect = await dbContext.DefectRecords.SingleOrDefaultAsync(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&

@@ -29,7 +29,7 @@ public sealed class MesQualityDispositionConsumerTests
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore());
 
-        await handler.HandleAsync(CreateDispositionEvent(defectNo: "DEF-001", dispositionType: "Rework", reworkWorkOrderId: "RW-WO-001"), CancellationToken.None);
+        await handler.HandleAsync(CreateDispositionEvent(sourceDocumentId: "DEF-001", dispositionType: "Rework", reworkWorkOrderId: "RW-WO-001"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var defect = await dbContext.DefectRecords.SingleAsync();
@@ -41,13 +41,43 @@ public sealed class MesQualityDispositionConsumerTests
     }
 
     [Fact]
+    public async Task Ncr_disposition_consumer_matches_by_payload_source_document_id_not_envelope_causation()
+    {
+        await using var dbContext = CreateDbContext(nameof(Ncr_disposition_consumer_matches_by_payload_source_document_id_not_envelope_causation));
+        dbContext.DefectRecords.Add(DefectRecord.Create(
+            "org-001",
+            "env-dev",
+            "DEF-REAL-001",
+            "WO-001",
+            "OP-10",
+            "SURFACE",
+            1m,
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateDispositionEvent(sourceDocumentId: "DEF-REAL-001", causationId: "quality-command-001", dispositionType: "Scrap", scrapMovementId: "MOV-001"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var defect = await dbContext.DefectRecords.SingleAsync();
+        Assert.Equal(DefectRecord.ScrapAcceptedStatus, defect.Status);
+        Assert.Equal("NCR-001", defect.NcrId);
+        Assert.Equal("NCR-2026-001", defect.NcrCode);
+        Assert.Equal("Scrap", defect.DispositionType);
+        Assert.Equal("MOV-001", defect.DispositionReferenceId);
+    }
+
+    [Fact]
     public async Task Ncr_disposition_consumer_ignores_unmatched_ncr_without_dead_letter()
     {
         await using var dbContext = CreateDbContext(nameof(Ncr_disposition_consumer_ignores_unmatched_ncr_without_dead_letter));
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(dbContext, deadLetters);
 
-        await handler.HandleAsync(CreateDispositionEvent(defectNo: "DEF-MISSING", dispositionType: "Scrap", scrapMovementId: "MOV-001"), CancellationToken.None);
+        await handler.HandleAsync(CreateDispositionEvent(sourceDocumentId: "DEF-MISSING", dispositionType: "Scrap", scrapMovementId: "MOV-001"), CancellationToken.None);
 
         Assert.Empty(dbContext.DefectRecords);
         Assert.Empty(await deadLetters.ListAsync(
@@ -57,8 +87,9 @@ public sealed class MesQualityDispositionConsumerTests
     }
 
     private static NcrDispositionDecidedIntegrationEvent CreateDispositionEvent(
-        string defectNo,
+        string sourceDocumentId,
         string dispositionType,
+        string causationId = "quality-command-001",
         string? reworkWorkOrderId = null,
         string? scrapMovementId = null)
     {
@@ -69,11 +100,11 @@ public sealed class MesQualityDispositionConsumerTests
             DateTimeOffset.Parse("2026-06-15T11:00:00Z"),
             QualityIntegrationEventSources.BusinessQuality,
             "corr-001",
-            defectNo,
+            causationId,
             "org-001",
             "env-dev",
             "quality",
-            $"quality:disposition:{defectNo}",
+            $"quality:disposition:{sourceDocumentId}",
             new NcrDispositionDecidedPayload(
                 "NCR-001",
                 "NCR-2026-001",
@@ -84,7 +115,10 @@ public sealed class MesQualityDispositionConsumerTests
                 reworkWorkOrderId,
                 scrapMovementId,
                 null,
-                DateTimeOffset.Parse("2026-06-15T11:00:00Z")));
+                DateTimeOffset.Parse("2026-06-15T11:00:00Z"))
+            {
+                SourceDocumentId = sourceDocumentId
+            });
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)

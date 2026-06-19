@@ -32,7 +32,8 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the NCR was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.NcrCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId })
+            .HasDatabaseName("ix_ncr_source_document_lookup");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceInspectionRecordId });
         builder.HasMany(x => x.MrbReviews)
             .WithOne()
