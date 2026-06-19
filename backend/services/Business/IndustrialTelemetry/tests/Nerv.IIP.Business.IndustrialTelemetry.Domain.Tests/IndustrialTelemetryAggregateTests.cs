@@ -68,8 +68,10 @@ public sealed class IndustrialTelemetryAggregateTests
     [InlineData(">=", 90, 80, 90, true)]
     [InlineData("<", 10, 9, 12, true)]
     [InlineData("<=", 10, 10, 12, true)]
-    [InlineData("==", 42, 41, 42, true)]
-    [InlineData("!=", 42, 42, 43, true)]
+    [InlineData("==", 42, 42, 43, true)]
+    [InlineData("==", 42, 41, 42, false)]
+    [InlineData("!=", 42, 41, 42, true)]
+    [InlineData("!=", 42, 42, 43, false)]
     [InlineData(">", 90, 80, 89, false)]
     [InlineData("<", 10, 10, 12, false)]
     public void Alarm_rule_evaluates_average_or_max_value_against_threshold(

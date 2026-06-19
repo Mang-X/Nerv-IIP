@@ -269,45 +269,48 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .OrderBy(x => x.RuleCode)
             .ToListAsync(cancellationToken);
 
-        foreach (var rule in rules)
+        var matchedRules = rules
+            .Where(rule => rule.Evaluate(request.AverageValue, request.MaxValue))
+            .Select(rule => new MatchedAlarmRule(rule, CreateRuleBucketExternalAlarmId(rule, request.BucketEndUtc)))
+            .ToArray();
+        if (matchedRules.Length == 0)
         {
-            if (!rule.Evaluate(request.AverageValue, request.MaxValue))
+            return;
+        }
+
+        var externalAlarmIds = matchedRules.Select(x => x.ExternalAlarmId).ToArray();
+        var existingExternalAlarmIds = await dbContext.AlarmEvents
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && externalAlarmIds.Contains(x.ExternalAlarmId))
+            .Select(x => x.ExternalAlarmId)
+            .ToListAsync(cancellationToken);
+        var existingExternalAlarmIdSet = existingExternalAlarmIds
+            .Concat(dbContext.AlarmEvents.Local
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DeviceAssetId == request.DeviceAssetId
+                    && externalAlarmIds.Contains(x.ExternalAlarmId))
+                .Select(x => x.ExternalAlarmId))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var matchedRule in matchedRules)
+        {
+            if (existingExternalAlarmIdSet.Contains(matchedRule.ExternalAlarmId))
             {
                 continue;
             }
 
-            var externalAlarmId = CreateRuleBucketExternalAlarmId(rule, request.BucketEndUtc);
-            var incoming = AlarmEvent.Raise(
+            dbContext.AlarmEvents.Add(AlarmEvent.Raise(
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DeviceAssetId,
-                rule.AlarmCode,
-                rule.Severity,
+                matchedRule.Rule.AlarmCode,
+                matchedRule.Rule.Severity,
                 request.BucketEndUtc,
-                externalAlarmId);
-            var existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId
-                    && x.EnvironmentId == request.EnvironmentId
-                    && x.DeviceAssetId == request.DeviceAssetId
-                    && x.AlarmCode == rule.AlarmCode
-                    && x.ExternalAlarmId == externalAlarmId,
-                cancellationToken);
-
-            if (existing is not null)
-            {
-                try
-                {
-                    existing.EnsureCompatibleDuplicate(incoming);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    throw new KnownException(ex.Message);
-                }
-
-                continue;
-            }
-
-            dbContext.AlarmEvents.Add(incoming);
+                matchedRule.ExternalAlarmId));
+            existingExternalAlarmIdSet.Add(matchedRule.ExternalAlarmId);
         }
     }
 
@@ -315,6 +318,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
     {
         return $"{rule.RuleCode}:{bucketEndUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)}";
     }
+
+    private sealed record MatchedAlarmRule(AlarmRule Rule, string ExternalAlarmId);
 }
 
 public sealed record RaiseAlarmCommand(

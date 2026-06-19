@@ -99,6 +99,42 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
         Assert.Equal("TEMP_RULE:2026-06-01T08:15:00.0000000+00:00", alarm.ExternalAlarmId);
     }
 
+    [Fact]
+    public async Task RecordTelemetrySample_keeps_rule_bucket_idempotency_when_rule_definition_changes_after_alarm_was_raised()
+    {
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_keeps_rule_bucket_idempotency_when_rule_definition_changes_after_alarm_was_raised));
+        var rule = AlarmRule.Configure("org-001", "env-dev", "DEV-PUMP-04", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", ">=", 90m, "celsius", true);
+        dbContext.AlarmRules.Add(rule);
+        await dbContext.SaveChangesAsync();
+
+        var bucketEndUtc = new DateTimeOffset(2026, 6, 1, 8, 20, 0, TimeSpan.Zero);
+        var command = new RecordTelemetrySampleCommand(
+            "org-001",
+            "env-dev",
+            "DEV-PUMP-04",
+            "temperature",
+            bucketEndUtc.AddMinutes(-5),
+            bucketEndUtc,
+            10,
+            70m,
+            95m,
+            81m,
+            "sample-004");
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        rule.UpdateDefinition("TEMP_CRITICAL", "critical", "temperature", ">=", 90m, "celsius", true);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var alarm = Assert.Single(dbContext.AlarmEvents);
+        Assert.Equal("TEMP_HIGH", alarm.AlarmCode);
+        Assert.Equal("warning", alarm.Severity);
+        Assert.Equal("TEMP_RULE:2026-06-01T08:20:00.0000000+00:00", alarm.ExternalAlarmId);
+    }
+
     private static ApplicationDbContext CreateDbContext(string databaseName)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

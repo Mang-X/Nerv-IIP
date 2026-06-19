@@ -98,9 +98,15 @@ public sealed class AlarmRule : Entity<AlarmRuleId>, IAggregateRoot
 
     public bool Evaluate(decimal averageValue, decimal maxValue)
     {
-        return IsEnabled
-            && (Compare(averageValue, ThresholdValue, ComparisonOperator)
-                || Compare(maxValue, ThresholdValue, ComparisonOperator));
+        if (!IsEnabled)
+        {
+            return false;
+        }
+
+        return ComparisonOperator is "==" or "!="
+            ? Compare(averageValue, ThresholdValue, ComparisonOperator)
+            : Compare(averageValue, ThresholdValue, ComparisonOperator)
+                || Compare(maxValue, ThresholdValue, ComparisonOperator);
     }
 
     private static bool Compare(decimal observedValue, decimal thresholdValue, string comparisonOperator)
