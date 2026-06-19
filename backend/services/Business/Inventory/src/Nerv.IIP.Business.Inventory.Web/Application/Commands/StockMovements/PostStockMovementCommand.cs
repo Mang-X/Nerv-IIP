@@ -200,6 +200,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     private static bool IsUnsupportedMovementOrQuality(ArgumentException exception)
     {
+        // Keep these names aligned with StockMovement.Post movementType and StockQualityStatus.Normalize qualityStatus.
         return exception.ParamName is "movementType" or "qualityStatus";
     }
 }
