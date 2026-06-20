@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -204,10 +205,26 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         }
 
-        using var response = await client.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
-        return envelope?.Data ?? throw new InvalidOperationException($"{serviceName} returned an empty response envelope.");
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务暂不可用。{exception.Message}");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
+            }
+
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            return envelope?.Data ?? throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回空响应。");
+        }
     }
 
     private static IReadOnlyCollection<ManufacturingBomMaterialLineItem> SelectMaterialLines(

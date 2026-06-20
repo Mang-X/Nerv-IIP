@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -166,6 +167,36 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         var alternate = Assert.Single(result.Lines, x => x.MaterialId == "MAT-ALT-B");
         Assert.Equal(20m, alternate.RequiredQuantity);
         Assert.Equal(3m, alternate.AvailableQuantity);
+    }
+
+    [Fact]
+    public async Task Http_provider_wraps_downstream_failures_as_known_material_readiness_errors()
+    {
+        var productEngineeringHandler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = JsonContent.Create(new { message = "maintenance" }),
+            });
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+            throw new InvalidOperationException($"Inventory should not be called after ProductEngineering fails: {request.RequestUri}"));
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-FSA",
+                "PV-001",
+                10m,
+                DateTimeOffset.Parse("2026-06-19T08:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", exception.Message);
+        Assert.Contains("ProductEngineering", exception.Message);
     }
 
     private static HttpResponseMessage JsonEnvelope<T>(T data)
