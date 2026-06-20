@@ -214,6 +214,10 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         {
             throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务暂不可用。{exception.Message}");
         }
+        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务请求超时。{exception.Message}");
+        }
 
         using (response)
         {

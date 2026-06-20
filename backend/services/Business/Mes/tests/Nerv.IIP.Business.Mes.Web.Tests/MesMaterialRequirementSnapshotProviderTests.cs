@@ -199,6 +199,33 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         Assert.Contains("ProductEngineering", exception.Message);
     }
 
+    [Fact]
+    public async Task Http_provider_wraps_http_timeouts_as_known_material_readiness_errors()
+    {
+        var productEngineeringHandler = new StubHttpMessageHandler(_ =>
+            throw new TaskCanceledException("The request timed out."));
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+            throw new InvalidOperationException($"Inventory should not be called after ProductEngineering times out: {request.RequestUri}"));
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => provider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-FSA",
+                "PV-001",
+                10m,
+                DateTimeOffset.Parse("2026-06-19T08:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE", exception.Message);
+        Assert.Contains("ProductEngineering", exception.Message);
+    }
+
     private static HttpResponseMessage JsonEnvelope<T>(T data)
     {
         return new HttpResponseMessage(HttpStatusCode.OK)
