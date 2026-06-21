@@ -130,14 +130,7 @@ public sealed class CloseWorkOrderCommandHandler(ApplicationDbContext dbContext)
             request.WorkOrderId,
             cancellationToken);
 
-        try
-        {
-            workOrder.Close(request.ClosedAtUtc);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Close(request.ClosedAtUtc));
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.ClosedAtUtc);
     }
@@ -173,14 +166,7 @@ public sealed class HoldWorkOrderCommandHandler(ApplicationDbContext dbContext)
             request.WorkOrderId,
             cancellationToken);
 
-        try
-        {
-            workOrder.Hold(request.Reason);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Hold(request.Reason));
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.HeldAtUtc);
     }
@@ -216,14 +202,7 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
             request.WorkOrderId,
             cancellationToken);
 
-        try
-        {
-            workOrder.Cancel(request.Reason);
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new KnownException(exception.Message);
-        }
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(request.Reason));
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
     }
@@ -244,6 +223,18 @@ internal static class WorkOrderLifecycleCommandGuards
                 x.WorkOrderIdValue == workOrderId,
             cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {workOrderId}");
+    }
+
+    public static void ApplyTransition(WorkOrder workOrder, Action<WorkOrder> transition)
+    {
+        try
+        {
+            transition(workOrder);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }
 
@@ -706,7 +697,6 @@ public sealed class ChangeOperationTaskStateCommandHandler(
 {
     public async Task<MesOperationActionResponse> Handle(ChangeOperationTaskStateCommand request, CancellationToken cancellationToken)
     {
-        WorkOrder? workOrderToStart = null;
         var task = await dbContext.OperationTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
@@ -746,7 +736,6 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                     x.WorkOrderIdValue == task.WorkOrderId,
                 cancellationToken)
                 ?? throw new KnownException($"未找到生产工单，WorkOrderId = {task.WorkOrderId}");
-            workOrderToStart = workOrder;
             var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
                 dbContext,
                 materialSnapshotProvider,
@@ -767,17 +756,18 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                     throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
                 }
             }
+
+            task.Start(request.ChangedAtUtc);
+            if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+            {
+                workOrder.Start(request.ChangedAtUtc);
+            }
+
+            return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
         }
 
         switch (request.Action)
         {
-            case "start":
-                task.Start(request.ChangedAtUtc);
-                if (workOrderToStart?.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
-                {
-                    workOrderToStart.Start(request.ChangedAtUtc);
-                }
-                break;
             case "pause":
                 task.Pause();
                 break;

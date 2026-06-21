@@ -274,6 +274,7 @@ public sealed class MesEndpointContractTests
         Assert.Equal("material shortage", active.HoldReason);
         Assert.Equal("plan cancelled", active.CancelReason);
         Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
     }
 
     [Fact]
@@ -1088,6 +1089,8 @@ public sealed class MesEndpointContractTests
     [InlineData("/api/business/v1/mes/schedules/run")]
     [InlineData("/api/business/v1/mes/work-orders/rush")]
     [InlineData("/api/business/v1/mes/work-orders/WO-001/close")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/hold")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/cancel")]
     public async Task Mes_write_endpoints_require_internal_service_authentication(string route)
     {
         await using var factory = new WebApplicationFactory<Program>();
