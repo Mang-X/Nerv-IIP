@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260621130639_Issue449ApprovalActionsDecisionAudit")]
+    [Migration("20260621134207_Issue449ApprovalActionsDecisionAudit")]
     partial class Issue449ApprovalActionsDecisionAudit
     {
         /// <inheritdoc />
@@ -51,6 +51,11 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the chain.");
+
+                    b.Property<int>("RoundNo")
+                        .HasColumnType("integer")
+                        .HasColumnName("round_no")
+                        .HasComment("Current submission round number; increments when a returned or withdrawn chain is resubmitted.");
 
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -154,6 +159,11 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
                         .HasColumnName("on_behalf_of_actor_type")
                         .HasComment("Original approver actor type when a delegate made the decision.");
 
+                    b.Property<int>("RoundNo")
+                        .HasColumnType("integer")
+                        .HasColumnName("round_no")
+                        .HasComment("Approval submission round when the decision or action was recorded.");
+
                     b.Property<Guid>("StepId")
                         .HasColumnType("uuid")
                         .HasColumnName("step_id")
@@ -168,6 +178,13 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
 
                     b.HasIndex("ChainId", "StepNo", "ActorType", "ActorRef", "OnBehalfOfActorType", "OnBehalfOfActorRef")
                         .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf");
+
+                    b.HasIndex("ChainId", "RoundNo", "StepNo", "ActorType", "ActorRef", "OnBehalfOfActorType", "OnBehalfOfActorRef")
+                        .IsUnique()
+                        .HasDatabaseName("UX_approval_decisions_resolution_actor_round")
+                        .HasFilter("decision IN ('approve', 'reject', 'return')");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("ChainId", "RoundNo", "StepNo", "ActorType", "ActorRef", "OnBehalfOfActorType", "OnBehalfOfActorRef"), false);
 
                     b.ToTable("approval_decisions", "business_approval", t =>
                         {

@@ -26,6 +26,15 @@ public sealed class ApprovalOverdueScheduler(
         }
 
         var interval = configuration.GetValue("Approval:OverdueCheck:Interval", DefaultInterval);
+        if (interval <= TimeSpan.Zero)
+        {
+            logger.LogWarning(
+                "Approval overdue check interval {Interval} is not positive; falling back to {DefaultInterval}.",
+                interval,
+                DefaultInterval);
+            interval = DefaultInterval;
+        }
+
         using var timer = new PeriodicTimer(interval);
         await TryCheckAsync(organizationId, environmentId, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))

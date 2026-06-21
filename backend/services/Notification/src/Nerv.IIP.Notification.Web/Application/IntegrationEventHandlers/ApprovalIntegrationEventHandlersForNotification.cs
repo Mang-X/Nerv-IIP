@@ -16,7 +16,8 @@ namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
     : IIntegrationEventHandler<ApprovalStepOverdueIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-step-overdue";
@@ -54,7 +55,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
         var stepName = NotificationIntegrationEventRequired.Value(payload.StepName, "Approval step name is required.");
         var recipientRef = NotificationIntegrationEventRequired.Actor(payload.ApproverType, payload.ApproverRef);
 
-        if (await AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
+        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
         {
             return;
         }
@@ -66,7 +67,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
             integrationEvent.EventVersion,
             sourceService,
             dedupeKey,
-            DateTimeOffset.UtcNow));
+            timeProvider.GetUtcNow()));
 
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,
@@ -80,18 +81,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
             Summary: $"Approval step {stepName} is overdue for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
             SuggestedRecipientRefs: [recipientRef]);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, DateTimeOffset.UtcNow), cancellationToken);
-    }
-
-    private static async Task<bool> AlreadyProcessedAsync(
-        ApplicationDbContext dbContext,
-        string consumerName,
-        string eventId,
-        CancellationToken cancellationToken)
-    {
-        return await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == consumerName && x.EventId == eventId,
-            cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -99,7 +89,8 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
 public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
     : IIntegrationEventHandler<ApprovalStepResolvedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.approval-step-resolved";
@@ -136,9 +127,7 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
         var chainId = NotificationIntegrationEventRequired.Value(payload.ChainId, "Approval chain id is required.");
         var recipientRef = NotificationIntegrationEventRequired.Actor(payload.ActorType, payload.ActorRef);
 
-        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == ConsumerName && x.EventId == eventId,
-            cancellationToken))
+        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
         {
             return;
         }
@@ -150,7 +139,7 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
             integrationEvent.EventVersion,
             sourceService,
             dedupeKey,
-            DateTimeOffset.UtcNow));
+            timeProvider.GetUtcNow()));
 
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,
@@ -164,7 +153,88 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
             Summary: $"Approval step {payload.StepNo} was {payload.Decision} for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
             SuggestedRecipientRefs: [recipientRef]);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, DateTimeOffset.UtcNow), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Approval.ApprovalActionRecordedIntegrationEvent", ConsumerName)]
+public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification(
+    ISender sender,
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider)
+    : IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "notification.approval-action-recorded";
+
+    private readonly IntegrationEventConsumerGuard<ApprovalActionRecordedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            ApprovalIntegrationEventTypes.ActionRecorded,
+            ApprovalIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(ApprovalActionRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Approval.ApprovalActionRecordedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(ApprovalActionRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(ApprovalActionRecordedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload
+            ?? throw new KnownException("Approval action recorded payload is required.");
+        var eventId = NotificationIntegrationEventRequired.Value(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = NotificationIntegrationEventRequired.Value(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = NotificationIntegrationEventRequired.Value(integrationEvent.SourceService, "Integration event source service is required.");
+        var organizationId = NotificationIntegrationEventRequired.Value(integrationEvent.OrganizationId, "Integration event organization is required.");
+        var environmentId = NotificationIntegrationEventRequired.Value(integrationEvent.EnvironmentId, "Integration event environment is required.");
+        var dedupeKey = NotificationIntegrationEventRequired.Value(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var chainId = NotificationIntegrationEventRequired.Value(payload.ChainId, "Approval chain id is required.");
+        var action = NotificationIntegrationEventRequired.Value(payload.Action, "Approval action is required.");
+        var recipientRefs = payload.SuggestedRecipientRefs
+            .Select(x => NotificationIntegrationEventRequired.Value(x, "Approval action recipient is required."))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (recipientRefs.Length == 0)
+        {
+            throw new KnownException("Approval action recipient is required.");
+        }
+
+        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
+        {
+            return;
+        }
+
+        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            ConsumerName,
+            eventId,
+            eventType,
+            integrationEvent.EventVersion,
+            sourceService,
+            dedupeKey,
+            timeProvider.GetUtcNow()));
+
+        var isTask = action is not "withdraw";
+        var request = new SubmitNotificationIntentRequest(
+            SourceService: sourceService,
+            SourceEventType: eventType,
+            SourceEventId: eventId,
+            IntentType: isTask ? NotificationContractConstants.IntentTypeTask : NotificationContractConstants.IntentTypeMessage,
+            Severity: NotificationContractConstants.SeverityInfo,
+            DedupeKey: dedupeKey,
+            Resource: new NotificationResourceRef("approval-chain", chainId, null),
+            Title: $"Approval {action}",
+            Summary: $"Approval action {action} was recorded for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
+            SuggestedRecipientRefs: recipientRefs);
+
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -183,5 +253,19 @@ file static class NotificationIntegrationEventRequired
     public static string Actor(string actorType, string actorRef)
     {
         return $"{Value(actorType, "Actor type is required.")}:{Value(actorRef, "Actor ref is required.")}";
+    }
+}
+
+file static class ApprovalNotificationConsumerState
+{
+    public static async Task<bool> AlreadyProcessedAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        string eventId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.ProcessedIntegrationEvents.AnyAsync(
+            x => x.ConsumerName == consumerName && x.EventId == eventId,
+            cancellationToken);
     }
 }

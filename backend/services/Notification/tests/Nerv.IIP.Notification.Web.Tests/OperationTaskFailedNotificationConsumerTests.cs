@@ -169,6 +169,53 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_approval_action_recorded_creates_task_for_new_assignee()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent("event-approval-action", "approval-action:chain-001:transfer"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("businessApproval.ActionRecorded", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-backup", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_action_recorded_withdraw_creates_message_for_affected_approvers()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent(
+            "event-approval-withdraw",
+            "approval-action:chain-001:withdraw",
+            action: "withdraw",
+            recipients: ["user:u-engineering", "user:u-quality"]));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-quality");
+        Assert.Empty(intent.Tasks);
+    }
+
+    [Fact]
     public async Task Handle_same_event_twice_does_not_create_duplicate_notification()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -330,6 +377,16 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         using var scope = factory.Services.CreateScope();
         IIntegrationEventHandler<ApprovalStepResolvedIntegrationEvent> handler =
             ActivatorUtilities.CreateInstance<ApprovalStepResolvedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalActionRecordedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalActionRecordedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalActionRecordedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
@@ -515,6 +572,36 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 OnBehalfOfActorRef: null,
                 Decision: "approve",
                 Comment: "ok",
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalActionRecordedIntegrationEvent CreateApprovalActionRecordedEvent(
+        string eventId,
+        string idempotencyKey,
+        string action = "transfer",
+        IReadOnlyCollection<string>? recipients = null)
+    {
+        return new ApprovalActionRecordedIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.ActionRecorded,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:10:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: "chain-001",
+            CausationId: $"decision-{eventId}",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "user:u-manager",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalActionRecordedPayload(
+                ChainId: "chain-001",
+                StepId: "step-001",
+                StepNo: 1,
+                Action: action,
+                ActorType: "user",
+                ActorRef: "u-manager",
+                Reason: "shift change",
+                SuggestedRecipientRefs: recipients ?? ["user:u-backup"],
                 DocumentReference: NewApprovalDocumentReference()));
     }
 

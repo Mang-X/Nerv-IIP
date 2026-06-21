@@ -25,3 +25,8 @@ public sealed record ApprovalStepOverdueDomainEvent(
     ApprovalChain Chain,
     ApprovalStep Step,
     DateTimeOffset MarkedAtUtc) : IDomainEvent;
+
+public sealed record ApprovalChainActionRecordedDomainEvent(
+    ApprovalChain Chain,
+    ApprovalDecision Decision,
+    IReadOnlyCollection<string> SuggestedRecipientRefs) : IDomainEvent;

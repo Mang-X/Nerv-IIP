@@ -275,19 +275,32 @@ public sealed class ApprovalEndpointContractTests
         dbContext.ApprovalChains.Add(chain);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new WithdrawApprovalChainCommandHandler(dbContext).Handle(new WithdrawApprovalChainCommand(
+        var clock = new FixedApprovalClock(DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
+        await new WithdrawApprovalChainCommandHandler(dbContext, clock).Handle(new WithdrawApprovalChainCommand(
             chain.Id,
             "user",
             "u-requester",
             "duplicate"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new ResubmitApprovalChainCommandHandler(dbContext).Handle(new ResubmitApprovalChainCommand(
+        var withdrawnChain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chain.Id, CancellationToken.None);
+        var withdrawnFirstStep = withdrawnChain.Steps.Single(x => x.StepNo == 1);
+        Assert.Equal(ApprovalStepStatuses.Withdrawn, withdrawnFirstStep.Status);
+        Assert.NotNull(withdrawnFirstStep.ResolvedAtUtc);
+
+        clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:00:00Z");
+        await new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(new ResubmitApprovalChainCommand(
             chain.Id,
             "user",
             "u-requester",
             "reworked"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new TransferApprovalStepCommandHandler(dbContext).Handle(new TransferApprovalStepCommand(
+        var resubmittedChain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chain.Id, CancellationToken.None);
+        var resubmittedFirstStep = resubmittedChain.Steps.Single(x => x.StepNo == 1);
+        Assert.Equal(ApprovalStepStatuses.Pending, resubmittedFirstStep.Status);
+        Assert.Null(resubmittedFirstStep.ResolvedAtUtc);
+
+        clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:05:00Z");
+        await new TransferApprovalStepCommandHandler(dbContext, clock).Handle(new TransferApprovalStepCommand(
             chain.Id,
             1,
             "user",
@@ -297,7 +310,8 @@ public sealed class ApprovalEndpointContractTests
             "user",
             "u-manager",
             "shift change"), CancellationToken.None);
-        var addedStepId = await new AddApprovalStepSignerCommandHandler(dbContext).Handle(new AddApprovalStepSignerCommand(
+        clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:10:00Z");
+        var addedStepId = await new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(new AddApprovalStepSignerCommand(
             chain.Id,
             1,
             "user",
@@ -307,10 +321,19 @@ public sealed class ApprovalEndpointContractTests
             "amount threshold"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var stored = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chain.Id, CancellationToken.None);
+        var stored = await dbContext.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .SingleAsync(x => x.Id == chain.Id, CancellationToken.None);
         Assert.Equal(ApprovalChainStatuses.Pending, stored.Status);
-        Assert.Contains(stored.Steps, x => x.Id == addedStepId && x.ApproverRef == "u-finance");
+        Assert.Contains(stored.Steps, x => x.Id == addedStepId
+            && x.ApproverRef == "u-finance"
+            && x.CompletionPolicy == ApprovalCompletionPolicies.All);
         Assert.Contains(stored.Steps, x => x.StepNo == 1 && x.ApproverRef == "u-engineering-backup");
+        Assert.Contains(stored.Decisions, x => x.Decision == ApprovalDecisions.Withdraw && x.ActorRef == "u-requester");
+        Assert.Contains(stored.Decisions, x => x.Decision == ApprovalDecisions.Resubmit && x.ActorRef == "u-requester");
+        Assert.Contains(stored.Decisions, x => x.Decision == ApprovalDecisions.Transfer && x.ActorRef == "u-manager");
+        Assert.Contains(stored.Decisions, x => x.Decision == ApprovalDecisions.AddSigner && x.ActorRef == "u-engineering-backup");
     }
 
     [Fact]
@@ -325,14 +348,22 @@ public sealed class ApprovalEndpointContractTests
         dbContext.ApprovalChains.Add(chain);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await Assert.ThrowsAsync<KnownException>(() => new ResubmitApprovalChainCommandHandler(dbContext).Handle(
+        var clock = new FixedApprovalClock(DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
+        await Assert.ThrowsAsync<KnownException>(() => new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(
             new ResubmitApprovalChainCommand(chain.Id, "user", "u-requester", "retry"),
             CancellationToken.None));
         chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
+        chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
         await dbContext.SaveChangesAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<KnownException>(() => new WithdrawApprovalChainCommandHandler(dbContext, clock).Handle(
+            new WithdrawApprovalChainCommand(chain.Id, "user", "u-requester", "already approved"),
+            CancellationToken.None));
 
-        await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext).Handle(
+        await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(
             new AddApprovalStepSignerCommand(chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
+            CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => new TransferApprovalStepCommandHandler(dbContext, clock).Handle(
+            new TransferApprovalStepCommand(chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
             CancellationToken.None));
     }
 
@@ -534,6 +565,6 @@ public sealed class ApprovalEndpointContractTests
 
     private sealed class FixedApprovalClock(DateTimeOffset utcNow) : IApprovalClock
     {
-        public DateTimeOffset UtcNow { get; } = utcNow;
+        public DateTimeOffset UtcNow { get; set; } = utcNow;
     }
 }

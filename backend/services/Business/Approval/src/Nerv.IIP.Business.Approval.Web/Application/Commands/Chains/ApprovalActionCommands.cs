@@ -21,13 +21,13 @@ public sealed class WithdrawApprovalChainCommandValidator : AbstractValidator<Wi
     }
 }
 
-public sealed class WithdrawApprovalChainCommandHandler(ApplicationDbContext dbContext)
+public sealed class WithdrawApprovalChainCommandHandler(ApplicationDbContext dbContext, IApprovalClock clock)
     : ICommandHandler<WithdrawApprovalChainCommand>
 {
     public async Task Handle(WithdrawApprovalChainCommand request, CancellationToken cancellationToken)
     {
         var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
-        ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Withdraw(request.ActorType, request.ActorRef, request.Reason, DateTimeOffset.UtcNow));
+        ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Withdraw(request.ActorType, request.ActorRef, request.Reason, clock.UtcNow));
     }
 }
 
@@ -48,13 +48,13 @@ public sealed class ResubmitApprovalChainCommandValidator : AbstractValidator<Re
     }
 }
 
-public sealed class ResubmitApprovalChainCommandHandler(ApplicationDbContext dbContext)
+public sealed class ResubmitApprovalChainCommandHandler(ApplicationDbContext dbContext, IApprovalClock clock)
     : ICommandHandler<ResubmitApprovalChainCommand>
 {
     public async Task Handle(ResubmitApprovalChainCommand request, CancellationToken cancellationToken)
     {
         var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
-        ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Resubmit(request.ActorType, request.ActorRef, request.Reason, DateTimeOffset.UtcNow));
+        ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Resubmit(request.ActorType, request.ActorRef, request.Reason, clock.UtcNow));
     }
 }
 
@@ -81,7 +81,7 @@ public sealed class AddApprovalStepSignerCommandValidator : AbstractValidator<Ad
     }
 }
 
-public sealed class AddApprovalStepSignerCommandHandler(ApplicationDbContext dbContext)
+public sealed class AddApprovalStepSignerCommandHandler(ApplicationDbContext dbContext, IApprovalClock clock)
     : ICommandHandler<AddApprovalStepSignerCommand, ApprovalStepId>
 {
     public async Task<ApprovalStepId> Handle(AddApprovalStepSignerCommand request, CancellationToken cancellationToken)
@@ -94,7 +94,8 @@ public sealed class AddApprovalStepSignerCommandHandler(ApplicationDbContext dbC
             request.ApproverRef,
             request.RequestedByActorType,
             request.RequestedByActorRef,
-            request.Reason));
+            request.Reason,
+            clock.UtcNow));
         return step.Id;
     }
 }
@@ -126,7 +127,7 @@ public sealed class TransferApprovalStepCommandValidator : AbstractValidator<Tra
     }
 }
 
-public sealed class TransferApprovalStepCommandHandler(ApplicationDbContext dbContext)
+public sealed class TransferApprovalStepCommandHandler(ApplicationDbContext dbContext, IApprovalClock clock)
     : ICommandHandler<TransferApprovalStepCommand>
 {
     public async Task Handle(TransferApprovalStepCommand request, CancellationToken cancellationToken)
@@ -140,7 +141,8 @@ public sealed class TransferApprovalStepCommandHandler(ApplicationDbContext dbCo
             request.ToActorRef,
             request.RequestedByActorType,
             request.RequestedByActorRef,
-            request.Reason));
+            request.Reason,
+            clock.UtcNow));
     }
 }
 

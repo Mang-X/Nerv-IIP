@@ -66,6 +66,35 @@ public sealed class ApprovalOverdueSchedulerTests
         await scheduler.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task Scheduler_falls_back_to_default_interval_when_configured_interval_is_not_positive()
+    {
+        var sender = new CapturingSender();
+        await using var services = new ServiceCollection()
+            .AddSingleton<ISender>(sender)
+            .BuildServiceProvider();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Approval:OverdueCheck:Enabled"] = "true",
+                ["Approval:OverdueCheck:OrganizationId"] = "org-001",
+                ["Approval:OverdueCheck:EnvironmentId"] = "env-dev",
+                ["Approval:OverdueCheck:Interval"] = "00:00:00",
+            })
+            .Build();
+        var scheduler = new ApprovalOverdueScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<ApprovalOverdueScheduler>.Instance);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(() => sender.LastCommand is not null || scheduler.ExecuteTask?.IsCompleted == true);
+
+        Assert.Equal(new CheckOverdueApprovalStepsCommand("org-001", "env-dev"), sender.LastCommand);
+        Assert.False(scheduler.ExecuteTask?.IsFaulted ?? false);
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

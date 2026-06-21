@@ -102,12 +102,23 @@ public sealed class ApprovalAggregateTests
     public void Pending_chain_can_be_withdrawn_and_no_longer_resolved()
     {
         var chain = NewChain();
+        var withdrawnAtUtc = DateTimeOffset.Parse("2026-06-21T08:00:00Z");
 
-        chain.Withdraw("user", "u-requester", "duplicate request", DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
+        chain.Withdraw("user", "u-requester", "duplicate request", withdrawnAtUtc);
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
             chain.ResolveStep(1, "user", "u-engineering", "approve", "ok"));
         Assert.Equal("withdrawn", chain.Status);
+        Assert.All(chain.Steps, step =>
+        {
+            Assert.Equal(ApprovalStepStatuses.Withdrawn, step.Status);
+            Assert.Equal(ApprovalDecisions.Withdraw, step.ResolvedDecision);
+            Assert.Equal(withdrawnAtUtc, step.ResolvedAtUtc);
+        });
+        Assert.Contains(chain.Decisions, x => x.Decision == ApprovalDecisions.Withdraw
+            && x.ActorRef == "u-requester"
+            && x.Comment == "duplicate request");
+        Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
         Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -116,12 +127,37 @@ public sealed class ApprovalAggregateTests
     {
         var chain = NewChain();
         chain.ResolveStep(1, "user", "u-engineering", "return", "needs changes");
+        var originalDueAtUtc = chain.Steps.Single(x => x.StepNo == 1).DueAtUtc;
 
         chain.Resubmit("user", "u-requester", "reworked", DateTimeOffset.Parse("2026-06-21T09:00:00Z"));
 
         Assert.Equal("pending", chain.Status);
         Assert.Null(chain.CompletedAtUtc);
         Assert.Equal(ApprovalStepStatuses.Pending, chain.Steps.Single(x => x.StepNo == 1).Status);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-22T09:00:00Z"), chain.Steps.Single(x => x.StepNo == 1).DueAtUtc);
+        Assert.NotEqual(originalDueAtUtc, chain.Steps.Single(x => x.StepNo == 1).DueAtUtc);
+        Assert.Contains(chain.Decisions, x => x.Decision == ApprovalDecisions.Resubmit
+            && x.ActorRef == "u-requester"
+            && x.Comment == "reworked");
+        Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
+    }
+
+    [Fact]
+    public void Withdrawn_chain_can_be_resubmitted_and_steps_reset_to_pending()
+    {
+        var chain = NewChain();
+        chain.Withdraw("user", "u-requester", "duplicate request", DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
+
+        chain.Resubmit("user", "u-requester", "fixed request", DateTimeOffset.Parse("2026-06-22T09:00:00Z"));
+
+        Assert.Equal("pending", chain.Status);
+        Assert.All(chain.Steps, step =>
+        {
+            Assert.Equal(ApprovalStepStatuses.Pending, step.Status);
+            Assert.Null(step.ResolvedDecision);
+            Assert.Null(step.ResolvedAtUtc);
+            Assert.Equal(DateTimeOffset.Parse("2026-06-23T09:00:00Z"), step.DueAtUtc);
+        });
     }
 
     [Fact]
@@ -134,7 +170,7 @@ public sealed class ApprovalAggregateTests
         var decision = chain.ResolveStep(1, "user", "u-engineering", "approve", "ok now");
 
         Assert.Equal(ApprovalDecisions.Approve, decision.Decision);
-        Assert.Equal(2, chain.Decisions.Count);
+        Assert.Equal(2, chain.Decisions.Count(x => x.Decision is ApprovalDecisions.Return or ApprovalDecisions.Approve));
     }
 
     [Fact]
@@ -161,6 +197,11 @@ public sealed class ApprovalAggregateTests
         chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
 
         Assert.Equal(1, addedStep.StepNo);
+        Assert.Equal(ApprovalCompletionPolicies.All, addedStep.CompletionPolicy);
+        Assert.Contains(chain.Decisions, x => x.Decision == ApprovalDecisions.AddSigner
+            && x.ActorRef == "u-engineering"
+            && x.Comment == "amount threshold");
+        Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
         Assert.Contains("sequence", premature.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("approved", chain.Status);
     }
@@ -178,6 +219,10 @@ public sealed class ApprovalAggregateTests
 
         Assert.Contains("assigned", previousActor.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(chain.Steps, x => x.StepNo == 1 && x.ApproverRef == "u-backup");
+        Assert.Contains(chain.Decisions, x => x.Decision == ApprovalDecisions.Transfer
+            && x.ActorRef == "u-manager"
+            && x.Comment == "shift change");
+        Assert.Contains(chain.GetDomainEvents(), x => x.GetType().Name == "ApprovalChainActionRecordedDomainEvent");
     }
 
     [Fact]

@@ -67,6 +67,7 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddNervIipObservability(builder.Configuration, "notification");
 builder.Services.AddNervIipLocalization();
 if (usePostgreSql)
@@ -84,6 +85,7 @@ builder.Services.AddScoped<OperationApprovalApprovedIntegrationEventHandlerForNo
 builder.Services.AddScoped<OperationApprovalRejectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalStepOverdueIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ApprovalStepResolvedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ApprovalActionRecordedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)
