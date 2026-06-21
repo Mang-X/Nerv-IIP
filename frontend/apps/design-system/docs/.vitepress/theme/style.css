@@ -154,3 +154,28 @@
 .VPNavBarAppearance {
   display: none !important;
 }
+
+/* ----------------------------------------------------------------------------
+ * Make the nav read as a real header: a solid bar with a hairline bottom border,
+ * instead of VitePress's transparent-over-content default (which dissolved the
+ * top bar into the page). Applies on inner pages (not the home hero).
+ * ------------------------------------------------------------------------- */
+.VPNavBar:not(.home) {
+  background-color: var(--background);
+  border-bottom: 1px solid var(--border);
+}
+@media (min-width: 960px) {
+  /* VitePress turns the bar transparent again ≥960 when a sidebar is present;
+     keep our solid header + divider so it stays a distinct band. */
+  .VPNavBar:not(.home),
+  .VPNavBar.has-sidebar:not(.home) {
+    background-color: var(--background);
+  }
+  .VPNavBar:not(.home) .content-body {
+    background-color: transparent;
+  }
+}
+/* The 1px line VitePress draws under the bar — tint it to our border token. */
+.VPNavBar:not(.home) .divider-line {
+  background-color: var(--border);
+}

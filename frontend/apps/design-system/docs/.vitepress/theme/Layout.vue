@@ -42,7 +42,7 @@ function toggleAppearance() {
           <Button
             variant="outline"
             size="sm"
-            class="ds-doc-search text-muted-foreground md:w-60 md:justify-between"
+            class="ds-doc-search text-muted-foreground md:w-52 md:justify-between"
             aria-label="搜索文档"
             @click="openSearch"
           >
@@ -78,17 +78,16 @@ function toggleAppearance() {
 </template>
 
 <style>
-/* The injected search trigger fills the search slot and left-aligns, mirroring
-   VitePress's own search placement (which we hide in style.css). */
+/* The search trigger sits with the right-hand control group (title left, tools
+   right — a proper header), not stretched across the bar. A small gap separates
+   it from the nav menu that follows. */
 .ds-doc-search-slot {
   display: flex;
-  flex-grow: 1;
   align-items: center;
-  justify-content: flex-start;
 }
 @media (min-width: 768px) {
   .ds-doc-search-slot {
-    padding-left: 32px;
+    margin-inline-end: 0.75rem;
   }
 }
 .ds-doc-search {
