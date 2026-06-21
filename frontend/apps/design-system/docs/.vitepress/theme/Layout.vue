@@ -41,8 +41,8 @@ function toggleAppearance() {
         <div class="ds-doc-search-slot">
           <Button
             variant="outline"
-            size="sm"
-            class="ds-doc-search text-muted-foreground md:w-52 md:justify-between"
+            size="lg"
+            class="ds-doc-search h-9 text-muted-foreground md:w-56 md:justify-between"
             aria-label="搜索文档"
             @click="openSearch"
           >
