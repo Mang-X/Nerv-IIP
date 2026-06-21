@@ -17,6 +17,9 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasMaxLength(50).HasComment("Maintenance priority.");
         builder.Property(x => x.SourceAlarmId).HasColumnName("source_alarm_id").HasMaxLength(150).HasComment("IndustrialTelemetry alarm id that opened this work order, when applicable.");
         builder.Property(x => x.SourcePlanCode).HasColumnName("source_plan_code").HasMaxLength(100).HasComment("Maintenance plan code that generated this work order, when applicable.");
+        builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(50).HasComment("Work order source type such as alarm, plan or inspection.");
+        builder.Property(x => x.SourceReferenceId).HasColumnName("source_reference_id").HasMaxLength(150).HasComment("Source fact reference id for source-type idempotency and traceability.");
+        builder.Property(x => x.DiagnosticDescription).HasColumnName("diagnostic_description").HasMaxLength(1000).HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Maintenance work order lifecycle status.");
         builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired().HasComment("UTC time when work order was opened.");
@@ -32,6 +35,10 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
+        // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })
+            .IsUnique()
+            .HasDatabaseName("ux_maintenance_work_orders_source_reference");
     }
 
     internal static void AddTenantColumns<T>(EntityTypeBuilder<T> builder)

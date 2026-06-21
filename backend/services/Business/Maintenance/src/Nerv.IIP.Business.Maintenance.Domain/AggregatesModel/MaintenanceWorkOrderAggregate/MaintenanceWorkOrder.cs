@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -10,6 +11,17 @@ public enum MaintenanceWorkOrderStatus
 {
     Open = 0,
     Completed = 1,
+}
+
+public static class MaintenanceWorkOrderSourceTypes
+{
+    public const string Alarm = "alarm";
+    public const string Inspection = "inspection";
+}
+
+public static class MaintenanceWorkOrderSourceActors
+{
+    public const string Inspection = "maintenanceInspection";
 }
 
 public sealed record SparePartLineDraft(string SkuCode, decimal Quantity, string? UomCode = null);
@@ -29,7 +41,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string priority,
         string? sourceAlarmId,
         string openedBy,
-        string? sourcePlanCode = null)
+        string? sourcePlanCode = null,
+        string? sourceType = null,
+        string? sourceReferenceId = null,
+        string? diagnosticDescription = null)
     {
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
@@ -38,6 +53,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         Priority = MaintenanceText.Required(priority, nameof(priority)).ToLowerInvariant();
         SourceAlarmId = MaintenanceText.Optional(sourceAlarmId);
         SourcePlanCode = MaintenanceText.Optional(sourcePlanCode);
+        SourceType = MaintenanceText.Optional(sourceType);
+        SourceReferenceId = MaintenanceText.Optional(sourceReferenceId);
+        DiagnosticDescription = MaintenanceText.Optional(diagnosticDescription);
         OpenedBy = MaintenanceText.Required(openedBy, nameof(openedBy));
         Status = MaintenanceWorkOrderStatus.Open;
         OpenedAtUtc = DateTimeOffset.UtcNow;
@@ -50,6 +68,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string Priority { get; private set; } = string.Empty;
     public string? SourceAlarmId { get; private set; }
     public string? SourcePlanCode { get; private set; }
+    public string? SourceType { get; private set; }
+    public string? SourceReferenceId { get; private set; }
+    public string? DiagnosticDescription { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
     public MaintenanceWorkOrderStatus Status { get; private set; }
     public DateTimeOffset OpenedAtUtc { get; private set; }
@@ -81,7 +102,14 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string planCode,
         string openedBy)
     {
-        return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, "planned", null, openedBy, MaintenanceText.Required(planCode, nameof(planCode)));
+        return new MaintenanceWorkOrder(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            "planned",
+            null,
+            openedBy,
+            MaintenanceText.Required(planCode, nameof(planCode)));
     }
 
     public static MaintenanceWorkOrder OpenFromAlarm(
@@ -92,7 +120,37 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string priority,
         string openedBy = "industrialTelemetry")
     {
-        return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, priority, MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId)), openedBy);
+        var normalizedAlarmId = MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId));
+        return new MaintenanceWorkOrder(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            priority,
+            normalizedAlarmId,
+            openedBy,
+            sourceType: MaintenanceWorkOrderSourceTypes.Alarm,
+            sourceReferenceId: normalizedAlarmId);
+    }
+
+    public static MaintenanceWorkOrder OpenFromInspection(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        MaintenanceInspectionId inspectionId,
+        string result,
+        string openedBy = MaintenanceWorkOrderSourceActors.Inspection)
+    {
+        var diagnosticDescription = $"Maintenance inspection failed: {MaintenanceText.Required(result, nameof(result))}";
+        return new MaintenanceWorkOrder(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            "high",
+            null,
+            openedBy,
+            sourceType: MaintenanceWorkOrderSourceTypes.Inspection,
+            sourceReferenceId: inspectionId.ToString(),
+            diagnosticDescription: diagnosticDescription);
     }
 
     public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)

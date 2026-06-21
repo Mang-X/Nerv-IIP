@@ -112,10 +112,22 @@ public sealed class MaintenanceSchemaConventionTests
             ?? throw new InvalidOperationException("MaintenancePlan metadata was not found.");
 
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourcePlanCode), "source_plan_code", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourceType), "source_type", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.SourceReferenceId), "source_reference_id", true);
+        AssertColumn(workOrder, nameof(MaintenanceWorkOrder.DiagnosticDescription), "diagnostic_description", true);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmCleared), "alarm_cleared", false);
         AssertColumn(workOrder, nameof(MaintenanceWorkOrder.AlarmClearedAtUtc), "alarm_cleared_at_utc", true);
         AssertColumn(plan, nameof(MaintenancePlan.LastGeneratedOn), "last_generated_on", true);
         AssertColumn(plan, nameof(MaintenancePlan.NextDueOn), "next_due_on", false);
+        Assert.Contains(workOrder.GetIndexes(), index =>
+            index.IsUnique
+            && index.GetDatabaseName() == "ux_maintenance_work_orders_source_reference"
+            && index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(MaintenanceWorkOrder.OrganizationId),
+                nameof(MaintenanceWorkOrder.EnvironmentId),
+                nameof(MaintenanceWorkOrder.SourceType),
+                nameof(MaintenanceWorkOrder.SourceReferenceId),
+            ]));
     }
 
     private static void AssertColumn(IEntityType entity, string propertyName, string columnName, bool nullable)
