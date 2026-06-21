@@ -93,6 +93,74 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(plan.Id, item.PlanId);
     }
 
+    [Theory]
+    [InlineData("NG")]
+    [InlineData("Failed")]
+    [InlineData("不合格")]
+    public async Task Failed_maintenance_inspection_opens_traceable_inspection_work_order(string result)
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-NG", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+
+        var inspectionId = await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", result, new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var inspection = await dbContext.MaintenanceInspections.SingleAsync();
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal(inspection.Id, inspectionId);
+        Assert.Equal("DEV-CNC-01", workOrder.DeviceAssetId);
+        Assert.Equal("inspection", GetWorkOrderStringProperty(workOrder, "SourceType"));
+        Assert.Equal(inspection.Id.ToString(), GetWorkOrderStringProperty(workOrder, "SourceReferenceId"));
+        Assert.Contains(result, GetWorkOrderStringProperty(workOrder, "DiagnosticDescription"), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("inspection", workOrder.OpenedBy);
+        Assert.Equal("high", workOrder.Priority);
+    }
+
+    [Fact]
+    public async Task Passed_maintenance_inspection_does_not_open_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-PASS", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+
+        await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "passed", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, await dbContext.MaintenanceInspections.CountAsync());
+        Assert.Equal(0, await dbContext.MaintenanceWorkOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task Failed_maintenance_inspection_replay_reuses_inspection_and_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-REPLAY", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+        var command = new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "NG", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+
+        var firstInspectionId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var replayInspectionId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(firstInspectionId, replayInspectionId);
+        Assert.Equal(1, await dbContext.MaintenanceInspections.CountAsync());
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal("inspection", GetWorkOrderStringProperty(workOrder, "SourceType"));
+        Assert.Equal(firstInspectionId.ToString(), GetWorkOrderStringProperty(workOrder, "SourceReferenceId"));
+    }
+
     [Fact]
     public async Task Maintenance_spare_part_create_and_list_use_work_order_scope()
     {
@@ -427,6 +495,7 @@ public sealed class MaintenanceEndpointContractTests
         await using var dbContext = CreateDbContext();
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-UTC", "P7D", new DateOnly(2026, 6, 1), "maintenance");
         dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
         var inspectionHandler = new RecordMaintenanceInspectionCommandHandler(dbContext);
         var localInspectedAt = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.FromHours(8));
         await inspectionHandler.Handle(new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "fail", localInspectedAt), CancellationToken.None);
@@ -486,6 +555,13 @@ public sealed class MaintenanceEndpointContractTests
             .UseInMemoryDatabase($"maintenance-availability-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static string GetWorkOrderStringProperty(MaintenanceWorkOrder workOrder, string propertyName)
+    {
+        var property = typeof(MaintenanceWorkOrder).GetProperty(propertyName)
+            ?? throw new InvalidOperationException($"MaintenanceWorkOrder.{propertyName} is required for traceable inspection work orders.");
+        return Assert.IsType<string>(property.GetValue(workOrder));
     }
 
     private sealed class NoopMediator : IMediator

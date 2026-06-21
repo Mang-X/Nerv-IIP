@@ -6,6 +6,16 @@ namespace Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspec
 
 public partial record MaintenanceInspectionId : IGuidStronglyTypedId;
 
+public static class MaintenanceInspectionResults
+{
+    private static readonly string[] FailedResults = ["failed", "fail", "blocked", "not-ok", "not ok", "nok", "ng", "不合格"];
+
+    public static bool IsFailed(string result)
+    {
+        return FailedResults.Contains(MaintenanceText.Required(result, nameof(result)).Trim(), StringComparer.OrdinalIgnoreCase);
+    }
+}
+
 public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAggregateRoot
 {
     private MaintenanceInspection()
