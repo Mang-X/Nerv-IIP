@@ -136,3 +136,21 @@
     padding-inline: 4rem;
   }
 }
+
+/* ----------------------------------------------------------------------------
+ * Hide VitePress's built-in nav controls — replaced by our own @nerv-iip/ui
+ * components in Layout.vue (search trigger + Sun/Moon appearance toggle).
+ * ------------------------------------------------------------------------- */
+/* Search: collapse the default container but KEEP it mounted — its local-search
+   modal + Ctrl/⌘-K listeners live here; only the trigger button is hidden. */
+.VPNavBarSearch {
+  flex-grow: 0 !important;
+  padding-left: 0 !important;
+}
+.VPNavBarSearch #local-search {
+  display: none !important;
+}
+/* Appearance: our Sun/Moon Button replaces the desktop switch. */
+.VPNavBarAppearance {
+  display: none !important;
+}
