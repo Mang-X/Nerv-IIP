@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
@@ -32,7 +33,7 @@ public sealed class QualityInspectionIntegrationEventTests
     [Fact]
     public void Inspection_rejected_event_preserves_disposition_reason_and_attachment_refs()
     {
-        var record = NewRejectedRecord();
+        var record = NewRejectedPlannedRecordWithStockRelease();
         var converter = new InspectionRejectedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor(
             new QualityIntegrationEventContext("corr-quality-001", "cmd-record-inspection-001", "user:qa-001")));
 
@@ -46,6 +47,16 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("rejected", integrationEvent.Payload.Result);
         Assert.Equal("Supplier certificate mismatch", integrationEvent.Payload.DispositionReason);
         Assert.Equal(["file-mrb-001"], integrationEvent.Payload.DispositionAttachmentFileIds);
+        Assert.NotNull(integrationEvent.Payload.StockRelease);
+        Assert.Equal("ea", integrationEvent.Payload.StockRelease.UomCode);
+        Assert.Equal("SITE-01", integrationEvent.Payload.StockRelease.SiteCode);
+        Assert.Equal("IQC-HOLD", integrationEvent.Payload.StockRelease.LocationCode);
+        Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
+        Assert.Equal("company", integrationEvent.Payload.StockRelease.OwnerType);
+        var resultLine = Assert.Single(integrationEvent.Payload.ResultLines!);
+        Assert.Equal("length", resultLine.CharacteristicCode);
+        Assert.Equal(11m, resultLine.MeasuredValue);
+        Assert.Equal("failed", resultLine.Result);
     }
 
     [Fact]
@@ -94,6 +105,48 @@ public sealed class QualityInspectionIntegrationEventTests
             "BATCH-001",
             null,
             [InspectionResultLineInput.Fail("coa", "mismatch", "wrong-spec", 10m, ["file-photo-001"])],
+            "Supplier certificate mismatch",
+            ["file-mrb-001"]);
+    }
+
+    private static InspectionRecord NewRejectedPlannedRecordWithStockRelease()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "IQP-001",
+            "receiving",
+            "SKU-RM-1000",
+            "supplier-001",
+            null,
+            null,
+            "purchase-receipt");
+        plan.AddCharacteristic(
+            "length",
+            "Tube length",
+            "caliper",
+            "critical",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Variable,
+            nominalValue: 10m,
+            lowerSpecLimit: 9.5m,
+            upperSpecLimit: 10.5m,
+            unitCode: "mm",
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 3, acceptanceNumber: 0, rejectionNumber: 1));
+        plan.Activate();
+
+        return InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            10m,
+            "BATCH-001",
+            null,
+            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            [InspectionResultLineInput.Measure("length", 11m, "mm", ["file-photo-001"])],
             "Supplier certificate mismatch",
             ["file-mrb-001"]);
     }

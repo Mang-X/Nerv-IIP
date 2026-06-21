@@ -14,6 +14,10 @@ public sealed class WorkCalendarEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the work calendar is valid.");
         builder.Property(x => x.Code).HasColumnName("code").IsRequired().HasMaxLength(100).HasComment("Business unique work calendar code.");
         builder.Property(x => x.Name).HasColumnName("name").IsRequired().HasMaxLength(200).HasComment("Work calendar display name.");
+        builder.Property(x => x.Timezone).HasColumnName("timezone").IsRequired().HasMaxLength(100).HasDefaultValue("UTC").HasComment("IANA timezone used to interpret local working days, holidays and exceptions.");
+        builder.Property(x => x.EffectiveFrom).HasColumnName("effective_from").HasComment("Optional local business date from which the calendar is valid.");
+        builder.Property(x => x.EffectiveTo).HasColumnName("effective_to").HasComment("Optional local business date through which the calendar is valid.");
+        builder.Property(x => x.HolidayCalendarCode).HasColumnName("holiday_calendar_code").IsRequired().HasMaxLength(100).HasComment("Optional external or reusable holiday calendar code referenced by this work calendar.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the work calendar from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the work calendar was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the work calendar was last updated.");

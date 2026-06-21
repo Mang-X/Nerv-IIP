@@ -118,11 +118,71 @@ public sealed class BarcodeLabelEndpointContractTests
             "ASN-001",
             "idem-scan-001",
             "accepted",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
             null));
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.DeviceCode)));
         Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.ScannedValue)));
+    }
+
+    [Fact]
+    public void Validators_require_inventory_context_for_accepted_inventory_scan()
+    {
+        var result = new RecordScanCommandValidator().Validate(new RecordScanCommand(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A(21)SN-0001",
+            "inventory.receipt",
+            "ASN-001",
+            "idem-scan-gs1-001",
+            "accepted",
+            null,
+            null,
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            1));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.SkuCode)));
+    }
+
+    [Fact]
+    public void Validators_reject_unsupported_accepted_scan_workflow()
+    {
+        var result = new RecordScanCommandValidator().Validate(new RecordScanCommand(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "BC001",
+            "mes.report",
+            "WO-001",
+            "idem-scan-unsupported-001",
+            "accepted",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(RecordScanCommand.SourceWorkflow)));
     }
 
     [Fact]

@@ -9,4 +9,6 @@ public sealed record LabelPrintBatchCompletedDomainEvent(LabelPrintBatch LabelPr
 
 public sealed record LabelScannedDomainEvent(ScanRecord ScanRecord) : IDomainEvent;
 
+public sealed record InventoryMovementRequestedFromScanDomainEvent(ScanRecord ScanRecord) : IDomainEvent;
+
 public sealed record ScanRejectedDomainEvent(ScanRecord ScanRecord) : IDomainEvent;

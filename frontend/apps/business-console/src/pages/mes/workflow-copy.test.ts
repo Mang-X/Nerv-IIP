@@ -61,7 +61,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       {
         operationTaskId: 'OP-001-10',
         workOrderId: 'WO-001',
-        status: 'Ready',
+        status: 'ready',
         operationSequence: 10,
         workCenterId: 'WC-01',
       },
@@ -113,12 +113,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
         workOrderId: 'WO-001',
         skuId: 'FG-001',
         quantity: 10,
-        status: 'Ready',
+        status: 'ready',
         operationTasks: [
           {
             operationTaskId: 'OP-001-10',
             operationSequence: 10,
-            status: 'Ready',
+            status: 'ready',
             workCenterId: 'WC-01',
           },
         ],

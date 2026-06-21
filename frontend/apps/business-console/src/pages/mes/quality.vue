@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
+import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -7,10 +8,14 @@ import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
@@ -24,6 +29,10 @@ const route = useRoute()
 const { filters, qualityItems, qualityItemsError, qualityItemsPending, qualityItemsTotal, refreshQualityItems } = useMesRelatedQualityItems()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 
+const statusFilter = computed({
+  get: () => filters.status || 'all',
+  set: (value: string) => { filters.status = value === 'all' ? undefined : value },
+})
 const errorMessage = computed(() => formatError(qualityItemsError.value))
 // 上下文穿透：从工单/工序带入时显示来源并提供返回链接。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -74,7 +83,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="质量状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="质量状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesQualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 

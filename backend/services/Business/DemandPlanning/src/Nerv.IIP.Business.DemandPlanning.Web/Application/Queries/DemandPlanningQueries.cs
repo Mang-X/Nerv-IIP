@@ -85,6 +85,7 @@ public sealed record PlanningSuggestionResponse(
     string SiteCode,
     decimal Quantity,
     DateOnly RequiredDate,
+    DateOnly ReleaseDate,
     PlanningSuggestionStatus Status,
     string ReasonCode,
     string? AcceptedDownstreamDocumentId);
@@ -112,6 +113,7 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.SiteCode,
                 x.Quantity,
                 x.RequiredDate,
+                x.ReleaseDate,
                 x.Status,
                 x.ReasonCode,
                 x.AcceptedDownstreamDocumentId))

@@ -2,6 +2,7 @@
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
+import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -59,12 +60,7 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
 })
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '待入库', value: 'Pending' },
-  { label: '已入库', value: 'Completed' },
-  { label: '失败', value: 'Failed' },
-]
+const statusOptions = mesReceiptStatusOptions
 
 // 完工入库申请状态的可读中文标签（与一线 / PDA 完工入库口径一致：待入库 / 部分入库 / 已入库…）。
 // 通用 StatusBadge 会把 Completed 解析成「已完成」，但本域语义是「已入库」，故按入库上下文显式映射。
@@ -125,9 +121,9 @@ watch(
 
 type ReceiptRow = (typeof receiptRequests)['value'][number]
 const columns: DataTableColumn<ReceiptRow>[] = [
-  { key: 'requestNo', header: '入库单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单' },
-  { key: 'skuId', header: '成品' },
+  { key: 'requestNo', header: '入库单', cellClass: 'font-medium', accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'skuId', header: '成品', accessor: (r) => r.skuCode ?? r.skuId ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
   { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
@@ -244,12 +240,12 @@ function isNonEmpty(value: string) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderId }}
+          {{ row.workOrderNo ?? row.workOrderId }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-skuId="{ row }">
-        <span v-if="row.skuId">{{ row.skuId }}</span>
+        <span v-if="row.skuId">{{ row.skuCode ?? row.skuId }}</span>
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>

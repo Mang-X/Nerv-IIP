@@ -171,12 +171,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             organizationId = "org-001",
             environmentId = "env-dev",
             deviceAssetId = "DEV-PRESS-01",
-            planCode = "PM-PRESS",
             interval = "P7D",
             startsOn = "2026-06-01",
             owner = "maintenance",
             windowStartUtc = "2026-06-01T08:00:00Z",
             windowEndUtc = "2026-06-01T16:00:00Z",
+            idempotencyKey = "maintenance-plan-create-001",
         });
         var inspectionResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/inspections", new
         {
@@ -193,12 +193,59 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(HttpStatusCode.OK, inspectionResponse.StatusCode);
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
         Assert.Equal("internal-test-token", maintenance.LastInternalToken);
-        Assert.Equal("PM-PRESS", maintenance.LastCreatePlanRequest.GetProperty("planCode").GetString());
+        Assert.True(maintenance.LastCreatePlanRequest.TryGetProperty("planCode", out var planCode));
+        Assert.Equal(JsonValueKind.Null, planCode.ValueKind);
+        Assert.Equal("maintenance-plan-create-001", maintenance.LastCreatePlanRequest.GetProperty("idempotencyKey").GetString());
         Assert.Equal(
             DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
             maintenance.LastCreatePlanRequest.GetProperty("windowStartUtc").GetDateTimeOffset());
         Assert.Equal("plan-001", maintenance.LastRecordInspectionRequest.GetProperty("planId").GetString());
         Assert.Equal("wo-maint-001", maintenance.LastRecordInspectionRequest.GetProperty("workOrderId").GetString());
+    }
+
+    [Fact]
+    public async Task Maintenance_generate_due_and_reliability_facades_use_permissions_and_forward_scope()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var generateResponse = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/plans/generate-due", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            businessDate = "2026-06-17",
+            requestedBy = "planner-001",
+        });
+        var reliabilityResponse = await client.GetAsync("/api/business-console/v1/maintenance/assets/DEV-PRESS-01/reliability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-30T16:00:00Z");
+
+        Assert.Equal(HttpStatusCode.OK, generateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reliabilityResponse.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenancePlansManage);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        Assert.Equal(new BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest("org-001", "env-dev", new DateOnly(2026, 6, 17), "planner-001"), maintenance.LastGenerateDueRequest);
+        Assert.Equal("DEV-PRESS-01", maintenance.LastReliabilityDeviceAssetId);
+        Assert.Equal(new BusinessConsoleQueryMaintenanceAssetReliabilityRequest(
+            "org-001",
+            "env-dev",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse("2026-06-30T16:00:00Z", CultureInfo.InvariantCulture)), maintenance.LastReliabilityRequest);
+
+        using var document = JsonDocument.Parse(await reliabilityResponse.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("DEV-PRESS-01", data.GetProperty("deviceAssetId").GetString());
+        Assert.Equal(2, data.GetProperty("failureCount").GetInt32());
+        Assert.Equal(24.5m, data.GetProperty("mtbfHours").GetDecimal());
+        Assert.Equal(35m, data.GetProperty("mttrMinutes").GetDecimal());
     }
 
     [Fact]
@@ -374,6 +421,12 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public JsonElement LastCreatePlanRequest { get; private set; }
 
+    public BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest? LastGenerateDueRequest { get; private set; }
+
+    public string? LastReliabilityDeviceAssetId { get; private set; }
+
+    public BusinessConsoleQueryMaintenanceAssetReliabilityRequest? LastReliabilityRequest { get; private set; }
+
     public JsonElement LastRecordInspectionRequest { get; private set; }
 
     public JsonElement LastCreateSparePartRequest { get; private set; }
@@ -508,6 +561,37 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         LastInternalToken = internalBearerToken;
         LastCreatePlanRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenancePlanResponse("plan-created"));
+    }
+
+    public Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> GenerateDueWorkOrdersAsync(
+        string internalBearerToken,
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastGenerateDueRequest = request;
+        return Task.FromResult(new BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(2, ["wo-pm-001", "wo-pm-002"]));
+    }
+
+    public Task<BusinessConsoleAssetReliabilityResponse> QueryAssetReliabilityAsync(
+        string internalBearerToken,
+        string deviceAssetId,
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReliabilityDeviceAssetId = deviceAssetId;
+        LastReliabilityRequest = request;
+        return Task.FromResult(new BusinessConsoleAssetReliabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            deviceAssetId,
+            request.WindowStartUtc,
+            request.WindowEndUtc,
+            2,
+            2,
+            24.5m,
+            35m));
     }
 
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(

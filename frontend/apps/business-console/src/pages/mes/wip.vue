@@ -2,34 +2,44 @@
 import type { DataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
 const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
-// facade 返回的是人读编码（workOrderId=WO-…、workCenterId=WC-…），直接展示即可分辨，不藏占位。
+// facade 回显示字段（workOrderNo / operationTaskNo / workCenterName），accessor 优先取人读显示值。
 const columns: DataTableColumn<WipRow>[] = [
-  { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
-  { key: 'workCenterId', header: '工作中心', width: 'w-32' },
+  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'progress', header: '在制进度', width: 'w-48', accessor: (r) => r.goodQuantity ?? 0 },
   { key: 'blockingReasons', header: '卡点' },
@@ -68,7 +78,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="在制状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="在制状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 
@@ -88,13 +103,9 @@ function formatError(error: unknown) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderId }}
+          {{ row.workOrderNo ?? row.workOrderId }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
-      </template>
-      <template #cell-workCenterId="{ row }">
-        <span v-if="row.workCenterId">{{ row.workCenterId }}</span>
-        <span v-else class="text-muted-foreground">未指定</span>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-progress="{ row }">

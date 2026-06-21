@@ -14,9 +14,14 @@ public sealed class ApprovalDecisionEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.StepNo).HasColumnName("step_no").IsRequired().HasComment("Approval step number resolved by this decision.");
         builder.Property(x => x.ActorType).HasColumnName("actor_type").IsRequired().HasMaxLength(50).HasComment("Actor reference type such as user, group or permission.");
         builder.Property(x => x.ActorRef).HasColumnName("actor_ref").IsRequired().HasMaxLength(150).HasComment("Public actor reference that made the decision.");
+        builder.Property(x => x.OnBehalfOfActorType).HasColumnName("on_behalf_of_actor_type").HasMaxLength(50).HasComment("Original approver actor type when a delegate made the decision.");
+        builder.Property(x => x.OnBehalfOfActorRef).HasColumnName("on_behalf_of_actor_ref").HasMaxLength(150).HasComment("Original approver actor reference when a delegate made the decision.");
         builder.Property(x => x.Decision).HasColumnName("decision").IsRequired().HasMaxLength(50).HasComment("Decision action: approve, reject or return.");
         builder.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(1000).HasComment("Optional approver comment.");
         builder.Property(x => x.DecidedAtUtc).HasColumnName("decided_at_utc").IsRequired().HasComment("UTC time when the decision was recorded.");
-        builder.HasIndex(x => new { x.ChainId, x.StepNo, x.ActorType, x.ActorRef }).IsUnique();
+        builder.HasIndex(x => new { x.ChainId, x.StepNo, x.ActorType, x.ActorRef, x.OnBehalfOfActorType, x.OnBehalfOfActorRef })
+            .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf")
+            .IsUnique()
+            .AreNullsDistinct(false);
     }
 }

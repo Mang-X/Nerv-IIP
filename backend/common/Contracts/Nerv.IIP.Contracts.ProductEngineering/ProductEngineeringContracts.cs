@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.ProductEngineering;
 
 public static class ProductionEngineeringContractStatuses
@@ -71,7 +73,10 @@ public sealed record BomReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    BomReleasedPayload Payload);
+    BomReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record RoutingReleasedIntegrationEvent(
     string EventId,
@@ -85,7 +90,10 @@ public sealed record RoutingReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    RoutingReleasedPayload Payload);
+    RoutingReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record ProductionVersionCreatedIntegrationEvent(
     string EventId,
@@ -99,7 +107,10 @@ public sealed record ProductionVersionCreatedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    ProductionVersionCreatedPayload Payload);
+    ProductionVersionCreatedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record EngineeringChangeReleasedIntegrationEvent(
     string EventId,
@@ -113,7 +124,10 @@ public sealed record EngineeringChangeReleasedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    EngineeringChangeReleasedPayload Payload);
+    EngineeringChangeReleasedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record BomReleasedPayload(
     string BomVersionId,
@@ -125,7 +139,15 @@ public sealed record BomReleasedPayload(
 public sealed record BomReleasedLine(
     string ComponentCode,
     decimal Quantity,
-    string UnitOfMeasureCode);
+    string UnitOfMeasureCode,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteCodes = null,
+    string? ReferenceDesignators = null,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record RoutingReleasedPayload(
     string RoutingVersionId,
@@ -138,7 +160,14 @@ public sealed record RoutingReleasedOperation(
     string WorkCenterCode,
     string OperationCode,
     string OperationName,
-    int StandardMinutes);
+    int StandardMinutes,
+    int SetupMinutes = 0,
+    int RunMinutes = 0,
+    int TeardownMinutes = 0,
+    string ControlKey = "",
+    bool RequiresReporting = true,
+    bool RequiresQualityInspection = false,
+    bool IsOutsourced = false);
 
 public sealed record ProductionVersionCreatedPayload(
     string ProductionVersionId,

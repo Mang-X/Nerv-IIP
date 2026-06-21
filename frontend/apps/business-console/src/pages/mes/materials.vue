@@ -1,21 +1,26 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import { mesMaterialIssueStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { ArrowUpRightIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '领料与齐套' } })
@@ -29,18 +34,22 @@ const {
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
 
 // 待收料：已下发但收料未齐的领料申请——驱动「催收料」动作（非机械计数，不冒充后端总量）。
 const awaitingReceiptCount = computed(
-  () => materialIssueRequests.value.filter((r) => r.status !== 'Closed' && receiptShortfall(r) > 0).length,
+  () => materialIssueRequests.value.filter((r) => r.status?.toLowerCase() !== 'closed' && receiptShortfall(r) > 0).length,
 )
 const errorMessage = computed(() => formatError(materialIssueRequestsError.value))
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 type RequestRow = (typeof materialIssueRequests)['value'][number]
 const columns: DataTableColumn<RequestRow>[] = [
   { key: 'requestId', header: '申请号', cellClass: 'font-medium', accessor: (r) => r.requestId ?? '无' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderId ?? '无' },
-  { key: 'materialId', header: '物料' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'materialId', header: '物料', accessor: (r) => r.materialCode ?? r.materialId ?? '无' },
   { key: 'receivedQuantity', header: '收料进度', width: 'w-44' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'wmsRequestId', header: '出库单', width: 'w-28' },
@@ -87,8 +96,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <!-- TODO(#420): 领料状态枚举待后端确认（如 待出库/部分收料/已齐/已关闭），暂以自由文本筛选。 -->
-        <Input v-model="filters.status" class="h-9 w-40" placeholder="按状态筛选（如已关闭）" aria-label="领料状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="领料状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesMaterialIssueStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 
@@ -101,10 +114,6 @@ function formatError(error: unknown) {
       :loading="materialIssueRequestsPending"
       empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
     >
-      <template #cell-materialId="{ row }">
-        <span v-if="row.materialId">{{ row.materialId }}</span>
-        <span v-else class="text-muted-foreground">—</span>
-      </template>
       <template #cell-receivedQuantity="{ row }">
         <div class="flex flex-col gap-1">
           <span class="text-sm tabular-nums">

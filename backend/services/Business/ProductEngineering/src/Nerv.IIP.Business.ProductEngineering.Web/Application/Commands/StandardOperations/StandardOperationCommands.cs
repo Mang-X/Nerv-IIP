@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands.StandardOperations;
 
@@ -8,7 +9,7 @@ public sealed record StandardOperationCommandResult(string OperationCode);
 public sealed record CreateStandardOperationCommand(
     string OrganizationId,
     string EnvironmentId,
-    string OperationCode,
+    string? OperationCode,
     string OperationName,
     string DefaultWorkCenterCode,
     int StandardSetupMinutes,
@@ -17,7 +18,8 @@ public sealed record CreateStandardOperationCommand(
     bool RequiresReporting,
     bool RequiresQualityInspection,
     bool IsOutsourced,
-    string? Description) : ICommand<StandardOperationCommandResult>, IStandardOperationDetails;
+    string? Description,
+    string? IdempotencyKey = null) : ICommand<StandardOperationCommandResult>, IStandardOperationDetails;
 
 public sealed class CreateStandardOperationCommandValidator : AbstractValidator<CreateStandardOperationCommand>
 {
@@ -26,24 +28,61 @@ public sealed class CreateStandardOperationCommandValidator : AbstractValidator<
         Include(new StandardOperationDetailsValidator());
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.OperationCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
-public sealed class CreateStandardOperationCommandHandler(IStandardOperationRepository repository)
+public sealed class CreateStandardOperationCommandHandler(
+    IStandardOperationRepository repository,
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<CreateStandardOperationCommand, StandardOperationCommandResult>
 {
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+
     public async Task<StandardOperationCommandResult> Handle(CreateStandardOperationCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.OperationCode, cancellationToken))
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "standard-operation",
+            request.OperationCode,
+            request.IdempotencyKey,
+            ProductEngineeringCodingService.Fingerprint(
+                request.OperationName,
+                request.DefaultWorkCenterCode,
+                request.StandardSetupMinutes,
+                request.StandardRunMinutes,
+                request.ControlKey,
+                request.RequiresReporting,
+                request.RequiresQualityInspection,
+                request.IsOutsourced,
+                request.Description),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
         {
-            throw new KnownException($"Standard operation '{request.OperationCode}' already exists.");
+            var persisted = await repository.GetByCodeAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"Standard operation '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return new StandardOperationCommandResult(persisted.OperationCode);
+        }
+
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
+        {
+            throw new KnownException($"Standard operation '{allocation.Code}' already exists.");
         }
 
         var operation = ProductEngineeringReleaseValidation.AsKnownException(() => StandardOperation.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.OperationCode,
+            allocation.Code,
             request.OperationName,
             request.DefaultWorkCenterCode,
             request.StandardSetupMinutes,

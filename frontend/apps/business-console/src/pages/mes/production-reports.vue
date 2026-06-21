@@ -8,9 +8,7 @@ import {
   Button,
   DataTable,
   DataTablePagination,
-  Input,
   PageHeader,
-  Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
@@ -25,7 +23,7 @@ const {
   productionReportsTotal,
   refreshProductionReports,
 } = useMesProductionReports()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { page, pageSize } = usePagedList(filters)
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
@@ -33,10 +31,10 @@ const errorMessage = computed(() => formatError(productionReportsError.value))
 
 type ReportRow = (typeof productionReports)['value'][number]
 const columns: DataTableColumn<ReportRow>[] = [
-  { key: 'reportNo', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单' },
+  { key: 'reportNo', header: '报工单', cellClass: 'font-medium', accessor: (r) => r.reportNo ?? r.productionReportId ?? '无' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
-  { key: 'operationTaskId', header: '工序' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
 ]
 
@@ -67,12 +65,6 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <Toolbar :show-search="false">
-      <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="报工状态" />
-      </template>
-    </Toolbar>
-
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <DataTable
@@ -82,10 +74,6 @@ function formatError(error: unknown) {
       :loading="productionReportsPending"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
     >
-      <template #cell-reportNo="{ row }">
-        <span v-if="row.reportNo">{{ row.reportNo }}</span>
-        <span v-else class="text-muted-foreground">—</span>
-      </template>
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
@@ -93,7 +81,7 @@ function formatError(error: unknown) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderId }}
+          {{ row.workOrderNo ?? row.workOrderId }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
@@ -108,10 +96,6 @@ function formatError(error: unknown) {
             返工 {{ formatQuantity(row.reworkQuantity) }}
           </span>
         </div>
-      </template>
-      <template #cell-operationTaskId="{ row }">
-        <span v-if="row.operationTaskId">{{ row.operationTaskId }}</span>
-        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
     </DataTable>

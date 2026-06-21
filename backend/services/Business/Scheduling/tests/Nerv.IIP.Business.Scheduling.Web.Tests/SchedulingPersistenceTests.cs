@@ -131,6 +131,15 @@ public sealed class SchedulingPersistenceTests
             AlgorithmVersion: "aps-lite-v1",
             Status: SchedulePlanStatusContract.Generated,
             GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            Metrics: new SchedulePlanMetricsContract(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: 1,
+                AssignedMinutes: assignedMinutes,
+                MakespanMinutes: 60,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: Math.Round(assignedMinutes / 480m, 4)),
             Assignments:
             [
                 new ScheduleAssignmentContract(

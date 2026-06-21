@@ -12,6 +12,10 @@ public sealed record MaintenanceWorkOrderCompletedDomainEvent(MaintenanceWorkOrd
 
 public sealed record AssetRestoredDomainEvent(MaintenanceWorkOrder WorkOrder, DateTimeOffset RestoredAtUtc) : IDomainEvent;
 
+public sealed record MaintenanceWorkOrderAlarmClearedDomainEvent(MaintenanceWorkOrder WorkOrder, DateTimeOffset ClearedAtUtc) : IDomainEvent;
+
+public sealed record MaintenanceSparePartIssuedDomainEvent(MaintenanceWorkOrder WorkOrder, SparePartLine SparePartLine) : IDomainEvent;
+
 public sealed record MaintenancePlanCreatedDomainEvent(MaintenancePlan Plan) : IDomainEvent;
 
 public sealed record MaintenanceInspectionRecordedDomainEvent(MaintenanceInspection Inspection) : IDomainEvent;

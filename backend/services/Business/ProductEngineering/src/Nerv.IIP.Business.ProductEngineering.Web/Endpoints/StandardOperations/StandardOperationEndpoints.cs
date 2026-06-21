@@ -77,7 +77,7 @@ public sealed record StandardOperationResponse(string OperationCode);
 public sealed record CreateStandardOperationRequest(
     string OrganizationId,
     string EnvironmentId,
-    string OperationCode,
+    string? OperationCode,
     string OperationName,
     string DefaultWorkCenterCode,
     int StandardSetupMinutes,
@@ -86,7 +86,8 @@ public sealed record CreateStandardOperationRequest(
     bool RequiresReporting,
     bool RequiresQualityInspection,
     bool IsOutsourced,
-    string? Description);
+    string? Description,
+    string? IdempotencyKey = null);
 
 public sealed class CreateStandardOperationEndpoint(ISender sender)
     : StandardOperationEndpoint<CreateStandardOperationRequest, ResponseData<StandardOperationResponse>>
@@ -110,7 +111,8 @@ public sealed class CreateStandardOperationEndpoint(ISender sender)
             req.RequiresReporting,
             req.RequiresQualityInspection,
             req.IsOutsourced,
-            req.Description), ct);
+            req.Description,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(new StandardOperationResponse(result.OperationCode).AsResponseData(), ct);
     }
 }

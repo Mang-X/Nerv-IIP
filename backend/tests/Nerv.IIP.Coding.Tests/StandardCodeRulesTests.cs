@@ -25,6 +25,8 @@ public sealed class StandardCodeRulesTests
     [InlineData("purchase-receipt", "GR")]
     [InlineData("account-payable", "AP")]
     [InlineData("account-receivable", "AR")]
+    [InlineData("account-payable-payment", "APPAY")]
+    [InlineData("account-receivable-collection", "ARCOL")]
     [InlineData("cost-candidate", "COST")]
     [InlineData("journal-voucher", "JV")]
     [InlineData("engineering-document", "EDOC")]
@@ -43,20 +45,24 @@ public sealed class StandardCodeRulesTests
     }
 
     [Theory]
-    [InlineData("unit-of-measure")]
-    [InlineData("site")]
-    [InlineData("workshop")]
-    [InlineData("production-line")]
-    [InlineData("shift")]
-    [InlineData("work-center")]
-    [InlineData("device-asset")]
-    [InlineData("department")]
-    [InlineData("team")]
-    [InlineData("work-calendar")]
-    public void MasterData_simple_resource_rules_are_registered(string ruleKey)
+    [InlineData("unit-of-measure", "UOM")]
+    [InlineData("site", "ST")]
+    [InlineData("workshop", "WS")]
+    [InlineData("production-line", "PL")]
+    [InlineData("shift", "SH")]
+    [InlineData("work-center", "WC")]
+    [InlineData("device-asset", "EQ")]
+    [InlineData("department", "DEPT")]
+    [InlineData("team", "TEAM")]
+    [InlineData("work-calendar", "CAL")]
+    [InlineData("standard-operation", "OP")]
+    [InlineData("quality-reason", "QR")]
+    [InlineData("maintenance-plan", "PM")]
+    public void Simple_resource_rules_are_registered(string ruleKey, string prefix)
     {
         var rule = StandardCodeRules.Get(ruleKey);
 
+        Assert.Equal(prefix, rule.Segments[0].Value);
         Assert.Contains(rule.Segments, segment => segment.Type == SegmentType.Sequence);
         rule.Validate();
     }

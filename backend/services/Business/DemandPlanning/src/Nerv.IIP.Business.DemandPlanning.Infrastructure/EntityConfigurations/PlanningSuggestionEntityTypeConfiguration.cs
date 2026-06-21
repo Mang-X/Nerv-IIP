@@ -18,6 +18,7 @@ public sealed class PlanningSuggestionEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(64).IsRequired().HasComment("Suggested site code snapshot.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Positive suggested quantity.");
         builder.Property(x => x.RequiredDate).HasColumnName("required_date").HasComment("Required date for downstream procurement or production.");
+        builder.Property(x => x.ReleaseDate).HasColumnName("release_date").HasComment("MRP-calculated release date after lead-time offset.");
         builder.Property(x => x.ReasonCode).HasColumnName("reason_code").HasMaxLength(128).IsRequired().HasComment("MRP reason code explaining why the suggestion exists.");
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Suggestion lifecycle status.");
         builder.Property(x => x.AcceptedDownstreamService).HasColumnName("accepted_downstream_service").HasMaxLength(64).HasComment("Downstream service that accepted the suggestion.");

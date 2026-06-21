@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
+using Nerv.IIP.Business.Quality.Web.Application.Commands;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.QualityReasons;
 
@@ -8,11 +9,12 @@ namespace Nerv.IIP.Business.Quality.Web.Application.Commands.QualityReasons;
 public sealed record CreateQualityReasonCommand(
     string OrganizationId,
     string EnvironmentId,
-    string ReasonCode,
+    string? ReasonCode,
     string ReasonName,
     string GroupName,
     string Severity,
-    string? DefaultDisposition) : ICommand<QualityReasonItem>;
+    string? DefaultDisposition,
+    string? IdempotencyKey = null) : ICommand<QualityReasonItem>;
 
 public sealed record UpdateQualityReasonCommand(
     string OrganizationId,
@@ -34,7 +36,8 @@ public sealed class CreateQualityReasonCommandValidator : AbstractValidator<Crea
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.ReasonName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.GroupName).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Severity)
@@ -86,20 +89,47 @@ public sealed class ArchiveQualityReasonCommandValidator : AbstractValidator<Arc
     }
 }
 
-public sealed class CreateQualityReasonCommandHandler(IQualityReasonRepository repository)
+public sealed class CreateQualityReasonCommandHandler(
+    IQualityReasonRepository repository,
+    QualityCodingService? codingService = null)
     : ICommandHandler<CreateQualityReasonCommand, QualityReasonItem>
 {
+    private readonly QualityCodingService _codingService = codingService ?? new QualityCodingService();
+
     public async Task<QualityReasonItem> Handle(CreateQualityReasonCommand request, CancellationToken cancellationToken)
     {
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, request.ReasonCode, cancellationToken))
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "quality-reason",
+            request.ReasonCode,
+            request.IdempotencyKey,
+            QualityCodingService.Fingerprint(request.ReasonName, request.GroupName, request.Severity, request.DefaultDisposition),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
         {
-            throw new KnownException($"Quality reason '{request.ReasonCode}' already exists.");
+            var persisted = await repository.GetByCodeAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                allocation.Code,
+                cancellationToken);
+            if (persisted is null)
+            {
+                throw new KnownException($"Quality reason '{allocation.Code}' idempotency record exists but resource was not found.");
+            }
+
+            return QualityReasonMapper.ToItem(persisted);
+        }
+
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, cancellationToken))
+        {
+            throw new KnownException($"Quality reason '{allocation.Code}' already exists.");
         }
 
         var reason = QualityReason.Create(
             request.OrganizationId,
             request.EnvironmentId,
-            request.ReasonCode,
+            allocation.Code,
             request.ReasonName,
             request.GroupName,
             request.Severity,

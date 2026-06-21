@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -65,6 +66,59 @@ public sealed class PurchaseReceiptRecordedIntegrationEventConverter
                 receipt.SupplierCode,
                 receipt.SiteCode,
                 receipt.QualityStatus));
+    }
+}
+
+public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventConverter
+    : IIntegrationEventConverter<PurchaseReceiptInventoryMovementRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(PurchaseReceiptInventoryMovementRequestedDomainEvent domainEvent)
+    {
+        var receipt = domainEvent.PurchaseReceipt;
+        var line = domainEvent.Line;
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency("purchase-receipt-inventory-movement", receipt.OrganizationId, receipt.EnvironmentId, receipt.PurchaseReceiptNo, line.PurchaseOrderLineNo);
+        return new InventoryMovementRequestedIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            occurredAtUtc,
+            InventoryIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            new InventoryMovementRequestedPayload(
+                "inbound",
+                InventoryIntegrationEventSources.BusinessErp,
+                receipt.PurchaseReceiptNo,
+                line.PurchaseOrderLineNo,
+                idempotencyKey,
+                line.SkuCode,
+                line.UomCode,
+                receipt.SiteCode,
+                line.LocationCode,
+                line.LotNo,
+                null,
+                NormalizeInventoryQualityStatus(line.QualityStatus),
+                "company",
+                null,
+                line.ReceivedQuantity,
+                occurredAtUtc));
+    }
+
+    private static string NormalizeInventoryQualityStatus(string qualityStatus)
+    {
+        var normalized = qualityStatus.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "accepted" or "unrestricted" => "unrestricted",
+            "inspection" or "quality" => "quality",
+            "rejected" or "blocked" => "blocked",
+            _ => normalized,
+        };
     }
 }
 

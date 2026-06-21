@@ -19,6 +19,11 @@ public sealed class FinishedGoodsReceiptRequestEntityTypeConfiguration : IEntity
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Finished goods quantity requested for receipt.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData unit of measure code for the receipt quantity.");
         builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").IsRequired().HasComment("UTC time when MES requested finished goods receipt.");
+        builder.Property(x => x.ProducedLotNo).HasColumnName("produced_lot_no").HasMaxLength(100).HasComment("Optional produced finished-goods lot number requested for receipt.");
+        builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number requested for receipt.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasDefaultValue(FinishedGoodsReceiptRequest.RequestedStatus).HasComment("MES finished-goods receipt request lifecycle status.");
+        builder.Property(x => x.PostedInventoryMovementId).HasColumnName("posted_inventory_movement_id").HasMaxLength(100).HasComment("Inventory movement id posted for this receipt request when known.");
+        builder.Property(x => x.PostedAtUtc).HasColumnName("posted_at_utc").HasComment("UTC time when Inventory posted the receipt movement.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
@@ -35,12 +36,33 @@ public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbCon
             .Include(x => x.Decisions)
             .SingleOrDefaultAsync(x => x.Id == request.ChainId, cancellationToken)
             ?? throw new KnownException("Approval chain was not found.");
+        var actorType = request.ActorType.Trim().ToLowerInvariant();
+        var actorRef = request.ActorRef.Trim();
+        var nowUtc = DateTimeOffset.UtcNow;
+        var matchingDelegations = await dbContext.ApprovalDelegations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == chain.OrganizationId
+                && x.EnvironmentId == chain.EnvironmentId
+                && x.Status == ApprovalDelegationStatuses.Active
+                && x.DelegateActorType == actorType
+                && x.DelegateActorRef == actorRef
+                && (x.DocumentType == null || x.DocumentType == chain.DocumentReference.DocumentType)
+                && x.EffectiveFromUtc <= nowUtc
+                && x.EffectiveToUtc >= nowUtc)
+            .OrderBy(x => x.EffectiveToUtc)
+            .ToListAsync(cancellationToken);
+        var matchingDelegation = matchingDelegations.FirstOrDefault(x => chain.Steps.Any(step =>
+            step.StepNo == request.StepNo
+            && step.Status == ApprovalStepStatuses.Pending
+            && step.MatchesApprover(x.DelegatorActorType, x.DelegatorActorRef)));
         var decision = chain.ResolveStep(
             request.StepNo,
             request.ActorType,
             request.ActorRef,
             request.Decision,
-            request.Comment);
+            request.Comment,
+            matchingDelegation?.DelegatorActorType,
+            matchingDelegation?.DelegatorActorRef);
         return decision.Id;
     }
 }

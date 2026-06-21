@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Queries;
 
@@ -30,6 +31,7 @@ public sealed record StockAvailabilityResponse(
     decimal OnHandQuantity,
     decimal ReservedQuantity,
     decimal AvailableQuantity,
+    decimal InventoryValue,
     IReadOnlyCollection<StockAvailabilityLineResponse> Items);
 
 public sealed record StockAvailabilityLineResponse(
@@ -41,7 +43,8 @@ public sealed record StockAvailabilityLineResponse(
     string? OwnerId,
     decimal OnHandQuantity,
     decimal ReservedQuantity,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    decimal InventoryValue);
 
 public sealed class GetStockAvailabilityQueryValidator : AbstractValidator<GetStockAvailabilityQuery>
 {
@@ -68,7 +71,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
 
     public async Task<StockAvailabilityResponse> Handle(GetStockAvailabilityQuery request, CancellationToken cancellationToken)
     {
-        var qualityStatus = Normalize(request.QualityStatus);
+        var qualityStatus = NormalizeQualityStatus(request.QualityStatus);
         var ownerType = Normalize(request.OwnerType);
         var query = dbContext.StockLedgers
             .AsNoTracking()
@@ -122,7 +125,8 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
                 group.Key.OwnerId,
                 group.Sum(x => x.OnHandQuantity),
                 group.Sum(x => x.ReservedQuantity),
-                group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity)))
+                group.Sum(x => x.OnHandQuantity) - group.Sum(x => x.ReservedQuantity),
+                group.Sum(x => x.InventoryValue)))
             .Take(MaxResultLines + 1)
             .ToListAsync(cancellationToken);
         if (items.Count > MaxResultLines)
@@ -132,6 +136,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
 
         var onHand = items.Sum(x => x.OnHandQuantity);
         var reserved = items.Sum(x => x.ReservedQuantity);
+        var inventoryValue = items.Sum(x => x.InventoryValue);
         return new StockAvailabilityResponse(
             request.OrganizationId,
             request.EnvironmentId,
@@ -147,11 +152,17 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             onHand,
             reserved,
             onHand - reserved,
+            inventoryValue,
             items);
     }
 
     private static string? Normalize(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeQualityStatus(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : StockQualityStatus.Normalize(value);
     }
 }

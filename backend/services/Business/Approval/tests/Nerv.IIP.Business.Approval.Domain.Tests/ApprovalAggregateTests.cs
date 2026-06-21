@@ -112,7 +112,7 @@ public sealed class ApprovalAggregateTests
     }
 
     [Fact]
-    public void Parallel_group_allows_same_step_number_to_resolve_before_next_step()
+    public void Parallel_group_with_all_policy_requires_every_approver_before_next_step()
     {
         var template = ApprovalTemplate.Create(
             "org-001",
@@ -139,7 +139,7 @@ public sealed class ApprovalAggregateTests
     }
 
     [Fact]
-    public void Parallel_group_key_is_metadata_and_same_step_still_requires_all_approvers()
+    public void Parallel_group_with_any_policy_allows_one_approver_to_unlock_next_step()
     {
         var template = ApprovalTemplate.Create(
             "org-001",
@@ -149,16 +149,17 @@ public sealed class ApprovalAggregateTests
             1,
             true,
             [
-                new ApprovalTemplateStepDefinition(1, "Finance review", "finance-qc", "user", "u-finance", 24),
-                new ApprovalTemplateStepDefinition(1, "Quality review", "finance-qc", "user", "u-quality", 24),
+                new ApprovalTemplateStepDefinition(1, "Finance review", "finance-qc", "user", "u-finance", 24, "any"),
+                new ApprovalTemplateStepDefinition(1, "Quality review", "finance-qc", "user", "u-quality", 24, "any"),
                 new ApprovalTemplateStepDefinition(2, "Manager review", null, "user", "u-manager", 24),
             ]);
         var chain = ApprovalChain.Start(template, NewDocument(), "system:inventory");
 
         chain.ResolveStep(1, "user", "u-finance", "approve", "ok");
+        chain.ResolveStep(2, "user", "u-manager", "approve", "ok");
 
-        Assert.All(chain.Steps.Where(x => x.StepNo == 1), x => Assert.Equal("finance-qc", x.ParallelGroupKey));
-        Assert.Throws<InvalidOperationException>(() => chain.ResolveStep(2, "user", "u-manager", "approve", "ok"));
+        Assert.Equal("approved", chain.Status);
+        Assert.Contains(chain.Steps.Where(x => x.StepNo == 1), x => x.Status == ApprovalStepStatuses.Skipped);
     }
 
     [Fact]
@@ -175,6 +176,42 @@ public sealed class ApprovalAggregateTests
                 new ApprovalTemplateStepDefinition(1, "Finance review", null, "user", "u-finance", 24),
                 new ApprovalTemplateStepDefinition(1, "Quality review", null, "user", "u-quality", 24),
             ]));
+    }
+
+    [Fact]
+    public void Conditional_steps_are_included_only_when_document_reference_matches()
+    {
+        var template = ApprovalTemplate.Create(
+            "org-001",
+            "env-dev",
+            "DOC-ROUTING",
+            "engineering-change-order",
+            1,
+            true,
+            [
+                new ApprovalTemplateStepDefinition(1, "Engineering review", null, "user", "u-engineering", 24, "all", "documentType=engineering-change-order"),
+                new ApprovalTemplateStepDefinition(2, "Procurement review", null, "user", "u-procurement", 24, "all", "documentType=purchase-order"),
+                new ApprovalTemplateStepDefinition(3, "Manager review", null, "user", "u-manager", 24),
+            ]);
+
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+
+        Assert.DoesNotContain(chain.Steps, x => x.ApproverRef == "u-procurement");
+        Assert.Contains(chain.Steps, x => x.ApproverRef == "u-engineering");
+    }
+
+    [Fact]
+    public void Overdue_pending_steps_emit_once()
+    {
+        var chain = NewChain();
+        var dueAt = chain.Steps.Min(x => x.DueAtUtc)!.Value;
+
+        var first = chain.MarkOverdueSteps(dueAt.AddSeconds(1));
+        var second = chain.MarkOverdueSteps(dueAt.AddHours(1));
+
+        Assert.Equal(1, first);
+        Assert.Equal(0, second);
+        Assert.Contains(chain.GetDomainEvents(), x => x is ApprovalStepOverdueDomainEvent);
     }
 
     private static ApprovalChain NewChain()

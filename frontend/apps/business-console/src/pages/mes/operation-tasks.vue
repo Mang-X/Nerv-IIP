@@ -2,6 +2,7 @@
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -65,14 +66,7 @@ watch(shiftFilter, (value) => {
   filters.shiftId = value === 'all' ? undefined : value
 })
 
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '可开工', value: 'Ready' },
-  { label: '执行中', value: 'Running' },
-  { label: '暂停', value: 'Paused' },
-  { label: '已完成', value: 'Completed' },
-  { label: '阻塞', value: 'Blocked' },
-]
+const statusOptions = mesOperationTaskStatusOptions
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
 const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 
@@ -104,11 +98,13 @@ const pagedTasks = computed(() => sortedTasks.value)
 // facade 返回人读编码（workOrderId=WO-…、workCenterId=WC-…、operationTaskId=WO-…-OP-序号）：
 // 工序序号(operationSequence)作主锚点，工单/工作中心直接展示编码即可分辨。
 const columns: DataTableColumn<Row>[] = [
-  { key: 'operationSequence', header: '工序', cellClass: 'font-medium', align: 'start', width: 'w-20', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workOrderId', header: '工单' },
+  { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号' },
+  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'workCenterId', header: '工作中心' },
-  { key: 'shiftId', header: '班次' },
+  { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
+  { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'qualityStatus', header: '质量状态' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
@@ -237,20 +233,12 @@ function formatError(error: unknown) {
           class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderId }}
+          {{ row.workOrderNo ?? row.workOrderId }}
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
         <StatusBadge :value="row.status" />
-      </template>
-      <template #cell-workCenterId="{ row }">
-        <span v-if="row.workCenterId">{{ row.workCenterId }}</span>
-        <span v-else class="text-muted-foreground">未指定</span>
-      </template>
-      <template #cell-shiftId="{ row }">
-        <span v-if="row.shiftId">{{ row.shiftId }}</span>
-        <span v-else class="text-muted-foreground">未指定</span>
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}

@@ -30,7 +30,9 @@ public sealed record ReleaseWorkOrderCommand(
     string WorkOrderId,
     DateTimeOffset ReleasedAtUtc) : ICommand<MesAcceptedResponse>;
 
-public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReleaseWorkOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
     : ICommandHandler<ReleaseWorkOrderCommand, MesAcceptedResponse>
 {
     public async Task<MesAcceptedResponse> Handle(ReleaseWorkOrderCommand request, CancellationToken cancellationToken)
@@ -49,18 +51,6 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
         if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
         {
             throw new KnownException("QUALITY_PLAN_MISSING: 工单缺少已发布生产版本，无法放行。");
-        }
-
-        var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
-            dbContext,
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.WorkOrderId,
-            null,
-            cancellationToken);
-        if (shortages.Count > 0)
-        {
-            throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
         }
 
         var hasOperationSnapshot = await dbContext.OperationTasks.AnyAsync(
@@ -84,6 +74,27 @@ public sealed class ReleaseWorkOrderCommandHandler(ApplicationDbContext dbContex
         if (equipmentIssues.Count > 0)
         {
             throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
+        }
+
+        var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
+            dbContext,
+            materialSnapshotProvider,
+            workOrder,
+            request.ReleasedAtUtc,
+            cancellationToken);
+        if (!materialCapture.NoRequirements)
+        {
+            var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
+                dbContext,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                null,
+                cancellationToken);
+            if (shortages.Count > 0)
+            {
+                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+            }
         }
 
         workOrder.MarkReleased();
@@ -373,6 +384,7 @@ public sealed record CreateMaterialIssueRequestCommand(
     string WorkOrderId,
     string? OperationTaskId,
     string? MaterialId,
+    string? UomCode,
     decimal? Quantity,
     DateTimeOffset RequestedAtUtc,
     string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
@@ -385,6 +397,7 @@ public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidat
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
     }
 }
@@ -412,7 +425,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.EnvironmentId, "material-issue-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.Quantity, request.RequestedAtUtc),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.OperationTaskId, request.MaterialId, request.UomCode, request.Quantity, request.RequestedAtUtc),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -425,6 +438,9 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         }
 
         var materialId = request.MaterialId.Trim();
+        var uomCode = string.IsNullOrWhiteSpace(request.UomCode)
+            ? throw new KnownException("领料申请必须指定单位，UomCode 不能为空。")
+            : request.UomCode.Trim();
 
         var requestedQuantity = request.Quantity ?? await dbContext.MaterialRequirements
             .AsNoTracking()
@@ -448,6 +464,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             request.WorkOrderId,
             request.OperationTaskId,
             materialId,
+            uomCode,
             requestedQuantity,
             request.RequestedAtUtc));
         return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
@@ -537,7 +554,9 @@ public sealed record ChangeOperationTaskStateCommand(
     string Action,
     DateTimeOffset ChangedAtUtc) : ICommand<MesOperationActionResponse>;
 
-public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext dbContext)
+public sealed class ChangeOperationTaskStateCommandHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
     : ICommandHandler<ChangeOperationTaskStateCommand, MesOperationActionResponse>
 {
     public async Task<MesOperationActionResponse> Handle(ChangeOperationTaskStateCommand request, CancellationToken cancellationToken)
@@ -575,16 +594,31 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
                 throw new KnownException(string.Join("; ", equipmentIssues.Select(x => x.Code)));
             }
 
-            var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
+            var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderIdValue == task.WorkOrderId,
+                cancellationToken)
+                ?? throw new KnownException($"未找到生产工单，WorkOrderId = {task.WorkOrderId}");
+            var materialCapture = await MaterialReadinessGuards.EnsureRequirementSnapshotsAsync(
                 dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
-                task.WorkOrderId,
-                task.OperationTaskIdValue,
+                materialSnapshotProvider,
+                workOrder,
+                request.ChangedAtUtc,
                 cancellationToken);
-            if (shortages.Count > 0)
+            if (!materialCapture.NoRequirements)
             {
-                throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+                var shortages = await MaterialReadinessGuards.GetShortageReasonsAsync(
+                    dbContext,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    task.WorkOrderId,
+                    task.OperationTaskIdValue,
+                    cancellationToken);
+                if (shortages.Count > 0)
+                {
+                    throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
+                }
             }
         }
 
@@ -612,6 +646,72 @@ public sealed class ChangeOperationTaskStateCommandHandler(ApplicationDbContext 
 
 internal static class MaterialReadinessGuards
 {
+    private const string MissingRequirementSnapshotReason =
+        "MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照，无法确认物料齐套。";
+
+    public static async Task<MaterialRequirementCaptureOutcome> EnsureRequirementSnapshotsAsync(
+        ApplicationDbContext dbContext,
+        IMesMaterialRequirementSnapshotProvider? snapshotProvider,
+        WorkOrder workOrder,
+        DateTimeOffset capturedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var hasRequirements = await HasRequirementSnapshotsAsync(
+            dbContext,
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.WorkOrderId,
+            cancellationToken);
+        if (hasRequirements)
+        {
+            return MaterialRequirementCaptureOutcome.Existing;
+        }
+
+        if (snapshotProvider is null)
+        {
+            return MaterialRequirementCaptureOutcome.Missing;
+        }
+
+        var result = await snapshotProvider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                workOrder.OrganizationId,
+                workOrder.EnvironmentId,
+                workOrder.WorkOrderId,
+                workOrder.SkuId,
+                workOrder.ProductionVersionId,
+                workOrder.Quantity,
+                capturedAtUtc),
+            cancellationToken);
+        if (result.Status == MesMaterialRequirementSnapshotStatus.Missing)
+        {
+            return MaterialRequirementCaptureOutcome.Missing;
+        }
+
+        if (result.Lines.Count == 0)
+        {
+            return MaterialRequirementCaptureOutcome.NoRequirementsFound;
+        }
+
+        foreach (var line in result.Lines)
+        {
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                workOrder.OrganizationId,
+                workOrder.EnvironmentId,
+                workOrder.WorkOrderId,
+                line.OperationTaskId,
+                line.MaterialId,
+                line.MaterialLotId,
+                line.RequiredQuantity,
+                line.AvailableQuantity,
+                line.StagedQuantity,
+                result.SourceSystem,
+                line.SourceSnapshotId,
+                capturedAtUtc));
+        }
+
+        return MaterialRequirementCaptureOutcome.Captured;
+    }
+
     public static async Task<IReadOnlyCollection<string>> GetShortageReasonsAsync(
         ApplicationDbContext dbContext,
         string organizationId,
@@ -620,7 +720,7 @@ internal static class MaterialReadinessGuards
         string? operationTaskId,
         CancellationToken cancellationToken)
     {
-        var requirements = await dbContext.MaterialRequirements
+        var persistedRequirements = await dbContext.MaterialRequirements
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == organizationId &&
@@ -636,11 +736,27 @@ internal static class MaterialReadinessGuards
                 x.StagedQuantity,
                 x.CapturedAtUtc))
             .ToArrayAsync(cancellationToken);
+        var requirements = persistedRequirements
+            .Concat(dbContext.MaterialRequirements.Local
+                .Where(x =>
+                    x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.WorkOrderId == workOrderId &&
+                    (operationTaskId == null || x.OperationTaskId == null || x.OperationTaskId == operationTaskId))
+                .Select(x => new MaterialRequirementSnapshot(
+                    x.OperationTaskId,
+                    x.MaterialId,
+                    x.MaterialLotId,
+                    x.RequiredQuantity,
+                    x.AvailableQuantity,
+                    x.StagedQuantity,
+                    x.CapturedAtUtc)))
+            .ToArray();
         requirements = SelectLatestRequirementSnapshots(requirements);
 
         if (requirements.Length == 0)
         {
-            return [];
+            return [MissingRequirementSnapshotReason];
         }
 
         var received = await dbContext.MaterialIssueRequests
@@ -674,6 +790,37 @@ internal static class MaterialReadinessGuards
                 ? $"{x.MaterialId} shortage {x.Shortage:0.######}"
                 : $"{x.MaterialId} {x.MaterialLotId} shortage {x.Shortage:0.######}")
             .ToArray();
+    }
+
+    private static async Task<bool> HasRequirementSnapshotsAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        return dbContext.MaterialRequirements.Local.Any(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderId == workOrderId) ||
+            await dbContext.MaterialRequirements
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.OrganizationId == organizationId &&
+                        x.EnvironmentId == environmentId &&
+                        x.WorkOrderId == workOrderId,
+                    cancellationToken);
+    }
+
+    public readonly record struct MaterialRequirementCaptureOutcome(bool NoRequirements)
+    {
+        public static MaterialRequirementCaptureOutcome Existing { get; } = new(false);
+
+        public static MaterialRequirementCaptureOutcome Captured { get; } = new(false);
+
+        public static MaterialRequirementCaptureOutcome Missing { get; } = new(false);
+
+        public static MaterialRequirementCaptureOutcome NoRequirementsFound { get; } = new(true);
     }
 
     internal static T[] SelectLatestRequirementSnapshots<T>(IEnumerable<T> requirements)
@@ -976,7 +1123,7 @@ public sealed class CreateShiftHandoverCommandHandler(ApplicationDbContext dbCon
         var openDefects = await dbContext.DefectRecords.CountAsync(
             x => x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
-                x.Status == DomainDefectRecord.OpenStatus,
+                x.ClosedAtUtc == null,
             cancellationToken);
         var openDowntimeEvents = await dbContext.WorkCenterUnavailabilities.CountAsync(
             x => x.OrganizationId == organizationId &&

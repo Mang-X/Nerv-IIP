@@ -51,7 +51,9 @@ public sealed record ApprovalTemplateStepRequest(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string? CompletionPolicy = null,
+    string? ConditionExpression = null);
 
 public sealed record CreateOrUpdateApprovalTemplateResponse(ApprovalTemplateId TemplateId);
 
@@ -95,6 +97,12 @@ public sealed record ListPendingApprovalTasksRequest(
     string ActorRef,
     int Skip = 0,
     int Take = 100);
+
+public sealed record CheckOverdueApprovalStepsRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record CheckOverdueApprovalStepsResponse(int MarkedCount);
 
 public sealed record ListApprovalDecisionsRequest(
     string OrganizationId,
@@ -174,7 +182,9 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
                 x.ParallelGroupKey,
                 x.ApproverType,
                 x.ApproverRef,
-                x.DueInHours)).ToArray()), ct);
+                x.DueInHours,
+                x.CompletionPolicy,
+                x.ConditionExpression)).ToArray()), ct);
         await Send.OkAsync(new CreateOrUpdateApprovalTemplateResponse(templateId).AsResponseData(), cancellation: ct);
     }
 }
@@ -268,6 +278,21 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
     {
         var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CheckOverdueApprovalStepsEndpoint(ISender sender)
+    : ApprovalEndpoint<CheckOverdueApprovalStepsRequest, ResponseData<CheckOverdueApprovalStepsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<CheckOverdueApprovalStepsEndpoint>());
+    }
+
+    public override async Task HandleAsync(CheckOverdueApprovalStepsRequest req, CancellationToken ct)
+    {
+        var marked = await sender.Send(new CheckOverdueApprovalStepsCommand(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(new CheckOverdueApprovalStepsResponse(marked).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -404,6 +429,7 @@ public static class ApprovalEndpointContracts
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "getApprovalChain"),
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
+        new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
         new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resolveApprovalStep"),
         new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),

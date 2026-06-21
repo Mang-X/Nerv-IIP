@@ -122,6 +122,7 @@ public sealed class DemandPlanningAggregateTests
             "SITE-01",
             19m,
             new DateOnly(2026, 5, 30),
+            new DateOnly(2026, 5, 25),
             "MRP-001");
     }
 }

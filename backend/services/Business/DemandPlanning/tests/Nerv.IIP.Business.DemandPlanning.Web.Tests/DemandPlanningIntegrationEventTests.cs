@@ -37,6 +37,7 @@ public sealed class DemandPlanningIntegrationEventTests
             : new PlannedWorkOrderSuggestedIntegrationEventConverter().Convert(new PlannedWorkOrderSuggestedDomainEvent(suggestion));
 
         Assert.Equal(expectedEventType, integrationEvent.EventType);
+        Assert.Equal(new DateOnly(2026, 5, 27), integrationEvent.Payload.ReleaseDate);
         Assert.Equal("DEMAND-001", integrationEvent.Payload.Pegging.Single().DemandSourceReference);
     }
 
@@ -54,6 +55,6 @@ public sealed class DemandPlanningIntegrationEventTests
 
     private static PlanningSuggestion NewSuggestion(string suggestionType)
     {
-        return PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), suggestionType, "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), "MRP-001");
+        return PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), suggestionType, "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
     }
 }
