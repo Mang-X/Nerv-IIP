@@ -134,7 +134,8 @@ public sealed class ApprovalChainActionRecordedIntegrationEventConverter
                 decision.StepNo.ToString(),
                 decision.Decision,
                 decision.ActorType,
-                decision.ActorRef),
+                decision.ActorRef,
+                decision.Id.ToString()),
             new ApprovalActionRecordedPayload(
                 chain.Id.ToString(),
                 decision.StepId.ToString(),

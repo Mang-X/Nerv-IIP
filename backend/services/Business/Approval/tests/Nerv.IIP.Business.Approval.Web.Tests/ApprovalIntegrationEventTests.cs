@@ -142,6 +142,23 @@ public sealed class ApprovalIntegrationEventTests
         Assert.Contains("user:u-backup", integrationEvent.Payload.SuggestedRecipientRefs);
     }
 
+    [Fact]
+    public void Approval_action_recorded_idempotency_key_distinguishes_repeated_actions_in_the_same_round()
+    {
+        var chain = NewChain();
+        chain.AddSigner(1, "user", "u-backup-1", "user", "u-manager", "extra approver");
+        chain.AddSigner(1, "user", "u-backup-2", "user", "u-manager", "extra approver");
+        var domainEvents = chain.GetDomainEvents().OfType<ApprovalChainActionRecordedDomainEvent>().ToArray();
+        var converter = new ApprovalChainActionRecordedIntegrationEventConverter();
+
+        var firstEvent = converter.Convert(domainEvents[0]);
+        var secondEvent = converter.Convert(domainEvents[1]);
+
+        Assert.NotEqual(firstEvent.IdempotencyKey, secondEvent.IdempotencyKey);
+        Assert.Contains(domainEvents[0].Decision.Id.ToString(), firstEvent.IdempotencyKey, StringComparison.Ordinal);
+        Assert.Contains(domainEvents[1].Decision.Id.ToString(), secondEvent.IdempotencyKey, StringComparison.Ordinal);
+    }
+
     private static ApprovalChain NewChain()
     {
         return ApprovalChain.Start(ApprovalEndpointContractTests.NewTemplate(), ApprovalEndpointContractTests.NewDocument(), "system:eco");
