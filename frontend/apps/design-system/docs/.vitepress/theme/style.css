@@ -179,3 +179,34 @@
 .VPNavBar:not(.home) .divider-line {
   background-color: var(--border);
 }
+
+/* ----------------------------------------------------------------------------
+ * Sidebar — bring it into our design language. VitePress's default active state
+ * is a brand-blue left `.indicator` stripe plus blue link text: our system bans
+ * side stripes and that blue reads poorly on the near-black surface. Replace it
+ * with a filled row + foreground text (matching our own Sidebar component).
+ * The `margin-inline:-8px` + `padding-inline:8px` pair widens the row's hit/fill
+ * area outward by 8px each side WITHOUT shifting the label (they cancel).
+ * ------------------------------------------------------------------------- */
+.VPSidebar .VPSidebarItem .indicator {
+  display: none !important;
+}
+.VPSidebar .VPSidebarItem.level-1 > .item,
+.VPSidebar .VPSidebarItem.level-2 > .item {
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-radius: 8px;
+  transition: background-color 0.15s var(--ease-out-quart, ease-out);
+}
+.VPSidebar .VPSidebarItem.is-link > .item:hover {
+  background-color: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.VPSidebar .VPSidebarItem.is-active.is-link > .item {
+  /* !important: out-rank VitePress's own level-N.is-active selectors (same
+     specificity, defined after ours) without an arms race of stacked classes. */
+  background-color: color-mix(in oklch, var(--foreground) 11%, transparent) !important;
+}
+.VPSidebar .VPSidebarItem.is-active.is-link > .item .link > .text {
+  color: var(--foreground) !important;
+  font-weight: 600;
+}
