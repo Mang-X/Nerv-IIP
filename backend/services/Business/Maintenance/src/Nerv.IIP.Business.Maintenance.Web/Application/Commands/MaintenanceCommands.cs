@@ -340,18 +340,19 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
     public async Task<MaintenanceInspectionId> Handle(RecordMaintenanceInspectionCommand request, CancellationToken cancellationToken)
     {
         var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
-        var inspection = await dbContext.MaintenanceInspections.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.PlanId == request.PlanId
-                && x.WorkOrderId == request.WorkOrderId
-                && x.Inspector == request.Inspector
-                && x.Result == request.Result
-                && x.InspectedAtUtc == inspectedAtUtc,
-            cancellationToken);
+        var normalizedResult = MaintenanceInspectionResults.Normalize(request.Result);
+        var inspection = await dbContext.MaintenanceInspections
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.PlanId == request.PlanId)
+            .Where(x => x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.Inspector == request.Inspector)
+            .Where(x => x.Result == normalizedResult)
+            .Where(x => x.InspectedAtUtc == inspectedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
         if (inspection is null)
         {
-            inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, request.Result, inspectedAtUtc);
+            inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc);
             dbContext.MaintenanceInspections.Add(inspection);
         }
 

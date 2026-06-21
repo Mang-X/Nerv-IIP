@@ -117,8 +117,28 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal("inspection", GetWorkOrderStringProperty(workOrder, "SourceType"));
         Assert.Equal(inspection.Id.ToString(), GetWorkOrderStringProperty(workOrder, "SourceReferenceId"));
         Assert.Contains(result, GetWorkOrderStringProperty(workOrder, "DiagnosticDescription"), StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("inspection", workOrder.OpenedBy);
+        Assert.Equal("maintenanceInspection", workOrder.OpenedBy);
         Assert.Equal("high", workOrder.Priority);
+    }
+
+    [Fact]
+    public async Task Failed_maintenance_inspection_for_work_order_opens_traceable_inspection_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var sourceWorkOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001");
+        dbContext.MaintenanceWorkOrders.Add(sourceWorkOrder);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+
+        var inspectionId = await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", null, sourceWorkOrder.Id, "inspector-001", "NG", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var generatedWorkOrder = await dbContext.MaintenanceWorkOrders.SingleAsync(x => x.Id != sourceWorkOrder.Id);
+        Assert.Equal("DEV-CNC-02", generatedWorkOrder.DeviceAssetId);
+        Assert.Equal("inspection", GetWorkOrderStringProperty(generatedWorkOrder, "SourceType"));
+        Assert.Equal(inspectionId.ToString(), GetWorkOrderStringProperty(generatedWorkOrder, "SourceReferenceId"));
     }
 
     [Fact]
@@ -159,6 +179,55 @@ public sealed class MaintenanceEndpointContractTests
         var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
         Assert.Equal("inspection", GetWorkOrderStringProperty(workOrder, "SourceType"));
         Assert.Equal(firstInspectionId.ToString(), GetWorkOrderStringProperty(workOrder, "SourceReferenceId"));
+    }
+
+    [Fact]
+    public async Task Failed_maintenance_inspection_replay_normalizes_result_for_idempotency()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-NORMALIZE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+        var inspectedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+
+        var firstInspectionId = await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", " NG ", inspectedAtUtc),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var replayInspectionId = await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "ng", inspectedAtUtc),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(firstInspectionId, replayInspectionId);
+        Assert.Equal(1, await dbContext.MaintenanceInspections.CountAsync());
+        Assert.Equal(1, await dbContext.MaintenanceWorkOrders.CountAsync());
+        var inspection = await dbContext.MaintenanceInspections.SingleAsync();
+        Assert.Equal("ng", inspection.Result);
+    }
+
+    [Fact]
+    public async Task Failed_maintenance_inspection_replay_tolerates_duplicate_historical_inspection_facts()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-INSPECT-HISTORY", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        var inspectedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var first = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-001", "ng", inspectedAtUtc);
+        var duplicate = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "inspector-001", "ng", inspectedAtUtc);
+        dbContext.MaintenancePlans.Add(plan);
+        dbContext.MaintenanceInspections.AddRange(first, duplicate);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordMaintenanceInspectionCommandHandler(dbContext);
+
+        var replayInspectionId = await handler.Handle(
+            new RecordMaintenanceInspectionCommand("org-001", "env-dev", plan.Id, null, "inspector-001", "NG", inspectedAtUtc),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Contains(replayInspectionId, new[] { first.Id, duplicate.Id });
+        Assert.Equal(2, await dbContext.MaintenanceInspections.CountAsync());
+        Assert.Equal(1, await dbContext.MaintenanceWorkOrders.CountAsync());
     }
 
     [Fact]

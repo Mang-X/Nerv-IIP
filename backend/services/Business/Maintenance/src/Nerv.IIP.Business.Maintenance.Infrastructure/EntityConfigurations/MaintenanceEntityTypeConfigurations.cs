@@ -35,6 +35,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
+        // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })
             .IsUnique()
             .HasDatabaseName("ux_maintenance_work_orders_source_reference");

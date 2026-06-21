@@ -19,6 +19,11 @@ public static class MaintenanceWorkOrderSourceTypes
     public const string Inspection = "inspection";
 }
 
+public static class MaintenanceWorkOrderSourceActors
+{
+    public const string Inspection = "maintenanceInspection";
+}
+
 public sealed record SparePartLineDraft(string SkuCode, decimal Quantity, string? UomCode = null);
 
 public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggregateRoot
@@ -133,7 +138,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string deviceAssetId,
         MaintenanceInspectionId inspectionId,
         string result,
-        string openedBy = MaintenanceWorkOrderSourceTypes.Inspection)
+        string openedBy = MaintenanceWorkOrderSourceActors.Inspection)
     {
         var diagnosticDescription = $"Maintenance inspection failed: {MaintenanceText.Required(result, nameof(result))}";
         return new MaintenanceWorkOrder(
