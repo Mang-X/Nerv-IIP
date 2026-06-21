@@ -226,9 +226,16 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Inventory__DefaultSiteCode", "production")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
-    .WaitFor(businessMesDatabase);
+    .WithReference(businessProductEngineering)
+    .WithReference(businessInventory)
+    .WaitFor(businessMesDatabase)
+    .WaitFor(businessProductEngineering)
+    .WaitFor(businessInventory);
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
