@@ -199,6 +199,19 @@ public sealed record ReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record CloseWorkOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    DateTimeOffset? ClosedAtUtc);
+
+public sealed record WorkOrderReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    string Reason,
+    DateTimeOffset? ChangedAtUtc);
+
 public sealed record CreateMaterialIssueRequestRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -555,6 +568,56 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
             req.EnvironmentId,
             req.WorkOrderId,
             req.ReleasedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CloseWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<CloseWorkOrderRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CloseWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(CloseWorkOrderRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CloseWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ClosedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<HoldWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new HoldWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CancelWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CancelWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1077,6 +1140,9 @@ public static class MesEndpointContracts
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
         new(typeof(ReleaseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/release", MesPermissionCodes.WorkOrdersManage, "releaseBusinessMesWorkOrder"),
+        new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
+        new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
+        new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),

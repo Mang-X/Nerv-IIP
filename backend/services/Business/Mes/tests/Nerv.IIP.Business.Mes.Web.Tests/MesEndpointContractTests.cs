@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -21,7 +22,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(38, MesEndpointContracts.All.Count);
+        Assert.Equal(41, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -73,6 +74,21 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/release"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "releaseBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/close"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "closeBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/hold"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "holdBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/cancel"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "cancelBusinessMesWorkOrder");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"
@@ -216,6 +232,75 @@ public sealed class MesEndpointContractTests
 
         Assert.All(MesEndpointContracts.All, contract =>
             Assert.Contains(contract.PermissionCode, MesPermissionCodes.All));
+    }
+
+    [Fact]
+    public async Task Work_order_lifecycle_commands_update_status_and_reject_illegal_close()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-05T08:00:00Z");
+        var completed = WorkOrder.Create("org-001", "env-dev", "WO-CLOSE", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        completed.MarkReleased();
+        completed.Start(now);
+        completed.RecordProductionProgress(2m, 0m, now.AddMinutes(30));
+        var active = WorkOrder.Create("org-001", "env-dev", "WO-ACTIVE", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        active.MarkReleased();
+        dbContext.WorkOrders.AddRange(completed, active);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var closeHandler = new CloseWorkOrderCommandHandler(dbContext);
+        var closeResponse = await closeHandler.Handle(
+            new CloseWorkOrderCommand("org-001", "env-dev", "WO-CLOSE", now.AddHours(1)),
+            CancellationToken.None);
+        var holdResponse = await new HoldWorkOrderCommandHandler(dbContext).Handle(
+            new HoldWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "material shortage", now.AddMinutes(10)),
+            CancellationToken.None);
+        var cancelResponse = await new CancelWorkOrderCommandHandler(dbContext).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "plan cancelled", now.AddMinutes(20)),
+            CancellationToken.None);
+        var invalidClose = await Assert.ThrowsAsync<KnownException>(() => closeHandler.Handle(
+            new CloseWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", now.AddHours(2)),
+            CancellationToken.None));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("Accepted", closeResponse.Status);
+        Assert.Equal("Accepted", holdResponse.Status);
+        Assert.Equal("Accepted", cancelResponse.Status);
+        Assert.Equal(WorkOrder.ClosedStatus, completed.Status);
+        Assert.Equal(now.AddHours(1), completed.ClosedAtUtc);
+        Assert.Equal(WorkOrder.CancelledStatus, active.Status);
+        Assert.Equal("material shortage", active.HoldReason);
+        Assert.Equal("plan cancelled", active.CancelReason);
+        Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
+    }
+
+    [Fact]
+    public async Task Starting_operation_task_starts_owning_work_order()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-05T08:00:00Z");
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-START", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        var tasks = workOrder.Release(
+            now,
+            [
+                new RoutingStepSnapshot("OP-10", 10, "WC-001", [], TimeSpan.FromMinutes(30)),
+            ]);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ChangeOperationTaskStateCommandHandler(dbContext, NoRequirementSnapshotProvider.Instance).Handle(
+            new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", now.AddMinutes(5)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("OP-10", response.OperationTaskId);
+        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
     }
 
     [Fact]
@@ -1003,6 +1088,9 @@ public sealed class MesEndpointContractTests
     [Theory]
     [InlineData("/api/business/v1/mes/schedules/run")]
     [InlineData("/api/business/v1/mes/work-orders/rush")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/close")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/hold")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/cancel")]
     public async Task Mes_write_endpoints_require_internal_service_authentication(string route)
     {
         await using var factory = new WebApplicationFactory<Program>();
@@ -1119,5 +1207,17 @@ internal sealed class NoopMediator : IMediator
     public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("No-op mediator cannot stream requests.");
+    }
+}
+
+internal sealed class NoRequirementSnapshotProvider : IMesMaterialRequirementSnapshotProvider
+{
+    public static readonly NoRequirementSnapshotProvider Instance = new();
+
+    public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+        MesMaterialRequirementSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(MesMaterialRequirementSnapshotResult.NoRequirements("test:no-requirements"));
     }
 }
