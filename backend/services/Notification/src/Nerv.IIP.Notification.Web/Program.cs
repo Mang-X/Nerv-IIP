@@ -82,6 +82,8 @@ builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotif
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalApprovedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRejectedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ApprovalStepOverdueIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<ApprovalStepResolvedIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)

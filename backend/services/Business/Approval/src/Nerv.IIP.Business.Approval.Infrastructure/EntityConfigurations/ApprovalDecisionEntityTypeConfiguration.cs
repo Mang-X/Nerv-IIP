@@ -20,8 +20,6 @@ public sealed class ApprovalDecisionEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(1000).HasComment("Optional approver comment.");
         builder.Property(x => x.DecidedAtUtc).HasColumnName("decided_at_utc").IsRequired().HasComment("UTC time when the decision was recorded.");
         builder.HasIndex(x => new { x.ChainId, x.StepNo, x.ActorType, x.ActorRef, x.OnBehalfOfActorType, x.OnBehalfOfActorRef })
-            .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf")
-            .IsUnique()
-            .AreNullsDistinct(false);
+            .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf");
     }
 }

@@ -163,9 +163,8 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("ChainId", "StepNo", "ActorType", "ActorRef", "OnBehalfOfActorType", "OnBehalfOfActorRef")
-                        .IsUnique()
-                        .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf"), false);
+                    b.HasIndex("ChainId", "StepNo", "ActorType", "ActorRef", "OnBehalfOfActorType", "OnBehalfOfActorRef")
+                        .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf");
 
                     b.ToTable("approval_decisions", "business_approval", t =>
                         {

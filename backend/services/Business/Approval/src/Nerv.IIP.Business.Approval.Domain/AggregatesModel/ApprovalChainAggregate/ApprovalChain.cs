@@ -88,7 +88,8 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             && x.ActorType == normalizedActorType
             && x.ActorRef == normalizedActorRef
             && x.OnBehalfOfActorType == normalizedOnBehalfOfActorType
-            && x.OnBehalfOfActorRef == normalizedOnBehalfOfActorRef);
+            && x.OnBehalfOfActorRef == normalizedOnBehalfOfActorRef
+            && x.DecidedAtUtc >= StartedAtUtc);
         if (sameActorDecision is not null)
         {
             if (sameActorDecision.Decision == normalizedDecision && sameActorDecision.Comment == normalizedComment)
@@ -169,6 +170,116 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         return approvalDecision;
     }
 
+    public void Withdraw(string actorType, string actorRef, string? reason, DateTimeOffset withdrawnAtUtc)
+    {
+        _ = ApprovalText.RequiredLower(actorType);
+        _ = ApprovalText.Required(actorRef);
+        _ = ApprovalText.Optional(reason);
+        if (Status is not ApprovalChainStatuses.Pending)
+        {
+            throw new InvalidOperationException("Only pending approval chains can be withdrawn.");
+        }
+
+        foreach (var step in steps.Where(x => x.Status == ApprovalStepStatuses.Pending))
+        {
+            step.Withdraw(withdrawnAtUtc);
+        }
+
+        Status = ApprovalChainStatuses.Withdrawn;
+        CompletedAtUtc = withdrawnAtUtc;
+    }
+
+    public void Resubmit(string actorType, string actorRef, string? reason, DateTimeOffset resubmittedAtUtc)
+    {
+        _ = ApprovalText.RequiredLower(actorType);
+        _ = ApprovalText.Required(actorRef);
+        _ = ApprovalText.Optional(reason);
+        _ = resubmittedAtUtc;
+        if (Status is not (ApprovalChainStatuses.Returned or ApprovalChainStatuses.Withdrawn))
+        {
+            throw new InvalidOperationException("Only returned or withdrawn approval chains can be resubmitted.");
+        }
+
+        foreach (var step in steps.Where(x => x.Status is ApprovalStepStatuses.Returned or ApprovalStepStatuses.Rejected or ApprovalStepStatuses.Withdrawn))
+        {
+            step.ResetForResubmission();
+        }
+
+        Status = ApprovalChainStatuses.Pending;
+        StartedAtUtc = resubmittedAtUtc;
+        CompletedAtUtc = null;
+    }
+
+    public ApprovalStep AddSigner(
+        int stepNo,
+        string approverType,
+        string approverRef,
+        string requestedByActorType,
+        string requestedByActorRef,
+        string? reason)
+    {
+        EnsureCurrentPendingStepNo(stepNo);
+        var normalizedApproverType = ApprovalText.RequiredLower(approverType);
+        var normalizedApproverRef = ApprovalText.Required(approverRef);
+        _ = ApprovalText.RequiredLower(requestedByActorType);
+        _ = ApprovalText.Required(requestedByActorRef);
+        _ = ApprovalText.Optional(reason);
+        if (steps.Any(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedApproverType
+                && x.ApproverRef == normalizedApproverRef
+                && x.Status == ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Approval signer already exists on the pending step.");
+        }
+
+        var baseStep = steps
+            .Where(x => x.StepNo == stepNo)
+            .OrderBy(x => x.StepName)
+            .First();
+        foreach (var step in steps.Where(x => x.StepNo == stepNo && x.Status == ApprovalStepStatuses.Pending))
+        {
+            step.RequireAllCompletionPolicy();
+        }
+
+        var addedStep = ApprovalStep.AdditionalSigner(baseStep, normalizedApproverType, normalizedApproverRef);
+        steps.Add(addedStep);
+        return addedStep;
+    }
+
+    public void Transfer(
+        int stepNo,
+        string fromActorType,
+        string fromActorRef,
+        string toActorType,
+        string toActorRef,
+        string requestedByActorType,
+        string requestedByActorRef,
+        string? reason)
+    {
+        EnsureCurrentPendingStepNo(stepNo);
+        var normalizedFromActorType = ApprovalText.RequiredLower(fromActorType);
+        var normalizedFromActorRef = ApprovalText.Required(fromActorRef);
+        var normalizedToActorType = ApprovalText.RequiredLower(toActorType);
+        var normalizedToActorRef = ApprovalText.Required(toActorRef);
+        _ = ApprovalText.RequiredLower(requestedByActorType);
+        _ = ApprovalText.Required(requestedByActorRef);
+        _ = ApprovalText.Optional(reason);
+        if (steps.Any(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedToActorType
+                && x.ApproverRef == normalizedToActorRef
+                && x.Status == ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Transfer target is already assigned to the pending step.");
+        }
+
+        var step = steps.SingleOrDefault(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedFromActorType
+                && x.ApproverRef == normalizedFromActorRef
+                && x.Status == ApprovalStepStatuses.Pending)
+            ?? throw new InvalidOperationException("No pending approval step is assigned to the transfer source actor.");
+        step.TransferTo(normalizedToActorType, normalizedToActorRef);
+    }
+
     public int MarkOverdueSteps(DateTimeOffset nowUtc)
     {
         if (Status is not ApprovalChainStatuses.Pending)
@@ -189,6 +300,34 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         }
 
         return marked;
+    }
+
+    private void EnsureCurrentPendingStepNo(int stepNo)
+    {
+        if (Status is not ApprovalChainStatuses.Pending)
+        {
+            throw new InvalidOperationException("Approval chain is terminal.");
+        }
+
+        if (stepNo <= 0)
+        {
+            throw new InvalidOperationException("Approval step number must be positive.");
+        }
+
+        if (steps.All(x => x.StepNo != stepNo))
+        {
+            throw new InvalidOperationException("Approval step was not found.");
+        }
+
+        if (CanActOnStepNo(stepNo) is false)
+        {
+            throw new InvalidOperationException("Approval steps must be changed in sequence.");
+        }
+
+        if (steps.All(x => x.StepNo != stepNo || x.Status != ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Approval step is already resolved.");
+        }
     }
 
     private bool CanActOnStepNo(int stepNo)
@@ -220,6 +359,28 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
         DueAtUtc = templateStep.DueInHours.HasValue ? startedAtUtc.AddHours(templateStep.DueInHours.Value) : null;
     }
 
+    private ApprovalStep(
+        int stepNo,
+        string stepName,
+        string? parallelGroupKey,
+        string completionPolicy,
+        string? conditionExpression,
+        string approverType,
+        string approverRef,
+        DateTimeOffset? dueAtUtc)
+    {
+        Id = new ApprovalStepId(Guid.CreateVersion7());
+        StepNo = stepNo;
+        StepName = stepName;
+        ParallelGroupKey = parallelGroupKey;
+        CompletionPolicy = completionPolicy;
+        ConditionExpression = conditionExpression;
+        ApproverType = approverType;
+        ApproverRef = approverRef;
+        Status = ApprovalStepStatuses.Pending;
+        DueAtUtc = dueAtUtc;
+    }
+
     public ApprovalChainId ChainId { get; private set; } = null!;
     public int StepNo { get; private set; }
     public string StepName { get; private set; } = string.Empty;
@@ -240,6 +401,19 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     internal static ApprovalStep FromTemplate(ApprovalTemplateStep templateStep, DateTimeOffset startedAtUtc)
     {
         return new ApprovalStep(templateStep, startedAtUtc);
+    }
+
+    internal static ApprovalStep AdditionalSigner(ApprovalStep baseStep, string approverType, string approverRef)
+    {
+        return new ApprovalStep(
+            baseStep.StepNo,
+            $"{baseStep.StepName} additional signer",
+            baseStep.ParallelGroupKey,
+            ApprovalCompletionPolicies.All,
+            baseStep.ConditionExpression,
+            approverType,
+            approverRef,
+            baseStep.DueAtUtc);
     }
 
     public bool MatchesApprover(string actorType, string actorRef)
@@ -289,6 +463,47 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
         }
 
         OverdueNotifiedAtUtc ??= nowUtc;
+    }
+
+    public void Withdraw(DateTimeOffset withdrawnAtUtc)
+    {
+        if (Status != ApprovalStepStatuses.Pending)
+        {
+            return;
+        }
+
+        Status = ApprovalStepStatuses.Withdrawn;
+        ResolvedDecision = ApprovalDecisions.Withdraw;
+        ResolvedComment = "Withdrawn by requester.";
+        ResolvedAtUtc = withdrawnAtUtc;
+    }
+
+    public void ResetForResubmission()
+    {
+        Status = ApprovalStepStatuses.Pending;
+        ResolvedByActorType = null;
+        ResolvedByActorRef = null;
+        ResolvedDecision = null;
+        ResolvedComment = null;
+        ResolvedAtUtc = null;
+        OverdueNotifiedAtUtc = null;
+    }
+
+    public void RequireAllCompletionPolicy()
+    {
+        CompletionPolicy = ApprovalCompletionPolicies.All;
+    }
+
+    public void TransferTo(string approverType, string approverRef)
+    {
+        if (Status != ApprovalStepStatuses.Pending)
+        {
+            throw new InvalidOperationException("Only pending approval steps can be transferred.");
+        }
+
+        ApproverType = approverType;
+        ApproverRef = approverRef;
+        OverdueNotifiedAtUtc = null;
     }
 
     public static bool IsGroupComplete(IEnumerable<ApprovalStep> group)
@@ -386,6 +601,7 @@ public static class ApprovalChainStatuses
     public const string Approved = "approved";
     public const string Rejected = "rejected";
     public const string Returned = "returned";
+    public const string Withdrawn = "withdrawn";
 }
 
 public static class ApprovalStepStatuses
@@ -395,6 +611,7 @@ public static class ApprovalStepStatuses
     public const string Rejected = "rejected";
     public const string Returned = "returned";
     public const string Skipped = "skipped";
+    public const string Withdrawn = "withdrawn";
 }
 
 public static class ApprovalDecisions
@@ -402,6 +619,7 @@ public static class ApprovalDecisions
     public const string Approve = "approve";
     public const string Reject = "reject";
     public const string Return = "return";
+    public const string Withdraw = "withdraw";
 }
 
 public static class ApprovalConditionMatcher

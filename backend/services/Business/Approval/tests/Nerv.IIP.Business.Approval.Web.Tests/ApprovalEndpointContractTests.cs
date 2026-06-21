@@ -27,7 +27,7 @@ public sealed class ApprovalEndpointContractTests
     {
         var contracts = ApprovalEndpointContracts.All.ToArray();
 
-        Assert.Equal(12, contracts.Length);
+        Assert.Equal(16, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/templates"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
@@ -73,6 +73,26 @@ public sealed class ApprovalEndpointContractTests
             && x.PermissionCode == ApprovalPermissionCodes.Manage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "resolveApprovalStep");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/approvals/chains/{chainId}/withdraw"
+            && x.PermissionCode == ApprovalPermissionCodes.Manage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "withdrawApprovalChain");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/approvals/chains/{chainId}/resubmit"
+            && x.PermissionCode == ApprovalPermissionCodes.Manage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "resubmitApprovalChain");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer"
+            && x.PermissionCode == ApprovalPermissionCodes.Manage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "addApprovalStepSigner");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer"
+            && x.PermissionCode == ApprovalPermissionCodes.Manage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "transferApprovalStep");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/delegations"
             && x.PermissionCode == ApprovalPermissionCodes.Read
@@ -100,6 +120,10 @@ public sealed class ApprovalEndpointContractTests
     [InlineData(typeof(CheckOverdueApprovalStepsEndpoint))]
     [InlineData(typeof(ListApprovalDecisionsEndpoint))]
     [InlineData(typeof(ResolveApprovalStepEndpoint))]
+    [InlineData(typeof(WithdrawApprovalChainEndpoint))]
+    [InlineData(typeof(ResubmitApprovalChainEndpoint))]
+    [InlineData(typeof(AddApprovalStepSignerEndpoint))]
+    [InlineData(typeof(TransferApprovalStepEndpoint))]
     [InlineData(typeof(ListApprovalDelegationsEndpoint))]
     [InlineData(typeof(CreateApprovalDelegationEndpoint))]
     [InlineData(typeof(RevokeApprovalDelegationEndpoint))]
@@ -237,6 +261,79 @@ public sealed class ApprovalEndpointContractTests
         var decision = await dbContext.ApprovalDecisions.SingleAsync(x => x.Id == decisionId, CancellationToken.None);
         Assert.Equal("u-backup", decision.ActorRef);
         Assert.Equal("u-engineering", decision.OnBehalfOfActorRef);
+    }
+
+    [Fact]
+    public async Task Approval_action_commands_withdraw_resubmit_add_signer_and_transfer()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = NewTemplate();
+        dbContext.ApprovalTemplates.Add(template);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+        dbContext.ApprovalChains.Add(chain);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new WithdrawApprovalChainCommandHandler(dbContext).Handle(new WithdrawApprovalChainCommand(
+            chain.Id,
+            "user",
+            "u-requester",
+            "duplicate"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ResubmitApprovalChainCommandHandler(dbContext).Handle(new ResubmitApprovalChainCommand(
+            chain.Id,
+            "user",
+            "u-requester",
+            "reworked"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new TransferApprovalStepCommandHandler(dbContext).Handle(new TransferApprovalStepCommand(
+            chain.Id,
+            1,
+            "user",
+            "u-engineering",
+            "user",
+            "u-engineering-backup",
+            "user",
+            "u-manager",
+            "shift change"), CancellationToken.None);
+        var addedStepId = await new AddApprovalStepSignerCommandHandler(dbContext).Handle(new AddApprovalStepSignerCommand(
+            chain.Id,
+            1,
+            "user",
+            "u-finance",
+            "user",
+            "u-engineering-backup",
+            "amount threshold"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var stored = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chain.Id, CancellationToken.None);
+        Assert.Equal(ApprovalChainStatuses.Pending, stored.Status);
+        Assert.Contains(stored.Steps, x => x.Id == addedStepId && x.ApproverRef == "u-finance");
+        Assert.Contains(stored.Steps, x => x.StepNo == 1 && x.ApproverRef == "u-engineering-backup");
+    }
+
+    [Fact]
+    public async Task Approval_action_commands_reject_invalid_states()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = NewTemplate();
+        dbContext.ApprovalTemplates.Add(template);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+        dbContext.ApprovalChains.Add(chain);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new ResubmitApprovalChainCommandHandler(dbContext).Handle(
+            new ResubmitApprovalChainCommand(chain.Id, "user", "u-requester", "retry"),
+            CancellationToken.None));
+        chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext).Handle(
+            new AddApprovalStepSignerCommand(chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
+            CancellationToken.None));
     }
 
     [Fact]

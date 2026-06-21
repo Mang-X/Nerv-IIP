@@ -99,6 +99,88 @@ public sealed class ApprovalAggregateTests
     }
 
     [Fact]
+    public void Pending_chain_can_be_withdrawn_and_no_longer_resolved()
+    {
+        var chain = NewChain();
+
+        chain.Withdraw("user", "u-requester", "duplicate request", DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            chain.ResolveStep(1, "user", "u-engineering", "approve", "ok"));
+        Assert.Equal("withdrawn", chain.Status);
+        Assert.Contains("terminal", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Returned_or_withdrawn_chain_can_be_resubmitted()
+    {
+        var chain = NewChain();
+        chain.ResolveStep(1, "user", "u-engineering", "return", "needs changes");
+
+        chain.Resubmit("user", "u-requester", "reworked", DateTimeOffset.Parse("2026-06-21T09:00:00Z"));
+
+        Assert.Equal("pending", chain.Status);
+        Assert.Null(chain.CompletedAtUtc);
+        Assert.Equal(ApprovalStepStatuses.Pending, chain.Steps.Single(x => x.StepNo == 1).Status);
+    }
+
+    [Fact]
+    public void Resubmitted_returned_step_can_be_decided_again_by_same_actor()
+    {
+        var chain = NewChain();
+        chain.ResolveStep(1, "user", "u-engineering", "return", "needs changes");
+        chain.Resubmit("user", "u-requester", "reworked", DateTimeOffset.UtcNow.AddMinutes(1));
+
+        var decision = chain.ResolveStep(1, "user", "u-engineering", "approve", "ok now");
+
+        Assert.Equal(ApprovalDecisions.Approve, decision.Decision);
+        Assert.Equal(2, chain.Decisions.Count);
+    }
+
+    [Fact]
+    public void Pending_chain_cannot_be_resubmitted_without_terminal_rework_state()
+    {
+        var chain = NewChain();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            chain.Resubmit("user", "u-requester", "retry", DateTimeOffset.Parse("2026-06-21T09:00:00Z")));
+
+        Assert.Contains("returned or withdrawn", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Add_signer_requires_the_added_current_step_before_next_step_can_resolve()
+    {
+        var chain = NewChain();
+
+        var addedStep = chain.AddSigner(1, "user", "u-finance", "user", "u-engineering", "amount threshold");
+        chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
+        var premature = Assert.Throws<InvalidOperationException>(() =>
+            chain.ResolveStep(2, "user", "u-quality", "approve", "ok"));
+        chain.ResolveStep(1, "user", "u-finance", "approve", "ok");
+        chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
+
+        Assert.Equal(1, addedStep.StepNo);
+        Assert.Contains("sequence", premature.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("approved", chain.Status);
+    }
+
+    [Fact]
+    public void Transfer_reassigns_current_pending_step_and_blocks_previous_actor()
+    {
+        var chain = NewChain();
+
+        chain.Transfer(1, "user", "u-engineering", "user", "u-backup", "user", "u-manager", "shift change");
+
+        var previousActor = Assert.Throws<InvalidOperationException>(() =>
+            chain.ResolveStep(1, "user", "u-engineering", "approve", "ok"));
+        chain.ResolveStep(1, "user", "u-backup", "approve", "ok");
+
+        Assert.Contains("assigned", previousActor.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(chain.Steps, x => x.StepNo == 1 && x.ApproverRef == "u-backup");
+    }
+
+    [Fact]
     public void Approved_chain_emits_approved_event_after_last_required_step()
     {
         var chain = NewChain();
