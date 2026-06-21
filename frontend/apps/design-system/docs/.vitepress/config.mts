@@ -143,6 +143,7 @@ export default defineConfig({
           items: [
             { text: '概览', link: '/components/mobile/' },
             { text: '完整示例', link: '/components/mobile/gallery' },
+            { text: 'AppShellMobile 应用外壳', link: '/components/mobile/app-shell-mobile' },
           ],
         },
         {
@@ -218,6 +219,13 @@ export default defineConfig({
             { text: 'Grid 宫格', link: '/components/mobile/grid' },
             { text: 'PullRefresh 下拉刷新', link: '/components/mobile/pull-refresh' },
             { text: 'SwipeCell 侧滑操作', link: '/components/mobile/swipe-cell' },
+          ],
+        },
+        {
+          text: '长列表',
+          items: [
+            { text: 'VirtualList 虚拟列表', link: '/components/mobile/virtual-list' },
+            { text: 'InfiniteList 无限滚动', link: '/components/mobile/infinite-list' },
           ],
         },
       ],
