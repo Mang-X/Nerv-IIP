@@ -3,6 +3,7 @@ import type { DataTableColumn } from '@nerv-iip/ui'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -50,6 +51,7 @@ const {
 } = useMesDispatchTasks()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { workers } = useBusinessWorkers()
+const { resolveWorkCenter } = useMesDisplayNames()
 const statusFilter = shallowRef('all')
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -72,7 +74,7 @@ const columns: DataTableColumn<DispatchRow>[] = [
   { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44' },

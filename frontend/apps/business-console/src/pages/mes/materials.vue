@@ -2,6 +2,7 @@
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
 import { mesMaterialIssueStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -34,6 +35,7 @@ const {
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { resolveSku } = useMesDisplayNames()
 const statusFilter = shallowRef('all')
 
 // 待收料：已下发但收料未齐的领料申请——驱动「催收料」动作（非机械计数，不冒充后端总量）。
@@ -49,7 +51,7 @@ type RequestRow = (typeof materialIssueRequests)['value'][number]
 const columns: DataTableColumn<RequestRow>[] = [
   { key: 'requestId', header: '申请号', cellClass: 'font-medium', accessor: (r) => r.requestId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
-  { key: 'materialId', header: '物料', accessor: (r) => r.materialCode ?? r.materialId ?? '无' },
+  { key: 'materialId', header: '物料', accessor: (r) => resolveSku(r.materialCode ?? r.materialId) ?? '无' },
   { key: 'receivedQuantity', header: '收料进度', width: 'w-44' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'wmsRequestId', header: '出库单', width: 'w-28' },

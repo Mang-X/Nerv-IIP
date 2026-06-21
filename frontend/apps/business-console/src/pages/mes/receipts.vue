@@ -3,6 +3,7 @@ import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-clien
 import type { DataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -50,6 +51,7 @@ const {
   refreshReceiptRequests,
 } = useMesFinishedGoodsReceipts()
 const { page, pageSize, resetPage } = usePagedList(filters, { resetOn: [() => filters.status] })
+const { resolveSku } = useMesDisplayNames()
 
 const route = useRoute()
 const successMessage = shallowRef('')
@@ -123,7 +125,7 @@ type ReceiptRow = (typeof receiptRequests)['value'][number]
 const columns: DataTableColumn<ReceiptRow>[] = [
   { key: 'requestNo', header: '入库单', cellClass: 'font-medium', accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
-  { key: 'skuId', header: '成品', accessor: (r) => r.skuCode ?? r.skuId ?? '无' },
+  { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
   { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
@@ -245,7 +247,7 @@ function isNonEmpty(value: string) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-skuId="{ row }">
-        <span v-if="row.skuId">{{ row.skuCode ?? row.skuId }}</span>
+        <span v-if="row.skuId">{{ resolveSku(row.skuCode ?? row.skuId) }}</span>
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>

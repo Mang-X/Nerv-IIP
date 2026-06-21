@@ -3,6 +3,7 @@ import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } 
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -42,6 +43,7 @@ const {
 } = useMesOperationTasks()
 
 const router = useRouter()
+const { resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
@@ -102,7 +104,7 @@ const columns: DataTableColumn<Row>[] = [
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
