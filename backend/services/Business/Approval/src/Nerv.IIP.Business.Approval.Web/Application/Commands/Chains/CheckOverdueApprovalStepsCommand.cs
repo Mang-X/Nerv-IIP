@@ -21,9 +21,9 @@ public interface IApprovalClock
     DateTimeOffset UtcNow { get; }
 }
 
-public sealed class SystemApprovalClock : IApprovalClock
+public sealed class SystemApprovalClock(TimeProvider timeProvider) : IApprovalClock
 {
-    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+    public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
 }
 
 public sealed class CheckOverdueApprovalStepsCommandHandler(ApplicationDbContext dbContext, IApprovalClock clock)
