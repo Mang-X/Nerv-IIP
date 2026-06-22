@@ -285,8 +285,6 @@ const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
   { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
   { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
-  { key: 'productionEngineeringSnapshotSource', header: '工程源' },
-  { key: 'inventorySnapshotSource', header: '库存源' },
   { key: 'actions', header: '', align: 'end', width: 'w-24' },
 ]
 const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
@@ -361,9 +359,6 @@ function formatDate(value?: string | null) {
 }
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
-}
-function formatSource(value?: string | null) {
-  return value && value.length > 0 ? value : '未采集'
 }
 </script>
 
@@ -530,8 +525,6 @@ function formatSource(value?: string | null) {
         <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
         <template #cell-coverage="{ row }"><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template>
         <template #cell-availabilityCount="{ row }"><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template>
-        <template #cell-productionEngineeringSnapshotSource="{ row }">{{ formatSource(row.productionEngineeringSnapshotSource) }}</template>
-        <template #cell-inventorySnapshotSource="{ row }">{{ formatSource(row.inventorySnapshotSource) }}</template>
         <template #cell-actions="{ row }">
           <Button
             size="sm"
