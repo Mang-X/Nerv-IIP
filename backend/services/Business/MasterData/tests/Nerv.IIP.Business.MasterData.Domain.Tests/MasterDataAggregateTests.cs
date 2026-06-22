@@ -293,6 +293,56 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Business_partner_captures_customer_credit_limit_and_currency()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-001",
+            "customer",
+            "Credit Customer",
+            ["customer"],
+            null,
+            defaultCurrencyCode: "CNY",
+            creditLimit: 1200m,
+            creditCurrencyCode: "cny");
+
+        Assert.Equal(1200m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
+
+        partner.UpdateCreditLimit(900m, "usd");
+
+        Assert.Equal(900m, partner.CreditLimit);
+        Assert.Equal("USD", partner.CreditCurrencyCode);
+    }
+
+    [Fact]
+    public void Business_partner_rejects_invalid_credit_master_data()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-BAD",
+            "customer",
+            "Bad Credit Customer",
+            ["customer"],
+            null,
+            creditLimit: -1m,
+            creditCurrencyCode: "CNY"));
+
+        Assert.Throws<ArgumentException>(() => BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-BAD",
+            "customer",
+            "Bad Credit Customer",
+            ["customer"],
+            null,
+            creditLimit: 100m,
+            creditCurrencyCode: " "));
+    }
+
+    [Fact]
     public void Business_partner_legacy_update_preserves_existing_roles_when_replacing_primary_role()
     {
         var partner = BusinessPartner.Create(

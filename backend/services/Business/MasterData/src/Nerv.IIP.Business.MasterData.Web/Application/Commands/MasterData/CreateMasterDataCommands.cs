@@ -416,7 +416,9 @@ public sealed record CreateBusinessPartnerCommand(
     string? PrimaryAddress = null,
     string? PrimaryContactName = null,
     string? PrimaryContactEmail = null,
-    string? PrimaryContactPhone = null) : ICommand<MasterDataResourceResult>;
+    string? PrimaryContactPhone = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<CreateBusinessPartnerCommand, MasterDataResourceResult>
@@ -430,7 +432,7 @@ public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerReposito
             request.EnvironmentId,
             request.Code,
             request.IdempotencyKey,
-            MasterDataCodingService.Fingerprint(request.PartnerType, request.Name, request.PartnerRoles ?? [], request.TaxId),
+            MasterDataCodingService.Fingerprint(request.PartnerType, request.Name, request.PartnerRoles ?? [], request.TaxId, request.CreditLimit, request.CreditCurrencyCode),
             cancellationToken,
             new Dictionary<string, string> { ["partnerType"] = request.PartnerType });
         if (allocation.IsIdempotentReplay)
@@ -464,7 +466,9 @@ public sealed class CreateBusinessPartnerCommandHandler(IBusinessPartnerReposito
             request.PrimaryAddress,
             request.PrimaryContactName,
             request.PrimaryContactEmail,
-            request.PrimaryContactPhone);
+            request.PrimaryContactPhone,
+            request.CreditLimit,
+            request.CreditCurrencyCode);
         await repository.AddAsync(partner, cancellationToken);
         return new MasterDataResourceResult("business-partner", partner.Code, partner.Name);
     }

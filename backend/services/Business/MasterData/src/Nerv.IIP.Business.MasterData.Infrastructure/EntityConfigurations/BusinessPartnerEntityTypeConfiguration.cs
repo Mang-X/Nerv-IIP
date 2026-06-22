@@ -24,6 +24,8 @@ public sealed class BusinessPartnerEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.PrimaryContactName).HasColumnName("primary_contact_name").HasMaxLength(200).HasComment("Optional primary contact display name.");
         builder.Property(x => x.PrimaryContactEmail).HasColumnName("primary_contact_email").HasMaxLength(200).HasComment("Optional primary contact email address.");
         builder.Property(x => x.PrimaryContactPhone).HasColumnName("primary_contact_phone").HasMaxLength(80).HasComment("Optional primary contact phone number.");
+        builder.Property(x => x.CreditLimit).HasColumnName("credit_limit").HasPrecision(18, 2).HasComment("Optional customer credit limit used by ERP sales credit checks.");
+        builder.Property(x => x.CreditCurrencyCode).HasColumnName("credit_currency_code").HasMaxLength(10).HasComment("ISO currency code for the customer credit limit.");
         builder.Property(x => x.Disabled).HasColumnName("disabled").IsRequired().HasComment("Disabled flag that hides the partner from active use.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the business partner was created.");
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the business partner was last updated.");

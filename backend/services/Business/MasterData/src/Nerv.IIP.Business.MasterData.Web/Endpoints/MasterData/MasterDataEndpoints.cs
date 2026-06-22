@@ -263,7 +263,9 @@ public sealed record UpdateMasterDataResourceRequest(
     string? CostCenterCode = null,
     bool? Bottleneck = null,
     string? HolidayCalendarCode = null,
-    int? BreakMinutes = null);
+    int? BreakMinutes = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
     : MasterDataEndpoint<UpdateMasterDataResourceRequest, ResponseData<MasterDataResourceDetail>>
@@ -368,7 +370,9 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.CostCenterCode,
                 req.Bottleneck,
                 req.HolidayCalendarCode,
-                req.BreakMinutes),
+                req.BreakMinutes,
+                req.CreditLimit,
+                req.CreditCurrencyCode),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
@@ -557,7 +561,14 @@ public sealed record CreateBusinessPartnerRequest(
     string? PrimaryAddress = null,
     string? PrimaryContactName = null,
     string? PrimaryContactEmail = null,
-    string? PrimaryContactPhone = null);
+    string? PrimaryContactPhone = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
+
+public sealed record GetBusinessPartnerCreditRequest(
+    [property: RouteParam] string CustomerCode,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed class CreateBusinessPartnerEndpoint(ISender sender)
     : MasterDataEndpoint<CreateBusinessPartnerRequest, ResponseData<MasterDataResourceResponse>>
@@ -585,8 +596,26 @@ public sealed class CreateBusinessPartnerEndpoint(ISender sender)
             req.PrimaryAddress,
             req.PrimaryContactName,
             req.PrimaryContactEmail,
-            req.PrimaryContactPhone), ct);
+            req.PrimaryContactPhone,
+            req.CreditLimit,
+            req.CreditCurrencyCode), ct);
         await Send.OkAsync(ToResponse(result).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class GetBusinessPartnerCreditEndpoint(ISender sender)
+    : MasterDataEndpoint<GetBusinessPartnerCreditRequest, ResponseData<Nerv.IIP.Contracts.MasterData.BusinessPartnerCreditProfile>>
+{
+    public override void Configure()
+    {
+        var contract = MasterDataEndpointContracts.Get<GetBusinessPartnerCreditEndpoint>();
+        ConfigureMasterDataContract(contract);
+    }
+
+    public override async Task HandleAsync(GetBusinessPartnerCreditRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBusinessPartnerCreditQuery(req.OrganizationId, req.EnvironmentId, req.CustomerCode), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -1514,6 +1543,7 @@ public static class MasterDataEndpointContracts
         new(typeof(CreateUnitOfMeasureEndpoint), "POST", "/api/business/v1/master-data/units-of-measure", BusinessPermissionCodes.MasterDataProductsManage, "createBusinessMasterDataUnitOfMeasure"),
         new(typeof(CreateUomConversionEndpoint), "POST", "/api/business/v1/master-data/uom-conversions", BusinessPermissionCodes.MasterDataProductsManage, "createBusinessMasterDataUomConversion"),
         new(typeof(CreateBusinessPartnerEndpoint), "POST", "/api/business/v1/master-data/partners", BusinessPermissionCodes.MasterDataPartnersManage, "createBusinessMasterDataPartner"),
+        new(typeof(GetBusinessPartnerCreditEndpoint), "GET", "/api/business/v1/master-data/partners/{customerCode}/credit", BusinessPermissionCodes.MasterDataPartnersRead, "getBusinessMasterDataPartnerCredit"),
         new(typeof(CreateDepartmentEndpoint), "POST", "/api/business/v1/master-data/departments", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataDepartment"),
         new(typeof(CreateTeamEndpoint), "POST", "/api/business/v1/master-data/teams", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataTeam"),
         new(typeof(CreateWorkshopEndpoint), "POST", "/api/business/v1/master-data/workshops", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorkshop"),

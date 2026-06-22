@@ -1,11 +1,13 @@
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.ServiceAuth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -278,6 +280,77 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public void Create_sales_order_contract_no_longer_accepts_caller_supplied_credit_limit()
+    {
+        Assert.DoesNotContain(typeof(CreateSalesOrderCommand).GetProperties(), property => property.Name == "CustomerCreditLimit");
+        Assert.DoesNotContain(typeof(CreateSalesOrderRequest).GetProperties(), property => property.Name == "CustomerCreditLimit");
+    }
+
+    [Fact]
+    public async Task Create_sales_order_blocks_when_customer_credit_master_data_is_missing()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-MISSING-CREDIT", "CUST-MISSING", "SKU-FG-001");
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QUO-MISSING-CREDIT"),
+            CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(null)).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-MISSING-CREDIT", "QUO-MISSING-CREDIT"),
+                CancellationToken.None));
+
+        Assert.Contains("credit limit", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_sales_order_uses_master_data_credit_limit_and_blocks_overrun()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-CREDIT-BLOCK", "CUST-001", "SKU-FG-001");
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-BLOCK"),
+            CancellationToken.None);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand("org-001", "env-dev", "AR-CREDIT", "DO-CREDIT", "CUST-001", 50m, "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 120m, "CNY"))).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-BLOCK", "QUO-CREDIT-BLOCK"),
+                CancellationToken.None));
+
+        Assert.Contains("credit limit", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_sales_order_passes_with_master_data_credit_limit()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        await CreateQuotationAsync(dbContext, "QUO-CREDIT-PASS", "CUST-001", "SKU-FG-001");
+        await new ApproveQuotationCommandHandler(dbContext).Handle(
+            new ApproveQuotationCommand("org-001", "env-dev", "QUO-CREDIT-PASS"),
+            CancellationToken.None);
+
+        var salesOrderId = await new CreateSalesOrderCommandHandler(
+                dbContext,
+                new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 250m, "CNY"))).Handle(
+                new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-PASS", "QUO-CREDIT-PASS"),
+                CancellationToken.None);
+
+        Assert.NotNull(salesOrderId);
+    }
+
+    [Fact]
     public async Task Finance_list_queries_apply_status_keyword_and_server_paging()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -375,7 +448,9 @@ public sealed class ErpSalesFinanceEndpointContractTests
         await new ApproveQuotationCommandHandler(dbContext).Handle(
             new ApproveQuotationCommand(organizationId, "env-dev", quotationNo),
             CancellationToken.None);
-        await new CreateSalesOrderCommandHandler(dbContext).Handle(
+        await new CreateSalesOrderCommandHandler(
+            dbContext,
+            new StaticCustomerCreditProfileReader(new CustomerCreditProfile(customerCode, 1_000_000m, "CNY"))).Handle(
             new CreateSalesOrderCommand(organizationId, "env-dev", salesOrderNo, quotationNo),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -419,5 +494,13 @@ internal static class ErpTestProvider
         services.AddDbContext<Infrastructure.ApplicationDbContext>(options =>
             options.UseInMemoryDatabase($"erp-sales-finance-contract-{Guid.NewGuid():N}"));
         return services.BuildServiceProvider();
+    }
+}
+
+internal sealed class StaticCustomerCreditProfileReader(CustomerCreditProfile? profile) : ICustomerCreditProfileReader
+{
+    public Task<CustomerCreditProfile?> GetAsync(string organizationId, string environmentId, string customerCode, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(profile);
     }
 }
