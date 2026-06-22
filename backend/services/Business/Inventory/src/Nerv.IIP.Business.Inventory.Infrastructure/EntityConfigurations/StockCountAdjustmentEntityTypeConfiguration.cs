@@ -12,7 +12,7 @@ public sealed class StockCountAdjustmentEntityTypeConfiguration : IEntityTypeCon
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_adjustments_site_code_format", "site_code");
-            tableBuilder.HasCheckConstraint("ck_stock_count_adjustments_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+            tableBuilder.HasCheckConstraint("ck_stock_count_adjustments_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock count adjustment aggregate id.");

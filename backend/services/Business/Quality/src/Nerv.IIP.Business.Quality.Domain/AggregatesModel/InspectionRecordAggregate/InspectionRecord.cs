@@ -227,6 +227,12 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             return;
         }
 
+        if (Result == InspectionRecordResults.ConditionalRelease)
+        {
+            this.AddDomainEvent(new InspectionConditionalReleasedDomainEvent(this));
+            return;
+        }
+
         this.AddDomainEvent(new InspectionRejectedDomainEvent(this));
     }
 

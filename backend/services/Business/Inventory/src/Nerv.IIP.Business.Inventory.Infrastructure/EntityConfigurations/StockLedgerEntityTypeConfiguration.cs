@@ -12,7 +12,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_ledgers_site_code_format", "site_code");
-            tableBuilder.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+            tableBuilder.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock ledger aggregate id.");
@@ -24,7 +24,7 @@ public sealed class StockLedgerEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Inventory stock location code.");
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional lot or batch number dimension.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number dimension.");
-        builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Quality status carried by stock facts.");
+        builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Quality status carried by stock facts: unrestricted, quality, restricted or blocked.");
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Stock ownership type such as company, customer or supplier.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional public owner reference id.");
         builder.Property(x => x.OnHandQuantity).HasColumnName("on_hand_quantity").IsRequired().HasPrecision(18, 6).HasComment("Current on-hand stock quantity.");
