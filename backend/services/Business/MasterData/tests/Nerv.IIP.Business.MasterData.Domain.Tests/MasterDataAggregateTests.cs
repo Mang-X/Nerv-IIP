@@ -330,7 +330,7 @@ public sealed class MasterDataAggregateTests
             creditLimit: -1m,
             creditCurrencyCode: "CNY"));
 
-        Assert.Throws<ArgumentException>(() => BusinessPartner.Create(
+        var missingCurrency = Assert.Throws<ArgumentException>(() => BusinessPartner.Create(
             "org-001",
             "env-dev",
             "CUST-BAD",
@@ -340,6 +340,8 @@ public sealed class MasterDataAggregateTests
             null,
             creditLimit: 100m,
             creditCurrencyCode: " "));
+        Assert.Equal("creditCurrencyCode", missingCurrency.ParamName);
+        Assert.Contains("Credit limit requires a currency code", missingCurrency.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -8,6 +8,8 @@ using Nerv.IIP.ServiceAuth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
+using System.Net;
+using System.Text;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -287,6 +289,20 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Master_data_credit_reader_wraps_non_json_error_responses_as_known_exception()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(HttpStatusCode.BadGateway, "<html>bad gateway</html>", "text/html"))
+        {
+            BaseAddress = new Uri("http://masterdata.test"),
+        };
+        var reader = new HttpCustomerCreditProfileReader(httpClient, new TestInternalServiceTokenProvider());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => reader.GetAsync("org-001", "env-dev", "CUST-001", CancellationToken.None));
+
+        Assert.Contains("HTTP 502", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Create_sales_order_blocks_when_customer_credit_master_data_is_missing()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -502,5 +518,21 @@ internal sealed class StaticCustomerCreditProfileReader(CustomerCreditProfile? p
     public Task<CustomerCreditProfile?> GetAsync(string organizationId, string environmentId, string customerCode, CancellationToken cancellationToken)
     {
         return Task.FromResult(profile);
+    }
+}
+
+internal sealed class TestInternalServiceTokenProvider : IInternalServiceTokenProvider
+{
+    public string BearerToken => "test-internal-token";
+}
+
+internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string body, string mediaType) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent(body, Encoding.UTF8, mediaType),
+        });
     }
 }

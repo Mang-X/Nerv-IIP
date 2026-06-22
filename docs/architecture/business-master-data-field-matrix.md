@@ -31,6 +31,8 @@ This matrix freezes the first governance pass for BusinessMasterData. It is not 
 | ResourceCapability | resourceCode, resourceType, capabilityCode, validMaterialTypes, capacityMin, capacityMax, capacityUomCode, compatibleStorageConditions, effectiveFrom, effectiveTo | ProductEngineering, Planning, MES, Maintenance | Product-specific routing parameter; belongs to ProductEngineering |
 | ReferenceData | codeSet, code, name, description, status, effectiveFrom, effectiveTo | All business domains | Transaction-specific states that only one domain owns |
 
+BusinessPartner `creditLimit` and `creditCurrencyCode` are nullable for onboarding and import compatibility, but the generic update API treats omitted or null values as "preserve existing". Clearing an existing credit limit is not currently exposed through that generic update surface; add a dedicated credit-limit command if that business operation becomes required.
+
 ## Process-Manufacturing-Sensitive Fields
 
 | Fact | MasterData role | ProductEngineering role | Quality / Inventory / MES role |

@@ -230,6 +230,11 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(creditLimit), creditLimit.Value, "Credit limit cannot be negative.");
         }
 
+        if (string.IsNullOrWhiteSpace(creditCurrencyCode))
+        {
+            throw new ArgumentException("Credit limit requires a currency code.", nameof(creditCurrencyCode));
+        }
+
         var currency = Required(creditCurrencyCode ?? string.Empty).ToUpperInvariant();
         return (creditLimit.Value, currency);
     }
