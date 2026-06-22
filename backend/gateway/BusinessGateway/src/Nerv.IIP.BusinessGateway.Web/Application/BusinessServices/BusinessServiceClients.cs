@@ -3462,11 +3462,21 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
         CancellationToken cancellationToken)
     {
+        // Downstream Maintenance requires an OpenedBy for the work orders it raises; the
+        // console exposes a single RequestedBy actor, so forward it as both fields.
+        var downstreamRequest = new
+        {
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.BusinessDate,
+            request.RequestedBy,
+            OpenedBy = request.RequestedBy,
+        };
         var response = await SendAsync<DownstreamGenerateDueMaintenanceWorkOrdersResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/maintenance/plans/generate-due",
-            request,
+            downstreamRequest,
             cancellationToken);
         return new BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(
             response.GeneratedCount,
