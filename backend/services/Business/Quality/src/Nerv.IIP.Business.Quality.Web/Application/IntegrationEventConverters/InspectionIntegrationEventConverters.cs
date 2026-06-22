@@ -90,6 +90,7 @@ internal static class InspectionIntegrationEventPayloads
             occurredAtUtc,
             ToStockRelease(record, targetQualityStatus),
             record.ResultLines.Select(ToResultLinePayload).ToArray(),
+            // Quality domain stores the batch identity as BatchNo; Inventory-facing contracts expose it as LotNo.
             record.BatchNo,
             record.SerialNo,
             record.SiteCode,

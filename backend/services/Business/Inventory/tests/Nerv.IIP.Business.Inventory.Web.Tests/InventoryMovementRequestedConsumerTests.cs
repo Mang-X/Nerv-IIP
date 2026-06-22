@@ -342,6 +342,72 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
     }
 
+    [Fact]
+    public async Task Quality_inspection_result_consumer_normalizes_optional_stock_release_locator_blanks()
+    {
+        await using var dbContext = CreateContext();
+        var targetLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            null,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            null);
+        targetLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-NO-LOT",
+            "LINE-001",
+            "idem-quality-in-no-lot",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            null,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            null,
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(targetLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "   ",
+                    "",
+                    StockQualityStatus.Quality,
+                    "company",
+                    " ")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality).OnHandQuantity);
+        var unrestrictedLedger = dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Unrestricted);
+        Assert.Null(unrestrictedLedger.LotNo);
+        Assert.Null(unrestrictedLedger.SerialNo);
+        Assert.Null(unrestrictedLedger.OwnerId);
+        Assert.Equal(3m, unrestrictedLedger.OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
     [Theory]
     [InlineData(QualityIntegrationEventTypes.InspectionPassed, StockQualityStatus.Unrestricted)]
     [InlineData(QualityIntegrationEventTypes.InspectionRejected, StockQualityStatus.Blocked)]

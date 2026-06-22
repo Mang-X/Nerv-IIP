@@ -156,4 +156,53 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.Contains("\"lotNo\":\"LOT-002\"", json, StringComparison.Ordinal);
         Assert.Contains("\"uomCode\":\"kg\"", json, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Quality_inspection_result_payload_deserializes_legacy_v1_without_stock_locator_dimensions()
+    {
+        var json = """
+            {
+              "eventId": "evt-legacy-001",
+              "eventType": "quality.InspectionPassed",
+              "eventVersion": 1,
+              "occurredAtUtc": "2026-06-22T00:00:01Z",
+              "sourceService": "business-quality",
+              "correlationId": "corr-001",
+              "causationId": "cause-001",
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "actor": "system:quality",
+              "idempotencyKey": "idem-legacy-001",
+              "payload": {
+                "inspectionRecordId": "QI-001",
+                "inspectionPlanId": "PLAN-001",
+                "sourceType": "receiving",
+                "sourceService": "quality",
+                "sourceDocumentId": "RCV-001",
+                "skuCode": "SKU-FG-1000",
+                "inspectedQuantity": 3,
+                "result": "passed",
+                "dispositionReason": null,
+                "dispositionAttachmentFileIds": [],
+                "recordedAtUtc": "2026-06-22T00:00:00Z",
+                "stockRelease": null,
+                "resultLines": []
+              }
+            }
+            """;
+
+        var integrationEvent = JsonSerializer.Deserialize<InspectionResultIntegrationEvent>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(integrationEvent);
+        Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Null(integrationEvent.Payload.LotNo);
+        Assert.Null(integrationEvent.Payload.SerialNo);
+        Assert.Null(integrationEvent.Payload.SiteCode);
+        Assert.Null(integrationEvent.Payload.LocationCode);
+        Assert.Null(integrationEvent.Payload.OwnerType);
+        Assert.Null(integrationEvent.Payload.OwnerId);
+        Assert.Null(integrationEvent.Payload.UomCode);
+    }
 }
