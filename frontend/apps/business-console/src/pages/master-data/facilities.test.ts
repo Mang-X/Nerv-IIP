@@ -148,12 +148,11 @@ function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub } } }
 
 describe('master-data facilities tree page', () => {
-  it('renders title, hierarchy hint and tree nodes for all four levels', async () => {
+  it('renders title and tree nodes for all four levels', async () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
 
     expect(wrapper.text()).toContain('工厂结构')
-    expect(wrapper.text()).toContain('工厂 → 车间 → 产线 → 工作中心 → 设备')
     // 两工厂 → 根可见；车间/产线/工作中心节点（少节点默认展开）。
     expect(wrapper.text()).toContain('宁波工厂')
     expect(wrapper.text()).toContain('上海工厂')

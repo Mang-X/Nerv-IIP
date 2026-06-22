@@ -317,8 +317,6 @@ async function submitDevice() {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备（设备归属产线与工作中心）</p>
-
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>

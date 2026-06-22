@@ -696,8 +696,6 @@ function childLabelOf(type: string): string | undefined {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备。点击左侧节点查看详情，选中父级可就地新建下级。</p>
-
     <SectionCards :columns="4">
       <SectionCard description="工厂数" :value="sites.total.value" hint="生产基地" />
       <SectionCard description="车间数" :value="workshops.workshopsTotal.value" hint="组织 / 区域分组" />

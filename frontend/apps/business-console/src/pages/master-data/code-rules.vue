@@ -452,10 +452,6 @@ async function submitForm() {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      编码规则决定各业务对象的编码格式（前缀/日期/流水/校验位）。修改走版本化发布，不影响已分配的历史编码。
-    </p>
-
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
     <DataTable

@@ -510,9 +510,6 @@ function openMembers(row: BusinessConsoleResourceItem) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      左侧部门树（选中父级可就地新建子部门），右侧维护该部门的班组与成员。工人来自系统用户，选择时按姓名 / 工号检索。
-    </p>
 
     <SectionCards :columns="2">
       <SectionCard description="部门数" :value="departments.total.value" hint="组织 / 职能分组" />

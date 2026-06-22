@@ -684,9 +684,6 @@ const sortedExceptions = computed(() =>
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      班次定义作息时段与计薪时长；工作日历定义工作日 / 休息日，驱动工作中心可用产能。
-    </p>
 
     <Tabs default-value="shift">
       <TabsList>

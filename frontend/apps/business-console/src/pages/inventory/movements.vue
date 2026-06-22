@@ -189,10 +189,6 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      常规业务应从收货、完工入库、领料或盘点单据自动发起；移动来源由业务单据带出，重复提交保护由系统处理。提交后回到库存可用量确认影响。
-    </p>
-
     <DataTable
       :columns="columns"
       :rows="movementQueue"
