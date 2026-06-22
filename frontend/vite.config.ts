@@ -85,6 +85,10 @@ export default defineConfig({
           'apps/**/src/**',
           'apps/**/tsconfig.json',
           'apps/**/typed-router.d.ts',
+          // design-system's typechecked sources live under docs/.vitepress (theme
+          // + config + showcase), not src/** — include them so editing the docs
+          // app invalidates the typecheck cache instead of showing a stale green.
+          'apps/**/docs/.vitepress/**',
           'packages/**/src/**',
           'packages/**/tsconfig.json',
           'tsconfig.base.json',
@@ -102,7 +106,7 @@ export default defineConfig({
       },
       'workspace:build': {
         command:
-          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console build',
+          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/design-system build',
         dependsOn: ['workspace:typecheck'],
         input: [
           'apps/console/index.html',
@@ -115,13 +119,24 @@ export default defineConfig({
           'apps/business-console/tsconfig.json',
           'apps/business-console/vite.config.ts',
           'apps/business-console/typed-router.d.ts',
+          // design-system is a production VitePress docs site; build it under the
+          // root gate so dead links / SSR / VitePress-Rolldown breakage surface in
+          // CI. It consumes docs/** (theme + config + markdown) and both UI pkgs.
+          'apps/design-system/docs/**',
+          'apps/design-system/package.json',
+          'apps/design-system/tsconfig.json',
           'packages/api-client/src/**',
           'packages/app-shell/src/**',
           'packages/auth/src/**',
           'packages/ui/src/**',
+          'packages/ui-mobile/src/**',
           'tsconfig.base.json',
         ],
-        output: ['apps/console/dist/**', 'apps/business-console/dist/**'],
+        output: [
+          'apps/console/dist/**',
+          'apps/business-console/dist/**',
+          'apps/design-system/docs/.vitepress/dist/**',
+        ],
       },
     },
   },

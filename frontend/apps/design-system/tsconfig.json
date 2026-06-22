@@ -1,6 +1,13 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*.ts", "src/**/*.vue", "typed-router.d.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "typed-router.d.ts",
+    "docs/.vitepress/**/*.ts",
+    "docs/.vitepress/**/*.mts",
+    "docs/.vitepress/**/*.vue"
+  ],
   "compilerOptions": {
     "baseUrl": ".",
     "rootDir": "../..",
