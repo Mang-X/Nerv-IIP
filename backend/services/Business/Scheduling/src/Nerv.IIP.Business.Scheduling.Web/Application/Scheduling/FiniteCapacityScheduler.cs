@@ -1198,7 +1198,7 @@ file sealed class SchedulerState
     private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
     {
         var resourceOccupancies = new List<ResourceOccupancy>();
-        var resourcesWithPriorOccupancy = new HashSet<string>(StringComparer.Ordinal);
+        var earliestOccupancyEndByResource = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
 
         foreach (var assignment in orderedAssignments
                      .OrderBy(x => x.StartUtc)
@@ -1208,7 +1208,8 @@ file sealed class SchedulerState
             var startUtc = assignment.StartUtc;
             if (operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
                 && operation.SetupMinutes > 0
-                && resourcesWithPriorOccupancy.Contains(assignment.ResourceId))
+                && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
+                && earliestEnd <= assignment.StartUtc)
             {
                 // Placement guarantees this setup occupancy stays inside the selected shift.
                 startUtc = assignment.StartUtc - TimeSpan.FromMinutes(operation.SetupMinutes);
@@ -1218,7 +1219,11 @@ file sealed class SchedulerState
                 assignment.ResourceId,
                 startUtc,
                 assignment.EndUtc));
-            resourcesWithPriorOccupancy.Add(assignment.ResourceId);
+            if (!earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out earliestEnd)
+                || assignment.EndUtc < earliestEnd)
+            {
+                earliestOccupancyEndByResource[assignment.ResourceId] = assignment.EndUtc;
+            }
         }
 
         return resourceOccupancies;

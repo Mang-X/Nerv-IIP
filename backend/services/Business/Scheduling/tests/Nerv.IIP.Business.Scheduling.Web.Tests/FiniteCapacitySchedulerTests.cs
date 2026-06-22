@@ -773,6 +773,43 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_does_not_count_setup_for_parallel_capacity_assignment_without_prior_completed_occupancy()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "OP-CAPACITY-B",
+            OperationSequence = 20,
+            SetupMinutes = 15,
+            SourceReference = "TEST:PARALLEL-B"
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-parallel-capacity-setup-001", GeneratedAtUtc);
+
+        AssertAssignment(plan, "OP-CAPACITY", "DEV-PARALLEL-01",
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
+        AssertAssignment(plan, "OP-CAPACITY-B", "DEV-PARALLEL-01",
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-PARALLEL-01");
+        Assert.Equal(360, plan.Metrics.AssignedMinutes);
+        Assert.Equal(360, load.AssignedMinutes);
+    }
+
+    [Fact]
     public void Schedule_merges_overlapping_unavailability_when_computing_load()
     {
         var problem = CreateParallelCapacityProblem() with
