@@ -89,7 +89,15 @@ internal static class InspectionIntegrationEventPayloads
             record.DispositionAttachmentFileIds,
             occurredAtUtc,
             ToStockRelease(record, targetQualityStatus),
-            record.ResultLines.Select(ToResultLinePayload).ToArray());
+            record.ResultLines.Select(ToResultLinePayload).ToArray(),
+            // Quality domain stores the batch identity as BatchNo; Inventory-facing contracts expose it as LotNo.
+            record.BatchNo,
+            record.SerialNo,
+            record.SiteCode,
+            record.LocationCode,
+            record.OwnerType,
+            record.OwnerId,
+            record.UomCode);
     }
 
     private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record, string? targetQualityStatus)

@@ -215,6 +215,51 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_inspection_record_command_preserves_ad_hoc_stock_release()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext));
+
+        var recordId = await handler.Handle(
+            new CreateInspectionRecordCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "receiving",
+                "purchase-receipt",
+                "RCV-ADHOC-001",
+                "SKU-RM-1000",
+                10m,
+                "LOT-ADHOC-001",
+                "SER-ADHOC-001",
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null,
+                [],
+                new StockReleaseDimensionCommandInput(
+                    "kg",
+                    "SITE-02",
+                    "IQC-STAGE",
+                    "quality",
+                    "supplier",
+                    "supplier-001")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var record = Assert.Single(dbContext.InspectionRecords);
+        Assert.Equal(record.Id, recordId);
+        Assert.Equal("kg", record.UomCode);
+        Assert.Equal("SITE-02", record.SiteCode);
+        Assert.Equal("IQC-STAGE", record.LocationCode);
+        Assert.Equal("quality", record.SourceQualityStatus);
+        Assert.Equal("supplier", record.OwnerType);
+        Assert.Equal("supplier-001", record.OwnerId);
+    }
+
+    [Fact]
     public async Task List_inspection_plans_returns_offset_page_and_total_count()
     {
         await using var provider = CreateInMemoryProvider();

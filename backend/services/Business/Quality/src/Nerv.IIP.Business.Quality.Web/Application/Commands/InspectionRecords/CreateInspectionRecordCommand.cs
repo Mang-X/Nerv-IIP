@@ -114,19 +114,20 @@ public sealed class CreateInspectionRecordCommandHandler(
         else
         {
             record = InspectionRecord.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.InspectionPlanId,
-            request.SourceType,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SkuCode,
-            request.InspectedQuantity,
-            request.BatchNo,
-            request.SerialNo,
-            lines,
-            request.DispositionReason,
-            request.DispositionAttachmentFileIds);
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.InspectionPlanId,
+                request.SourceType,
+                request.SourceService,
+                request.SourceDocumentId,
+                request.SkuCode,
+                request.InspectedQuantity,
+                request.BatchNo,
+                request.SerialNo,
+                lines,
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds,
+                stockRelease);
         }
 
         await repository.AddAsync(record, cancellationToken);

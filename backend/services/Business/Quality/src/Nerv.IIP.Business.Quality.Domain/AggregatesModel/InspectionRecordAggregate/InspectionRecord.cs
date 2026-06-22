@@ -127,7 +127,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string? serialNo,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
-        IReadOnlyCollection<string> dispositionAttachmentFileIds)
+        IReadOnlyCollection<string> dispositionAttachmentFileIds,
+        StockReleaseDimension? stockRelease = null)
     {
         return new InspectionRecord(
             organizationId,
@@ -140,7 +141,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             inspectedQuantity,
             batchNo,
             serialNo,
-            null,
+            stockRelease,
             resultLines,
             dispositionReason,
             dispositionAttachmentFileIds);
