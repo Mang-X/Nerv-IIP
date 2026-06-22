@@ -602,10 +602,9 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
         }
 
         response.EnsureSuccessStatusCode();
-        return await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<MasterDataSkuPlanningDetail>(
+        return await OptionalPlanningSnapshotHttp.ReadEnvelopeDataOrDefaultAsync<MasterDataSkuPlanningDetail>(
             response,
             "MasterData returned an invalid SKU planning detail response.",
-            "MasterData returned an empty SKU planning detail response envelope.",
             cancellationToken);
     }
 
@@ -689,10 +688,29 @@ internal static class OptionalPlanningSnapshotHttp
         CancellationToken cancellationToken)
         where T : class
     {
-        ResponseDataEnvelope<T>? envelope;
+        var envelope = await ReadEnvelopeAsync<T>(response, invalidResponseMessage, cancellationToken);
+        return envelope?.Data ?? throw new OptionalPlanningSnapshotException(emptyEnvelopeMessage);
+    }
+
+    public static async Task<T?> ReadEnvelopeDataOrDefaultAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var envelope = await ReadEnvelopeAsync<T>(response, invalidResponseMessage, cancellationToken);
+        return envelope?.Data;
+    }
+
+    private static async Task<ResponseDataEnvelope<T>?> ReadEnvelopeAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
         try
         {
-            envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            return await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
         }
         catch (JsonException ex)
         {
@@ -702,8 +720,6 @@ internal static class OptionalPlanningSnapshotHttp
         {
             throw new OptionalPlanningSnapshotException(invalidResponseMessage, ex);
         }
-
-        return envelope?.Data ?? throw new OptionalPlanningSnapshotException(emptyEnvelopeMessage);
     }
 }
 

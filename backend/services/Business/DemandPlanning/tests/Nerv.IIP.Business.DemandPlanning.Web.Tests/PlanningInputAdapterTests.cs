@@ -278,6 +278,62 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Master_data_planning_parameter_client_skips_empty_single_sku_envelope()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/sku/SKU-MISSING", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": null
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-RM-1000",
+                    "displayName": "Raw material",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs",
+                    "plannedDeliveryTimeDays": 3,
+                    "safetyStockQuantity": 2
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [
+                    new PlanningParameterSnapshotItem("SKU-MISSING", "pcs", "SITE-01"),
+                    new PlanningParameterSnapshotItem("SKU-RM-1000", "pcs", "SITE-01"),
+                ]),
+            CancellationToken.None);
+
+        var parameter = Assert.Single(snapshot.PlanningParameters);
+        Assert.Equal("master-data-planning-parameters:1", snapshot.SnapshotSource);
+        Assert.Equal("SKU-RM-1000", parameter.SkuCode);
+    }
+
+    [Fact]
     public async Task Erp_scheduled_receipt_client_maps_open_purchase_order_lines_across_pages()
     {
         var handler = new StubHttpMessageHandler(request =>
