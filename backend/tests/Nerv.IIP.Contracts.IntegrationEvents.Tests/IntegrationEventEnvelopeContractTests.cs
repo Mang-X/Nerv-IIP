@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.BarcodeLabel;
 using Nerv.IIP.Contracts.Inventory;
@@ -102,5 +103,57 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.NotNull(payloadProperty);
         Assert.False(payloadProperty.PropertyType == typeof(string), $"{eventType.FullName} payload must be structured.");
         Assert.True(payloadProperty.PropertyType.Namespace?.StartsWith("Nerv.IIP.Contracts.", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void Quality_inspection_result_payload_exposes_optional_stock_locator_dimensions_in_v1()
+    {
+        var payload = new InspectionResultPayload(
+            "QI-001",
+            "PLAN-001",
+            "receiving",
+            "quality",
+            "RCV-001",
+            "SKU-FG-1000",
+            3m,
+            "passed",
+            null,
+            [],
+            DateTimeOffset.Parse("2026-06-22T00:00:00Z"),
+            StockRelease: null,
+            ResultLines: null,
+            LotNo: "LOT-002",
+            SerialNo: "SER-002",
+            SiteCode: "SITE-01",
+            LocationCode: "IQC-HOLD",
+            OwnerType: "company",
+            OwnerId: "owner-001",
+            UomCode: "kg");
+        var integrationEvent = new InspectionResultIntegrationEvent(
+            "evt-001",
+            QualityIntegrationEventTypes.InspectionPassed,
+            QualityIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-22T00:00:01Z"),
+            QualityIntegrationEventSources.BusinessQuality,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:quality",
+            "idem-001",
+            payload);
+
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("LOT-002", integrationEvent.Payload.LotNo);
+        Assert.Equal("SER-002", integrationEvent.Payload.SerialNo);
+        Assert.Equal("SITE-01", integrationEvent.Payload.SiteCode);
+        Assert.Equal("IQC-HOLD", integrationEvent.Payload.LocationCode);
+        Assert.Equal("company", integrationEvent.Payload.OwnerType);
+        Assert.Equal("owner-001", integrationEvent.Payload.OwnerId);
+        Assert.Equal("kg", integrationEvent.Payload.UomCode);
+        Assert.Contains("\"lotNo\":\"LOT-002\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"uomCode\":\"kg\"", json, StringComparison.Ordinal);
     }
 }

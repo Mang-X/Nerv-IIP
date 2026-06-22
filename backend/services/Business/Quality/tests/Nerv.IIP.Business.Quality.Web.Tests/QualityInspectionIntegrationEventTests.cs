@@ -53,10 +53,40 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("IQC-HOLD", integrationEvent.Payload.StockRelease.LocationCode);
         Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
         Assert.Equal("company", integrationEvent.Payload.StockRelease.OwnerType);
+        Assert.Equal("BATCH-001", integrationEvent.Payload.LotNo);
+        Assert.Equal("ea", integrationEvent.Payload.UomCode);
+        Assert.Equal("SITE-01", integrationEvent.Payload.SiteCode);
+        Assert.Equal("IQC-HOLD", integrationEvent.Payload.LocationCode);
+        Assert.Equal("company", integrationEvent.Payload.OwnerType);
         var resultLine = Assert.Single(integrationEvent.Payload.ResultLines!);
         Assert.Equal("length", resultLine.CharacteristicCode);
         Assert.Equal(11m, resultLine.MeasuredValue);
         Assert.Equal("failed", resultLine.Result);
+    }
+
+    [Fact]
+    public void Ad_hoc_inspection_result_event_preserves_stock_release_dimensions()
+    {
+        var record = NewPassedAdHocRecordWithStockRelease();
+        var converter = new InspectionPassedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor());
+
+        var integrationEvent = converter.Convert(new InspectionPassedDomainEvent(record));
+
+        Assert.NotNull(integrationEvent.Payload.StockRelease);
+        Assert.Equal("kg", integrationEvent.Payload.StockRelease.UomCode);
+        Assert.Equal("SITE-02", integrationEvent.Payload.StockRelease.SiteCode);
+        Assert.Equal("IQC-STAGE", integrationEvent.Payload.StockRelease.LocationCode);
+        Assert.Equal("BATCH-ADHOC-001", integrationEvent.Payload.StockRelease.LotNo);
+        Assert.Equal("SER-ADHOC-001", integrationEvent.Payload.StockRelease.SerialNo);
+        Assert.Equal("supplier", integrationEvent.Payload.StockRelease.OwnerType);
+        Assert.Equal("supplier-001", integrationEvent.Payload.StockRelease.OwnerId);
+        Assert.Equal("BATCH-ADHOC-001", integrationEvent.Payload.LotNo);
+        Assert.Equal("SER-ADHOC-001", integrationEvent.Payload.SerialNo);
+        Assert.Equal("kg", integrationEvent.Payload.UomCode);
+        Assert.Equal("SITE-02", integrationEvent.Payload.SiteCode);
+        Assert.Equal("IQC-STAGE", integrationEvent.Payload.LocationCode);
+        Assert.Equal("supplier", integrationEvent.Payload.OwnerType);
+        Assert.Equal("supplier-001", integrationEvent.Payload.OwnerId);
     }
 
     [Fact]
@@ -107,6 +137,25 @@ public sealed class QualityInspectionIntegrationEventTests
             [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
             null,
             []);
+    }
+
+    private static InspectionRecord NewPassedAdHocRecordWithStockRelease()
+    {
+        return InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-ADHOC-001",
+            "SKU-RM-1000",
+            10m,
+            "BATCH-ADHOC-001",
+            "SER-ADHOC-001",
+            [InspectionResultLineInput.Pass("appearance", "ok", null, [])],
+            null,
+            [],
+            stockRelease: StockReleaseDimension.Create("kg", "SITE-02", "IQC-STAGE", "quality", "supplier", "supplier-001"));
     }
 
     private static InspectionRecord NewRejectedRecord()

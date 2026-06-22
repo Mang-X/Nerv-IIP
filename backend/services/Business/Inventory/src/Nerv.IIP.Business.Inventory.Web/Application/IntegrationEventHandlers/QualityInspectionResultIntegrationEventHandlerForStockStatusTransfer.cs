@@ -73,25 +73,34 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 throw new KnownException("Quality inspection stock release can only transfer stock from quality status.");
             }
 
-            await sender.Send(
-                new PostStockStatusTransferCommand(
-                    integrationEvent.OrganizationId,
-                    integrationEvent.EnvironmentId,
-                    sourceStatus,
-                    targetStatus,
-                    "quality",
-                    payload.SourceDocumentId,
-                    payload.InspectionRecordId,
-                    integrationEvent.IdempotencyKey,
-                    payload.SkuCode,
-                    payload.StockRelease.UomCode,
-                    payload.StockRelease.SiteCode,
-                    payload.StockRelease.LocationCode,
-                    payload.StockRelease.LotNo,
-                    payload.StockRelease.SerialNo,
-                    payload.StockRelease.OwnerType,
-                    payload.StockRelease.OwnerId,
-                    payload.InspectedQuantity),
+            await SendStatusTransferAsync(
+                integrationEvent,
+                sourceStatus,
+                targetStatus,
+                payload.StockRelease.UomCode,
+                payload.StockRelease.SiteCode,
+                payload.StockRelease.LocationCode,
+                payload.StockRelease.LotNo,
+                payload.StockRelease.SerialNo,
+                payload.StockRelease.OwnerType,
+                payload.StockRelease.OwnerId,
+                cancellationToken);
+            return;
+        }
+
+        if (TryGetPayloadStockLocator(payload, out var payloadStockLocator))
+        {
+            await SendStatusTransferAsync(
+                integrationEvent,
+                StockQualityStatus.Quality,
+                targetStatus,
+                payloadStockLocator.UomCode,
+                payloadStockLocator.SiteCode,
+                payloadStockLocator.LocationCode,
+                payloadStockLocator.LotNo,
+                payloadStockLocator.SerialNo,
+                payloadStockLocator.OwnerType,
+                payloadStockLocator.OwnerId,
                 cancellationToken);
             return;
         }
@@ -136,6 +145,64 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             cancellationToken);
     }
 
+    private Task SendStatusTransferAsync(
+        InspectionResultIntegrationEvent integrationEvent,
+        string sourceStatus,
+        string targetStatus,
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string? lotNo,
+        string? serialNo,
+        string ownerType,
+        string? ownerId,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        return sender.Send(
+            new PostStockStatusTransferCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                sourceStatus,
+                targetStatus,
+                "quality",
+                payload.SourceDocumentId,
+                payload.InspectionRecordId,
+                integrationEvent.IdempotencyKey,
+                payload.SkuCode,
+                uomCode,
+                siteCode,
+                locationCode,
+                lotNo,
+                serialNo,
+                ownerType,
+                ownerId,
+                payload.InspectedQuantity),
+            cancellationToken);
+    }
+
+    private static bool TryGetPayloadStockLocator(InspectionResultPayload payload, out PayloadStockLocator stockLocator)
+    {
+        if (string.IsNullOrWhiteSpace(payload.UomCode)
+            || string.IsNullOrWhiteSpace(payload.SiteCode)
+            || string.IsNullOrWhiteSpace(payload.LocationCode)
+            || string.IsNullOrWhiteSpace(payload.OwnerType))
+        {
+            stockLocator = default;
+            return false;
+        }
+
+        stockLocator = new PayloadStockLocator(
+            payload.UomCode,
+            payload.SiteCode,
+            payload.LocationCode,
+            string.IsNullOrWhiteSpace(payload.LotNo) ? null : payload.LotNo,
+            string.IsNullOrWhiteSpace(payload.SerialNo) ? null : payload.SerialNo,
+            payload.OwnerType,
+            string.IsNullOrWhiteSpace(payload.OwnerId) ? null : payload.OwnerId);
+        return true;
+    }
+
     private async Task<bool> IsAlreadyProcessedAsync(InspectionResultIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
@@ -161,4 +228,13 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 && x.IdempotencyKey == inboundKey,
             cancellationToken);
     }
+
+    private readonly record struct PayloadStockLocator(
+        string UomCode,
+        string SiteCode,
+        string LocationCode,
+        string? LotNo,
+        string? SerialNo,
+        string OwnerType,
+        string? OwnerId);
 }

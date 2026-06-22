@@ -137,7 +137,14 @@ public sealed record InspectionResultPayload(
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
     DateTimeOffset RecordedAtUtc,
     StockReleaseDimensionPayload? StockRelease = null,
-    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null);
+    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null,
+    string? LotNo = null,
+    string? SerialNo = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? OwnerType = null,
+    string? OwnerId = null,
+    string? UomCode = null);
 
 public sealed record StockReleaseDimensionPayload(
     string UomCode,

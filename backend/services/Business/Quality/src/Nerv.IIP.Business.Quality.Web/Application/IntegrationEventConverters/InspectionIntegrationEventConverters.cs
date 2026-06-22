@@ -89,7 +89,14 @@ internal static class InspectionIntegrationEventPayloads
             record.DispositionAttachmentFileIds,
             occurredAtUtc,
             ToStockRelease(record, targetQualityStatus),
-            record.ResultLines.Select(ToResultLinePayload).ToArray());
+            record.ResultLines.Select(ToResultLinePayload).ToArray(),
+            record.BatchNo,
+            record.SerialNo,
+            record.SiteCode,
+            record.LocationCode,
+            record.OwnerType,
+            record.OwnerId,
+            record.UomCode);
     }
 
     private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record, string? targetQualityStatus)
