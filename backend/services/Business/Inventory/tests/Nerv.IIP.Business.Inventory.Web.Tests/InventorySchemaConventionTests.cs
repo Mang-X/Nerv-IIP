@@ -115,7 +115,7 @@ public sealed class InventorySchemaConventionTests
                 var constraint = Assert.Single(constraints, x => x.Name == constraintName);
                 if (constraintName.EndsWith("_quality_status", StringComparison.Ordinal))
                 {
-                    Assert.Contains("quality_status in ('unrestricted','quality','blocked')", constraint.Sql, StringComparison.Ordinal);
+                    Assert.Contains("quality_status in ('unrestricted','quality','restricted','blocked')", constraint.Sql, StringComparison.Ordinal);
                 }
                 else
                 {

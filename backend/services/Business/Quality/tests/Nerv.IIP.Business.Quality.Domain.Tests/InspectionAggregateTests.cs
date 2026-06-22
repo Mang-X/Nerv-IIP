@@ -320,7 +320,7 @@ public sealed class InspectionAggregateTests
         Assert.Equal("Released by MRB waiver", record.DispositionReason);
         Assert.Equal(["file-waiver-001"], record.DispositionAttachmentFileIds);
         Assert.Equal(1m, record.FailedQuantity());
-        Assert.IsType<InspectionRejectedDomainEvent>(record.GetDomainEvents().Single());
+        Assert.IsType<InspectionConditionalReleasedDomainEvent>(record.GetDomainEvents().Single());
     }
 
     [Fact]

@@ -194,6 +194,7 @@ public sealed class InventoryMovementRequestedConsumerTests
     [Theory]
     [InlineData(QualityIntegrationEventTypes.InspectionPassed, "unrestricted")]
     [InlineData(QualityIntegrationEventTypes.InspectionRejected, "blocked")]
+    [InlineData(QualityIntegrationEventTypes.InspectionConditionalReleased, "restricted")]
     public async Task Quality_inspection_result_consumer_transfers_quality_stock(string eventType, string targetStatus)
     {
         await using var dbContext = CreateContext();
@@ -594,7 +595,11 @@ public sealed class InventoryMovementRequestedConsumerTests
                 "QI-001",
                 "SKU-FG-1000",
                 3m,
-                eventType == QualityIntegrationEventTypes.InspectionPassed ? "passed" : "rejected",
+                eventType == QualityIntegrationEventTypes.InspectionPassed
+                    ? "passed"
+                    : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
+                        ? "conditional-release"
+                        : "rejected",
                 null,
                 [],
                 DateTimeOffset.UtcNow,

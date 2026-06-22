@@ -25,6 +25,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             ConsumerName,
             [
                 QualityIntegrationEventTypes.InspectionPassed,
+                QualityIntegrationEventTypes.InspectionConditionalReleased,
                 QualityIntegrationEventTypes.InspectionRejected
             ],
             QualityIntegrationEventVersions.V1));
@@ -44,8 +45,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
     {
         var targetStatus = integrationEvent.EventType switch
         {
-            QualityIntegrationEventTypes.InspectionPassed => "unrestricted",
-            QualityIntegrationEventTypes.InspectionRejected => "blocked",
+            QualityIntegrationEventTypes.InspectionPassed => StockQualityStatus.Unrestricted,
+            QualityIntegrationEventTypes.InspectionConditionalReleased => StockQualityStatus.Restricted,
+            QualityIntegrationEventTypes.InspectionRejected => StockQualityStatus.Blocked,
             _ => throw new InvalidOperationException("Quality inspection event was not filtered by the consumer guard."),
         };
 
@@ -58,6 +60,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         if (payload.StockRelease is not null)
         {
             var sourceStatus = StockQualityStatus.Normalize(payload.StockRelease.SourceQualityStatus);
+            targetStatus = StockQualityStatus.Normalize(payload.StockRelease.TargetQualityStatus ?? targetStatus);
             if (sourceStatus != StockQualityStatus.Quality)
             {
                 throw new KnownException("Quality inspection stock release can only transfer stock from quality status.");

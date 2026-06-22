@@ -5,6 +5,7 @@ namespace Nerv.IIP.Contracts.Quality;
 public static class QualityIntegrationEventTypes
 {
     public const string InspectionPassed = "quality.InspectionPassed";
+    public const string InspectionConditionalReleased = "quality.InspectionConditionalReleased";
     public const string InspectionRejected = "quality.InspectionRejected";
     public const string DefectRaised = "quality.DefectRaised";
     public const string NcrOpened = "quality.NcrOpened";
@@ -139,7 +140,8 @@ public sealed record StockReleaseDimensionPayload(
     string? SerialNo,
     string SourceQualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string? TargetQualityStatus = null);
 
 public sealed record InspectionResultLinePayload(
     string CharacteristicCode,

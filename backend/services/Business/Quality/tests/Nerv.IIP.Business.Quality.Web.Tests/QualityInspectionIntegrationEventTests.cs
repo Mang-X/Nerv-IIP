@@ -60,6 +60,24 @@ public sealed class QualityInspectionIntegrationEventTests
     }
 
     [Fact]
+    public void Inspection_conditional_release_event_preserves_distinct_release_semantics()
+    {
+        var record = NewConditionalReleaseRecordWithStockRelease();
+        var converter = new InspectionConditionalReleasedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor());
+
+        var integrationEvent = converter.Convert(new InspectionConditionalReleasedDomainEvent(record));
+
+        Assert.Equal(QualityIntegrationEventTypes.InspectionConditionalReleased, integrationEvent.EventType);
+        Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("conditional-release", integrationEvent.Payload.Result);
+        Assert.Equal("MRB conditional release review required", integrationEvent.Payload.DispositionReason);
+        Assert.NotNull(integrationEvent.Payload.StockRelease);
+        Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
+        Assert.Equal("restricted", integrationEvent.Payload.StockRelease.TargetQualityStatus);
+        Assert.Equal("quality:inspection-conditional-release:org-001:env-dev:purchase-receipt:RCV-002", integrationEvent.IdempotencyKey);
+    }
+
+    [Fact]
     public void Inspection_result_event_idempotency_key_is_deterministic_for_same_record_result()
     {
         var record = NewRejectedRecord();
@@ -149,6 +167,48 @@ public sealed class QualityInspectionIntegrationEventTests
             [InspectionResultLineInput.Measure("length", 11m, "mm", ["file-photo-001"])],
             "Supplier certificate mismatch",
             ["file-mrb-001"]);
+    }
+
+    private static InspectionRecord NewConditionalReleaseRecordWithStockRelease()
+    {
+        var plan = InspectionPlan.Create(
+            "org-001",
+            "env-dev",
+            "IQP-001",
+            "receiving",
+            "SKU-RM-1000",
+            "supplier-001",
+            null,
+            null,
+            "purchase-receipt");
+        plan.AddCharacteristic(
+            "appearance",
+            "Appearance",
+            "visual",
+            "major",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 5, acceptanceNumber: 1, rejectionNumber: 3));
+        plan.Activate();
+
+        return InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-002",
+            "SKU-RM-1000",
+            5m,
+            "BATCH-002",
+            null,
+            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            [InspectionResultLineInput.Attribute("appearance", "two defects", "scratch", 2m, [])],
+            "MRB conditional release review required",
+            []);
     }
 
     private sealed class StubQualityIntegrationEventContextAccessor(QualityIntegrationEventContext? context = null)

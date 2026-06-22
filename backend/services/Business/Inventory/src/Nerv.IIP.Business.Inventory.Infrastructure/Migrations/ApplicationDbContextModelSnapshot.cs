@@ -155,7 +155,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
-                            t.HasCheckConstraint("ck_stock_count_adjustments_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+                            t.HasCheckConstraint("ck_stock_count_adjustments_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -312,7 +312,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_count_tasks_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
-                            t.HasCheckConstraint("ck_stock_count_tasks_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+                            t.HasCheckConstraint("ck_stock_count_tasks_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_count_tasks_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -406,7 +406,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("quality_status")
-                        .HasComment("Quality status carried by stock facts.");
+                        .HasComment("Quality status carried by stock facts: unrestricted, quality, restricted or blocked.");
 
                     b.Property<decimal>("ReservedQuantity")
                         .HasPrecision(18, 6)
@@ -463,7 +463,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_ledgers_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
-                            t.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+                            t.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_ledgers_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -630,7 +630,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("quality_status")
-                        .HasComment("Canonical stock status: unrestricted, quality or blocked.");
+                        .HasComment("Canonical stock status: unrestricted, quality, restricted or blocked.");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)
@@ -704,7 +704,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_movements_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
-                            t.HasCheckConstraint("ck_stock_movements_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+                            t.HasCheckConstraint("ck_stock_movements_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_movements_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -788,7 +788,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("quality_status")
-                        .HasComment("Canonical stock status reserved: unrestricted, quality or blocked.");
+                        .HasComment("Canonical stock status reserved: unrestricted, quality, restricted or blocked.");
 
                     b.Property<decimal>("ReleasedQuantity")
                         .HasPrecision(18, 6)
@@ -874,7 +874,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_reservations_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
-                            t.HasCheckConstraint("ck_stock_reservations_quality_status", "quality_status in ('unrestricted','quality','blocked')");
+                            t.HasCheckConstraint("ck_stock_reservations_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_reservations_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
