@@ -21,8 +21,8 @@ public sealed class SchedulePlanEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC timestamp when the plan was released.");
         builder.Property(x => x.ScheduledOperationCount).HasColumnName("scheduled_operation_count").HasComment("Number of operations assigned by this plan.");
         builder.Property(x => x.UnscheduledOperationCount).HasColumnName("unscheduled_operation_count").HasComment("Number of operations left unscheduled by this plan.");
-        builder.Property(x => x.AssignedMinutes).HasColumnName("assigned_minutes").HasComment("Total assigned operation duration in minutes.");
-        builder.Property(x => x.MakespanMinutes).HasColumnName("makespan_minutes").HasComment("Minutes between the earliest assignment start and latest assignment end.");
+        builder.Property(x => x.AssignedMinutes).HasColumnName("assigned_minutes").HasComment("Total resource occupied minutes, including operation processing plus setup/changeover time.");
+        builder.Property(x => x.MakespanMinutes).HasColumnName("makespan_minutes").HasComment("Minutes between the earliest resource occupancy start and latest assignment end.");
         builder.Property(x => x.TotalTardinessMinutes).HasColumnName("total_tardiness_minutes").HasComment("Total minutes by which assigned operations finish after their due dates.");
         builder.Property(x => x.LateOperationCount).HasColumnName("late_operation_count").HasComment("Number of assigned operations finishing after their due dates.");
         builder.Property(x => x.OnTimeRate).HasColumnName("on_time_rate").HasPrecision(18, 6).HasComment("Assigned operations completed on or before due date divided by assigned operations.");
