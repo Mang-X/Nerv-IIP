@@ -8,6 +8,7 @@ import {
   BoxesIcon,
   BoxIcon,
   Building2Icon,
+  CalendarClockIcon,
   CalendarCogIcon,
   CalendarRangeIcon,
   CheckCheckIcon,
@@ -198,14 +199,23 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
         { title: '出库发货', icon: PackageIcon, to: { path: '/wms/outbound' } },
         { title: '拣货任务', icon: PackageSearchIcon, to: { path: '/wms/picking' } },
         { title: 'WCS 任务', icon: CpuIcon, to: { path: '/wms/wcs' } },
+        { title: '盘点执行', icon: ClipboardCheckIcon, to: { path: '/wms/counts' } },
       ],
     },
   ],
   'equipment': [
     {
+      label: '运行监控',
       items: [
         { title: '设备运行看板', icon: ActivityIcon, to: { path: '/equipment' } },
         { title: '设备报警', icon: BellRingIcon, to: { path: '/equipment/alarms' } },
+      ],
+    },
+    {
+      label: '维护保养',
+      items: [
+        { title: '维护工单', icon: WrenchIcon, to: { path: '/maintenance/work-orders' } },
+        { title: '保养计划', icon: CalendarClockIcon, to: { path: '/maintenance/plans' } },
       ],
     },
   ],
@@ -228,6 +238,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/inventory')) return 'inventory'
   if (isUnder(path, '/wms')) return 'wms'
   if (isUnder(path, '/equipment')) return 'equipment'
+  if (isUnder(path, '/maintenance')) return 'equipment'
   return 'workbench'
 }
 

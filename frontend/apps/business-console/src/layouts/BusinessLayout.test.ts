@@ -75,7 +75,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('wms')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务', '盘点执行'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {

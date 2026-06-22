@@ -1,22 +1,28 @@
 import {
+  completeBusinessConsoleWmsCountExecutionMutationOptions,
   completeBusinessConsoleWmsInboundOrderMutationOptions,
   completeBusinessConsoleWmsOutboundOrderMutationOptions,
   completeBusinessConsoleWmsWcsTaskMutationOptions,
+  createBusinessConsoleWmsCountExecutionMutationOptions,
   createBusinessConsoleWmsInboundOrderMutationOptions,
   createBusinessConsoleWmsOutboundOrderMutationOptions,
   createBusinessConsoleWmsPickingTaskMutationOptions,
   createBusinessConsoleWmsPutawayTaskMutationOptions,
   dispatchBusinessConsoleWmsWcsTaskMutationOptions,
   failBusinessConsoleWmsWcsTaskMutationOptions,
+  listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsPickingTasksQueryOptions,
   listBusinessConsoleWmsPutawayTasksQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  type BusinessConsoleCreateWmsCountExecutionRequest,
   type BusinessConsoleCreateWmsInboundOrderRequest,
   type BusinessConsoleCreateWmsOutboundOrderRequest,
   type BusinessConsoleCreateWmsPickingTaskRequest,
   type BusinessConsoleCreateWmsPutawayTaskRequest,
+  type BusinessConsoleWmsCountExecutionItem,
+  type BusinessConsoleWmsCountExecutionListEnvelope,
   type BusinessConsoleWmsInboundOrderItem,
   type BusinessConsoleWmsInboundOrderListEnvelope,
   type BusinessConsoleWmsInventoryContext,
@@ -353,5 +359,54 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
       }),
     createPickingPending: createMutation.isLoading,
     createPickingError: createMutation.error,
+  }
+}
+
+// 盘点执行（库位 × SKU 的账面 vs 实盘）。完成盘点按差额触发库存调整移动。
+export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
+  const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
+  const countExecutionsQuery = useQuery(() =>
+    listBusinessConsoleWmsCountExecutionsQueryOptions({
+      query: {
+        ...baseQuery(filters),
+        ...optionalQuery('locationCode', filters.locationCode),
+      },
+    }),
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsCountExecutionMutationOptions(),
+    onSuccess() {
+      void countExecutionsQuery.refetch()
+    },
+  })
+  const completeMutation = useMutation({
+    ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
+    onSuccess() {
+      void countExecutionsQuery.refetch()
+    },
+  })
+
+  return {
+    filters,
+    countExecutions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
+      listItems<BusinessConsoleWmsCountExecutionItem>(countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined),
+    ),
+    countExecutionsError: countExecutionsQuery.error,
+    countExecutionsPending: countExecutionsQuery.isLoading,
+    countExecutionsTotal: computed(() => listTotal(countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined)),
+    refreshCountExecutions: countExecutionsQuery.refetch,
+    createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
+      createMutation.mutateAsync({ body }),
+    createCountExecutionPending: createMutation.isLoading,
+    createCountExecutionError: createMutation.error,
+    completeCountExecution: (countExecutionId: string, countedQuantity: number) =>
+      completeMutation.mutateAsync({
+        path: { countExecutionId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { countedQuantity, idempotencyKey: makeIdempotencyKey() },
+      }),
+    completeCountExecutionPending: completeMutation.isLoading,
+    completeCountExecutionError: completeMutation.error,
   }
 }
