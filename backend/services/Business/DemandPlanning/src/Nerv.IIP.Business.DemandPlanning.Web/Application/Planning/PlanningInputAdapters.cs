@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -98,6 +99,19 @@ public sealed record PlanningParameterSnapshotRequest(
 public sealed record PlanningParameterSnapshotResult(
     string SnapshotSource,
     IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters);
+
+public sealed class OptionalPlanningSnapshotException : Exception
+{
+    public OptionalPlanningSnapshotException(string message)
+        : base(message)
+    {
+    }
+
+    public OptionalPlanningSnapshotException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 public interface IPlanningParameterSnapshotClient
 {
@@ -249,8 +263,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
 
     private static bool IsOptionalPlanningSourceFailure(Exception exception)
     {
-        return exception is HttpRequestException
-            or InvalidOperationException
+        return exception is OptionalPlanningSnapshotException
+            or HttpRequestException
             or TaskCanceledException;
     }
 
@@ -450,8 +464,11 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
 
             using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ErpPurchaseOrdersResponse>>(cancellationToken);
-            var body = envelope?.Data ?? throw new InvalidOperationException("ERP returned an empty purchase order response envelope.");
+            var body = await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<ErpPurchaseOrdersResponse>(
+                response,
+                "ERP returned an invalid purchase order response.",
+                "ERP returned an empty purchase order response envelope.",
+                cancellationToken);
             orders.AddRange(body.Items);
             skip += PageSize;
             if (body.Items.Count == 0 || skip >= body.Total)
@@ -585,8 +602,10 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
         }
 
         response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<MasterDataSkuPlanningDetail>>(cancellationToken);
-        return envelope?.Data;
+        return await OptionalPlanningSnapshotHttp.ReadEnvelopeDataOrDefaultAsync<MasterDataSkuPlanningDetail>(
+            response,
+            "MasterData returned an invalid SKU planning detail response.",
+            cancellationToken);
     }
 
     private static int ComputeLeadTimeDays(MasterDataSkuPlanningDetail detail)
@@ -659,6 +678,51 @@ public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) :
 }
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+internal static class OptionalPlanningSnapshotHttp
+{
+    public static async Task<T> ReadEnvelopeDataAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        string emptyEnvelopeMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var envelope = await ReadEnvelopeAsync<T>(response, invalidResponseMessage, cancellationToken);
+        return envelope?.Data ?? throw new OptionalPlanningSnapshotException(emptyEnvelopeMessage);
+    }
+
+    public static async Task<T?> ReadEnvelopeDataOrDefaultAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        var envelope = await ReadEnvelopeAsync<T>(response, invalidResponseMessage, cancellationToken);
+        return envelope?.Data;
+    }
+
+    private static async Task<ResponseDataEnvelope<T>?> ReadEnvelopeAsync<T>(
+        HttpResponseMessage response,
+        string invalidResponseMessage,
+        CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+        }
+        catch (JsonException ex)
+        {
+            throw new OptionalPlanningSnapshotException(invalidResponseMessage, ex);
+        }
+        catch (NotSupportedException ex)
+        {
+            throw new OptionalPlanningSnapshotException(invalidResponseMessage, ex);
+        }
+    }
+}
+
 internal sealed record ProductEngineeringSkuSnapshot(
     ProductionVersionSnapshot? Version,
     IReadOnlyCollection<BomComponentSnapshot> Components);
