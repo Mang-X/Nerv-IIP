@@ -193,4 +193,46 @@ describe('business planning composable', () => {
     })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
+
+  it('accepts the selected suggestions in bulk and clears them as each succeeds', async () => {
+    const {
+      acceptSelectedSuggestions,
+      selectedSuggestionCount,
+      setSuggestionSelection,
+      toggleSuggestionSelection,
+    } = useBusinessPlanning()
+
+    setSuggestionSelection(['s-wo', 's-po'])
+    expect(selectedSuggestionCount.value).toBe(2)
+
+    const typeById: Record<string, string> = {
+      's-wo': 'planned-work-order',
+      's-po': 'planned-purchase',
+    }
+    await acceptSelectedSuggestions((id) => typeById[id])
+
+    const acceptMutation = vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock
+      .results[0]?.value.mutation
+    expect(acceptMutation).toHaveBeenCalledTimes(2)
+    expect(acceptMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { suggestionId: 's-wo' },
+        body: expect.objectContaining({ downstreamService: 'MES' }),
+      }),
+    )
+    expect(acceptMutation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { suggestionId: 's-po' },
+        body: expect.objectContaining({ downstreamService: 'ERP' }),
+      }),
+    )
+    // 全部成功后选中集合清空。
+    expect(selectedSuggestionCount.value).toBe(0)
+
+    // 切换选择互斥：再次切换同一 id 取消选择。
+    toggleSuggestionSelection('s-wo')
+    expect(selectedSuggestionCount.value).toBe(1)
+    toggleSuggestionSelection('s-wo')
+    expect(selectedSuggestionCount.value).toBe(0)
+  })
 })

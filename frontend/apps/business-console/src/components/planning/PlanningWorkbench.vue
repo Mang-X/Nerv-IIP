@@ -10,6 +10,7 @@ import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/u
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import {
   Button,
+  Checkbox,
   DataTable,
   DatePicker,
   Dialog,
@@ -38,13 +39,16 @@ import {
   TabsList,
   TabsTrigger,
 } from '@nerv-iip/ui'
-import { PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CheckCheckIcon, CornerDownRightIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
 
 const {
+  acceptSelectedSuggestions,
   acceptSuggestion,
   acceptSuggestionError,
   acceptSuggestionPending,
+  batchAcceptPending,
+  clearSuggestionSelection,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -63,10 +67,15 @@ const {
   runMrpPending,
   runRequest,
   runSelection,
+  selectedSuggestionCount,
+  selectedSuggestionIds,
+  setSuggestionSelection,
   suggestionFilters,
+  suggestionTypeFilter,
   suggestions,
   suggestionsError,
   suggestionsPending,
+  toggleSuggestionSelection,
 } = useBusinessPlanning()
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
@@ -141,9 +150,122 @@ const suggestionStatusOptions = [
   { label: '已接受', value: 'accepted' },
 ]
 
-const demandQuantity = computed(() => demands.value.reduce((sum, item) => sum + (item.quantity ?? 0), 0))
-const proposedWorkOrders = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-work-order' && isOpen(i.status)).length)
-const proposedPurchases = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-purchase' && isOpen(i.status)).length)
+// 建议分型（呼应两组：生产→MES / 采购→ERP）。
+const productionSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-work-order'))
+const purchaseSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-purchase'))
+const openSuggestionCount = computed(() => suggestions.value.filter((i) => isOpen(i.status)).length)
+
+// KPI #3：换掉无意义的跨 SKU/单位求和，改 3 张语义卡。
+// 卡1：待评审建议条数（生产 N / 采购 N 拆分作脚注）。
+const reviewKpiHint = computed(() => `生产 ${productionSuggestions.value.filter((i) => isOpen(i.status)).length} · 采购 ${purchaseSuggestions.value.filter((i) => isOpen(i.status)).length}`)
+
+// 卡2：需求 SKU 数 / 已被建议覆盖的 SKU 数（去重）。
+const demandSkuCodes = computed(() => new Set(demands.value.map((d) => d.skuCode).filter((c): c is string => !!c)))
+const coveredSkuCodes = computed(() => {
+  const covered = new Set<string>()
+  const demandSet = demandSkuCodes.value
+  for (const s of suggestions.value) {
+    if (s.skuCode && demandSet.has(s.skuCode)) covered.add(s.skuCode)
+  }
+  return covered
+})
+const demandSkuKpi = computed(() => `${coveredSkuCodes.value.size} / ${demandSkuCodes.value.size}`)
+
+// 卡3：最近一次 MRP（状态 + 建议数）。运行按计划范围排序取最后一条。
+const latestRun = computed(() => {
+  const runs = mrpRuns.value
+  if (runs.length === 0) return null
+  return [...runs].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? ''))[runs.length - 1]
+})
+const latestRunKpiValue = computed(() => (latestRun.value ? planningStatus(latestRun.value.status).label : '未运行'))
+const latestRunKpiHint = computed(() => (latestRun.value ? `生成 ${latestRun.value.suggestionCount ?? 0} 条建议` : '尚未运行 MRP'))
+
+// MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
+function coverageRate(run: BusinessConsoleMrpRunItem): string {
+  const demandCount = run.demandCount ?? 0
+  if (demandCount <= 0) return '—'
+  const pct = Math.round(((run.suggestionCount ?? 0) / demandCount) * 100)
+  return `${pct}%`
+}
+
+// 运行的人读锚点：以「计划范围」作追溯标题，避免裸 GUID。
+function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
+  if (!run) return '选择一次运行'
+  return `计划范围 ${formatDate(run.horizonStart)} ~ ${formatDate(run.horizonEnd)}`
+}
+const selectedRun = computed(() => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null)
+
+// 需求紧迫度：按 dueDate 距今天数。逾期 danger / 7 天内 warning / 正常 neutral。
+function dueUrgency(dueDate?: string | null): { label: string, tone: StatusTone } {
+  if (!dueDate) return { label: '未排期', tone: 'neutral' }
+  const due = new Date(dueDate.slice(0, 10))
+  if (Number.isNaN(due.getTime())) return { label: '未排期', tone: 'neutral' }
+  const today = new Date(new Date().toISOString().slice(0, 10))
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000)
+  if (days < 0) return { label: `逾期 ${Math.abs(days)} 天`, tone: 'danger' }
+  if (days === 0) return { label: '今日到期', tone: 'warning' }
+  if (days <= 7) return { label: `${days} 天内`, tone: 'warning' }
+  return { label: `${days} 天后`, tone: 'neutral' }
+}
+
+// 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
+function demandCoverage(skuCode?: string | null): { label: string, tone: StatusTone } {
+  if (skuCode && coveredSkuCodes.value.has(skuCode)) return { label: '已生成建议', tone: 'success' }
+  return { label: '未覆盖', tone: 'neutral' }
+}
+
+// pegging 分型（成品净需求 / 组件展开）。
+function peggingTypeLabel(value?: string | null): { label: string, tone: StatusTone } {
+  const map: Record<string, { label: string, tone: StatusTone }> = {
+    'finished-good': { label: '成品净需求', tone: 'info' },
+    'finished-good-net-requirement': { label: '成品净需求', tone: 'info' },
+    'component': { label: '组件展开', tone: 'neutral' },
+    'component-net-requirement': { label: '组件展开', tone: 'neutral' },
+  }
+  return map[value ?? ''] ?? { label: '需求展开', tone: 'neutral' }
+}
+// 父项=组件 或 无组件 → 视为顶层（成品行，不缩进）；有不同组件 → 缩进。
+function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
+  return !!row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode
+}
+
+// 计划建议分型筛选后的可见行。
+const visibleSuggestions = computed(() => {
+  const t = suggestionTypeFilter.type
+  if (!t) return suggestions.value
+  return suggestions.value.filter((s) => s.suggestionType === t)
+})
+const suggestionTypeFilterOptions = [
+  { label: '全部类型', value: '' },
+  { label: '生产建议 (→MES)', value: 'planned-work-order' },
+  { label: '采购建议 (→ERP)', value: 'planned-purchase' },
+]
+
+// 当前可见且待评审、可被批量接受的建议 id。
+const acceptableSuggestionIds = computed(() =>
+  visibleSuggestions.value.filter((s) => isOpen(s.status) && s.suggestionId).map((s) => s.suggestionId as string),
+)
+const suggestionTypeById = computed(() => {
+  const map = new Map<string, string | null | undefined>()
+  for (const s of suggestions.value) {
+    if (s.suggestionId) map.set(s.suggestionId, s.suggestionType)
+  }
+  return map
+})
+const allAcceptableSelected = computed(() =>
+  acceptableSuggestionIds.value.length > 0
+  && acceptableSuggestionIds.value.every((id) => selectedSuggestionIds.value.has(id)),
+)
+function isSuggestionSelected(id?: string | null) {
+  return !!id && selectedSuggestionIds.value.has(id)
+}
+function toggleSelectAllAcceptable(checked: boolean) {
+  if (checked) setSuggestionSelection(acceptableSuggestionIds.value)
+  else clearSuggestionSelection()
+}
+async function acceptSelected() {
+  await acceptSelectedSuggestions((id) => suggestionTypeById.value.get(id))
+}
 
 const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
@@ -151,26 +273,32 @@ const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'skuCode', header: 'SKU' },
   { key: 'siteCode', header: '工厂' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
-  { key: 'dueDate', header: '日期', width: 'w-28' },
+  { key: 'dueDate', header: '需求日', width: 'w-32' },
+  { key: 'urgency', header: '紧迫度', width: 'w-28' },
+  { key: 'coverage', header: '覆盖', width: 'w-28' },
 ]
 const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
   // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
   { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
-  { key: 'productionEngineeringSnapshotSource', header: '工程快照' },
-  { key: 'inventorySnapshotSource', header: '库存快照' },
-  { key: 'actions', header: '', align: 'end', width: 'w-12' },
+  { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
+  { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
+  { key: 'productionEngineeringSnapshotSource', header: '工程源' },
+  { key: 'inventorySnapshotSource', header: '库存源' },
+  { key: 'actions', header: '', align: 'end', width: 'w-24' },
 ]
 const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'demandSourceReference', header: '需求来源', cellClass: 'font-medium' },
-  { key: 'parentSkuCode', header: '父项' },
-  { key: 'componentSkuCode', header: '组件' },
+  { key: 'peggingType', header: '展开类型', width: 'w-28' },
+  { key: 'sku', header: '物料层级' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'engineeringRef', header: '工程引用' },
 ]
 const suggestionColumns: DataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
+  { key: 'select', header: '', width: 'w-10' },
   { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
@@ -358,9 +486,9 @@ function formatSource(value?: string | null) {
   </PageHeader>
 
   <SectionCards :columns="3">
-    <SectionCard description="需求总量" :value="demandQuantity" hint="当前计划范围" />
-    <SectionCard description="生产建议" :value="proposedWorkOrders" hint="待评审" />
-    <SectionCard description="采购建议" :value="proposedPurchases" hint="待评审" />
+    <SectionCard description="待评审建议" :value="openSuggestionCount" footnote="条计划建议待接受" :hint="reviewKpiHint" />
+    <SectionCard description="需求覆盖 (SKU)" :value="demandSkuKpi" footnote="已生成建议 / 需求 SKU 数" hint="按 SKU 去重统计" />
+    <SectionCard description="最近一次 MRP" :value="latestRunKpiValue" :footnote="latestRun ? runHorizonLabel(latestRun) : '—'" :hint="latestRunKpiHint" />
   </SectionCards>
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
@@ -389,6 +517,8 @@ function formatSource(value?: string | null) {
         </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
+        <template #cell-urgency="{ row }"><StatusBadge :label="dueUrgency(row.dueDate).label" :tone="dueUrgency(row.dueDate).tone" /></template>
+        <template #cell-coverage="{ row }"><StatusBadge :label="demandCoverage(row.skuCode).label" :tone="demandCoverage(row.skuCode).tone" /></template>
       </DataTable>
     </TabsContent>
 
@@ -396,18 +526,33 @@ function formatSource(value?: string | null) {
       <DataTable :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" empty-message="尚未运行 MRP。">
         <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
         <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-demandCount="{ row }"><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template>
         <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
+        <template #cell-coverage="{ row }"><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template>
+        <template #cell-availabilityCount="{ row }"><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template>
         <template #cell-productionEngineeringSnapshotSource="{ row }">{{ formatSource(row.productionEngineeringSnapshotSource) }}</template>
         <template #cell-inventorySnapshotSource="{ row }">{{ formatSource(row.inventorySnapshotSource) }}</template>
         <template #cell-actions="{ row }">
-          <Button size="sm" type="button" variant="ghost" @click="runSelection.runId = row.runId ?? ''">查看追溯</Button>
+          <Button
+            size="sm"
+            type="button"
+            :variant="runSelection.runId === row.runId ? 'secondary' : 'ghost'"
+            @click="runSelection.runId = row.runId ?? ''"
+          >
+            查看追溯
+          </Button>
         </template>
       </DataTable>
 
       <div class="grid gap-2">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">需求追溯</span>
-          <span class="text-sm text-muted-foreground">{{ runSelection.runId ? `批次 ${runSelection.runId}` : '选择一次运行' }}</span>
+          <span class="text-sm text-muted-foreground">{{ runHorizonLabel(selectedRun) }}</span>
+          <StatusBadge
+            v-if="selectedRun"
+            :label="planningStatus(selectedRun.status).label"
+            :tone="planningStatus(selectedRun.status).tone"
+          />
         </div>
         <DataTable
           :columns="peggingColumns"
@@ -416,35 +561,91 @@ function formatSource(value?: string | null) {
           :loading="peggingPending"
           empty-message="选择一条 MRP 运行查看需求与物料来源。"
         >
-          <template #cell-parentSkuCode="{ row }">
-            <div class="flex flex-col gap-0.5">
-              <span>{{ skuLabel(row.parentSkuCode) }}</span>
-              <span v-if="row.parentSkuCode" class="text-xs text-muted-foreground">{{ row.parentSkuCode }}</span>
-            </div>
+          <template #cell-peggingType="{ row }">
+            <StatusBadge :label="peggingTypeLabel(row.peggingType).label" :tone="peggingTypeLabel(row.peggingType).tone" />
           </template>
-          <template #cell-componentSkuCode="{ row }">
-            <div class="flex flex-col gap-0.5">
-              <span>{{ skuLabel(row.componentSkuCode) }}</span>
-              <span v-if="row.componentSkuCode" class="text-xs text-muted-foreground">{{ row.componentSkuCode }}</span>
+          <template #cell-sku="{ row }">
+            <div :class="isComponentRow(row) ? 'flex items-start gap-1.5 pl-5' : 'flex flex-col gap-0.5'">
+              <CornerDownRightIcon v-if="isComponentRow(row)" class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div class="flex flex-col gap-0.5">
+                <template v-if="isComponentRow(row)">
+                  <span>{{ skuLabel(row.componentSkuCode) }}</span>
+                  <span class="text-xs text-muted-foreground">
+                    {{ row.componentSkuCode }} · 属 {{ skuLabel(row.parentSkuCode) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="font-medium">{{ skuLabel(row.parentSkuCode) }}</span>
+                  <span v-if="row.parentSkuCode" class="text-xs text-muted-foreground">{{ row.parentSkuCode }}</span>
+                </template>
+              </div>
             </div>
           </template>
           <template #cell-quantity="{ row }"><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template>
-          <template #cell-engineeringRef="{ row }">{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '-' }}</template>
+          <template #cell-engineeringRef="{ row }">
+            <div class="flex flex-col gap-0.5">
+              <span>{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '—' }}</span>
+              <span v-if="row.routingReference" class="text-xs text-muted-foreground">工艺 {{ row.routingReference }}</span>
+            </div>
+          </template>
         </DataTable>
       </div>
     </TabsContent>
 
     <TabsContent value="suggestions" class="grid gap-3">
-      <div class="flex justify-end">
-        <Select v-model="suggestionFilters.status">
-          <SelectTrigger class="h-9 w-32" aria-label="建议状态"><SelectValue placeholder="建议状态" /></SelectTrigger>
+      <div class="flex flex-wrap items-center gap-2">
+        <Select v-model="suggestionTypeFilter.type">
+          <SelectTrigger class="h-9 w-44" aria-label="建议分型"><SelectValue placeholder="全部类型" /></SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+            <SelectItem v-for="o in suggestionTypeFilterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
           </SelectContent>
         </Select>
+        <span class="text-sm text-muted-foreground">
+          生产建议 → MES · 采购建议 → ERP
+        </span>
+        <div class="ms-auto flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              :model-value="allAcceptableSelected"
+              :disabled="acceptableSuggestionIds.length === 0"
+              aria-label="全选可接受建议"
+              @update:model-value="(v) => toggleSelectAllAcceptable(v === true)"
+            />
+            全选待评审
+          </label>
+          <Button
+            size="sm"
+            type="button"
+            :disabled="selectedSuggestionCount === 0 || batchAcceptPending || acceptSuggestionPending"
+            @click="acceptSelected"
+          >
+            <Spinner v-if="batchAcceptPending" aria-hidden="true" />
+            <CheckCheckIcon v-else aria-hidden="true" />
+            批量接受{{ selectedSuggestionCount > 0 ? ` 选中 ${selectedSuggestionCount} 条` : '' }}
+          </Button>
+          <Select v-model="suggestionFilters.status">
+            <SelectTrigger class="h-9 w-32" aria-label="建议状态"><SelectValue placeholder="建议状态" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <DataTable :columns="suggestionColumns" :rows="suggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
-        <template #cell-suggestionType="{ row }">{{ suggestionTypeLabel(row.suggestionType) }}</template>
+      <DataTable :columns="suggestionColumns" :rows="visibleSuggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
+        <template #cell-select="{ row }">
+          <Checkbox
+            :model-value="isSuggestionSelected(row.suggestionId)"
+            :disabled="!isOpen(row.status)"
+            :aria-label="`选择建议 ${skuLabel(row.skuCode)}`"
+            @update:model-value="() => toggleSuggestionSelection(row.suggestionId)"
+          />
+        </template>
+        <template #cell-suggestionType="{ row }">
+          <StatusBadge
+            :label="suggestionTypeLabel(row.suggestionType)"
+            :tone="row.suggestionType === 'planned-work-order' ? 'info' : 'neutral'"
+          />
+        </template>
         <template #cell-skuCode="{ row }">
           <div class="flex flex-col gap-0.5">
             <span>{{ skuLabel(row.skuCode) }}</span>
@@ -460,7 +661,7 @@ function formatSource(value?: string | null) {
             size="sm"
             type="button"
             variant="outline"
-            :disabled="acceptSuggestionPending || planningStatus(row.status).label === '已接受'"
+            :disabled="acceptSuggestionPending || batchAcceptPending || planningStatus(row.status).label === '已接受'"
             @click="acceptPlanningSuggestion(row.suggestionId, row.suggestionType)"
           >
             接受

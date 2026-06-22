@@ -19,7 +19,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 export interface PlanningContextFilters {
   organizationId: string
@@ -32,6 +32,11 @@ export interface PlanningSuggestionFilters extends PlanningContextFilters {
 
 export interface PlanningRunSelection {
   runId: string
+}
+
+export interface PlanningSuggestionTypeFilter {
+  /** '', 'planned-work-order', or 'planned-purchase' — '' means all types. */
+  type: string
 }
 
 export interface PlanningDemandForm {
@@ -126,6 +131,11 @@ export function useBusinessPlanning() {
   const demandForm = defaultDemandForm(businessContext.organizationId, businessContext.environmentId)
   const runRequest = defaultRunRequest(businessContext.organizationId, businessContext.environmentId)
   const runSelection = defaultRunSelection()
+  // 计划建议「分型筛选」(生产/采购)，纯前端过滤，不带入后端查询。
+  const suggestionTypeFilter = reactive<PlanningSuggestionTypeFilter>({ type: '' })
+  // 批量接受：选中的 suggestionId 集合 + 批量进度。
+  const selectedSuggestionIds = ref<Set<string>>(new Set())
+  const batchAcceptPending = ref(false)
   const queryCache = useQueryCache()
 
   const demandsQuery = useQuery(() =>
@@ -188,6 +198,63 @@ export function useBusinessPlanning() {
     },
   })
 
+  const acceptOne = (suggestionId: string, body: BusinessConsoleAcceptPlanningSuggestionRequest) =>
+    acceptSuggestionMutation.mutateAsync({
+      path: {
+        suggestionId,
+      },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+      body,
+    })
+
+  function buildDownstream(suggestionType?: string | null, suggestionId?: string): BusinessConsoleAcceptPlanningSuggestionRequest {
+    const isWorkOrder = suggestionType === 'planned-work-order'
+    return {
+      downstreamService: isWorkOrder ? 'MES' : 'ERP',
+      downstreamDocumentType: isWorkOrder ? 'planned-work-order' : 'planned-purchase-order',
+      downstreamDocumentId: `${isWorkOrder ? 'WO-PLAN' : 'PO-PLAN'}-${suggestionId ?? ''}`,
+    }
+  }
+
+  function toggleSuggestionSelection(suggestionId?: string | null) {
+    if (!suggestionId) return
+    const next = new Set(selectedSuggestionIds.value)
+    if (next.has(suggestionId)) next.delete(suggestionId)
+    else next.add(suggestionId)
+    selectedSuggestionIds.value = next
+  }
+  function setSuggestionSelection(ids: string[]) {
+    selectedSuggestionIds.value = new Set(ids)
+  }
+  function clearSuggestionSelection() {
+    selectedSuggestionIds.value = new Set()
+  }
+
+  /**
+   * 批量接受：循环调已接通的单条 accept 端点（不依赖新后端、不碰下游回执）。
+   * 接受成功的从选中集合移除；任一失败不阻断其余，错误经 acceptSuggestionError 暴露。
+   */
+  async function acceptSelectedSuggestions(
+    resolveType: (suggestionId: string) => string | null | undefined,
+  ) {
+    const ids = [...selectedSuggestionIds.value]
+    if (ids.length === 0) return
+    batchAcceptPending.value = true
+    const remaining = new Set(selectedSuggestionIds.value)
+    try {
+      for (const id of ids) {
+        await acceptOne(id, buildDownstream(resolveType(id), id))
+        remaining.delete(id)
+        selectedSuggestionIds.value = new Set(remaining)
+      }
+    } finally {
+      batchAcceptPending.value = false
+    }
+  }
+
   function syncContext() {
     suggestionFilters.organizationId = filters.organizationId
     suggestionFilters.environmentId = filters.environmentId
@@ -198,18 +265,10 @@ export function useBusinessPlanning() {
   }
 
   return {
-    acceptSuggestion: (suggestionId: string, body: BusinessConsoleAcceptPlanningSuggestionRequest) =>
-      acceptSuggestionMutation.mutateAsync({
-        path: {
-          suggestionId,
-        },
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-        body,
-      }),
+    acceptSuggestion: acceptOne,
+    acceptSelectedSuggestions,
     acceptSuggestionError: acceptSuggestionMutation.error,
+    batchAcceptPending: computed(() => batchAcceptPending.value),
     acceptSuggestionPending: acceptSuggestionMutation.isLoading,
     createDemandError: createDemandMutation.error,
     createDemandPending: createDemandMutation.isLoading,
@@ -256,7 +315,13 @@ export function useBusinessPlanning() {
     runMrpPending: runMrpMutation.isLoading,
     runRequest,
     runSelection,
+    selectedSuggestionIds: computed(() => selectedSuggestionIds.value),
+    selectedSuggestionCount: computed(() => selectedSuggestionIds.value.size),
+    setSuggestionSelection,
+    clearSuggestionSelection,
+    toggleSuggestionSelection,
     suggestionFilters,
+    suggestionTypeFilter,
     suggestions: computed<BusinessConsolePlanningSuggestionItem[]>(() =>
       unwrapItems(
         suggestionsQuery.data.value as BusinessConsolePlanningSuggestionListEnvelope | undefined,
