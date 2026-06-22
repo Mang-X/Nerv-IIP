@@ -60,7 +60,14 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         if (payload.StockRelease is not null)
         {
             var sourceStatus = StockQualityStatus.Normalize(payload.StockRelease.SourceQualityStatus);
-            targetStatus = StockQualityStatus.Normalize(payload.StockRelease.TargetQualityStatus ?? targetStatus);
+            var payloadTargetStatus = string.IsNullOrWhiteSpace(payload.StockRelease.TargetQualityStatus)
+                ? targetStatus
+                : StockQualityStatus.Normalize(payload.StockRelease.TargetQualityStatus);
+            if (payloadTargetStatus != targetStatus)
+            {
+                throw new KnownException("Quality inspection stock release target status must match the inspection event type.");
+            }
+
             if (sourceStatus != StockQualityStatus.Quality)
             {
                 throw new KnownException("Quality inspection stock release can only transfer stock from quality status.");

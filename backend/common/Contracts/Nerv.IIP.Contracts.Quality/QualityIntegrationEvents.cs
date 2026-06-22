@@ -24,6 +24,13 @@ public static class QualityIntegrationEventSources
     public const string BusinessMes = "business-mes";
 }
 
+public static class QualityStockReleaseTargetStatuses
+{
+    public const string Unrestricted = "unrestricted";
+    public const string Restricted = "restricted";
+    public const string Blocked = "blocked";
+}
+
 public sealed record DefectRaisedIntegrationEvent(
     string EventId,
     string EventType,

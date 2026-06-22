@@ -73,7 +73,7 @@ public sealed class QualityInspectionIntegrationEventTests
         Assert.Equal("MRB conditional release review required", integrationEvent.Payload.DispositionReason);
         Assert.NotNull(integrationEvent.Payload.StockRelease);
         Assert.Equal("quality", integrationEvent.Payload.StockRelease.SourceQualityStatus);
-        Assert.Equal("restricted", integrationEvent.Payload.StockRelease.TargetQualityStatus);
+        Assert.Equal(QualityStockReleaseTargetStatuses.Restricted, integrationEvent.Payload.StockRelease.TargetQualityStatus);
         Assert.Equal("quality:inspection-conditional-release:org-001:env-dev:purchase-receipt:RCV-002", integrationEvent.IdempotencyKey);
     }
 

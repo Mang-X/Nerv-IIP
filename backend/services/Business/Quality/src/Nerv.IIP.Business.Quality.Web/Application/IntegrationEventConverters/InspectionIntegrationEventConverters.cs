@@ -13,7 +13,7 @@ public sealed class InspectionPassedIntegrationEventConverter(IQualityIntegratio
             domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionPassed,
             "inspection-passed",
-            "unrestricted",
+            QualityStockReleaseTargetStatuses.Unrestricted,
             contextAccessor.GetContext());
     }
 }
@@ -27,7 +27,7 @@ public sealed class InspectionRejectedIntegrationEventConverter(IQualityIntegrat
             domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionRejected,
             "inspection-rejected",
-            "blocked",
+            QualityStockReleaseTargetStatuses.Blocked,
             contextAccessor.GetContext());
     }
 }
@@ -41,7 +41,7 @@ public sealed class InspectionConditionalReleasedIntegrationEventConverter(IQual
             domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionConditionalReleased,
             "inspection-conditional-release",
-            "restricted",
+            QualityStockReleaseTargetStatuses.Restricted,
             contextAccessor.GetContext());
     }
 }

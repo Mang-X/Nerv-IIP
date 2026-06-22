@@ -190,6 +190,7 @@ Source:
 Known gaps:
 
 1. Inventory 已覆盖库存地点、余额、受控库存状态、预留/释放/分配、移动平均计价、移动、盘点冻结和盘点调整；批次谱系、WMS 作业单和 ERP GL 月结仍归后续业务切片补齐。
+2. `restricted` 是质量让步接收/条件放行后的受控库存状态。`AddRestrictedQualityStatus` 的 Down 迁移会恢复三值 check constraint；如果库中已经存在 `restricted` 行，回滚前必须先迁移或清理这些库存事实，否则数据库会拒绝重新添加旧约束。
 
 ## BusinessMES Schema
 
