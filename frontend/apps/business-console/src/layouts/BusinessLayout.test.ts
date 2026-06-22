@@ -75,7 +75,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('wms')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '出库发货', 'WCS 任务'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
@@ -90,12 +90,6 @@ describe('BusinessLayout (T-shaped)', () => {
     // Foundation must not sit in the primary plan/work-order group.
     const planning = sideNav.find((g) => g.label === '计划与工单')
     expect(planning?.items.some((i) => i.title === '生产准备检查')).toBe(false)
-  })
-
-  it('resolves the 工艺与版本 route to the 产品工程 domain', () => {
-    routeState.path = '/master-data/process'
-    const wrapper = mountLayout()
-    expect(wrapper.getComponent(AppShellTStub).props('currentDomainId')).toBe('engineering')
   })
 
   it('uses a fallback for the authenticated user display name', () => {

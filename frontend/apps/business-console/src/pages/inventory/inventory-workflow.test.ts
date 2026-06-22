@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -84,6 +85,7 @@ const uiStubs = {
 function mountInventoryPage(component: unknown) {
   return mount(component, {
     global: {
+      plugins: [createPinia()],
       stubs: {
         ...uiStubs,
         RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
@@ -119,6 +121,8 @@ describe('inventory workflow pages', () => {
 
     const wrapper = mountInventoryPage(CountsPage)
 
+    await wrapper.find('#count-task-sku').setValue('SKU-001')
+    await wrapper.find('#count-task-site').setValue('S1')
     await wrapper.find('#count-task-location').setValue('A-01')
     await wrapper.findAll('form')[0]!.trigger('submit')
     await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')

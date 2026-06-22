@@ -48,9 +48,9 @@ let adjustmentKeySequence = 0
 
 const taskForm = reactive({
   countTaskCode: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   uomCode: 'EA',
-  siteCode: 'S1',
+  siteCode: '',
   locationCode: '',
   lotNo: '',
   serialNo: '',

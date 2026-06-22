@@ -99,7 +99,7 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader :title="`设备详情：${filters.deviceAssetId}`" :breadcrumbs="[{ label: '设备监控（IoT）' }]">
+    <PageHeader :title="filters.deviceAssetId ? `设备详情：${filters.deviceAssetId}` : '设备详情'" :breadcrumbs="[{ label: '设备监控（IoT）' }]">
       <template #actions>
         <Button size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
@@ -117,6 +117,11 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
+    <div v-if="!filters.deviceAssetId" class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+      未指定设备。请从设备运行看板选择具体设备查看详情。
+    </div>
+
+    <template v-else>
     <SectionCards :columns="4">
       <SectionCard description="当前状态" :value="statusLabel(currentState?.currentState)" hint="设备运行事实" />
       <SectionCard description="数据状态" :value="currentState?.isSourceFresh ? '正常' : '过期'" :hint="formatDateTime(currentState?.stateOccurredAtUtc)" />
@@ -182,5 +187,6 @@ function formatError(error: unknown) {
         </DataTable>
       </div>
     </div>
+    </template>
   </BusinessLayout>
 </template>

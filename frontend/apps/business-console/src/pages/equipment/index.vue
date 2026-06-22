@@ -88,7 +88,7 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.deviceAssetIds" class="h-9 w-72" placeholder="DEV-OIL-01,DEV-PACK-01" aria-label="设备范围" />
+        <Input v-model="filters.deviceAssetIds" class="h-9 w-72" placeholder="默认全部设备；逗号分隔设备号可缩小范围" aria-label="设备范围（留空显示全部）" />
       </template>
     </Toolbar>
 
@@ -100,7 +100,7 @@ function formatError(error: unknown) {
         :rows="devices"
         :row-key="(r) => r.deviceAssetId ?? '无'"
         :loading="overviewPending"
-        empty-message="当前范围没有设备运行事实。调整设备范围后再试。"
+        empty-message="暂无设备运行事实。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
       >
         <template #cell-deviceAssetId="{ row }">
           <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="font-medium text-brand underline-offset-4 hover:underline">

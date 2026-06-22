@@ -194,7 +194,9 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     {
       items: [
         { title: '收货入库', icon: PackageCheckIcon, to: { path: '/wms/inbound' } },
+        { title: '上架任务', icon: LayersIcon, to: { path: '/wms/putaway' } },
         { title: '出库发货', icon: PackageIcon, to: { path: '/wms/outbound' } },
+        { title: '拣货任务', icon: PackageSearchIcon, to: { path: '/wms/picking' } },
         { title: 'WCS 任务', icon: CpuIcon, to: { path: '/wms/wcs' } },
       ],
     },
@@ -217,8 +219,6 @@ function isUnder(path: string, base: string): boolean {
 /** Resolve the active top domain id from a route path. */
 export function resolveDomainId(path: string): string {
   if (path === '/' || path === '') return 'workbench'
-  // 工艺与版本 lives under /master-data/process but belongs to 产品工程.
-  if (isUnder(path, '/master-data/process')) return 'engineering'
   if (isUnder(path, '/master-data')) return 'master-data'
   if (isUnder(path, '/engineering')) return 'engineering'
   if (isUnder(path, '/planning')) return 'planning'
