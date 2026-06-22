@@ -123,13 +123,41 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Contains(pegging, x => x.DemandSourceReference == "DEMAND-001" && x.ProductionVersionReference == "PV-001" && x.ManufacturingBomReference == "MBOM-001");
     }
 
+    [Theory]
+    [InlineData("inventory-http:2;scheduled-receipts:error;master-data-planning-parameters:none", new[] { "scheduled-receipts" })]
+    [InlineData("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:error", new[] { "master-data-planning-parameters" })]
+    [InlineData("inventory-http:2;scheduled-receipts:error;master-data-planning-parameters:error", new[] { "scheduled-receipts", "master-data-planning-parameters" })]
+    [InlineData("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:2", new string[] { })]
+    public async Task Mrp_run_command_and_list_query_expose_input_degradation_sources(
+        string inventorySnapshotSource,
+        string[] expectedSources)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new RunMrpCommandHandler(
+            dbContext,
+            new FixedPlanningInputSnapshotProvider(inventorySnapshotSource));
+
+        var result = await handler.Handle(
+            new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(expectedSources, result.InputDegradationSources);
+        var runs = await new ListMrpRunsQueryHandler(dbContext)
+            .Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None);
+        var run = Assert.Single(runs);
+        Assert.Equal(expectedSources, run.InputDegradationSources);
+    }
+
     [Fact]
     public async Task Suggestion_acceptance_is_idempotent_for_same_downstream_reference_and_rejects_conflicts()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), "MRP-001");
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
         dbContext.PlanningSuggestions.Add(suggestion);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
@@ -247,8 +275,10 @@ public sealed class DemandPlanningEndpointContractTests
 
     private static void ConfigureRequiredUpstreamBaseUrls(IWebHostBuilder builder)
     {
+        builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");
         builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
         builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
+        builder.UseSetting("Erp:BaseUrl", "http://erp.local");
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
@@ -256,6 +286,27 @@ public sealed class DemandPlanningEndpointContractTests
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FixedPlanningInputSnapshotProvider(string inventorySnapshotSource) : IPlanningInputSnapshotProvider
+    {
+        public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
+            string organizationId,
+            string environmentId,
+            DateOnly horizonStart,
+            DateOnly horizonEnd,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new PlanningInputSnapshotResult(
+                "product-engineering-http:0",
+                inventorySnapshotSource,
+                [],
+                [],
+                [],
+                [],
+                [],
+                []));
         }
     }
 }

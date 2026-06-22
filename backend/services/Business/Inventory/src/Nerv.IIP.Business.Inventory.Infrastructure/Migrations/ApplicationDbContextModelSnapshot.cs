@@ -155,6 +155,8 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
+                            t.HasCheckConstraint("ck_stock_count_adjustments_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
+
                             t.HasCheckConstraint("ck_stock_count_adjustments_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
                             t.HasCheckConstraint("ck_stock_count_adjustments_sku_code_format", "sku_code ~ '^[A-Za-z0-9_.:-]+$'");
@@ -310,6 +312,8 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_count_tasks_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
+                            t.HasCheckConstraint("ck_stock_count_tasks_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
+
                             t.HasCheckConstraint("ck_stock_count_tasks_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
                             t.HasCheckConstraint("ck_stock_count_tasks_sku_code_format", "sku_code ~ '^[A-Za-z0-9_.:-]+$'");
@@ -330,6 +334,23 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the balance is valid.");
 
+                    b.Property<string>("FrozenCountTaskCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("frozen_count_task_code")
+                        .HasComment("Open count task code that currently freezes this ledger, when any.");
+
+                    b.Property<decimal>("InventoryValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("inventory_value")
+                        .HasComment("Current inventory value for this ledger dimension.");
+
+                    b.Property<bool>("IsFrozenForCount")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_frozen_for_count")
+                        .HasComment("Flag indicating regular movements are blocked while an open count task owns this ledger snapshot.");
+
                     b.Property<long>("LedgerVersion")
                         .HasColumnType("bigint")
                         .HasColumnName("ledger_version")
@@ -347,6 +368,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot or batch number dimension.");
+
+                    b.Property<decimal>("MovingAverageUnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("moving_average_unit_cost")
+                        .HasComment("Current moving-average unit cost for this ledger dimension.");
 
                     b.Property<decimal>("OnHandQuantity")
                         .HasPrecision(18, 6)
@@ -379,13 +406,13 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("quality_status")
-                        .HasComment("Quality status carried by stock facts.");
+                        .HasComment("Quality status carried by stock facts: unrestricted, quality, restricted or blocked.");
 
                     b.Property<decimal>("ReservedQuantity")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("reserved_quantity")
-                        .HasComment("Current reserved quantity; always zero in Inventory MVP.");
+                        .HasComment("Current reserved stock quantity held by Inventory reservations.");
 
                     b.Property<int>("RowVersion")
                         .IsConcurrencyToken()
@@ -435,6 +462,8 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                             t.HasComment("Inventory current stock ledger balances by SKU, UOM, site, location, lot, serial, quality and owner dimensions.");
 
                             t.HasCheckConstraint("ck_stock_ledgers_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
+
+                            t.HasCheckConstraint("ck_stock_ledgers_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
 
                             t.HasCheckConstraint("ck_stock_ledgers_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
@@ -558,6 +587,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot or batch number dimension.");
 
+                    b.Property<decimal?>("MovementAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("movement_amount")
+                        .HasComment("Signed movement amount derived from quantity and unit cost.");
+
                     b.Property<string>("MovementType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -595,7 +630,7 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("quality_status")
-                        .HasComment("Quality status carried by stock facts.");
+                        .HasComment("Canonical stock status: unrestricted, quality, restricted or blocked.");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)
@@ -643,6 +678,12 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
                         .HasColumnName("source_service")
                         .HasComment("Source service that requested the movement.");
 
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Optional movement unit cost used for moving-average valuation.");
+
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -663,9 +704,181 @@ namespace Nerv.IIP.Business.Inventory.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_stock_movements_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
 
+                            t.HasCheckConstraint("ck_stock_movements_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
+
                             t.HasCheckConstraint("ck_stock_movements_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
 
                             t.HasCheckConstraint("ck_stock_movements_sku_code_format", "sku_code ~ '^[A-Za-z0-9_.:-]+$'");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate.StockReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Stock reservation aggregate id.");
+
+                    b.Property<decimal>("AllocatedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("allocated_quantity")
+                        .HasComment("Quantity allocated to outbound consumption.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the reservation was created.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the reservation is valid.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Reservation idempotency key unique within source document scope.");
+
+                    b.Property<string>("LocationCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Inventory stock location code.");
+
+                    b.Property<string>("LotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("lot_no")
+                        .HasComment("Optional lot or batch number dimension.");
+
+                    b.Property<decimal>("OpenQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("open_quantity")
+                        .HasComment("Remaining reserved quantity not released or allocated.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the reservation.");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Optional public owner reference id.");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Stock ownership type such as company, customer or supplier.");
+
+                    b.Property<string>("QualityStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("quality_status")
+                        .HasComment("Canonical stock status reserved: unrestricted, quality, restricted or blocked.");
+
+                    b.Property<decimal>("ReleasedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("released_quantity")
+                        .HasComment("Quantity released back to availability.");
+
+                    b.Property<decimal>("ReservedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("reserved_quantity")
+                        .HasComment("Original reserved quantity.");
+
+                    b.Property<string>("SerialNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Optional serial number dimension.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("MasterData site code.");
+
+                    b.Property<string>("SkuCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sku_code")
+                        .HasComment("MasterData SKU code.");
+
+                    b.Property<string>("SourceDocumentId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_document_id")
+                        .HasComment("Source document id that owns the reservation.");
+
+                    b.Property<string>("SourceDocumentLineId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_document_line_id")
+                        .HasComment("Optional source document line id that owns the reservation.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_service")
+                        .HasComment("Source service that requested the reservation.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("status")
+                        .HasComment("Reservation lifecycle status.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("MasterData unit of measure code.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the reservation was last changed.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SkuCode", "SiteCode", "LocationCode", "Status");
+
+                    b.ToTable("stock_reservations", "inventory", t =>
+                        {
+                            t.HasComment("Inventory stock reservation facts by source document and ledger dimension.");
+
+                            t.HasCheckConstraint("ck_stock_reservations_location_code_format", "location_code ~ '^[A-Za-z0-9_.:-]+$'");
+
+                            t.HasCheckConstraint("ck_stock_reservations_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
+
+                            t.HasCheckConstraint("ck_stock_reservations_site_code_format", "site_code ~ '^[A-Za-z0-9_.:-]+$'");
+
+                            t.HasCheckConstraint("ck_stock_reservations_sku_code_format", "sku_code ~ '^[A-Za-z0-9_.:-]+$'");
                         });
                 });
 

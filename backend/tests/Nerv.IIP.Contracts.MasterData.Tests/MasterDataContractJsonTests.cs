@@ -38,4 +38,25 @@ public sealed class MasterDataContractJsonTests
         Assert.Equal("user:planner-001", root.GetProperty("actor").GetString());
         Assert.Equal("SKU-FG-1000", root.GetProperty("payload").GetProperty("code").GetString());
     }
+
+    [Fact]
+    public void Business_partner_credit_profile_serializes_for_service_to_service_consumers()
+    {
+        var profile = new BusinessPartnerCreditProfile(
+            "org-001",
+            "env-dev",
+            "CUST-001",
+            1200m,
+            "CNY",
+            "2026-06-22T00:00:00.0000000Z");
+
+        var json = JsonSerializer.Serialize(profile, JsonOptions);
+
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("CUST-001", root.GetProperty("customerCode").GetString());
+        Assert.Equal(1200m, root.GetProperty("creditLimit").GetDecimal());
+        Assert.Equal("CNY", root.GetProperty("currencyCode").GetString());
+    }
 }

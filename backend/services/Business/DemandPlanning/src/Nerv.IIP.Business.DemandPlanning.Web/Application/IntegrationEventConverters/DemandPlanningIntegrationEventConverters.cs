@@ -108,6 +108,7 @@ internal static class DemandPlanningIntegrationEventConverterHelpers
                 suggestion.SiteCode,
                 suggestion.Quantity,
                 suggestion.RequiredDate,
+                suggestion.ReleaseDate,
                 suggestion.PeggingLinks.Select(x => new PlanningSuggestionPeggingPayload(
                     x.DemandSourceReference,
                     x.ParentSkuCode,

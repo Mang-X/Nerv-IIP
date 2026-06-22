@@ -6,6 +6,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -100,15 +101,7 @@ watch(workCenterFilter, (value) => {
   filters.workCenterId = value === 'all' ? undefined : value
 })
 
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '已下达', value: 'Released' },
-  { label: '可开工', value: 'Ready' },
-  { label: '执行中', value: 'Running' },
-  { label: '已完成', value: 'Completed' },
-  { label: '已关闭', value: 'Closed' },
-  { label: '阻塞', value: 'Blocked' },
-]
+const statusOptions = mesWorkOrderStatusOptions
 const demandEntries = [
   { title: '正常订单', description: '销售订单进入计划池', action: '去生产计划', path: '/mes/plans?source=sales' },
   { title: '备货生产', description: '主生产计划确认后下达', action: '查看计划来源', path: '/mes/plans?source=stock' },
@@ -382,6 +375,7 @@ function formatStatus(value?: string | null) {
     blocked: '阻塞',
     closed: '已关闭',
     completed: '已完成',
+    inprogress: '执行中',
     queued: '排队中',
     ready: '可开工',
     released: '已下达',
@@ -501,12 +495,12 @@ function isNonEmpty(value: string) {
           :to="`/mes/work-orders/${encodeURIComponent(row.workOrderId)}`"
           class="flex flex-col gap-0.5 text-left"
         >
-          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderNo ?? row.workOrderId }}</span>
+          <span class="text-xs text-muted-foreground">{{ row.skuCode ?? row.skuId ?? '无物料' }}</span>
         </RouterLink>
         <div v-else class="flex flex-col gap-0.5">
           <span class="font-medium text-muted-foreground">无编号</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="text-xs text-muted-foreground">{{ row.skuCode ?? row.skuId ?? '无物料' }}</span>
         </div>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
@@ -519,7 +513,7 @@ function isNonEmpty(value: string) {
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
             class="text-xs text-muted-foreground"
           >
-            {{ task.operationSequence ?? '无' }} / {{ task.workCenterId ?? '无' }} / {{ formatStatus(task.status) }}
+            {{ task.operationSequence ?? '无' }} / {{ task.workCenterName ?? task.workCenterCode ?? task.workCenterId ?? '无' }} / {{ task.operationTaskNo ?? task.operationTaskId ?? '无任务' }} / {{ formatStatus(task.status) }}
           </span>
           <span v-if="!(row.operationTasks?.length)" class="text-xs text-muted-foreground">暂无工序任务</span>
         </div>

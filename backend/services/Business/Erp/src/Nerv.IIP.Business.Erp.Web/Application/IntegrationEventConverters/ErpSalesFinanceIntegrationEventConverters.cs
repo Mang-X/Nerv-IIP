@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Wms;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -16,6 +17,42 @@ public sealed class DeliveryOrderReleasedIntegrationEventConverter
             delivery.EnvironmentId,
             EventIds.Idempotency("delivery-order-released", delivery.OrganizationId, delivery.EnvironmentId, delivery.DeliveryOrderNo),
             new DeliveryOrderReleasedPayload(PublicId(delivery.Id), delivery.DeliveryOrderNo, delivery.SalesOrderNo, delivery.CustomerCode));
+    }
+}
+
+public sealed class DeliveryOrderOutboundOrderRequestedIntegrationEventConverter
+    : IIntegrationEventConverter<DeliveryOrderReleasedDomainEvent, WmsOutboundOrderRequestedIntegrationEvent>
+{
+    public WmsOutboundOrderRequestedIntegrationEvent Convert(DeliveryOrderReleasedDomainEvent domainEvent)
+    {
+        var delivery = domainEvent.DeliveryOrder;
+        return new WmsOutboundOrderRequestedIntegrationEvent(
+            EventIds.New(),
+            WmsIntegrationEventTypes.OutboundOrderRequested,
+            WmsIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            WmsIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
+            delivery.OrganizationId,
+            delivery.EnvironmentId,
+            "system:erp",
+            EventIds.Idempotency("delivery-order-wms-outbound-requested", delivery.OrganizationId, delivery.EnvironmentId, delivery.DeliveryOrderNo),
+            new WmsOutboundOrderRequestedPayload(
+                delivery.DeliveryOrderNo,
+                delivery.SalesOrderNo,
+                delivery.CustomerCode,
+                null,
+                delivery.Lines
+                    .OrderBy(x => x.SalesOrderLineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsOutboundOrderRequestedLine(
+                        x.SalesOrderLineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        x.LocationCode,
+                        x.LotNo,
+                        x.Quantity))
+                    .ToArray()));
     }
 }
 

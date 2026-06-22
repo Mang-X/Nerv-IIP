@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Web.Application.Validation;
 
 namespace Nerv.IIP.Business.Approval.Web.Application.Queries.Chains;
@@ -62,7 +63,7 @@ public sealed class ListPendingApprovalTasksQueryHandler(ApplicationDbContext db
                 .Where(step => step.Status == ApprovalStepStatuses.Pending
                     && step.ApproverType == actorType
                     && step.ApproverRef == request.ActorRef
-                    && chain.Steps.Where(previous => previous.StepNo < step.StepNo).All(previous => previous.Status == ApprovalStepStatuses.Approved))
+                    && chain.Steps.Where(previous => previous.StepNo < step.StepNo).GroupBy(previous => previous.StepNo).All(ApprovalStep.IsGroupComplete))
                 .Select(step => new PendingApprovalTaskResponse(
                     chain.Id.ToString(),
                     step.StepNo,
@@ -80,4 +81,5 @@ public sealed class ListPendingApprovalTasksQueryHandler(ApplicationDbContext db
             items.Skip(request.Skip).Take(request.Take).ToArray(),
             items.Length);
     }
+
 }

@@ -1,5 +1,6 @@
 using System.Reflection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySummaryAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetryTagAggregate;
@@ -60,6 +61,29 @@ public sealed class IndustrialTelemetryAggregateTests
         Assert.False(alarm.HasSameRaisePayload(conflicting));
         Assert.Throws<InvalidOperationException>(() => alarm.EnsureCompatibleDuplicate(conflicting));
         Assert.IsType<AlarmRaisedDomainEvent>(alarm.GetDomainEvents().Single());
+    }
+
+    [Theory]
+    [InlineData(">", 90, 80, 91, true)]
+    [InlineData(">=", 90, 80, 90, true)]
+    [InlineData("<", 10, 9, 12, true)]
+    [InlineData("<=", 10, 10, 12, true)]
+    [InlineData("==", 42, 42, 43, true)]
+    [InlineData("==", 42, 41, 42, false)]
+    [InlineData("!=", 42, 41, 42, true)]
+    [InlineData("!=", 42, 42, 43, false)]
+    [InlineData(">", 90, 80, 89, false)]
+    [InlineData("<", 10, 10, 12, false)]
+    public void Alarm_rule_evaluates_average_or_max_value_against_threshold(
+        string comparisonOperator,
+        decimal thresholdValue,
+        decimal averageValue,
+        decimal maxValue,
+        bool expected)
+    {
+        var rule = AlarmRule.Configure("org-001", "env-dev", "DEV-CNC-01", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", comparisonOperator, thresholdValue, "celsius", true);
+
+        Assert.Equal(expected, rule.Evaluate(averageValue, maxValue));
     }
 
     [Fact]

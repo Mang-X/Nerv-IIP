@@ -134,6 +134,76 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
     }
 }
 
+public sealed record QueryAssetReliabilityQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<AssetReliabilityResponse>;
+
+public sealed record AssetReliabilityResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int FailureCount,
+    int RepairCount,
+    decimal? MtbfHours,
+    decimal? MttrMinutes);
+
+public sealed class QueryAssetReliabilityQueryValidator : AbstractValidator<QueryAssetReliabilityQuery>
+{
+    public QueryAssetReliabilityQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryAssetReliabilityQuery, AssetReliabilityResponse>
+{
+    public async Task<AssetReliabilityResponse> Handle(QueryAssetReliabilityQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var faultOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.SourceAlarmId != null)
+            .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
+            .Select(x => new ReliabilityWorkOrderProjection(x.OpenedAtUtc, x.CompletedAtUtc))
+            .ToArrayAsync(cancellationToken);
+
+        var completedDurations = faultOrders
+            .Where(x => x.CompletedAtUtc is not null && x.CompletedAtUtc > x.OpenedAtUtc)
+            .Select(x => (decimal)(x.CompletedAtUtc!.Value - x.OpenedAtUtc).TotalMinutes)
+            .ToArray();
+        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
+        var failureCount = faultOrders.Length;
+        var repairCount = completedDurations.Length;
+        var mtbfHours = failureCount == 0 ? null : (decimal?)(windowHours / failureCount);
+        var mttrMinutes = repairCount == 0 ? null : (decimal?)(completedDurations.Sum() / repairCount);
+
+        return new AssetReliabilityResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            failureCount,
+            repairCount,
+            mtbfHours.HasValue ? Math.Round(mtbfHours.Value, 6) : null,
+            mttrMinutes.HasValue ? Math.Round(mttrMinutes.Value, 6) : null);
+    }
+}
+
+internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? CompletedAtUtc);
+
 public sealed record GetMaintenanceAssetAvailabilityWindowsQuery(
     string OrganizationId,
     string EnvironmentId,
@@ -187,8 +257,6 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryValidator : Abstract
 public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryMaintenanceAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
-    private static readonly string[] InspectionRequiredResults = ["failed", "fail", "blocked", "not-ok", "not ok", "nok"];
-
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
         var originalContract = request.Request;
@@ -402,7 +470,7 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationD
 
     private static bool IsInspectionRequired(string result)
     {
-        return InspectionRequiredResults.Contains(result.Trim(), StringComparer.OrdinalIgnoreCase);
+        return MaintenanceInspectionResults.IsFailed(result);
     }
 
     private static DateTimeOffset Max(DateTimeOffset left, DateTimeOffset right)

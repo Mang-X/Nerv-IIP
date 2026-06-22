@@ -7,10 +7,13 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Quality;
 using Npgsql;
 using System.Data;
 
@@ -27,6 +30,9 @@ public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent";
     private const string AssetRestoredTopic = "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent";
+    private const string SchedulePlanReleasedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
+    private const string NcrDispositionDecidedTopic = "Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent";
+    private const string StockMovementPostedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent";
 
     [Fact]
     public void Mes_cap_registration_discovers_maintenance_asset_event_subscribers()
@@ -52,6 +58,9 @@ public sealed class MesCapSubscriptionTests
 
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
     }
 
     [Fact]
@@ -78,7 +87,25 @@ public sealed class MesCapSubscriptionTests
 
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Null(provider.GetService<IStorageInitializer>());
+    }
+
+    [Fact]
+    public void Mes_runtime_consumer_registration_includes_new_cap_consumer_types()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMesIntegrationEventConsumers();
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 
     [PostgreSqlFact]

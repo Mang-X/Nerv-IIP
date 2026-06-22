@@ -16,9 +16,15 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").IsRequired().HasMaxLength(150).HasComment("MasterData device asset public id or code reference.");
         builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasMaxLength(50).HasComment("Maintenance priority.");
         builder.Property(x => x.SourceAlarmId).HasColumnName("source_alarm_id").HasMaxLength(150).HasComment("IndustrialTelemetry alarm id that opened this work order, when applicable.");
+        builder.Property(x => x.SourcePlanCode).HasColumnName("source_plan_code").HasMaxLength(100).HasComment("Maintenance plan code that generated this work order, when applicable.");
+        builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(50).HasComment("Work order source type such as alarm, plan or inspection.");
+        builder.Property(x => x.SourceReferenceId).HasColumnName("source_reference_id").HasMaxLength(150).HasComment("Source fact reference id for source-type idempotency and traceability.");
+        builder.Property(x => x.DiagnosticDescription).HasColumnName("diagnostic_description").HasMaxLength(1000).HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Maintenance work order lifecycle status.");
         builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired().HasComment("UTC time when work order was opened.");
+        builder.Property(x => x.AlarmCleared).HasColumnName("alarm_cleared").IsRequired().HasComment("Whether the source IndustrialTelemetry alarm has been cleared while awaiting maintenance confirmation.");
+        builder.Property(x => x.AlarmClearedAtUtc).HasColumnName("alarm_cleared_at_utc").HasComment("UTC time when the source alarm was cleared.");
         builder.Property(x => x.AssetUnavailable).HasColumnName("asset_unavailable").IsRequired().HasComment("Whether Maintenance marked the device unavailable.");
         builder.Property(x => x.AssetUnavailableReason).HasColumnName("asset_unavailable_reason").HasMaxLength(500).HasComment("Reason published with maintenance.AssetUnavailable.");
         builder.Property(x => x.AssetUnavailableFromUtc).HasColumnName("asset_unavailable_from_utc").HasComment("UTC start time of asset unavailability.");
@@ -29,6 +35,10 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
+        // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })
+            .IsUnique()
+            .HasDatabaseName("ux_maintenance_work_orders_source_reference");
     }
 
     internal static void AddTenantColumns<T>(EntityTypeBuilder<T> builder)
@@ -65,6 +75,8 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.PlanCode).HasColumnName("plan_code").IsRequired().HasMaxLength(100).HasComment("Maintenance plan code.");
         builder.Property(x => x.Interval).HasColumnName("interval").IsRequired().HasMaxLength(50).HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
         builder.Property(x => x.StartsOn).HasColumnName("starts_on").IsRequired().HasComment("Plan start date.");
+        builder.Property(x => x.LastGeneratedOn).HasColumnName("last_generated_on").HasComment("Last business date for which the plan generated a maintenance work order.");
+        builder.Property(x => x.NextDueOn).HasColumnName("next_due_on").IsRequired().HasComment("Next business date on which the preventive maintenance plan is due.");
         builder.Property(x => x.Owner).HasColumnName("owner").IsRequired().HasMaxLength(150).HasComment("Plan owner or team.");
         builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("UTC start of the optional runtime availability maintenance window.");
         builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("UTC end of the optional runtime availability maintenance window.");

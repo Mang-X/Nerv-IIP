@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Quality.Domain;
@@ -50,6 +52,22 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<QualityReason>(
             fixture.DbContext,
             [nameof(QualityReason.OrganizationId), nameof(QualityReason.EnvironmentId), nameof(QualityReason.GroupName), nameof(QualityReason.Enabled)]);
+    }
+
+    [Fact]
+    public void Mes_defect_source_unique_index_is_scoped_to_auto_created_mes_ncrs()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260616013940_AddQualityBusinessGap415",
+            "20260619051226_AddQualityDefectConsumerReliability");
+
+        Assert.Contains("CREATE UNIQUE INDEX ux_ncr_mes_defect_source", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "WHERE source_type = 'in-process' AND sku_code = 'MES-SKU-UNRESOLVED';",
+            script,
+            StringComparison.Ordinal);
     }
 
     private static SchemaFixture CreateFixture()

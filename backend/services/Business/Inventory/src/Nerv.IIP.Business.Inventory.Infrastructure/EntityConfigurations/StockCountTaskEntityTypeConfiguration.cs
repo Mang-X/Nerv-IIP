@@ -12,6 +12,7 @@ public sealed class StockCountTaskEntityTypeConfiguration : IEntityTypeConfigura
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_location_code_format", "location_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_sku_code_format", "sku_code");
             InventoryCodeCheckConstraints.Add(tableBuilder, "ck_stock_count_tasks_site_code_format", "site_code");
+            tableBuilder.HasCheckConstraint("ck_stock_count_tasks_quality_status", "quality_status in ('unrestricted','quality','restricted','blocked')");
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Stock count task aggregate id.");

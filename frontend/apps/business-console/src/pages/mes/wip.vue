@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useMesWipSummary } from '@/composables/useBusinessMes'
+import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -11,16 +12,25 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   StatusBadge,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
+const statusFilter = shallowRef('all')
+watch(statusFilter, (value) => {
+  filters.status = value === 'all' ? undefined : value
+})
 
 const goodTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.goodQuantity ?? 0), 0))
 const scrapTotal = computed(() => wipRows.value.reduce((s, r) => s + (r.scrapQuantity ?? 0), 0))
@@ -28,9 +38,9 @@ const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
 const columns: DataTableColumn<WipRow>[] = [
-  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderId ?? '无' },
-  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskId ?? '无' },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
+  { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'plannedQuantity', header: '计划数', align: 'end', width: 'w-20' },
   { key: 'goodQuantity', header: '良品', align: 'end', width: 'w-20' },
@@ -65,7 +75,12 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="在制状态" />
+        <Select v-model="statusFilter">
+          <SelectTrigger class="h-9 w-32" aria-label="在制状态"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
+          </SelectContent>
+        </Select>
       </template>
     </Toolbar>
 

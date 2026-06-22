@@ -12,6 +12,7 @@ public enum InboundOrderStatus
 {
     Open = 0,
     Completed = 1,
+    InventoryPostingFailed = 2,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -141,6 +142,21 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         return request;
     }
 
+    public void MarkInventoryPostingFailed()
+    {
+        if (Status == InboundOrderStatus.InventoryPostingFailed)
+        {
+            return;
+        }
+
+        if (Status != InboundOrderStatus.Completed)
+        {
+            throw new InvalidOperationException("Only completed inbound orders can be marked as Inventory posting failed.");
+        }
+
+        Status = InboundOrderStatus.InventoryPostingFailed;
+    }
+
     private InboundOrderLine FindLine(string lineNo)
     {
         return lines.SingleOrDefault(x => x.LineNo == lineNo)
@@ -149,9 +165,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
     private void EnsureOpen()
     {
-        if (Status == InboundOrderStatus.Completed)
+        if (Status != InboundOrderStatus.Open)
         {
-            throw new InvalidOperationException("Completed inbound orders are immutable.");
+            throw new InvalidOperationException("Completed or failed inbound orders are immutable.");
         }
     }
 }

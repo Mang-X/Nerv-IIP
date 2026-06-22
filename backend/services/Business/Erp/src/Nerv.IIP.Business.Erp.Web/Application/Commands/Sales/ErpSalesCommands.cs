@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 
@@ -123,7 +124,12 @@ public sealed class ApproveQuotationCommandHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record CreateSalesOrderCommand(string OrganizationId, string EnvironmentId, string? SalesOrderNo, string QuotationNo, string? IdempotencyKey = null) : ICommand<SalesOrderId>;
+public sealed record CreateSalesOrderCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SalesOrderNo,
+    string QuotationNo,
+    string? IdempotencyKey = null) : ICommand<SalesOrderId>;
 
 public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateSalesOrderCommand>
 {
@@ -136,7 +142,7 @@ public sealed class CreateSalesOrderCommandValidator : AbstractValidator<CreateS
     }
 }
 
-public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null) : ICommandHandler<CreateSalesOrderCommand, SalesOrderId>
+public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContext, ICustomerCreditProfileReader creditProfileReader, ErpCodingService? codingService = null) : ICommandHandler<CreateSalesOrderCommand, SalesOrderId>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
@@ -156,13 +162,42 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 && x.QuotationNo == request.QuotationNo,
                 cancellationToken)
             ?? throw new KnownException($"Quotation '{request.QuotationNo}' was not found.");
-        var order = SalesOrder.CreateFromQuotation(allocation.Code, quotation);
+        var creditProfile = await creditProfileReader.GetAsync(request.OrganizationId, request.EnvironmentId, quotation.CustomerCode, cancellationToken)
+            ?? throw new KnownException($"Customer '{quotation.CustomerCode}' credit limit master data is required before creating a sales order.");
+        var openReceivables = await dbContext.AccountReceivables
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.CustomerCode == quotation.CustomerCode)
+            .SumAsync(x => x.Amount - x.CollectedAmount, cancellationToken);
+        var activeSalesOrders = (await dbContext.SalesOrders
+            .Include(x => x.Lines)
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.CustomerCode == quotation.CustomerCode
+                && x.Status == "released")
+            .ToListAsync(cancellationToken))
+            .SelectMany(x => x.Lines)
+            .Sum(x => x.OpenQuantity * x.UnitPrice);
+        var creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, creditProfile.CreditLimit, openReceivables, activeSalesOrders);
+
+        SalesOrder order;
+        try
+        {
+            order = SalesOrder.CreateFromQuotation(allocation.Code, quotation, creditSnapshot);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
         dbContext.SalesOrders.Add(order);
         return order.Id;
     }
 }
 
-public sealed record DeliveryOrderCommandLine(string SalesOrderLineNo, decimal Quantity);
+public sealed record DeliveryOrderCommandLine(string SalesOrderLineNo, decimal Quantity, string? LocationCode = null, string? LotNo = null);
 
 public sealed record ReleaseDeliveryOrderCommand(
     string OrganizationId,
@@ -212,7 +247,7 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
         var delivery = DeliveryOrder.Release(
             order,
             allocation.Code,
-            request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity)));
+            request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo)));
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;
     }

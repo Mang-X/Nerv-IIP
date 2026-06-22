@@ -19,6 +19,7 @@ public sealed record CreateInspectionRecordRequest(
     decimal InspectedQuantity,
     string? BatchNo,
     string? SerialNo,
+    StockReleaseDimensionCommandInput? StockRelease,
     IReadOnlyCollection<InspectionResultLineCommandInput>? ResultLines,
     string? DispositionReason,
     IReadOnlyCollection<string>? DispositionAttachmentFileIds);
@@ -68,7 +69,8 @@ public sealed class CreateInspectionRecordEndpoint(ISender sender)
             req.SerialNo,
             req.ResultLines ?? [],
             req.DispositionReason,
-            req.DispositionAttachmentFileIds ?? []), ct);
+            req.DispositionAttachmentFileIds ?? [],
+            req.StockRelease), ct);
         await Send.OkAsync(new CreateInspectionRecordResponse(id).AsResponseData(), cancellation: ct);
     }
 }

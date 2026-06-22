@@ -11,7 +11,16 @@ public sealed record InspectionResultLineCommandInput(
     string Result,
     string? DefectReason,
     decimal? DefectQuantity,
-    IReadOnlyCollection<string> AttachmentFileIds);
+    IReadOnlyCollection<string> AttachmentFileIds,
+    decimal? MeasuredValue = null);
+
+public sealed record StockReleaseDimensionCommandInput(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string SourceQualityStatus,
+    string OwnerType,
+    string? OwnerId);
 
 public sealed record CreateInspectionRecordCommand(
     string OrganizationId,
@@ -26,7 +35,8 @@ public sealed record CreateInspectionRecordCommand(
     string? SerialNo,
     IReadOnlyCollection<InspectionResultLineCommandInput> ResultLines,
     string? DispositionReason,
-    IReadOnlyCollection<string> DispositionAttachmentFileIds) : ICommand<InspectionRecordId>;
+    IReadOnlyCollection<string> DispositionAttachmentFileIds,
+    StockReleaseDimensionCommandInput? StockRelease = null) : ICommand<InspectionRecordId>;
 
 public sealed class CreateInspectionRecordCommandValidator : AbstractValidator<CreateInspectionRecordCommand>
 {
@@ -53,32 +63,73 @@ public sealed class CreateInspectionRecordCommandValidator : AbstractValidator<C
     }
 }
 
-public sealed class CreateInspectionRecordCommandHandler(IInspectionRecordRepository repository)
+public sealed class CreateInspectionRecordCommandHandler(
+    IInspectionRecordRepository repository,
+    IInspectionPlanRepository inspectionPlanRepository)
     : ICommandHandler<CreateInspectionRecordCommand, InspectionRecordId>
 {
     public async Task<InspectionRecordId> Handle(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
     {
-        var record = InspectionRecord.Create(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.InspectionPlanId,
-            request.SourceType,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SkuCode,
-            request.InspectedQuantity,
-            request.BatchNo,
-            request.SerialNo,
-            request.ResultLines.Select(x => new InspectionResultLineInput(
-                x.CharacteristicCode,
-                x.ObservedValue,
-                x.UnitCode,
-                x.Result,
-                x.DefectReason,
-                x.DefectQuantity,
-                x.AttachmentFileIds)).ToArray(),
-            request.DispositionReason,
-            request.DispositionAttachmentFileIds);
+        var lines = request.ResultLines.Select(x => new InspectionResultLineInput(
+            x.CharacteristicCode,
+            x.ObservedValue,
+            x.UnitCode,
+            x.Result,
+            x.DefectReason,
+            x.DefectQuantity,
+            x.AttachmentFileIds,
+            x.MeasuredValue)).ToArray();
+        var stockRelease = request.StockRelease is null
+            ? null
+            : StockReleaseDimension.Create(
+                request.StockRelease.UomCode,
+                request.StockRelease.SiteCode,
+                request.StockRelease.LocationCode,
+                request.StockRelease.SourceQualityStatus,
+                request.StockRelease.OwnerType,
+                request.StockRelease.OwnerId);
+        InspectionRecord record;
+        if (request.InspectionPlanId is not null)
+        {
+            var plan = await inspectionPlanRepository.GetWithCharacteristicsAsync(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.InspectionPlanId,
+                    cancellationToken)
+                ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
+            record = InspectionRecord.CreateFromPlan(
+                plan,
+                request.SourceType,
+                request.SourceService,
+                request.SourceDocumentId,
+                request.SkuCode,
+                request.InspectedQuantity,
+                request.BatchNo,
+                request.SerialNo,
+                stockRelease,
+                lines,
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds);
+        }
+        else
+        {
+            record = InspectionRecord.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.InspectionPlanId,
+                request.SourceType,
+                request.SourceService,
+                request.SourceDocumentId,
+                request.SkuCode,
+                request.InspectedQuantity,
+                request.BatchNo,
+                request.SerialNo,
+                lines,
+                request.DispositionReason,
+                request.DispositionAttachmentFileIds,
+                stockRelease);
+        }
+
         await repository.AddAsync(record, cancellationToken);
         return record.Id;
     }

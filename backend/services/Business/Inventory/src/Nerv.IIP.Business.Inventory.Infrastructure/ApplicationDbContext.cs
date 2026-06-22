@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAgg
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
@@ -16,6 +17,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<StockLocation> StockLocations => Set<StockLocation>();
     public DbSet<StockLedger> StockLedgers => Set<StockLedger>();
     public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+    public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<StockCountTask> StockCountTasks => Set<StockCountTask>();
     public DbSet<StockCountAdjustment> StockCountAdjustments => Set<StockCountAdjustment>();
 

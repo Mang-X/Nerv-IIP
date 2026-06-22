@@ -45,6 +45,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         decimal inspectedQuantity,
         string? batchNo,
         string? serialNo,
+        StockReleaseDimension? stockRelease,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
         IReadOnlyCollection<string> dispositionAttachmentFileIds)
@@ -60,6 +61,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         InspectedQuantity = Positive(inspectedQuantity, nameof(inspectedQuantity));
         BatchNo = Optional(batchNo);
         SerialNo = Optional(serialNo);
+        ApplyStockRelease(stockRelease);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
 
@@ -71,6 +73,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         ResultLines.AddRange(resultLines.Select(x => new InspectionResultLine(
             x.CharacteristicCode,
             x.ObservedValue,
+            x.MeasuredValue,
             x.UnitCode,
             x.Result,
             x.DefectReason,
@@ -97,6 +100,12 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     public decimal InspectedQuantity { get; private set; }
     public string? BatchNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public string? UomCode { get; private set; }
+    public string? SiteCode { get; private set; }
+    public string? LocationCode { get; private set; }
+    public string? SourceQualityStatus { get; private set; }
+    public string? OwnerType { get; private set; }
+    public string? OwnerId { get; private set; }
     public string Result { get; private set; } = string.Empty;
     public string? DispositionReason { get; private set; }
     public List<string> DispositionAttachmentFileIds { get; private set; } = [];
@@ -118,7 +127,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string? serialNo,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
-        IReadOnlyCollection<string> dispositionAttachmentFileIds)
+        IReadOnlyCollection<string> dispositionAttachmentFileIds,
+        StockReleaseDimension? stockRelease = null)
     {
         return new InspectionRecord(
             organizationId,
@@ -131,7 +141,58 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             inspectedQuantity,
             batchNo,
             serialNo,
+            stockRelease,
             resultLines,
+            dispositionReason,
+            dispositionAttachmentFileIds);
+    }
+
+    public static InspectionRecord CreateFromPlan(
+        InspectionPlan inspectionPlan,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        string skuCode,
+        decimal inspectedQuantity,
+        string? batchNo,
+        string? serialNo,
+        StockReleaseDimension? stockRelease,
+        IReadOnlyCollection<InspectionResultLineInput> resultLines,
+        string? dispositionReason,
+        IReadOnlyCollection<string> dispositionAttachmentFileIds)
+    {
+        ArgumentNullException.ThrowIfNull(inspectionPlan);
+        if (inspectionPlan.Status != "active")
+        {
+            throw new InvalidOperationException("Planned inspection records require an active inspection plan.");
+        }
+
+        var normalizedSourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
+        if (!string.Equals(inspectionPlan.Category, normalizedSourceType, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"Inspection plan category '{inspectionPlan.Category}' does not match record source type '{normalizedSourceType}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(inspectionPlan.SkuCode)
+            && !string.Equals(inspectionPlan.SkuCode, skuCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Inspection plan SKU '{inspectionPlan.SkuCode}' does not match inspected SKU '{skuCode}'.");
+        }
+
+        var plannedLines = CalculatePlannedLines(inspectionPlan, resultLines, inspectedQuantity);
+        return new InspectionRecord(
+            inspectionPlan.OrganizationId,
+            inspectionPlan.EnvironmentId,
+            inspectionPlan.Id,
+            normalizedSourceType,
+            sourceService,
+            sourceDocumentId,
+            skuCode,
+            inspectedQuantity,
+            batchNo,
+            serialNo,
+            stockRelease,
+            plannedLines,
             dispositionReason,
             dispositionAttachmentFileIds);
     }
@@ -167,7 +228,138 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             return;
         }
 
+        if (Result == InspectionRecordResults.ConditionalRelease)
+        {
+            this.AddDomainEvent(new InspectionConditionalReleasedDomainEvent(this));
+            return;
+        }
+
         this.AddDomainEvent(new InspectionRejectedDomainEvent(this));
+    }
+
+    private void ApplyStockRelease(StockReleaseDimension? stockRelease)
+    {
+        if (stockRelease is null)
+        {
+            return;
+        }
+
+        UomCode = stockRelease.UomCode;
+        SiteCode = stockRelease.SiteCode;
+        LocationCode = stockRelease.LocationCode;
+        SourceQualityStatus = stockRelease.SourceQualityStatus;
+        OwnerType = stockRelease.OwnerType;
+        OwnerId = stockRelease.OwnerId;
+    }
+
+    private static IReadOnlyCollection<InspectionResultLineInput> CalculatePlannedLines(
+        InspectionPlan inspectionPlan,
+        IReadOnlyCollection<InspectionResultLineInput> resultLines,
+        decimal inspectedQuantity)
+    {
+        if (resultLines.Count == 0)
+        {
+            throw new ArgumentException("Inspection record must contain result lines.", nameof(resultLines));
+        }
+
+        var inputByCode = resultLines
+            .GroupBy(x => x.CharacteristicCode.Trim().ToLowerInvariant())
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+        var missingRequired = inspectionPlan.Characteristics
+            .Where(x => x.IsRequired && !inputByCode.ContainsKey(x.CharacteristicCode))
+            .Select(x => x.CharacteristicCode)
+            .ToArray();
+        if (missingRequired.Length > 0)
+        {
+            throw new InvalidOperationException($"Inspection record is missing required characteristic(s): {string.Join(", ", missingRequired)}.");
+        }
+
+        return inspectionPlan.Characteristics
+            .Where(x => inputByCode.ContainsKey(x.CharacteristicCode))
+            .Select(x => CalculatePlannedLine(x, inputByCode[x.CharacteristicCode], inspectedQuantity))
+            .ToArray();
+    }
+
+    private static InspectionResultLineInput CalculatePlannedLine(
+        InspectionPlanCharacteristic characteristic,
+        InspectionResultLineInput input,
+        decimal inspectedQuantity)
+    {
+        if (characteristic.SamplingPlan is not null && inspectedQuantity < characteristic.SamplingPlan.SampleSize)
+        {
+            throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {characteristic.SamplingPlan.SampleSize}.");
+        }
+
+        return characteristic.CharacteristicType switch
+        {
+            InspectionCharacteristicTypes.Variable => CalculateVariableLine(characteristic, input, inspectedQuantity),
+            InspectionCharacteristicTypes.Attribute => CalculateAttributeLine(characteristic, input),
+            _ => throw new InvalidOperationException($"Unsupported characteristic type '{characteristic.CharacteristicType}'."),
+        };
+    }
+
+    private static InspectionResultLineInput CalculateVariableLine(
+        InspectionPlanCharacteristic characteristic,
+        InspectionResultLineInput input,
+        decimal inspectedQuantity)
+    {
+        if (!input.MeasuredValue.HasValue)
+        {
+            throw new InvalidOperationException($"Variable characteristic '{characteristic.CharacteristicCode}' requires measured value.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(characteristic.UnitCode)
+            && !string.IsNullOrWhiteSpace(input.UnitCode)
+            && !string.Equals(characteristic.UnitCode, input.UnitCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Characteristic '{characteristic.CharacteristicCode}' unit '{input.UnitCode}' does not match plan unit '{characteristic.UnitCode}'.");
+        }
+
+        var failed = characteristic.LowerSpecLimit.HasValue && input.MeasuredValue.Value < characteristic.LowerSpecLimit.Value
+            || characteristic.UpperSpecLimit.HasValue && input.MeasuredValue.Value > characteristic.UpperSpecLimit.Value;
+        return input with
+        {
+            ObservedValue = input.MeasuredValue.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            UnitCode = input.UnitCode ?? characteristic.UnitCode,
+            Result = failed ? InspectionLineResults.Failed : InspectionLineResults.Passed,
+            DefectReason = failed ? input.DefectReason ?? "out-of-specification" : input.DefectReason,
+            DefectQuantity = failed ? input.DefectQuantity ?? inspectedQuantity : input.DefectQuantity,
+        };
+    }
+
+    private static InspectionResultLineInput CalculateAttributeLine(
+        InspectionPlanCharacteristic characteristic,
+        InspectionResultLineInput input)
+    {
+        if (characteristic.SamplingPlan is null)
+        {
+            if (input.Result == InspectionLineResults.Passed
+                && (input.DefectQuantity.GetValueOrDefault() > 0m || !string.IsNullOrWhiteSpace(input.DefectReason)))
+            {
+                return input with
+                {
+                    Result = InspectionLineResults.Failed,
+                    DefectReason = input.DefectReason ?? "attribute-defect-observed",
+                };
+            }
+
+            return input;
+        }
+
+        var defectQuantity = input.DefectQuantity ?? 0m;
+        var result = defectQuantity <= characteristic.SamplingPlan.AcceptanceNumber
+            ? InspectionLineResults.Passed
+            : defectQuantity >= characteristic.SamplingPlan.RejectionNumber
+                ? InspectionLineResults.Failed
+                : InspectionLineResults.ConditionalRelease;
+        return input with
+        {
+            Result = result,
+            DefectReason = result == InspectionLineResults.Passed
+                ? input.DefectReason
+                : input.DefectReason ?? (result == InspectionLineResults.Failed ? "aql-rejection-number-reached" : "aql-conditional-release"),
+            DefectQuantity = defectQuantity,
+        };
     }
 
     private void Touch()
@@ -217,6 +409,7 @@ public sealed class InspectionResultLine : Entity<InspectionResultLineId>
     internal InspectionResultLine(
         string characteristicCode,
         string observedValue,
+        decimal? measuredValue,
         string? unitCode,
         string result,
         string? defectReason,
@@ -225,6 +418,7 @@ public sealed class InspectionResultLine : Entity<InspectionResultLineId>
     {
         CharacteristicCode = Required(characteristicCode).ToLowerInvariant();
         ObservedValue = Required(observedValue);
+        MeasuredValue = measuredValue;
         UnitCode = Optional(unitCode);
         Result = Supported(result, InspectionLineResults.All, nameof(result));
         DefectReason = Optional(defectReason);
@@ -245,6 +439,7 @@ public sealed class InspectionResultLine : Entity<InspectionResultLineId>
     public InspectionRecordId InspectionRecordId { get; private set; } = null!;
     public string CharacteristicCode { get; private set; } = string.Empty;
     public string ObservedValue { get; private set; } = string.Empty;
+    public decimal? MeasuredValue { get; private set; }
     public string? UnitCode { get; private set; }
     public string Result { get; private set; } = string.Empty;
     public string? DefectReason { get; private set; }
@@ -277,11 +472,42 @@ public sealed record InspectionResultLineInput(
     string Result,
     string? DefectReason,
     decimal? DefectQuantity,
-    IReadOnlyCollection<string> AttachmentFileIds)
+    IReadOnlyCollection<string> AttachmentFileIds,
+    decimal? MeasuredValue = null)
 {
     public static InspectionResultLineInput Pass(string characteristicCode, string observedValue, string? unitCode, IReadOnlyCollection<string> attachmentFileIds)
     {
         return new InspectionResultLineInput(characteristicCode, observedValue, unitCode, InspectionLineResults.Passed, null, null, attachmentFileIds);
+    }
+
+    public static InspectionResultLineInput Measure(string characteristicCode, decimal measuredValue, string? unitCode, IReadOnlyCollection<string> attachmentFileIds)
+    {
+        return new InspectionResultLineInput(
+            characteristicCode,
+            measuredValue.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            unitCode,
+            InspectionLineResults.Passed,
+            null,
+            null,
+            attachmentFileIds,
+            measuredValue);
+    }
+
+    public static InspectionResultLineInput Attribute(
+        string characteristicCode,
+        string observedText,
+        string? defectReason,
+        decimal? defectQuantity,
+        IReadOnlyCollection<string> attachmentFileIds)
+    {
+        return new InspectionResultLineInput(
+            characteristicCode,
+            observedText,
+            null,
+            InspectionLineResults.Passed,
+            defectReason,
+            defectQuantity,
+            attachmentFileIds);
     }
 
     public static InspectionResultLineInput Fail(
@@ -319,4 +545,40 @@ public static class InspectionLineResults
     public const string ConditionalRelease = "conditional-release";
 
     public static readonly HashSet<string> All = [Passed, Failed, ConditionalRelease];
+}
+
+public sealed record StockReleaseDimension(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string SourceQualityStatus,
+    string OwnerType,
+    string? OwnerId)
+{
+    public static StockReleaseDimension Create(
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string sourceQualityStatus,
+        string ownerType,
+        string? ownerId)
+    {
+        return new StockReleaseDimension(
+            Required(uomCode),
+            Required(siteCode),
+            Required(locationCode),
+            Required(sourceQualityStatus).ToLowerInvariant(),
+            Required(ownerType).ToLowerInvariant(),
+            Optional(ownerId));
+    }
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 }

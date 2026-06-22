@@ -96,6 +96,31 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
+    public void Sales_order_credit_check_blocks_limit_overrun_from_open_ar_and_released_orders()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-004",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
+        quotation.Approve();
+
+        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation(
+            "SO-CREDIT-001",
+            quotation,
+            new CustomerCreditSnapshot("CUST-001", 25m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m)));
+
+        var order = SalesOrder.CreateFromQuotation(
+            "SO-CREDIT-002",
+            quotation,
+            new CustomerCreditSnapshot("CUST-001", 40m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m));
+
+        Assert.Equal("released", order.Status);
+    }
+
+    [Fact]
     public void Delivery_order_cannot_exceed_sales_order_open_quantity()
     {
         var quotation = Quotation.Create(
@@ -109,6 +134,28 @@ public sealed class ErpSalesFinanceAggregateTests
         var order = SalesOrder.CreateFromQuotation("SO-001", quotation);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => DeliveryOrder.Release(order, "DO-001", [new DeliveryOrderLineDraft("L1", 3m)]));
+    }
+
+    [Fact]
+    public void Delivery_order_lines_keep_wms_outbound_dimensions_from_sales_order()
+    {
+        var quotation = Quotation.Create(
+            "org-001",
+            "env-dev",
+            "QT-005",
+            "CUST-001",
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
+            [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
+        quotation.Approve();
+        var order = SalesOrder.CreateFromQuotation("SO-005", quotation);
+
+        var delivery = DeliveryOrder.Release(order, "DO-005", [new DeliveryOrderLineDraft("L1", 1m, "FG-SHIP", "LOT-FG-001")]);
+
+        var line = Assert.Single(delivery.Lines);
+        Assert.Equal("SKU-FG", line.SkuCode);
+        Assert.Equal("ea", line.UomCode);
+        Assert.Equal("FG-SHIP", line.LocationCode);
+        Assert.Equal("LOT-FG-001", line.LotNo);
     }
 
     [Fact]
@@ -134,8 +181,28 @@ public sealed class ErpSalesFinanceAggregateTests
     [Fact]
     public void Payable_and_receivable_track_open_amount_after_partial_settlement()
     {
-        var payable = AccountPayable.Create("org-001", "env-dev", "AP-002", "RCV-002", "SUP-001", 100m, "cny");
-        var receivable = AccountReceivable.Create("org-001", "env-dev", "AR-002", "DO-002", "CUST-001", 80m, "usd");
+        var payable = AccountPayable.Create(
+            "org-001",
+            "env-dev",
+            "AP-002",
+            "RCV-002",
+            "SUP-001",
+            100m,
+            "cny",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 7, 1),
+            "NET30");
+        var receivable = AccountReceivable.Create(
+            "org-001",
+            "env-dev",
+            "AR-002",
+            "DO-002",
+            "CUST-001",
+            80m,
+            "usd",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 15),
+            "NET14");
 
         payable.RegisterPayment(40m);
         receivable.RegisterCollection(35m);
@@ -144,6 +211,10 @@ public sealed class ErpSalesFinanceAggregateTests
         Assert.Equal(45m, receivable.OpenAmount);
         Assert.Equal("CNY", payable.CurrencyCode);
         Assert.Equal("USD", receivable.CurrencyCode);
+        Assert.Equal(new DateOnly(2026, 7, 1), payable.DueDate);
+        Assert.Equal(new DateOnly(2026, 6, 15), receivable.DueDate);
+        Assert.Equal("current", payable.GetAgingBucket(new DateOnly(2026, 6, 30)));
+        Assert.Equal("1-30", receivable.GetAgingBucket(new DateOnly(2026, 7, 1)));
     }
 
     [Fact]

@@ -63,10 +63,28 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
             cancellationToken)
             ?? throw new KnownException("Stock ledger does not exist for the requested count adjustment.");
 
-        var movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+        StockMovement movement;
+        try
+        {
+            movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+        }
+        catch (StockCountRecountRequiredException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+        catch (InvalidOperationException exception) when (IsReservedStockGuard(exception))
+        {
+            throw new KnownException(exception.Message);
+        }
+
         dbContext.StockMovements.Add(movement);
         var adjustment = StockCountAdjustment.Record(task, movement, request.IdempotencyKey);
         dbContext.StockCountAdjustments.Add(adjustment);
         return new ConfirmStockCountAdjustmentResult(movement.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity);
+    }
+
+    private static bool IsReservedStockGuard(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase);
     }
 }

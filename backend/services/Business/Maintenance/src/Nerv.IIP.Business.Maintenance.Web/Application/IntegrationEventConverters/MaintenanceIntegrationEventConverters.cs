@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Maintenance.Domain.DomainEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -90,6 +91,47 @@ public sealed class AssetRestoredIntegrationEventConverter
             workOrder.OpenedBy,
             $"asset-restored:{workOrder.Id}:{domainEvent.RestoredAtUtc:O}",
             new AssetRestoredPayload(workOrder.DeviceAssetId, domainEvent.RestoredAtUtc));
+    }
+}
+
+public sealed class MaintenanceSparePartIssuedIntegrationEventConverter
+    : IIntegrationEventConverter<MaintenanceSparePartIssuedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(MaintenanceSparePartIssuedDomainEvent domainEvent)
+    {
+        var workOrder = domainEvent.WorkOrder;
+        var line = domainEvent.SparePartLine;
+        var occurredAtUtc = workOrder.CompletedAtUtc ?? DateTimeOffset.UtcNow;
+        var idempotencyKey = $"maintenance:{workOrder.OrganizationId}:{workOrder.EnvironmentId}:{workOrder.Id}:{line.Id}";
+        return new InventoryMovementRequestedIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            occurredAtUtc,
+            MaintenanceIntegrationEventSources.Maintenance,
+            workOrder.Id.ToString(),
+            line.Id.ToString(),
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.OpenedBy,
+            idempotencyKey,
+            new InventoryMovementRequestedPayload(
+                "outbound",
+                "maintenance",
+                workOrder.Id.ToString(),
+                line.Id.ToString(),
+                idempotencyKey,
+                line.SkuCode,
+                line.UomCode ?? "EA",
+                "maintenance",
+                "maintenance-spares",
+                null,
+                null,
+                "available",
+                "maintenance",
+                null,
+                -Math.Abs(line.Quantity),
+                occurredAtUtc));
     }
 }
 

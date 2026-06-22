@@ -101,6 +101,90 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
     }
 }
 
+public sealed record MarkMaintenanceWorkOrderAlarmClearedCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceAlarmId,
+    DateTimeOffset ClearedAtUtc) : ICommand;
+
+public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandValidator : AbstractValidator<MarkMaintenanceWorkOrderAlarmClearedCommand>
+{
+    public MarkMaintenanceWorkOrderAlarmClearedCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceAlarmId).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class MarkMaintenanceWorkOrderAlarmClearedCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<MarkMaintenanceWorkOrderAlarmClearedCommand>
+{
+    public async Task Handle(MarkMaintenanceWorkOrderAlarmClearedCommand request, CancellationToken cancellationToken)
+    {
+        var workOrders = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.SourceAlarmId == request.SourceAlarmId)
+            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open)
+            .OrderBy(x => x.OpenedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        foreach (var workOrder in workOrders)
+        {
+            workOrder.MarkAlarmCleared(request.ClearedAtUtc);
+        }
+    }
+}
+
+public sealed record GenerateDueMaintenanceWorkOrdersCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly BusinessDate,
+    string OpenedBy) : ICommand<GenerateDueMaintenanceWorkOrdersResult>;
+
+public sealed record GenerateDueMaintenanceWorkOrdersResult(int GeneratedCount, IReadOnlyCollection<MaintenanceWorkOrderId> WorkOrderIds);
+
+public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractValidator<GenerateDueMaintenanceWorkOrdersCommand>
+{
+    public GenerateDueMaintenanceWorkOrdersCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
+{
+    public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
+    {
+        var duePlans = await dbContext.MaintenancePlans
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.NextDueOn <= request.BusinessDate)
+            .OrderBy(x => x.DeviceAssetId)
+            .ThenBy(x => x.PlanCode)
+            .ToArrayAsync(cancellationToken);
+
+        var workOrderIds = new List<MaintenanceWorkOrderId>();
+        foreach (var plan in duePlans)
+        {
+            var workOrder = MaintenanceWorkOrder.OpenFromPlan(
+                plan.OrganizationId,
+                plan.EnvironmentId,
+                plan.DeviceAssetId,
+                plan.PlanCode,
+                request.OpenedBy);
+            dbContext.MaintenanceWorkOrders.Add(workOrder);
+            plan.MarkGenerated(request.BusinessDate);
+            workOrderIds.Add(workOrder.Id);
+        }
+
+        return new GenerateDueMaintenanceWorkOrdersResult(workOrderIds.Count, workOrderIds);
+    }
+}
+
 public sealed record CreateMaintenanceSparePartCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -255,9 +339,74 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
 {
     public async Task<MaintenanceInspectionId> Handle(RecordMaintenanceInspectionCommand request, CancellationToken cancellationToken)
     {
-        var inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, request.Result, request.InspectedAtUtc.ToUniversalTime());
-        dbContext.MaintenanceInspections.Add(inspection);
-        await Task.CompletedTask;
+        var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
+        var normalizedResult = MaintenanceInspectionResults.Normalize(request.Result);
+        var inspection = await dbContext.MaintenanceInspections
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.PlanId == request.PlanId)
+            .Where(x => x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.Inspector == request.Inspector)
+            .Where(x => x.Result == normalizedResult)
+            .Where(x => x.InspectedAtUtc == inspectedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (inspection is null)
+        {
+            inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc);
+            dbContext.MaintenanceInspections.Add(inspection);
+        }
+
+        if (MaintenanceInspectionResults.IsFailed(inspection.Result))
+        {
+            await OpenInspectionWorkOrderIfNeededAsync(inspection, cancellationToken);
+        }
+
         return inspection.Id;
+    }
+
+    private async Task OpenInspectionWorkOrderIfNeededAsync(MaintenanceInspection inspection, CancellationToken cancellationToken)
+    {
+        var sourceReferenceId = inspection.Id.ToString();
+        var existing = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == inspection.OrganizationId
+                && x.EnvironmentId == inspection.EnvironmentId
+                && x.SourceType == MaintenanceWorkOrderSourceTypes.Inspection
+                && x.SourceReferenceId == sourceReferenceId,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return;
+        }
+
+        var deviceAssetId = await ResolveInspectionDeviceAssetIdAsync(inspection, cancellationToken);
+        var workOrder = MaintenanceWorkOrder.OpenFromInspection(
+            inspection.OrganizationId,
+            inspection.EnvironmentId,
+            deviceAssetId,
+            inspection.Id,
+            inspection.Result);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+    }
+
+    private async Task<string> ResolveInspectionDeviceAssetIdAsync(MaintenanceInspection inspection, CancellationToken cancellationToken)
+    {
+        if (inspection.PlanId is not null)
+        {
+            var plan = await dbContext.MaintenancePlans.SingleOrDefaultAsync(
+                x => x.Id == inspection.PlanId
+                    && x.OrganizationId == inspection.OrganizationId
+                    && x.EnvironmentId == inspection.EnvironmentId,
+                cancellationToken)
+                ?? throw new KnownException($"Maintenance inspection plan was not found: {inspection.PlanId}");
+            return plan.DeviceAssetId;
+        }
+
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+            x => x.Id == inspection.WorkOrderId
+                && x.OrganizationId == inspection.OrganizationId
+                && x.EnvironmentId == inspection.EnvironmentId,
+            cancellationToken)
+            ?? throw new KnownException($"Maintenance inspection work order was not found: {inspection.WorkOrderId}");
+        return workOrder.DeviceAssetId;
     }
 }

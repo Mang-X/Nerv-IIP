@@ -160,6 +160,16 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("interval")
                         .HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
 
+                    b.Property<DateOnly?>("LastGeneratedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_generated_on")
+                        .HasComment("Last business date for which the plan generated a maintenance work order.");
+
+                    b.Property<DateOnly>("NextDueOn")
+                        .HasColumnType("date")
+                        .HasColumnName("next_due_on")
+                        .HasComment("Next business date on which the preventive maintenance plan is due.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -216,6 +226,16 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Maintenance work order id.");
 
+                    b.Property<bool>("AlarmCleared")
+                        .HasColumnType("boolean")
+                        .HasColumnName("alarm_cleared")
+                        .HasComment("Whether the source IndustrialTelemetry alarm has been cleared while awaiting maintenance confirmation.");
+
+                    b.Property<DateTimeOffset?>("AlarmClearedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alarm_cleared_at_utc")
+                        .HasComment("UTC time when the source alarm was cleared.");
+
                     b.Property<bool>("AssetUnavailable")
                         .HasColumnType("boolean")
                         .HasColumnName("asset_unavailable")
@@ -249,6 +269,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("device_asset_id")
                         .HasComment("MasterData device asset public id or code reference.");
+
+                    b.Property<string>("DiagnosticDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("diagnostic_description")
+                        .HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
 
                     b.Property<int?>("DowntimeMinutes")
                         .HasColumnType("integer")
@@ -300,6 +326,24 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("source_alarm_id")
                         .HasComment("IndustrialTelemetry alarm id that opened this work order, when applicable.");
 
+                    b.Property<string>("SourcePlanCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_plan_code")
+                        .HasComment("Maintenance plan code that generated this work order, when applicable.");
+
+                    b.Property<string>("SourceReferenceId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_reference_id")
+                        .HasComment("Source fact reference id for source-type idempotency and traceability.");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("source_type")
+                        .HasComment("Work order source type such as alarm, plan or inspection.");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -311,6 +355,10 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceAlarmId")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceReferenceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_maintenance_work_orders_source_reference");
 
                     b.ToTable("maintenance_work_orders", "maintenance", t =>
                         {

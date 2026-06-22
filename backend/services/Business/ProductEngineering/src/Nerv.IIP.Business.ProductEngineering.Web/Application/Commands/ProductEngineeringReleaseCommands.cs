@@ -7,6 +7,9 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVers
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.ServiceAuth;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
@@ -280,6 +283,13 @@ public sealed class ReleaseManufacturingBomCommandValidator : AbstractValidator<
         RuleFor(x => x.EngineeringBomCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EngineeringBomRevision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.MaterialLines).NotEmpty();
+        RuleForEach(x => x.MaterialLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(50);
+            line.RuleFor(x => x.ScrapRate).GreaterThanOrEqualTo(0);
+        });
     }
 }
 
@@ -322,6 +332,8 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             request.EngineeringBomRevision,
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
+
+        ProductEngineeringReleaseValidation.ValidateManufacturingBomMaterialContinuity(ebom, request.SkuCode, request.MaterialLines);
 
         var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
@@ -469,6 +481,36 @@ public sealed class ReleaseRoutingCommandHandler(
 
 internal static class ProductEngineeringReleaseValidation
 {
+    public static void ValidateManufacturingBomMaterialContinuity(
+        EngineeringBom engineeringBom,
+        string manufacturingBomSkuCode,
+        IReadOnlyCollection<ManufacturingBomMaterialLineCommand> materialLines)
+    {
+        var normalizedManufacturingBomSkuCode = manufacturingBomSkuCode.Trim();
+        if (!string.Equals(engineeringBom.ParentItemCode, normalizedManufacturingBomSkuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Manufacturing BOM SKU '{normalizedManufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+        }
+
+        var requiredEbomChildSkuCodes = engineeringBom.Lines
+            .Where(line => !line.IsPhantom)
+            .Select(line => line.ChildItemCode)
+            .ToHashSet(StringComparer.Ordinal);
+        var mbomMaterialSkuCodes = materialLines
+            .Select(line => line.SkuCode?.Trim() ?? string.Empty)
+            .Where(code => code.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingMaterialSkuCodes = requiredEbomChildSkuCodes
+            .Where(code => !mbomMaterialSkuCodes.Contains(code))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (missingMaterialSkuCodes.Length > 0)
+        {
+            throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
+        }
+    }
+
     public static T AsKnownException<T>(Func<T> action)
     {
         try
@@ -518,10 +560,12 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     IManufacturingBomRepository manufacturingBomRepository,
     IRoutingRepository routingRepository,
     IProductionVersionRepository productionVersionRepository,
+    IEngineeringApprovalVerifier? approvalVerifier = null,
     ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IEngineeringApprovalVerifier _approvalVerifier = approvalVerifier ?? new RejectingEngineeringApprovalVerifier();
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
@@ -536,6 +580,13 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             return new EntityCommandResult(allocation.Code);
         }
+
+        await _approvalVerifier.EnsureApprovedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ApprovalReferenceId,
+            allocation.Code,
+            cancellationToken);
 
         var affectedVersions = new List<Action<string>>();
         var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Reason)
@@ -614,4 +665,83 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             ? throw new KnownException($"Production version '{versionId}' was not found.")
             : reason => version.Archive(reason);
     }
+}
+
+public interface IEngineeringApprovalVerifier
+{
+    Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class RejectingEngineeringApprovalVerifier : IEngineeringApprovalVerifier
+{
+    public Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        throw new KnownException("Engineering change release requires a verified approved BusinessApproval chain.");
+    }
+}
+
+public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInternalServiceTokenProvider tokenProvider)
+    : IEngineeringApprovalVerifier
+{
+    public async Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(approvalReferenceId, out _))
+        {
+            throw new KnownException("Engineering change approvalReferenceId must be a BusinessApproval chain id.");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalReferenceId)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' could not be verified.");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApprovalChainEnvelope>(cancellationToken);
+        var chain = envelope?.Data ?? throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' returned an empty response.");
+        ValidateApprovedChain(chain, organizationId, environmentId, changeNumber);
+    }
+
+    private static void ValidateApprovedChain(
+        ApprovalChainResponse chain,
+        string organizationId,
+        string environmentId,
+        string changeNumber)
+    {
+        if (!string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
+            || !string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.SourceService, "product-engineering", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentType, "engineering-change-order", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentId, changeNumber, StringComparison.Ordinal))
+        {
+            throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+        }
+    }
+
+    private sealed record ApprovalChainEnvelope(ApprovalChainResponse? Data);
+
+    private sealed record ApprovalChainResponse(
+        string OrganizationId,
+        string EnvironmentId,
+        string Status,
+        string SourceService,
+        string DocumentType,
+        string DocumentId);
 }

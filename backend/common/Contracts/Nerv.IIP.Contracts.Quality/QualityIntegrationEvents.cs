@@ -1,9 +1,13 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Contracts.Quality;
 
 public static class QualityIntegrationEventTypes
 {
     public const string InspectionPassed = "quality.InspectionPassed";
+    public const string InspectionConditionalReleased = "quality.InspectionConditionalReleased";
     public const string InspectionRejected = "quality.InspectionRejected";
+    public const string DefectRaised = "quality.DefectRaised";
     public const string NcrOpened = "quality.NcrOpened";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
@@ -17,7 +21,40 @@ public static class QualityIntegrationEventVersions
 public static class QualityIntegrationEventSources
 {
     public const string BusinessQuality = "business-quality";
+    public const string BusinessMes = "business-mes";
 }
+
+public static class QualityStockReleaseTargetStatuses
+{
+    public const string Unrestricted = "unrestricted";
+    public const string Restricted = "restricted";
+    public const string Blocked = "blocked";
+}
+
+public sealed record DefectRaisedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    DefectRaisedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record DefectRaisedPayload(
+    string DefectNo,
+    string WorkOrderId,
+    string? OperationTaskId,
+    string DefectCode,
+    decimal Quantity,
+    DateTimeOffset RecordedAtUtc);
 
 public sealed record NcrOpenedIntegrationEvent(
     string EventId,
@@ -31,7 +68,10 @@ public sealed record NcrOpenedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrOpenedPayload Payload);
+    NcrOpenedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record NcrDispositionDecidedIntegrationEvent(
     string EventId,
@@ -45,7 +85,10 @@ public sealed record NcrDispositionDecidedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrDispositionDecidedPayload Payload);
+    NcrDispositionDecidedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record NcrClosedIntegrationEvent(
     string EventId,
@@ -59,7 +102,10 @@ public sealed record NcrClosedIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    NcrClosedPayload Payload);
+    NcrClosedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record InspectionResultIntegrationEvent(
     string EventId,
@@ -73,7 +119,10 @@ public sealed record InspectionResultIntegrationEvent(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    InspectionResultPayload Payload);
+    InspectionResultPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record InspectionResultPayload(
     string InspectionRecordId,
@@ -86,7 +135,36 @@ public sealed record InspectionResultPayload(
     string Result,
     string? DispositionReason,
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
-    DateTimeOffset RecordedAtUtc);
+    DateTimeOffset RecordedAtUtc,
+    StockReleaseDimensionPayload? StockRelease = null,
+    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null,
+    string? LotNo = null,
+    string? SerialNo = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? OwnerType = null,
+    string? OwnerId = null,
+    string? UomCode = null);
+
+public sealed record StockReleaseDimensionPayload(
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    string SourceQualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    string? TargetQualityStatus = null);
+
+public sealed record InspectionResultLinePayload(
+    string CharacteristicCode,
+    decimal? MeasuredValue,
+    string? ObservedText,
+    string? UnitCode,
+    string Result,
+    string? DefectReason,
+    decimal? DefectQuantity);
 
 public sealed record NcrOpenedPayload(
     string NcrId,
@@ -111,7 +189,17 @@ public sealed record NcrDispositionDecidedPayload(
     string? ReworkWorkOrderId,
     string? ScrapMovementId,
     string? ReturnDocumentId,
-    DateTimeOffset ChangedAtUtc);
+    DateTimeOffset ChangedAtUtc,
+    IReadOnlyCollection<MrbReviewPayload>? MrbReviews = null)
+{
+    public string? SourceDocumentId { get; init; }
+}
+
+public sealed record MrbReviewPayload(
+    string ReviewerId,
+    string Decision,
+    string? Comment,
+    DateTimeOffset ReviewedAtUtc);
 
 public sealed record NcrClosedPayload(
     string NcrId,

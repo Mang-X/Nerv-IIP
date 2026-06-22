@@ -50,10 +50,21 @@ public sealed record GeneratedSchedulePlanSnapshot(
     int ContractVersion,
     DateTimeOffset GeneratedAtUtc,
     SchedulePlanInputStatus Status,
+    GeneratedSchedulePlanMetricsSnapshot Metrics,
     IReadOnlyList<GeneratedScheduleAssignmentSnapshot> Assignments,
     IReadOnlyList<GeneratedScheduleResourceLoadSnapshot> ResourceLoads,
     IReadOnlyList<GeneratedScheduleConflictSnapshot> Conflicts,
     IReadOnlyList<GeneratedUnscheduledOperationSnapshot> UnscheduledOperations);
+
+public sealed record GeneratedSchedulePlanMetricsSnapshot(
+    int ScheduledOperationCount,
+    int UnscheduledOperationCount,
+    int AssignedMinutes,
+    int MakespanMinutes,
+    int TotalTardinessMinutes,
+    int LateOperationCount,
+    decimal OnTimeRate,
+    decimal AverageResourceUtilization);
 
 public sealed record GeneratedScheduleAssignmentSnapshot(
     string AssignmentId,
@@ -166,6 +177,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
         Status = SchedulePlanLifecycleStatus.Generated;
+        ApplyMetrics(plan.Metrics);
 
         foreach (var assignment in plan.Assignments)
         {
@@ -205,6 +217,14 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
     public SchedulePlanLifecycleStatus Status { get; private set; }
     public DateTimeOffset GeneratedAtUtc { get; private set; }
     public DateTimeOffset? ReleasedAtUtc { get; private set; }
+    public int ScheduledOperationCount { get; private set; }
+    public int UnscheduledOperationCount { get; private set; }
+    public int AssignedMinutes { get; private set; }
+    public int MakespanMinutes { get; private set; }
+    public int TotalTardinessMinutes { get; private set; }
+    public int LateOperationCount { get; private set; }
+    public decimal OnTimeRate { get; private set; }
+    public decimal AverageResourceUtilization { get; private set; }
     public IReadOnlyCollection<SchedulePlanAssignment> Assignments => assignments;
     public IReadOnlyCollection<SchedulePlanResourceLoad> ResourceLoads => resourceLoads;
     public IReadOnlyCollection<SchedulePlanConflict> Conflicts => conflicts;
@@ -252,6 +272,7 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         AlgorithmVersion = Required(plan.AlgorithmVersion, nameof(plan.AlgorithmVersion));
         ContractVersion = plan.ContractVersion;
         GeneratedAtUtc = plan.GeneratedAtUtc;
+        ApplyMetrics(plan.Metrics);
         assignments.Clear();
         resourceLoads.Clear();
         conflicts.Clear();
@@ -280,6 +301,19 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         }
 
         this.AddDomainEvent(new SchedulePlanGeneratedDomainEvent(this));
+    }
+
+    private void ApplyMetrics(GeneratedSchedulePlanMetricsSnapshot metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        ScheduledOperationCount = metrics.ScheduledOperationCount;
+        UnscheduledOperationCount = metrics.UnscheduledOperationCount;
+        AssignedMinutes = metrics.AssignedMinutes;
+        MakespanMinutes = metrics.MakespanMinutes;
+        TotalTardinessMinutes = metrics.TotalTardinessMinutes;
+        LateOperationCount = metrics.LateOperationCount;
+        OnTimeRate = metrics.OnTimeRate;
+        AverageResourceUtilization = metrics.AverageResourceUtilization;
     }
 
     public void AddAssignment(GeneratedScheduleAssignmentSnapshot assignment)

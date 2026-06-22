@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -20,7 +22,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(38, MesEndpointContracts.All.Count);
+        Assert.Equal(41, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -72,6 +74,21 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/release"
             && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
             && x.OperationId == "releaseBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/close"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "closeBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/hold"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "holdBusinessMesWorkOrder");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/cancel"
+            && x.PermissionCode == MesPermissionCodes.WorkOrdersManage
+            && x.OperationId == "cancelBusinessMesWorkOrder");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness"
@@ -218,6 +235,75 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Work_order_lifecycle_commands_update_status_and_reject_illegal_close()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-05T08:00:00Z");
+        var completed = WorkOrder.Create("org-001", "env-dev", "WO-CLOSE", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        completed.MarkReleased();
+        completed.Start(now);
+        completed.RecordProductionProgress(2m, 0m, now.AddMinutes(30));
+        var active = WorkOrder.Create("org-001", "env-dev", "WO-ACTIVE", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        active.MarkReleased();
+        dbContext.WorkOrders.AddRange(completed, active);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var closeHandler = new CloseWorkOrderCommandHandler(dbContext);
+        var closeResponse = await closeHandler.Handle(
+            new CloseWorkOrderCommand("org-001", "env-dev", "WO-CLOSE", now.AddHours(1)),
+            CancellationToken.None);
+        var holdResponse = await new HoldWorkOrderCommandHandler(dbContext).Handle(
+            new HoldWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "material shortage", now.AddMinutes(10)),
+            CancellationToken.None);
+        var cancelResponse = await new CancelWorkOrderCommandHandler(dbContext).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "plan cancelled", now.AddMinutes(20)),
+            CancellationToken.None);
+        var invalidClose = await Assert.ThrowsAsync<KnownException>(() => closeHandler.Handle(
+            new CloseWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", now.AddHours(2)),
+            CancellationToken.None));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("Accepted", closeResponse.Status);
+        Assert.Equal("Accepted", holdResponse.Status);
+        Assert.Equal("Accepted", cancelResponse.Status);
+        Assert.Equal(WorkOrder.ClosedStatus, completed.Status);
+        Assert.Equal(now.AddHours(1), completed.ClosedAtUtc);
+        Assert.Equal(WorkOrder.CancelledStatus, active.Status);
+        Assert.Equal("material shortage", active.HoldReason);
+        Assert.Equal("plan cancelled", active.CancelReason);
+        Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
+    }
+
+    [Fact]
+    public async Task Starting_operation_task_starts_owning_work_order()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-06-05T08:00:00Z");
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-START", "SKU-001", "PV-001", 2m, 10, now.AddDays(1));
+        var tasks = workOrder.Release(
+            now,
+            [
+                new RoutingStepSnapshot("OP-10", 10, "WC-001", [], TimeSpan.FromMinutes(30)),
+            ]);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ChangeOperationTaskStateCommandHandler(dbContext, NoRequirementSnapshotProvider.Instance).Handle(
+            new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-10", "start", now.AddMinutes(5)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("OP-10", response.OperationTaskId);
+        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
+    }
+
+    [Fact]
     public async Task Mes_workbench_queries_return_detail_operations_wip_and_empty_material_context()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -245,6 +331,7 @@ public sealed class MesEndpointContractTests
             ]);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordProductionReportCommandHandler(dbContext).Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 8m, 1m, false, dueUtc),
             CancellationToken.None);
@@ -274,6 +361,32 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1m, wipRow.ScrapQuantity);
         Assert.Equal("Ready", material.ReadinessStatus);
         Assert.Empty(material.Items);
+    }
+
+    [Fact]
+    public void Operation_task_status_filters_do_not_depend_on_enum_ToString_provider_translation()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var query = InvokeOperationTaskEntityQuery(
+            dbContext,
+            "org-001",
+            "env-dev",
+            null,
+            "inProgress",
+            "progress",
+            null,
+            null,
+            null);
+
+        Assert.DoesNotContain("ToString", query.Expression.ToString(), StringComparison.Ordinal);
+
+        var sql = query.ToQueryString();
+        Assert.Contains("operation_tasks", sql, StringComparison.Ordinal);
+        Assert.Contains("status", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -489,9 +602,9 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var now = DateTimeOffset.Parse("2026-06-03T08:00:00Z");
         dbContext.MaterialIssueRequests.AddRange(
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", 1m, now.AddMinutes(1)),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", 1m, now.AddMinutes(2)),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-003", "WO-MAT", "OP-MAT-30", "MAT-OIL", 1m, now.AddMinutes(3)));
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-001", "WO-MAT", "OP-MAT-10", "MAT-OIL", "L", 1m, now.AddMinutes(1)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-002", "WO-MAT", "OP-MAT-20", "MAT-OIL", "L", 1m, now.AddMinutes(2)),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-003", "WO-MAT", "OP-MAT-30", "MAT-OIL", "L", 1m, now.AddMinutes(3)));
         dbContext.WorkCenterUnavailabilities.AddRange(
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-001", "WC-MIX", now.AddMinutes(1), null, "breakdown", "ASSET-001"),
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-002", "WC-MIX", now.AddMinutes(2), null, "breakdown", "ASSET-001"),
@@ -569,11 +682,30 @@ public sealed class MesEndpointContractTests
         Assert.Equal(1, workOrders.Total);
         Assert.Equal("WO-FILTER-001", Assert.Single(workOrders.Items).WorkOrderId);
         Assert.Equal(1, operationTasks.Total);
-        Assert.Equal("OP-FILTER-10", Assert.Single(operationTasks.Items).OperationTaskId);
+        var operationTask = Assert.Single(operationTasks.Items);
+        Assert.Equal("OP-FILTER-10", operationTask.OperationTaskId);
+        Assert.Equal("WO-FILTER-001", operationTask.WorkOrderNo);
+        Assert.Equal("OP-FILTER-10", operationTask.OperationTaskNo);
+        Assert.Equal("WC-FILTER", operationTask.WorkCenterCode);
+        Assert.Null(operationTask.WorkCenterName);
+        Assert.Equal("DEV-FILTER", operationTask.DeviceAssetCode);
+        Assert.Null(operationTask.DeviceAssetName);
         Assert.Equal(1, dispatchTasks.Total);
-        Assert.Equal("OP-FILTER-10", Assert.Single(dispatchTasks.Items).OperationTaskId);
+        var dispatchTask = Assert.Single(dispatchTasks.Items);
+        Assert.Equal("OP-FILTER-10", dispatchTask.OperationTaskId);
+        Assert.Equal("WO-FILTER-001", dispatchTask.WorkOrderNo);
+        Assert.Equal("OP-FILTER-10", dispatchTask.OperationTaskNo);
+        Assert.Equal("WC-FILTER", dispatchTask.WorkCenterCode);
+        Assert.Null(dispatchTask.WorkCenterName);
+        Assert.Equal("DEV-FILTER", dispatchTask.DeviceAssetCode);
+        Assert.Null(dispatchTask.DeviceAssetName);
         Assert.Equal(1, wip.Total);
-        Assert.Equal("OP-FILTER-10", Assert.Single(wip.Items).OperationTaskId);
+        var wipItem = Assert.Single(wip.Items);
+        Assert.Equal("OP-FILTER-10", wipItem.OperationTaskId);
+        Assert.Equal("WO-FILTER-001", wipItem.WorkOrderNo);
+        Assert.Equal("OP-FILTER-10", wipItem.OperationTaskNo);
+        Assert.Equal("WC-FILTER", wipItem.WorkCenterCode);
+        Assert.Null(wipItem.WorkCenterName);
     }
 
     [Fact]
@@ -618,8 +750,8 @@ public sealed class MesEndpointContractTests
             Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-FILTER", "WO-FILTER", "SKU-FILTER", 1m, "PCS", now),
             Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequest.Create("org-001", "env-dev", "FGR-OTHER", "WO-OTHER", "SKU-OTHER", 1m, "PCS", now.AddMinutes(1)));
         dbContext.MaterialIssueRequests.AddRange(
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-FILTER", "WO-FILTER", "OP-FILTER", "MAT-FILTER", 1m, now),
-            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OTHER", "WO-OTHER", "OP-OTHER", "MAT-OTHER", 1m, now.AddMinutes(1)));
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-FILTER", "WO-FILTER", "OP-FILTER", "MAT-FILTER", "PCS", 1m, now),
+            Domain.AggregatesModel.MaterialSupplyAggregate.MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OTHER", "WO-OTHER", "OP-OTHER", "MAT-OTHER", "PCS", 1m, now.AddMinutes(1)));
         dbContext.WorkCenterUnavailabilities.AddRange(
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-FILTER", "WC-FILTER", now, null, "filter-reason", "DEV-FILTER"),
             Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open("org-001", "env-dev", "DOWNTIME-OTHER", "WC-OTHER", now.AddMinutes(1), null, "other-reason", "DEV-OTHER"));
@@ -659,21 +791,64 @@ public sealed class MesEndpointContractTests
         var handovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
             new ListShiftHandoversQuery("org-001", "env-dev", "SHIFT-FILTER", Skip: 0, Take: 10, Keyword: "TEAM-FILTER", WorkCenterId: "WC-FILTER", DeviceAssetId: "DEV-FILTER"),
             CancellationToken.None);
+        var nonMatchingReceipts = await new ListFinishedGoodsReceiptRequestsQueryHandler(dbContext).Handle(
+            new ListFinishedGoodsReceiptRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "posted"),
+            CancellationToken.None);
+        var nonMatchingMaterialIssues = await new ListMaterialIssueRequestsQueryHandler(dbContext).Handle(
+            new ListMaterialIssueRequestsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "received"),
+            CancellationToken.None);
+        var nonMatchingQualityItems = await new ListRelatedQualityItemsQueryHandler(dbContext).Handle(
+            new ListRelatedQualityItemsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "reworkPending"),
+            CancellationToken.None);
+        var nonMatchingDowntimeEvents = await new ListDowntimeEventsQueryHandler(dbContext).Handle(
+            new ListDowntimeEventsQuery("org-001", "env-dev", null, null, Skip: 0, Take: 10, Status: "recovered"),
+            CancellationToken.None);
+        var nonMatchingCapacityImpacts = await new ListCapacityImpactsQueryHandler(dbContext).Handle(
+            new ListCapacityImpactsQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "recovered"),
+            CancellationToken.None);
+        var nonMatchingHandovers = await new ListShiftHandoversQueryHandler(dbContext).Handle(
+            new ListShiftHandoversQuery("org-001", "env-dev", null, Skip: 0, Take: 10, Status: "accepted"),
+            CancellationToken.None);
 
         Assert.Equal("PRPT-FILTER", Assert.Single(reports.Items).ReportNo);
+        Assert.Equal("WO-FILTER", Assert.Single(reports.Items).WorkOrderNo);
+        Assert.Equal("OP-FILTER", Assert.Single(reports.Items).OperationTaskNo);
         Assert.Equal(1, reports.Total);
-        Assert.Equal("FGR-FILTER", Assert.Single(receipts.Items).RequestNo);
+        var receipt = Assert.Single(receipts.Items);
+        Assert.Equal("FGR-FILTER", receipt.RequestNo);
+        Assert.Equal("WO-FILTER", receipt.WorkOrderNo);
+        Assert.Equal("SKU-FILTER", receipt.SkuCode);
         Assert.Equal(1, receipts.Total);
-        Assert.Equal("MIR-FILTER", Assert.Single(materialIssues.Items).RequestId);
+        var materialIssue = Assert.Single(materialIssues.Items);
+        Assert.Equal("MIR-FILTER", materialIssue.RequestId);
+        Assert.Equal("WO-FILTER", materialIssue.WorkOrderNo);
+        Assert.Equal("OP-FILTER", materialIssue.OperationTaskNo);
+        Assert.Equal("MAT-FILTER", materialIssue.MaterialCode);
         Assert.Equal(1, materialIssues.Total);
         Assert.Equal("DEF-FILTER", Assert.Single(qualityItems.Items).DefectCode);
         Assert.Equal(1, qualityItems.Total);
-        Assert.Equal("DOWNTIME-FILTER", Assert.Single(downtimeEvents.Items).DowntimeEventId);
+        var downtime = Assert.Single(downtimeEvents.Items);
+        Assert.Equal("DOWNTIME-FILTER", downtime.DowntimeEventId);
+        Assert.Null(downtime.WorkOrderNo);
+        Assert.Null(downtime.OperationTaskNo);
+        Assert.Equal("DEV-FILTER", downtime.DeviceAssetCode);
+        Assert.Null(downtime.DeviceAssetName);
         Assert.Equal(1, downtimeEvents.Total);
-        Assert.Equal("DOWNTIME-FILTER", Assert.Single(capacityImpacts.Items).ImpactId);
+        var capacityImpact = Assert.Single(capacityImpacts.Items);
+        Assert.Equal("DOWNTIME-FILTER", capacityImpact.ImpactId);
+        Assert.Equal("WC-FILTER", capacityImpact.WorkCenterCode);
+        Assert.Null(capacityImpact.WorkCenterName);
+        Assert.Equal("DEV-FILTER", capacityImpact.DeviceAssetCode);
+        Assert.Null(capacityImpact.DeviceAssetName);
         Assert.Equal(1, capacityImpacts.Total);
         Assert.Equal("SHIFT-FILTER", Assert.Single(handovers.Items).ShiftId);
         Assert.Equal(1, handovers.Total);
+        Assert.Equal(0, nonMatchingReceipts.Total);
+        Assert.Equal(0, nonMatchingMaterialIssues.Total);
+        Assert.Equal(0, nonMatchingQualityItems.Total);
+        Assert.Equal(0, nonMatchingDowntimeEvents.Total);
+        Assert.Equal(0, nonMatchingCapacityImpacts.Total);
+        Assert.Equal(0, nonMatchingHandovers.Total);
     }
 
     [Fact]
@@ -913,6 +1088,9 @@ public sealed class MesEndpointContractTests
     [Theory]
     [InlineData("/api/business/v1/mes/schedules/run")]
     [InlineData("/api/business/v1/mes/work-orders/rush")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/close")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/hold")]
+    [InlineData("/api/business/v1/mes/work-orders/WO-001/cancel")]
     public async Task Mes_write_endpoints_require_internal_service_authentication(string route)
     {
         await using var factory = new WebApplicationFactory<Program>();
@@ -953,6 +1131,35 @@ public sealed class MesEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> InvokeOperationTaskEntityQuery(
+        Infrastructure.ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string? workOrderId,
+        string? status,
+        string? keyword,
+        string? workCenterId,
+        string? shiftId,
+        string? deviceAssetId)
+    {
+        var method = typeof(GetMesWorkOrderDetailQueryHandler).GetMethod(
+            "QueryOperationTaskEntities",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        return Assert.IsAssignableFrom<IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask>>(
+            method.Invoke(null, [
+                dbContext,
+                organizationId,
+                environmentId,
+                workOrderId,
+                status,
+                keyword,
+                workCenterId,
+                shiftId,
+                deviceAssetId,
+            ]));
     }
 }
 
@@ -1000,5 +1207,17 @@ internal sealed class NoopMediator : IMediator
     public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException("No-op mediator cannot stream requests.");
+    }
+}
+
+internal sealed class NoRequirementSnapshotProvider : IMesMaterialRequirementSnapshotProvider
+{
+    public static readonly NoRequirementSnapshotProvider Instance = new();
+
+    public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
+        MesMaterialRequirementSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(MesMaterialRequirementSnapshotResult.NoRequirements("test:no-requirements"));
     }
 }

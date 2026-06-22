@@ -69,6 +69,19 @@ public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
 public sealed record ListMaintenancePlansRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
+public sealed record GenerateDueMaintenanceWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly BusinessDate,
+    string OpenedBy);
+
+public sealed record QueryMaintenanceAssetReliabilityRequest(
+    string DeviceAssetId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc);
+
 public sealed record GetMaintenanceAssetAvailabilityWindowsRequest(
     string DeviceAssetId,
     string OrganizationId,
@@ -171,6 +184,30 @@ public sealed class ListMaintenancePlansEndpoint(ISender sender)
     }
 }
 
+public sealed class GenerateDueMaintenanceWorkOrdersEndpoint(ISender sender)
+    : MaintenanceEndpoint<GenerateDueMaintenanceWorkOrdersRequest, ResponseData<GenerateDueMaintenanceWorkOrdersResult>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<GenerateDueMaintenanceWorkOrdersEndpoint>());
+
+    public override async Task HandleAsync(GenerateDueMaintenanceWorkOrdersRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new GenerateDueMaintenanceWorkOrdersCommand(req.OrganizationId, req.EnvironmentId, req.BusinessDate, req.OpenedBy), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class QueryMaintenanceAssetReliabilityEndpoint(ISender sender)
+    : MaintenanceEndpoint<QueryMaintenanceAssetReliabilityRequest, ResponseData<AssetReliabilityResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<QueryMaintenanceAssetReliabilityEndpoint>());
+
+    public override async Task HandleAsync(QueryMaintenanceAssetReliabilityRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new QueryAssetReliabilityQuery(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.WindowStartUtc, req.WindowEndUtc), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetMaintenanceAssetAvailabilityWindowsEndpoint(ISender sender)
     : MaintenanceEndpoint<GetMaintenanceAssetAvailabilityWindowsRequest, ResponseData<EquipmentRuntimeAvailabilityResponse>>
 {
@@ -269,6 +306,8 @@ public static class MaintenanceEndpointContracts
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),
         new(typeof(ListMaintenancePlansEndpoint), "GET", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenancePlans"),
+        new(typeof(GenerateDueMaintenanceWorkOrdersEndpoint), "POST", "/api/business/v1/maintenance/plans/generate-due", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "generateDueMaintenanceWorkOrders"),
+        new(typeof(QueryMaintenanceAssetReliabilityEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/reliability", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAssetReliability"),
         new(typeof(RecordMaintenanceInspectionEndpoint), "POST", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "recordMaintenanceInspection"),
         new(typeof(ListMaintenanceInspectionsEndpoint), "GET", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceInspections"),
         new(typeof(ListMaintenanceSparePartsEndpoint), "GET", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceSpareParts"),

@@ -20,6 +20,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
 
@@ -166,6 +167,96 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error =>
             error.ErrorMessage.Contains("Disposition", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Create_inspection_record_rejects_plan_from_different_business_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var plan = InspectionPlan.Create(
+            "org-other",
+            "env-dev",
+            "IQP-OTHER-001",
+            "receiving",
+            "SKU-RM-1000",
+            "supplier-001",
+            null,
+            null,
+            "purchase-receipt");
+        plan.AddCharacteristic("appearance", "Appearance", "visual", "critical", true, "zero-defect");
+        plan.Activate();
+        dbContext.InspectionPlans.Add(plan);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateInspectionRecordCommand(
+                "org-001",
+                "env-dev",
+                plan.Id,
+                "receiving",
+                "purchase-receipt",
+                "RCV-001",
+                "SKU-RM-1000",
+                10m,
+                "BATCH-001",
+                null,
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null,
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("was not found", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.InspectionRecords);
+    }
+
+    [Fact]
+    public async Task Create_inspection_record_command_preserves_ad_hoc_stock_release()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext));
+
+        var recordId = await handler.Handle(
+            new CreateInspectionRecordCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "receiving",
+                "purchase-receipt",
+                "RCV-ADHOC-001",
+                "SKU-RM-1000",
+                10m,
+                "LOT-ADHOC-001",
+                "SER-ADHOC-001",
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null,
+                [],
+                new StockReleaseDimensionCommandInput(
+                    "kg",
+                    "SITE-02",
+                    "IQC-STAGE",
+                    "quality",
+                    "supplier",
+                    "supplier-001")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var record = Assert.Single(dbContext.InspectionRecords);
+        Assert.Equal(record.Id, recordId);
+        Assert.Equal("kg", record.UomCode);
+        Assert.Equal("SITE-02", record.SiteCode);
+        Assert.Equal("IQC-STAGE", record.LocationCode);
+        Assert.Equal("quality", record.SourceQualityStatus);
+        Assert.Equal("supplier", record.OwnerType);
+        Assert.Equal("supplier-001", record.OwnerId);
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
@@ -118,6 +119,100 @@ public sealed class OperationTaskFailedNotificationConsumerTests
             && x.IntentType == NotificationIntentTypes.Message
             && x.ResourceId == "task-002");
         Assert.All(intents, x => Assert.Empty(x.Tasks));
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_overdue_creates_review_task_for_step_approver()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("business-approval", intent.SourceService);
+        Assert.Equal("businessApproval.StepOverdue", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-engineering", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_resolved_creates_result_message_for_actor()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalStepResolvedAsync(factory, CreateApprovalStepResolvedEvent("event-approval-resolved", "approval-step-resolved:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("businessApproval.StepResolved", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-engineering", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Empty(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_action_recorded_creates_task_for_new_assignee()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent("event-approval-action", "approval-action:chain-001:transfer"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("businessApproval.ActionRecorded", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-backup", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_action_recorded_withdraw_creates_message_for_affected_approvers()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent(
+            "event-approval-withdraw",
+            "approval-action:chain-001:withdraw",
+            action: "withdraw",
+            recipients: ["user:u-engineering", "user:u-quality"]));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-quality");
+        Assert.Empty(intent.Tasks);
     }
 
     [Fact]
@@ -265,6 +360,36 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
+    private static async Task HandleApprovalStepOverdueAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalStepOverdueIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalStepOverdueIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalStepOverdueIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalStepResolvedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalStepResolvedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalStepResolvedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalStepResolvedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalActionRecordedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalActionRecordedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalActionRecordedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
     private static OperationTaskFailedIntegrationEvent CreateEvent(
         string eventId,
         string idempotencyKey,
@@ -392,6 +517,101 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 DecidedBy: "ops-approver",
                 DecisionReason: "rejected",
                 DecidedAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z")));
+    }
+
+    private static ApprovalStepOverdueIntegrationEvent CreateApprovalStepOverdueEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new ApprovalStepOverdueIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.StepOverdue,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:00:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "step-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-approval",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalStepOverduePayload(
+                ChainId: "chain-001",
+                StepId: "step-001",
+                StepNo: 1,
+                StepName: "Engineering review",
+                ApproverType: "user",
+                ApproverRef: "u-engineering",
+                DueAtUtc: DateTimeOffset.Parse("2026-06-21T07:00:00Z"),
+                MarkedAtUtc: DateTimeOffset.Parse("2026-06-21T08:00:00Z"),
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalStepResolvedIntegrationEvent CreateApprovalStepResolvedEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new ApprovalStepResolvedIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.StepResolved,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:05:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "decision-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "user:u-engineering",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalStepResolvedPayload(
+                ChainId: "chain-001",
+                StepNo: 1,
+                ActorType: "user",
+                ActorRef: "u-engineering",
+                OnBehalfOfActorType: null,
+                OnBehalfOfActorRef: null,
+                Decision: "approve",
+                Comment: "ok",
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalActionRecordedIntegrationEvent CreateApprovalActionRecordedEvent(
+        string eventId,
+        string idempotencyKey,
+        string action = "transfer",
+        IReadOnlyCollection<string>? recipients = null)
+    {
+        return new ApprovalActionRecordedIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.ActionRecorded,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:10:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: "chain-001",
+            CausationId: $"decision-{eventId}",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "user:u-manager",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalActionRecordedPayload(
+                ChainId: "chain-001",
+                StepId: "step-001",
+                StepNo: 1,
+                Action: action,
+                ActorType: "user",
+                ActorRef: "u-manager",
+                Reason: "shift change",
+                SuggestedRecipientRefs: recipients ?? ["user:u-backup"],
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalDocumentReferencePayload NewApprovalDocumentReference()
+    {
+        return new ApprovalDocumentReferencePayload(
+            SourceService: "eco",
+            DocumentType: "engineering-change-order",
+            DocumentId: "ECO-1001",
+            DocumentLineId: null);
     }
 
     private sealed class NotificationConsumerWebApplicationFactory : WebApplicationFactory<Program>

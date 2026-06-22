@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Quality.Web.Tests;
@@ -80,6 +81,21 @@ public sealed class QualityStartupGovernanceTests
             .Get(JwtBearerDefaults.AuthenticationScheme);
 
         Assert.True(options.RequireHttpsMetadata);
+    }
+
+    [Fact]
+    public async Task Integration_event_dead_letter_store_uses_persistent_quality_db_store()
+    {
+        await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+
+        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+
+        Assert.True(
+            store.GetType().FullName?.StartsWith(
+                "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Quality.Infrastructure.ApplicationDbContext,",
+                StringComparison.Ordinal) is true,
+            $"Expected persistent Quality DB dead-letter store but received {store.GetType().FullName}.");
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

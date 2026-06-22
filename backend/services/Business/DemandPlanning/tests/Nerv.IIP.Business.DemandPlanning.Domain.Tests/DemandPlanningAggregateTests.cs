@@ -49,6 +49,20 @@ public sealed class DemandPlanningAggregateTests
     }
 
     [Fact]
+    public void Mrp_run_exposes_input_degradation_sources_from_snapshot_metadata()
+    {
+        var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
+
+        run.Start(new PlanningInputSnapshot(
+            "production-version-api",
+            "inventory-http:2;scheduled-receipts:error;master-data-planning-parameters:error",
+            1,
+            2));
+
+        Assert.Equal(["scheduled-receipts", "master-data-planning-parameters"], run.InputDegradationSources);
+    }
+
+    [Fact]
     public void Planning_suggestion_can_be_accepted_once_by_same_downstream_reference()
     {
         var suggestion = NewSuggestion();
@@ -122,6 +136,7 @@ public sealed class DemandPlanningAggregateTests
             "SITE-01",
             19m,
             new DateOnly(2026, 5, 30),
+            new DateOnly(2026, 5, 25),
             "MRP-001");
     }
 }

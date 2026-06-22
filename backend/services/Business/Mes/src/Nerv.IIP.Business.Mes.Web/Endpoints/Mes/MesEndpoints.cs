@@ -68,7 +68,12 @@ public sealed record RecordProductionReportRequest(
     bool CompletesOperation,
     DateTimeOffset ReportedAtUtc,
     string? IdempotencyKey = null,
-    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null);
+    IReadOnlyCollection<ConsumedMaterialLotInput>? ConsumedMaterialLots = null,
+    decimal ReworkQuantity = 0m,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
@@ -93,7 +98,9 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
@@ -108,7 +115,8 @@ public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListCapacityImpactsRequest(
     string OrganizationId,
@@ -118,7 +126,8 @@ public sealed record ListCapacityImpactsRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record FoundationReadinessAreaRequest(
     string OrganizationId,
@@ -190,12 +199,26 @@ public sealed record ReleaseWorkOrderRequest(
     [property: RouteParam] string WorkOrderId,
     DateTimeOffset? ReleasedAtUtc);
 
+public sealed record CloseWorkOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    DateTimeOffset? ClosedAtUtc);
+
+public sealed record WorkOrderReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string WorkOrderId,
+    string Reason,
+    DateTimeOffset? ChangedAtUtc);
+
 public sealed record CreateMaterialIssueRequestRequest(
     string OrganizationId,
     string EnvironmentId,
     [property: RouteParam] string WorkOrderId,
     string? OperationTaskId,
     string MaterialId,
+    string UomCode,
     decimal? Quantity,
     DateTimeOffset? RequestedAtUtc,
     string? IdempotencyKey = null);
@@ -209,7 +232,8 @@ public sealed record ListMaterialIssueRequestsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record LineSideMaterialReceiptRequest(
     string OrganizationId,
@@ -254,7 +278,8 @@ public sealed record ListRelatedQualityItemsRequest(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record ListDowntimeEventsRequest(
     string OrganizationId,
@@ -264,7 +289,8 @@ public sealed record ListDowntimeEventsRequest(
     int Skip = 0,
     int Take = 100,
     string? Keyword = null,
-    string? ShiftId = null);
+    string? ShiftId = null,
+    string? Status = null);
 
 public sealed record RecordDowntimeEventRequest(
     string OrganizationId,
@@ -294,7 +320,8 @@ public sealed record ListShiftHandoversRequest(
     int Take = 100,
     string? Keyword = null,
     string? WorkCenterId = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    string? Status = null);
 
 public sealed record CreateShiftHandoverRequest(
     string OrganizationId,
@@ -545,6 +572,56 @@ public sealed class ReleaseWorkOrderEndpoint(ISender sender, TimeProvider timePr
     }
 }
 
+public sealed class CloseWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<CloseWorkOrderRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CloseWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(CloseWorkOrderRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CloseWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.ClosedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class HoldWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<HoldWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new HoldWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
+public sealed class CancelWorkOrderEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<WorkOrderReasonRequest, MesAcceptedResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<CancelWorkOrderEndpoint>());
+
+    public override async Task HandleAsync(WorkOrderReasonRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new CancelWorkOrderCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.Reason,
+            req.ChangedAtUtc ?? timeProvider.GetUtcNow()), ct);
+        await Send.OkAsync(response, ct);
+    }
+}
+
 public sealed class GetMaterialReadinessEndpoint(ISender sender)
     : MesEndpoint<WorkOrderContextRequest, MesMaterialReadinessResponse>
 {
@@ -570,6 +647,7 @@ public sealed class CreateMaterialIssueRequestEndpoint(ISender sender, TimeProvi
             req.WorkOrderId,
             req.OperationTaskId,
             req.MaterialId,
+            req.UomCode,
             req.Quantity,
             req.RequestedAtUtc ?? timeProvider.GetUtcNow(),
             req.IdempotencyKey), ct);
@@ -754,7 +832,12 @@ public sealed class RecordProductionReportEndpoint(ISender sender)
             req.CompletesOperation,
             req.ReportedAtUtc,
             req.IdempotencyKey,
-            req.ConsumedMaterialLots), ct);
+            req.ConsumedMaterialLots,
+            req.ReworkQuantity,
+            req.ScrapReasonCode,
+            req.DefectRecordNo,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new RecordProductionReportResponse(result.Id, result.ReportNo), ct);
     }
 }
@@ -837,7 +920,9 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.Quantity,
             req.UomCode,
             req.RequestedAtUtc,
-            req.IdempotencyKey), ct);
+            req.IdempotencyKey,
+            req.ProducedLotNo,
+            req.SerialNo), ct);
         await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }
@@ -878,7 +963,8 @@ public sealed class ListDowntimeEventsEndpoint(ISender sender)
             req.Skip,
             req.Take,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -936,7 +1022,8 @@ public sealed class ListShiftHandoversEndpoint(ISender sender)
             req.Take,
             req.Keyword,
             req.WorkCenterId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1026,7 +1113,8 @@ public sealed class ListCapacityImpactsEndpoint(ISender sender)
             req.Take,
             req.WorkCenterId,
             req.Keyword,
-            req.ShiftId), ct);
+            req.ShiftId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1052,6 +1140,9 @@ public static class MesEndpointContracts
         new(typeof(ListMesWorkOrdersEndpoint), "GET", "/api/business/v1/mes/work-orders", MesPermissionCodes.WorkOrdersRead, "listBusinessMesWorkOrders"),
         new(typeof(GetMesWorkOrderDetailEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}", MesPermissionCodes.WorkOrdersRead, "getBusinessMesWorkOrderDetail"),
         new(typeof(ReleaseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/release", MesPermissionCodes.WorkOrdersManage, "releaseBusinessMesWorkOrder"),
+        new(typeof(CloseWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/close", MesPermissionCodes.WorkOrdersManage, "closeBusinessMesWorkOrder"),
+        new(typeof(HoldWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/hold", MesPermissionCodes.WorkOrdersManage, "holdBusinessMesWorkOrder"),
+        new(typeof(CancelWorkOrderEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/cancel", MesPermissionCodes.WorkOrdersManage, "cancelBusinessMesWorkOrder"),
         new(typeof(GetMaterialReadinessEndpoint), "GET", "/api/business/v1/mes/work-orders/{workOrderId}/material-readiness", MesPermissionCodes.MaterialsRead, "getBusinessMesMaterialReadiness"),
         new(typeof(CreateMaterialIssueRequestEndpoint), "POST", "/api/business/v1/mes/work-orders/{workOrderId}/material-issue-requests", MesPermissionCodes.MaterialsManage, "createBusinessMesMaterialIssueRequest"),
         new(typeof(ListMaterialIssueRequestsEndpoint), "GET", "/api/business/v1/mes/material-issue-requests", MesPermissionCodes.MaterialsRead, "listBusinessMesMaterialIssueRequests"),

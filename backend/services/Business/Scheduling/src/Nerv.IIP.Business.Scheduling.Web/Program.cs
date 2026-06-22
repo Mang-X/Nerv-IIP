@@ -34,6 +34,21 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Mes:BaseUrl", "http://localhost:5111");
+    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Maintenance:BaseUrl", "http://localhost:5117");
+    builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient(HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName, client =>
+    {
+        client.BaseAddress = industrialTelemetryBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient(HttpSchedulingEquipmentAvailabilityProvider.MaintenanceClientName, client =>
+    {
+        client.BaseAddress = maintenanceBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -59,6 +74,16 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
+    if (isTesting)
+    {
+        builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, NoopSchedulingEquipmentAvailabilityProvider>();
+        builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, NoopSchedulingMaterialReadinessProvider>();
+    }
+    else
+    {
+        builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
+        builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
+    }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (string.IsNullOrWhiteSpace(connectionString))
@@ -157,6 +182,17 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(IConfiguration configuration, string configurationKey, string fallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    return new Uri(fallback, UriKind.Absolute);
 }
 
 #pragma warning disable S1118
