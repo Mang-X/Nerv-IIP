@@ -836,7 +836,32 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", planning.LastInternalToken);
         Assert.Equal(new BusinessConsoleRunMrpRequest("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), planning.LastRunMrpRequest);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("mrp-run-001", document.RootElement.GetProperty("data").GetProperty("runId").GetString());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("mrp-run-001", data.GetProperty("runId").GetString());
+        Assert.Empty(data.GetProperty("inputDegradationSources").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Planning_mrp_run_list_exposes_input_degradation_sources()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.True(item.GetProperty("hasInputDegradation").GetBoolean());
+        Assert.Equal("scheduled-receipts", item.GetProperty("inputDegradationSources")[0].GetString());
     }
 
     [Fact]
@@ -4824,7 +4849,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         LastInternalToken = internalBearerToken;
         LastRunMrpRequest = request;
-        return Task.FromResult(new BusinessConsoleRunMrpResponse("mrp-run-001", 2));
+        return Task.FromResult(new BusinessConsoleRunMrpResponse("mrp-run-001", 2, false, []));
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -4833,7 +4858,20 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMrpRunListResponse([]));
+        return Task.FromResult(new BusinessConsoleMrpRunListResponse([
+            new BusinessConsoleMrpRunItem(
+                "mrp-run-001",
+                new DateOnly(2026, 5, 25),
+                new DateOnly(2026, 6, 30),
+                "Completed",
+                1,
+                2,
+                3,
+                "product-engineering-http:1",
+                "inventory-http:2;scheduled-receipts:error",
+                true,
+                ["scheduled-receipts"]),
+        ]));
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(

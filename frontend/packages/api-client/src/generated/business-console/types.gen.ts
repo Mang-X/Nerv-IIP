@@ -1583,6 +1583,8 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse =
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpResponse = {
     runId?: string;
     suggestionCount?: number;
+    hasInputDegradation?: boolean;
+    inputDegradationSources?: Array<string>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpRequest = {
@@ -1610,6 +1612,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     suggestionCount?: number;
     productionEngineeringSnapshotSource?: string;
     inventorySnapshotSource?: string;
+    hasInputDegradation?: boolean;
+    inputDegradationSources?: Array<string>;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {

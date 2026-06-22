@@ -23059,6 +23059,15 @@
           "suggestionCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "hasInputDegradation": {
+            "type": "boolean"
+          },
+          "inputDegradationSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -23160,6 +23169,15 @@
           },
           "inventorySnapshotSource": {
             "type": "string"
+          },
+          "hasInputDegradation": {
+            "type": "boolean"
+          },
+          "inputDegradationSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

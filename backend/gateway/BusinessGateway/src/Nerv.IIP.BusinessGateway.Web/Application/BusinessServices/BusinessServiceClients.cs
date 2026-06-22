@@ -2825,7 +2825,12 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             "/api/business/v1/planning/mrp-runs",
             request,
             cancellationToken);
-        return new BusinessConsoleRunMrpResponse(response.RunId, response.SuggestionCount);
+        var inputDegradationSources = response.InputDegradationSources ?? [];
+        return new BusinessConsoleRunMrpResponse(
+            response.RunId,
+            response.SuggestionCount,
+            inputDegradationSources.Count > 0 || response.HasInputDegradation,
+            inputDegradationSources);
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -2854,7 +2859,9 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.AvailabilityCount,
             x.SuggestionCount,
             x.ProductionEngineeringSnapshotSource,
-            x.InventorySnapshotSource)).ToArray());
+            x.InventorySnapshotSource,
+            (x.InputDegradationSources ?? []).Count > 0 || x.HasInputDegradation,
+            x.InputDegradationSources ?? [])).ToArray());
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
@@ -2957,7 +2964,11 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
-    private sealed record DownstreamRunMrpResponse(string RunId, int SuggestionCount);
+    private sealed record DownstreamRunMrpResponse(
+        string RunId,
+        int SuggestionCount,
+        bool HasInputDegradation,
+        IReadOnlyCollection<string>? InputDegradationSources);
 
     private sealed record DownstreamMrpRunItem(
         string RunId,
@@ -2968,7 +2979,9 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         int AvailabilityCount,
         int SuggestionCount,
         string ProductionEngineeringSnapshotSource,
-        string InventorySnapshotSource);
+        string InventorySnapshotSource,
+        bool HasInputDegradation,
+        IReadOnlyCollection<string>? InputDegradationSources);
 
     private sealed record DownstreamPlanningSuggestionItem(
         string SuggestionId,

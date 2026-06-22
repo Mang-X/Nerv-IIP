@@ -103,6 +103,7 @@ const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
 const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
   { key: 'runId', header: '运行批次', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
   { key: 'productionEngineeringSnapshotSource', header: '工程快照' },
   { key: 'inventorySnapshotSource', header: '库存快照' },
@@ -172,6 +173,9 @@ function formatQuantity(value?: number | null, uom?: string | null) {
 }
 function formatSource(value?: string | null) {
   return value && value.length > 0 ? value : '未采集'
+}
+function inputDegradationLabel(sources?: readonly string[] | null) {
+  return sources && sources.length > 0 ? sources.join(', ') : '正常'
 }
 </script>
 
@@ -304,6 +308,12 @@ function formatSource(value?: string | null) {
     <TabsContent value="runs" class="grid gap-4">
       <DataTable :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" empty-message="尚未运行 MRP。">
         <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-inputDegradationSources="{ row }">
+          <StatusBadge
+            :label="inputDegradationLabel(row.inputDegradationSources)"
+            :tone="row.hasInputDegradation ? 'warning' : 'success'"
+          />
+        </template>
         <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
         <template #cell-productionEngineeringSnapshotSource="{ row }">{{ formatSource(row.productionEngineeringSnapshotSource) }}</template>
         <template #cell-inventorySnapshotSource="{ row }">{{ formatSource(row.inventorySnapshotSource) }}</template>

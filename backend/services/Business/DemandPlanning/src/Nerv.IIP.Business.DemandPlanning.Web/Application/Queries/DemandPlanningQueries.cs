@@ -50,17 +50,20 @@ public sealed record MrpRunResponse(
     int AvailabilityCount,
     int SuggestionCount,
     string ProductionEngineeringSnapshotSource,
-    string InventorySnapshotSource);
+    string InventorySnapshotSource,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
 {
     public async Task<IReadOnlyCollection<MrpRunResponse>> Handle(ListMrpRunsQuery request, CancellationToken cancellationToken)
     {
-        return await dbContext.MrpRuns.AsNoTracking()
+        var runs = await dbContext.MrpRuns.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new MrpRunResponse(
+            .Select(x => new
+            {
                 x.Id,
                 x.HorizonStart,
                 x.HorizonEnd,
@@ -69,8 +72,28 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
                 x.AvailabilityCount,
                 x.SuggestionCount,
                 x.ProductionEngineeringSnapshotSource,
-                x.InventorySnapshotSource))
+                x.InventorySnapshotSource,
+            })
             .ToListAsync(cancellationToken);
+
+        return runs.Select(x =>
+        {
+            var inputDegradationSources = PlanningInputDegradation.FromSnapshotSources(
+                x.ProductionEngineeringSnapshotSource,
+                x.InventorySnapshotSource);
+            return new MrpRunResponse(
+                x.Id,
+                x.HorizonStart,
+                x.HorizonEnd,
+                x.Status,
+                x.DemandCount,
+                x.AvailabilityCount,
+                x.SuggestionCount,
+                x.ProductionEngineeringSnapshotSource,
+                x.InventorySnapshotSource,
+                inputDegradationSources.Count > 0,
+                inputDegradationSources);
+        }).ToList();
     }
 }
 
