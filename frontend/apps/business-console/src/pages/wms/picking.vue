@@ -20,8 +20,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   StatusBadge,
   Toolbar,
   toast,
@@ -94,9 +92,6 @@ async function submitCreate() {
 }
 
 const errorMessage = computed(() => formatError(pickingTasksError.value ?? createPickingError.value))
-const openCount = computed(
-  () => pickingTasks.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
-)
 
 type PickingRow = BusinessConsoleWmsWarehouseTaskItem
 const columns: DataTableColumn<PickingRow>[] = [
@@ -139,11 +134,6 @@ function formatError(error: unknown) {
         </Button>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="2">
-      <SectionCard description="拣货任务" :value="pickingTasksTotal" hint="后端返回总数" />
-      <SectionCard description="本页待执行" :value="openCount" hint="尚未完成拣货" />
-    </SectionCards>
 
     <Toolbar :show-search="false">
       <template #filters>

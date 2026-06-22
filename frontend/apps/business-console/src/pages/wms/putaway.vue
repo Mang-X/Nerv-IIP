@@ -20,8 +20,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   StatusBadge,
   Toolbar,
   toast,
@@ -94,9 +92,6 @@ async function submitCreate() {
 }
 
 const errorMessage = computed(() => formatError(putawayTasksError.value ?? createPutawayError.value))
-const openCount = computed(
-  () => putawayTasks.value.filter((r) => (r.status ?? '').toLowerCase() !== 'completed').length,
-)
 
 type PutawayRow = BusinessConsoleWmsWarehouseTaskItem
 const columns: DataTableColumn<PutawayRow>[] = [
@@ -139,11 +134,6 @@ function formatError(error: unknown) {
         </Button>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="2">
-      <SectionCard description="上架任务" :value="putawayTasksTotal" hint="后端返回总数" />
-      <SectionCard description="本页待执行" :value="openCount" hint="尚未完成上架" />
-    </SectionCards>
 
     <Toolbar :show-search="false">
       <template #filters>
