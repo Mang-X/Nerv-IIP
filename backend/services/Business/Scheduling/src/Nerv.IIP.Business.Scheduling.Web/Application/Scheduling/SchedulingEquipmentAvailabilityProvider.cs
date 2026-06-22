@@ -42,6 +42,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
     public const string IndustrialTelemetryClientName = "SchedulingIndustrialTelemetryAvailability";
     public const string MaintenanceClientName = "SchedulingMaintenanceAvailability";
     public const string SourceUnavailableReasonCode = "equipment.availabilitySourceUnavailable";
+    public const int MaxAvailabilityQueryIdsPerBatch = 50;
 
     public async Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
         SchedulingProblemContract problem,
@@ -49,21 +50,46 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
     {
         ArgumentNullException.ThrowIfNull(problem);
 
-        var requestPath = BuildAvailabilityPath(problem);
-        var industrialTelemetry = QueryDownstreamAsync(
-            IndustrialTelemetryClientName,
-            "/api/business/v1/iiot/runtime-availability",
-            requestPath,
-            problem,
-            cancellationToken);
-        var maintenance = QueryDownstreamAsync(
-            MaintenanceClientName,
-            "/api/business/v1/maintenance/availability-windows",
-            requestPath,
-            problem,
-            cancellationToken);
+        var batches = CreateBatches(problem).ToArray();
+        if (batches.Length == 0)
+        {
+            return new EquipmentRuntimeAvailabilityResponse(
+                ContractVersion: 1,
+                OrganizationId: problem.OrganizationId,
+                EnvironmentId: problem.EnvironmentId,
+                QueryWindowStartUtc: problem.HorizonStartUtc,
+                QueryWindowEndUtc: problem.HorizonEndUtc,
+                Items: []);
+        }
 
-        var responses = await Task.WhenAll(industrialTelemetry, maintenance);
+        var requests = batches.SelectMany((batch, index) =>
+        {
+            var batchProblem = problem with { Resources = batch };
+            var requestPath = BuildAvailabilityPath(batchProblem);
+            var batchNumber = index + 1;
+
+            return new[]
+            {
+                QueryDownstreamAsync(
+                    IndustrialTelemetryClientName,
+                    "/api/business/v1/iiot/runtime-availability",
+                    requestPath,
+                    batchProblem,
+                    batchNumber,
+                    batches.Length,
+                    cancellationToken),
+                QueryDownstreamAsync(
+                    MaintenanceClientName,
+                    "/api/business/v1/maintenance/availability-windows",
+                    requestPath,
+                    batchProblem,
+                    batchNumber,
+                    batches.Length,
+                    cancellationToken)
+            };
+        });
+
+        var responses = await Task.WhenAll(requests);
         return new EquipmentRuntimeAvailabilityResponse(
             ContractVersion: 1,
             OrganizationId: problem.OrganizationId,
@@ -84,6 +110,8 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
         string route,
         string query,
         SchedulingProblemContract problem,
+        int batchNumber,
+        int batchCount,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{route}?{query}");
@@ -107,31 +135,34 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
         {
             logger.LogWarning(
                 exception,
-                "Scheduling equipment availability source {Source} was unavailable for problem {ProblemId}.",
+                "Scheduling equipment availability source {Source} was unavailable for problem {ProblemId} batch {BatchNumber}/{BatchCount} ({ResourceCount} resources).",
                 clientName,
-                problem.ProblemId);
+                problem.ProblemId,
+                batchNumber,
+                batchCount,
+                problem.Resources.Count);
             return SourceUnavailable(problem, clientName);
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
                 exception,
-                "Scheduling equipment availability source {Source} timed out for problem {ProblemId}.",
+                "Scheduling equipment availability source {Source} timed out for problem {ProblemId} batch {BatchNumber}/{BatchCount} ({ResourceCount} resources).",
                 clientName,
-                problem.ProblemId);
+                problem.ProblemId,
+                batchNumber,
+                batchCount,
+                problem.Resources.Count);
             return SourceUnavailable(problem, clientName);
         }
     }
 
     private static string BuildAvailabilityPath(SchedulingProblemContract problem)
     {
+        // P0 downstream availability endpoints require explicit device ids and reject direct work-center filtering.
+        // Work center ids stay on the batch resource slice so fail-closed windows keep their scheduling context.
         var deviceAssetIds = string.Join(',', problem.Resources
             .Select(x => x.ResourceId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal));
-        var workCenterIds = string.Join(',', problem.Resources
-            .Select(x => x.WorkCenterId)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct(StringComparer.Ordinal)
             .Order(StringComparer.Ordinal));
@@ -141,8 +172,34 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
             ("environmentId", problem.EnvironmentId),
             ("windowStartUtc", problem.HorizonStartUtc),
             ("windowEndUtc", problem.HorizonEndUtc),
-            ("deviceAssetIds", deviceAssetIds),
-            ("workCenterIds", workCenterIds));
+            ("deviceAssetIds", deviceAssetIds));
+    }
+
+    private static IReadOnlyCollection<SchedulingResourceContract>[] CreateBatches(SchedulingProblemContract problem)
+    {
+        var resources = problem.Resources
+            .Where(x => !string.IsNullOrWhiteSpace(x.ResourceId))
+            .GroupBy(x => $"{x.ResourceId}\u001F{x.WorkCenterId}", StringComparer.Ordinal)
+            .Select(x => x.First())
+            .ToArray();
+        var deviceAssetIds = resources
+            .Select(x => x.ResourceId)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        return deviceAssetIds
+            .Chunk(MaxAvailabilityQueryIdsPerBatch)
+            .Select(chunk =>
+            {
+                var deviceAssetIdSet = chunk.ToHashSet(StringComparer.Ordinal);
+                return (IReadOnlyCollection<SchedulingResourceContract>)resources
+                    .Where(x => deviceAssetIdSet.Contains(x.ResourceId))
+                    .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
+                    .ThenBy(x => x.WorkCenterId, StringComparer.Ordinal)
+                    .ToArray();
+            })
+            .ToArray();
     }
 
     private static string Query(params (string Name, object? Value)[] values)
