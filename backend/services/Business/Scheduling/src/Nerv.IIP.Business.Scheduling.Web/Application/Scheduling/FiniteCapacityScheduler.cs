@@ -264,11 +264,13 @@ file sealed class SchedulerState
     private readonly DateTimeOffset generatedAtUtc;
     private readonly Dictionary<string, SchedulingResourceContract> resources;
     private readonly Dictionary<string, SchedulingCalendarContract> calendars;
+    private readonly Dictionary<OperationKey, SchedulingOperationContract> operationByKey;
     private readonly List<ScheduleAssignmentContract> assignments = [];
     private readonly List<ScheduleConflictContract> conflicts = [];
     private readonly List<UnscheduledOperationContract> unscheduledOperations = [];
     private readonly List<ScheduleChangeContract> changeSummary = [];
     private readonly HashSet<OperationKey> failedOperationKeys = [];
+    private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
     private SchedulerState(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
@@ -278,6 +280,11 @@ file sealed class SchedulerState
         this.generatedAtUtc = generatedAtUtc;
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
+        operationByKey = problem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (
+                Key: new OperationKey(order.OrderId, operation.OperationId),
+                Operation: operation)))
+            .ToDictionary(x => x.Key, x => x.Operation);
     }
 
     public static SchedulerState From(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
@@ -310,7 +317,7 @@ file sealed class SchedulerState
                 EndUtc: locked.EndUtc,
                 IsLocked: true,
                 ExplanationCode: locked.LockReasonCode);
-            assignments.Add(assignment);
+            AddAssignment(assignment);
             changeSummary.Add(new ScheduleChangeContract(
                 locked.OrderId,
                 locked.OperationId,
@@ -420,7 +427,7 @@ file sealed class SchedulerState
                 continue;
             }
 
-            assignments.Add(result);
+            AddAssignment(result);
             scheduledOperationKeys.Add(OperationKey.From(result));
             changeSummary.Add(new ScheduleChangeContract(
                 result.OrderId,
@@ -910,7 +917,7 @@ file sealed class SchedulerState
         DateTimeOffset endUtc,
         int capacity)
     {
-        var overlappingOccupancies = BuildResourceOccupancies(assignments)
+        var overlappingOccupancies = GetResourceOccupancies(assignments)
             .Where(x => x.ResourceId == resource.ResourceId)
             .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
             .ToList();
@@ -1172,14 +1179,26 @@ file sealed class SchedulerState
             .Any(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc));
     }
 
+    private void AddAssignment(ScheduleAssignmentContract assignment)
+    {
+        assignments.Add(assignment);
+        resourceOccupancyCache = null;
+    }
+
+    private IReadOnlyCollection<ResourceOccupancy> GetResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
+    {
+        if (ReferenceEquals(orderedAssignments, assignments))
+        {
+            return resourceOccupancyCache ??= BuildResourceOccupancies(orderedAssignments);
+        }
+
+        return BuildResourceOccupancies(orderedAssignments);
+    }
+
     private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
     {
-        var operationByKey = problem.Orders
-            .SelectMany(order => order.Operations.Select(operation => (
-                Key: new OperationKey(order.OrderId, operation.OperationId),
-                Operation: operation)))
-            .ToDictionary(x => x.Key, x => x.Operation);
         var resourceOccupancies = new List<ResourceOccupancy>();
+        var resourcesWithPriorOccupancy = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var assignment in orderedAssignments
                      .OrderBy(x => x.StartUtc)
@@ -1189,8 +1208,9 @@ file sealed class SchedulerState
             var startUtc = assignment.StartUtc;
             if (operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
                 && operation.SetupMinutes > 0
-                && resourceOccupancies.Any(x => x.ResourceId == assignment.ResourceId && x.EndUtc <= assignment.StartUtc))
+                && resourcesWithPriorOccupancy.Contains(assignment.ResourceId))
             {
+                // Placement guarantees this setup occupancy stays inside the selected shift.
                 startUtc = assignment.StartUtc - TimeSpan.FromMinutes(operation.SetupMinutes);
             }
 
@@ -1198,6 +1218,7 @@ file sealed class SchedulerState
                 assignment.ResourceId,
                 startUtc,
                 assignment.EndUtc));
+            resourcesWithPriorOccupancy.Add(assignment.ResourceId);
         }
 
         return resourceOccupancies;
