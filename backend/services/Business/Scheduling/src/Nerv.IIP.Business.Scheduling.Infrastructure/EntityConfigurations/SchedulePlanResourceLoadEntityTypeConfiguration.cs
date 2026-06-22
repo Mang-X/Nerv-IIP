@@ -13,7 +13,7 @@ public sealed class SchedulePlanResourceLoadEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.ResourceId).HasColumnName("resource_id").HasMaxLength(96).IsRequired().HasComment("Resource id for the load window.");
         builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("Load window start timestamp in UTC.");
         builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("Load window end timestamp in UTC.");
-        builder.Property(x => x.AssignedMinutes).HasColumnName("assigned_minutes").HasComment("Assigned production minutes in the window.");
+        builder.Property(x => x.AssignedMinutes).HasColumnName("assigned_minutes").HasComment("Resource occupied minutes in the window, including processing plus setup/changeover time.");
         builder.Property(x => x.AvailableMinutes).HasColumnName("available_minutes").HasComment("Available capacity minutes in the window.");
         builder.Property(x => x.Utilization).HasColumnName("utilization").HasPrecision(18, 6).HasComment("Assigned minutes divided by available minutes.");
     }
