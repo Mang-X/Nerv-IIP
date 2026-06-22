@@ -180,6 +180,9 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             availabilityItems,
             cancellationToken);
 
+        // Keep optional adapter source segments as "<source>:<status>" and use
+        // ":error" for degraded optional inputs; MrpRun derives its explicit
+        // input degradation sources from this persisted snapshot metadata.
         return new PlanningInputSnapshotResult(
             engineering.SnapshotSource,
             $"{inventorySnapshot.SnapshotSource};{scheduledReceipts.SnapshotSource};{planningParameters.SnapshotSource}",

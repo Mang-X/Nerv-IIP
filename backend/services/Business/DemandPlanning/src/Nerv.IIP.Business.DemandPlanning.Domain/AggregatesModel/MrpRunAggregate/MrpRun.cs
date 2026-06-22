@@ -21,6 +21,8 @@ public static class PlanningInputDegradation
 {
     public static IReadOnlyCollection<string> FromSnapshotSources(params string[] snapshotSources)
     {
+        // Snapshot sources are semicolon-separated adapter segments. Optional adapters
+        // must emit "<source>:error" for degraded inputs; see PlanningInputAdapters.
         return snapshotSources
             .SelectMany(source => source.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(ParseDegradedSource)
@@ -47,6 +49,8 @@ public static class PlanningInputDegradation
 
 public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 {
+    private IReadOnlyCollection<string>? inputDegradationSources;
+
     private MrpRun()
     {
     }
@@ -75,7 +79,9 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
     public string InventorySnapshotSource { get; private set; } = string.Empty;
     public bool HasInputDegradation => InputDegradationSources.Count > 0;
     public IReadOnlyCollection<string> InputDegradationSources =>
-        PlanningInputDegradation.FromSnapshotSources(ProductionEngineeringSnapshotSource, InventorySnapshotSource);
+        inputDegradationSources ??= PlanningInputDegradation.FromSnapshotSources(
+            ProductionEngineeringSnapshotSource,
+            InventorySnapshotSource);
     public int DemandCount { get; private set; }
     public int AvailabilityCount { get; private set; }
     public int SuggestionCount { get; private set; }
@@ -97,6 +103,9 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 
         ProductionEngineeringSnapshotSource = DemandPlanningText.Required(snapshot.ProductionEngineeringSnapshotSource);
         InventorySnapshotSource = DemandPlanningText.Required(snapshot.InventorySnapshotSource);
+        inputDegradationSources = PlanningInputDegradation.FromSnapshotSources(
+            ProductionEngineeringSnapshotSource,
+            InventorySnapshotSource);
         DemandCount = snapshot.DemandCount;
         AvailabilityCount = snapshot.AvailabilityCount;
         StartedAtUtc = DateTimeOffset.UtcNow;

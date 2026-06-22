@@ -2829,7 +2829,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         return new BusinessConsoleRunMrpResponse(
             response.RunId,
             response.SuggestionCount,
-            inputDegradationSources.Count > 0 || response.HasInputDegradation,
+            response.HasInputDegradation,
             inputDegradationSources);
     }
 
@@ -2860,7 +2860,7 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.SuggestionCount,
             x.ProductionEngineeringSnapshotSource,
             x.InventorySnapshotSource,
-            (x.InputDegradationSources ?? []).Count > 0 || x.HasInputDegradation,
+            x.HasInputDegradation,
             x.InputDegradationSources ?? [])).ToArray());
     }
 

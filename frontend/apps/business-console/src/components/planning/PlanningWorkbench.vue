@@ -175,7 +175,13 @@ function formatSource(value?: string | null) {
   return value && value.length > 0 ? value : '未采集'
 }
 function inputDegradationLabel(sources?: readonly string[] | null) {
-  return sources && sources.length > 0 ? sources.join(', ') : '正常'
+  return sources && sources.length > 0 ? sources.map(inputDegradationSourceLabel).join('、') : '正常'
+}
+function inputDegradationSourceLabel(source: string) {
+  return ({
+    'scheduled-receipts': '在途到货',
+    'master-data-planning-parameters': '主数据规划参数',
+  } as Record<string, string>)[source] ?? source
 }
 </script>
 

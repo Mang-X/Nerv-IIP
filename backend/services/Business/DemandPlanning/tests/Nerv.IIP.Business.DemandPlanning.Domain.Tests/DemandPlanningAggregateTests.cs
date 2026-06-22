@@ -59,10 +59,7 @@ public sealed class DemandPlanningAggregateTests
             1,
             2));
 
-        var property = typeof(MrpRun).GetProperty("InputDegradationSources");
-        Assert.NotNull(property);
-        var sources = Assert.IsAssignableFrom<IReadOnlyCollection<string>>(property!.GetValue(run));
-        Assert.Equal(["scheduled-receipts", "master-data-planning-parameters"], sources);
+        Assert.Equal(["scheduled-receipts", "master-data-planning-parameters"], run.InputDegradationSources);
     }
 
     [Fact]

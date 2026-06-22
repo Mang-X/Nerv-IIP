@@ -144,11 +144,11 @@ public sealed class DemandPlanningEndpointContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal(expectedSources, GetInputDegradationSources(result));
+        Assert.Equal(expectedSources, result.InputDegradationSources);
         var runs = await new ListMrpRunsQueryHandler(dbContext)
             .Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None);
         var run = Assert.Single(runs);
-        Assert.Equal(expectedSources, GetInputDegradationSources(run));
+        Assert.Equal(expectedSources, run.InputDegradationSources);
     }
 
     [Fact]
@@ -287,13 +287,6 @@ public sealed class DemandPlanningEndpointContractTests
         {
             return Task.CompletedTask;
         }
-    }
-
-    private static IReadOnlyCollection<string> GetInputDegradationSources(object response)
-    {
-        var property = response.GetType().GetProperty("InputDegradationSources");
-        Assert.NotNull(property);
-        return Assert.IsAssignableFrom<IReadOnlyCollection<string>>(property!.GetValue(response));
     }
 
     private sealed class FixedPlanningInputSnapshotProvider(string inventorySnapshotSource) : IPlanningInputSnapshotProvider
