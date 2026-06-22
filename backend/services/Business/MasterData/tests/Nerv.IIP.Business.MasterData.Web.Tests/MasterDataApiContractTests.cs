@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
@@ -95,7 +96,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(40, contracts.Count);
+        Assert.Equal(41, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -153,6 +154,17 @@ public sealed class MasterDataApiContractTests
             && x.Route == "/api/business/v1/master-data/skills/{skillCode}/archive"
             && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
             && x.OperationId == "archiveBusinessMasterDataSkill");
+    }
+
+    [Fact]
+    public void MasterData_exposes_customer_credit_profile_route()
+    {
+        var contracts = MasterDataEndpointContracts.All.ToArray();
+
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/partners/{customerCode}/credit"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataPartnersRead
+            && x.OperationId == "getBusinessMasterDataPartnerCredit");
     }
 
     [Fact]
@@ -366,6 +378,50 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
 
         Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Business_partner_credit_query_returns_credit_master_data()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-001",
+            "customer",
+            "Credit Customer",
+            ["customer"],
+            null,
+            defaultCurrencyCode: "CNY",
+            creditLimit: 1000m,
+            creditCurrencyCode: "CNY"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetBusinessPartnerCreditQueryHandler(dbContext).Handle(
+            new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
+            CancellationToken.None);
+
+        Assert.Equal("CUST-001", response.CustomerCode);
+        Assert.Equal(1000m, response.CreditLimit);
+        Assert.Equal("CNY", response.CurrencyCode);
+    }
+
+    [Fact]
+    public async Task Business_partner_credit_query_blocks_missing_credit_limit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create("org-001", "env-dev", "CUST-001", "customer", "Credit Customer"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new GetBusinessPartnerCreditQueryHandler(dbContext).Handle(
+            new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
+            CancellationToken.None));
+
+        Assert.Contains("does not have a credit limit", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

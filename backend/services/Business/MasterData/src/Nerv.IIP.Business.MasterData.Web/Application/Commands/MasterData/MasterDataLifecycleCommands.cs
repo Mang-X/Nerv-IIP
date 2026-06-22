@@ -111,7 +111,9 @@ public sealed record UpdateMasterDataResourceCommand(
     string? CostCenterCode = null,
     bool? Bottleneck = null,
     string? HolidayCalendarCode = null,
-    int? BreakMinutes = null) : ICommand<MasterDataResourceDetail>;
+    int? BreakMinutes = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
     string OrganizationId,
@@ -222,7 +224,9 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.PrimaryAddress ?? partner.PrimaryAddress,
                     request.PrimaryContactName ?? partner.PrimaryContactName,
                     request.PrimaryContactEmail ?? partner.PrimaryContactEmail,
-                    request.PrimaryContactPhone ?? partner.PrimaryContactPhone);
+                    request.PrimaryContactPhone ?? partner.PrimaryContactPhone,
+                    request.CreditLimit ?? partner.CreditLimit,
+                    request.CreditCurrencyCode ?? partner.CreditCurrencyCode);
                 return Detail(partner);
             case "site":
                 var site = await FindSiteAsync(request, cancellationToken);
@@ -504,7 +508,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("uom-conversion", $"{x.FromUomCode}->{x.ToUomCode}", $"{x.FromUomCode} to {x.ToUomCode}", !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Status: x.Disabled ? "disabled" : "active", FromUomCode: x.FromUomCode, ToUomCode: x.ToUomCode, Factor: x.Factor, Offset: x.Offset, Precision: x.Precision, RoundingMode: x.RoundingMode, EffectiveFrom: x.EffectiveFrom, EffectiveTo: x.EffectiveTo);
 
     internal static MasterDataResourceDetail Detail(BusinessPartner x) =>
-        new("business-partner", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PartnerType: x.PartnerType, PartnerRoles: x.PartnerRoles, TaxId: x.TaxId, Status: x.Disabled ? "disabled" : "active", TaxRegionCode: x.TaxRegionCode, DefaultCurrencyCode: x.DefaultCurrencyCode, PaymentTermsCode: x.PaymentTermsCode, PrimaryAddress: x.PrimaryAddress, PrimaryContactName: x.PrimaryContactName, PrimaryContactEmail: x.PrimaryContactEmail, PrimaryContactPhone: x.PrimaryContactPhone);
+        new("business-partner", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PartnerType: x.PartnerType, PartnerRoles: x.PartnerRoles, TaxId: x.TaxId, Status: x.Disabled ? "disabled" : "active", TaxRegionCode: x.TaxRegionCode, DefaultCurrencyCode: x.DefaultCurrencyCode, PaymentTermsCode: x.PaymentTermsCode, PrimaryAddress: x.PrimaryAddress, PrimaryContactName: x.PrimaryContactName, PrimaryContactEmail: x.PrimaryContactEmail, PrimaryContactPhone: x.PrimaryContactPhone, CreditLimit: x.CreditLimit, CreditCurrencyCode: x.CreditCurrencyCode);
 
     internal static MasterDataResourceDetail Detail(Site x) =>
         new("site", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, Timezone: x.Timezone, Status: x.Disabled ? "disabled" : "active");

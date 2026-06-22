@@ -109,7 +109,9 @@ public sealed record MasterDataResourceDetail(
     string? CostCenterCode = null,
     bool? Bottleneck = null,
     string? HolidayCalendarCode = null,
-    int? BreakMinutes = null);
+    int? BreakMinutes = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record GetMasterDataResourceDetailQuery(
     string OrganizationId,
