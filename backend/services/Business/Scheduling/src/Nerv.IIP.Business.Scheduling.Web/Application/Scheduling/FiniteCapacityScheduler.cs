@@ -734,6 +734,7 @@ file sealed class SchedulerState
                 var occupiedStart = CandidateOccupiedStart(resource, candidate, setup);
                 if (occupiedStart < shift.StartUtc)
                 {
+                    // Keep setup occupancy inside the selected shift; load reconstruction uses the same invariant.
                     candidate = shift.StartUtc + setup;
                     continue;
                 }

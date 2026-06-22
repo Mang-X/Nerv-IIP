@@ -541,7 +541,7 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
-    public async Task Schedule_advances_setup_after_pre_processing_resource_block()
+    public void Schedule_advances_setup_after_pre_processing_resource_block()
     {
         var problem = CreateSingleOperationProblem();
         var firstOperation = problem.Orders.Single().Operations.Single();
@@ -573,9 +573,7 @@ public class FiniteCapacitySchedulerTests
         };
         var scheduler = new FiniteCapacityScheduler();
 
-        var plan = await Task
-            .Run(() => scheduler.Schedule(problem, "plan-setup-block-001", GeneratedAtUtc))
-            .WaitAsync(TimeSpan.FromSeconds(5));
+        var plan = scheduler.Schedule(problem, "plan-setup-block-001", GeneratedAtUtc);
 
         var second = Assignment(plan, "WO-SNAPSHOT-001-OP20");
         Assert.Equal(new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero), second.StartUtc);
