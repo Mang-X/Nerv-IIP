@@ -75,9 +75,25 @@ const pageSize = computed({
 })
 
 const columns: DataTableColumn<RoleRow>[] = [
-  { key: 'roleName', header: '角色名称', cellClass: 'font-medium', accessor: (r) => r.roleName || '—' },
-  { key: 'roleId', header: '角色 ID', cellClass: 'font-mono text-xs text-muted-foreground', accessor: (r) => r.roleId || '—' },
-  { key: 'permissionCount', header: '权限数', align: 'end', width: 'w-20', accessor: (r) => r.permissionCodes?.length ?? 0 },
+  {
+    key: 'roleName',
+    header: '角色名称',
+    cellClass: 'font-medium',
+    accessor: (r) => r.roleName || '—',
+  },
+  {
+    key: 'roleId',
+    header: '角色 ID',
+    cellClass: 'font-mono text-xs text-muted-foreground',
+    accessor: (r) => r.roleId || '—',
+  },
+  {
+    key: 'permissionCount',
+    header: '权限数',
+    align: 'end',
+    width: 'w-20',
+    accessor: (r) => r.permissionCodes?.length ?? 0,
+  },
   { key: 'keyPermissions', header: '关键权限' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
 ]
@@ -137,9 +153,15 @@ async function savePermissions() {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader title="角色" :breadcrumbs="[{ label: '身份与访问' }]" :count="`${roles.totalCount.value} 个角色`">
+      <PageHeader
+        title="角色"
+        :breadcrumbs="[{ label: '身份与访问' }]"
+        :count="`${roles.totalCount.value} 个角色`"
+      >
         <template #actions>
-          <Button type="button" :disabled="!canManageRoles" @click="openCreateDialog">新建角色</Button>
+          <Button type="button" :disabled="!canManageRoles" @click="openCreateDialog"
+            >新建角色</Button
+          >
         </template>
       </PageHeader>
 
@@ -192,7 +214,11 @@ async function savePermissions() {
         </template>
       </DataTable>
 
-      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="roles.totalCount.value" />
+      <DataTablePagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total-items="roles.totalCount.value"
+      />
 
       <RoleCreateDialog
         v-model:open="createDialogOpen"

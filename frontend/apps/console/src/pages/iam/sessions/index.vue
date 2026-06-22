@@ -72,11 +72,22 @@ const statusModel = computed({
 
 const columns: DataTableColumn<SessionRow>[] = [
   { key: 'sessionId', header: '会话 ID', cellClass: 'font-mono text-xs' },
-  { key: 'userId', header: '用户 ID', cellClass: 'font-mono text-xs text-muted-foreground', accessor: (r) => r.userId || '—' },
+  {
+    key: 'userId',
+    header: '用户 ID',
+    cellClass: 'font-mono text-xs text-muted-foreground',
+    accessor: (r) => r.userId || '—',
+  },
   { key: 'issuedAtUtc', header: '签发时间', accessor: (r) => formatDate(r.issuedAtUtc) },
   { key: 'expiresAtUtc', header: '过期时间', accessor: (r) => formatDate(r.expiresAtUtc) },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'permissionVersion', header: '权限版本', align: 'end', width: 'w-24', accessor: (r) => r.permissionVersion ?? '—' },
+  {
+    key: 'permissionVersion',
+    header: '权限版本',
+    align: 'end',
+    width: 'w-24',
+    accessor: (r) => r.permissionVersion ?? '—',
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
@@ -140,9 +151,19 @@ async function confirmRevoke(sessionId: string) {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader title="会话" :breadcrumbs="[{ label: '身份与访问' }]" :count="`${sessions.totalCount.value} 个会话`">
+      <PageHeader
+        title="会话"
+        :breadcrumbs="[{ label: '身份与访问' }]"
+        :count="`${sessions.totalCount.value} 个会话`"
+      >
         <template #actions>
-          <Button size="sm" type="button" variant="outline" :disabled="tablePending" @click="refreshSessions">
+          <Button
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="tablePending"
+            @click="refreshSessions"
+          >
             <RefreshCwIcon aria-hidden="true" />
             刷新
           </Button>
@@ -208,7 +229,11 @@ async function confirmRevoke(sessionId: string) {
         </template>
       </DataTable>
 
-      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="sessions.totalCount.value" />
+      <DataTablePagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total-items="sessions.totalCount.value"
+      />
 
       <RevokeSessionDialog
         v-model:open="revokeOpen"

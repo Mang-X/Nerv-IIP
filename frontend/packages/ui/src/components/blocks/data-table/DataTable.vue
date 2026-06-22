@@ -1,17 +1,8 @@
 <script setup lang="ts" generic="T extends object = Record<string, unknown>">
 import type { HTMLAttributes } from 'vue'
-import type {
-  ColumnDef,
-  SortingFn,
-  SortingState,
-  Updater,
-} from '@tanstack/vue-table'
+import type { ColumnDef, SortingFn, SortingState, Updater } from '@tanstack/vue-table'
 import { computed } from 'vue'
-import {
-  getCoreRowModel,
-  getSortedRowModel,
-  useVueTable,
-} from '@tanstack/vue-table'
+import { getCoreRowModel, getSortedRowModel, useVueTable } from '@tanstack/vue-table'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-vue-next'
 import {
   Table,
@@ -23,6 +14,7 @@ import {
   TableRow,
 } from '../../ui/table'
 import { Button } from '../../ui/button'
+import { Checkbox } from '../../ui/checkbox'
 import { Skeleton } from '../../ui/skeleton'
 import { cn } from '../../../lib/utils'
 import type { DataTableAlign, DataTableColumn, DataTableSort } from './types'
@@ -40,6 +32,10 @@ const props = withDefaults(
     sort?: DataTableSort | null
     /** Sort rows in-component from the sort state. Set false to sort in the parent. */
     clientSort?: boolean
+    /** Show a leading checkbox column for row selection. */
+    selectable?: boolean
+    /** Selected row keys (v-model:selected). */
+    selected?: (string | number)[]
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -48,10 +44,15 @@ const props = withDefaults(
     skeletonRows: 5,
     sort: null,
     clientSort: true,
+    selectable: false,
+    selected: () => [],
   },
 )
 
-const emit = defineEmits<{ 'update:sort': [value: DataTableSort | null] }>()
+const emit = defineEmits<{
+  'update:sort': [value: DataTableSort | null]
+  'update:selected': [value: (string | number)[]]
+}>()
 
 const alignClass: Record<DataTableAlign, string> = {
   start: 'text-left',
@@ -145,6 +146,39 @@ function sortIcon(state: false | 'asc' | 'desc') {
   if (!state) return ArrowUpDownIcon
   return state === 'asc' ? ArrowUpIcon : ArrowDownIcon
 }
+
+// ── Row selection (manual; covers the rows currently in view) ──
+const selectedSet = computed(() => new Set(props.selected))
+const visibleKeys = computed(() => table.getRowModel().rows.map((row) => keyOf(row.original)))
+const allSelected = computed(
+  () => visibleKeys.value.length > 0 && visibleKeys.value.every((k) => selectedSet.value.has(k)),
+)
+const someSelected = computed(
+  () => !allSelected.value && visibleKeys.value.some((k) => selectedSet.value.has(k)),
+)
+const headerState = computed<boolean | 'indeterminate'>(() =>
+  allSelected.value ? true : someSelected.value ? 'indeterminate' : false,
+)
+
+function toggleAll() {
+  if (allSelected.value) {
+    const remove = new Set(visibleKeys.value)
+    emit(
+      'update:selected',
+      props.selected.filter((k) => !remove.has(k)),
+    )
+  } else {
+    const next = new Set(props.selected)
+    for (const k of visibleKeys.value) next.add(k)
+    emit('update:selected', [...next])
+  }
+}
+function toggleRow(key: string | number) {
+  const next = new Set(props.selected)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  emit('update:selected', [...next])
+}
 </script>
 
 <template>
@@ -153,14 +187,23 @@ function sortIcon(state: false | 'asc' | 'desc') {
       <Table>
         <TableHeader>
           <TableRow v-for="headerGroup in table.getHeaderGroups()" :key="headerGroup.id">
+            <TableHead v-if="selectable" class="w-10">
+              <Checkbox
+                :model-value="headerState"
+                aria-label="全选"
+                @update:model-value="toggleAll"
+              />
+            </TableHead>
             <TableHead
               v-for="header in headerGroup.headers"
               :key="header.id"
-              :class="cn(
-                alignClass[colOf(header.column.id).align ?? 'start'],
-                widthClass(colOf(header.column.id).width),
-                colOf(header.column.id).headerClass,
-              )"
+              :class="
+                cn(
+                  alignClass[colOf(header.column.id).align ?? 'start'],
+                  widthClass(colOf(header.column.id).width),
+                  colOf(header.column.id).headerClass,
+                )
+              "
               :style="widthStyle(colOf(header.column.id).width)"
             >
               <Button
@@ -173,7 +216,12 @@ function sortIcon(state: false | 'asc' | 'desc') {
                 @click="header.column.getToggleSortingHandler()?.($event)"
               >
                 {{ colOf(header.column.id).header }}
-                <component :is="sortIcon(header.column.getIsSorted())" class="size-4" data-icon="inline-end" aria-hidden="true" />
+                <component
+                  :is="sortIcon(header.column.getIsSorted())"
+                  class="size-4"
+                  data-icon="inline-end"
+                  aria-hidden="true"
+                />
               </Button>
               <template v-else>{{ colOf(header.column.id).header }}</template>
             </TableHead>
@@ -182,22 +230,46 @@ function sortIcon(state: false | 'asc' | 'desc') {
         <TableBody>
           <template v-if="loading">
             <TableRow v-for="n in skeletonRows" :key="`sk-${n}`">
+              <TableCell v-if="selectable" class="w-10"
+                ><Skeleton class="size-4 rounded-[4px]"
+              /></TableCell>
               <TableCell
                 v-for="column in columns"
                 :key="column.key"
                 :class="alignClass[column.align ?? 'start']"
               >
-                <Skeleton class="h-5 w-full max-w-32" :class="column.align === 'end' ? 'ml-auto' : ''" />
+                <Skeleton
+                  class="h-5 w-full max-w-32"
+                  :class="column.align === 'end' ? 'ml-auto' : ''"
+                />
               </TableCell>
             </TableRow>
           </template>
 
           <template v-else-if="table.getRowModel().rows.length">
-            <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
+            <TableRow
+              v-for="row in table.getRowModel().rows"
+              :key="row.id"
+              :data-state="
+                selectable && selectedSet.has(keyOf(row.original)) ? 'selected' : undefined
+              "
+            >
+              <TableCell v-if="selectable" class="w-10">
+                <Checkbox
+                  :model-value="selectedSet.has(keyOf(row.original))"
+                  :aria-label="`选择行`"
+                  @update:model-value="toggleRow(keyOf(row.original))"
+                />
+              </TableCell>
               <TableCell
                 v-for="cell in row.getVisibleCells()"
                 :key="cell.id"
-                :class="cn(alignClass[colOf(cell.column.id).align ?? 'start'], colOf(cell.column.id).cellClass)"
+                :class="
+                  cn(
+                    alignClass[colOf(cell.column.id).align ?? 'start'],
+                    colOf(cell.column.id).cellClass,
+                  )
+                "
               >
                 <slot
                   :name="`cell-${cell.column.id}`"
@@ -211,7 +283,7 @@ function sortIcon(state: false | 'asc' | 'desc') {
             </TableRow>
           </template>
 
-          <TableEmpty v-else :colspan="columns.length">
+          <TableEmpty v-else :colspan="columns.length + (selectable ? 1 : 0)">
             <slot name="empty">{{ emptyMessage }}</slot>
           </TableEmpty>
         </TableBody>

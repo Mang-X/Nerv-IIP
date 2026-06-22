@@ -38,7 +38,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div :class="cn('flex items-center gap-2 rounded-lg border border-border bg-card px-3 min-h-touch', $props.class)">
+  <div
+    :class="
+      cn(
+        'flex items-center gap-2 rounded-lg border border-border bg-card px-3 min-h-touch',
+        $props.class,
+      )
+    "
+  >
     <ScanLine class="size-5 shrink-0 text-brand" aria-hidden="true" />
     <input
       ref="inputEl"

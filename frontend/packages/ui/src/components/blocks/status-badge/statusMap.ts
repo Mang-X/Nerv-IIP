@@ -40,7 +40,17 @@ const STATUS_LABELS: Record<string, string> = {
 
 const TONE_BY_STATUS: Record<StatusTone, string[]> = {
   success: ['ready', 'completed', 'closed', 'passed', 'available', 'active', 'approved'],
-  info: ['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled', 'dispatched'],
+  info: [
+    'running',
+    'inprogress',
+    'in-progress',
+    'started',
+    'manual',
+    'released',
+    'issued',
+    'scheduled',
+    'dispatched',
+  ],
   danger: ['blocked', 'failed', 'rejected', 'unavailable', 'cancelled', 'disabled'],
   warning: [
     'pending',
