@@ -49,7 +49,11 @@ public sealed record ListDemandSourcesRequest(string OrganizationId, string Envi
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
-public sealed record RunMrpResponse(MrpRunId RunId, int SuggestionCount);
+public sealed record RunMrpResponse(
+    MrpRunId RunId,
+    int SuggestionCount,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed record ListMrpRunsRequest(string OrganizationId, string EnvironmentId);
 
@@ -114,7 +118,11 @@ public sealed class RunMrpEndpoint(ISender sender)
     public override async Task HandleAsync(RunMrpRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new RunMrpCommand(req.OrganizationId, req.EnvironmentId, req.HorizonStart, req.HorizonEnd), ct);
-        await Send.OkAsync(new RunMrpResponse(result.RunId, result.SuggestionCount).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new RunMrpResponse(
+            result.RunId,
+            result.SuggestionCount,
+            result.HasInputDegradation,
+            result.InputDegradationSources).AsResponseData(), cancellation: ct);
     }
 }
 

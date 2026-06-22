@@ -94,7 +94,15 @@ describe('business planning composable', () => {
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
       success: true,
-      data: { items: [{ runId: 'run-1', suggestionCount: 2, inventorySnapshotSource: 'inventory-http:2' }] },
+      data: {
+        items: [{
+          runId: 'run-1',
+          suggestionCount: 2,
+          inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
+          hasInputDegradation: true,
+          inputDegradationSources: ['scheduled-receipts'],
+        }],
+      },
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
       success: true,
@@ -123,7 +131,9 @@ describe('business planning composable', () => {
     expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(false)
     expect(runSelection.runId).toBe('')
     expect(demands.value).toHaveLength(1)
-    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2')
+    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2;scheduled-receipts:error')
+    expect(mrpRuns.value[0]?.hasInputDegradation).toBe(true)
+    expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
   })

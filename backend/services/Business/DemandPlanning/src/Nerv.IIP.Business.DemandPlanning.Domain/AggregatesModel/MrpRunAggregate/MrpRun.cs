@@ -17,8 +17,40 @@ public sealed record PlanningInputSnapshot(
     int DemandCount,
     int AvailabilityCount);
 
+public static class PlanningInputDegradation
+{
+    public static IReadOnlyCollection<string> FromSnapshotSources(params string[] snapshotSources)
+    {
+        // Snapshot sources are semicolon-separated adapter segments. Optional adapters
+        // must emit "<source>:error" for degraded inputs; see PlanningInputAdapters.
+        return snapshotSources
+            .SelectMany(source => source.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Select(ParseDegradedSource)
+            .Where(source => source is not null)
+            .Select(source => source!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string? ParseDegradedSource(string segment)
+    {
+        var separatorIndex = segment.IndexOf(':', StringComparison.Ordinal);
+        if (separatorIndex <= 0 || separatorIndex == segment.Length - 1)
+        {
+            return null;
+        }
+
+        var status = segment[(separatorIndex + 1)..];
+        return string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
+            ? segment[..separatorIndex]
+            : null;
+    }
+}
+
 public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 {
+    private IReadOnlyCollection<string>? inputDegradationSources;
+
     private MrpRun()
     {
     }
@@ -45,6 +77,11 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
     public MrpRunStatus Status { get; private set; }
     public string ProductionEngineeringSnapshotSource { get; private set; } = string.Empty;
     public string InventorySnapshotSource { get; private set; } = string.Empty;
+    public bool HasInputDegradation => InputDegradationSources.Count > 0;
+    public IReadOnlyCollection<string> InputDegradationSources =>
+        inputDegradationSources ??= PlanningInputDegradation.FromSnapshotSources(
+            ProductionEngineeringSnapshotSource,
+            InventorySnapshotSource);
     public int DemandCount { get; private set; }
     public int AvailabilityCount { get; private set; }
     public int SuggestionCount { get; private set; }
@@ -66,6 +103,9 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 
         ProductionEngineeringSnapshotSource = DemandPlanningText.Required(snapshot.ProductionEngineeringSnapshotSource);
         InventorySnapshotSource = DemandPlanningText.Required(snapshot.InventorySnapshotSource);
+        inputDegradationSources = PlanningInputDegradation.FromSnapshotSources(
+            ProductionEngineeringSnapshotSource,
+            InventorySnapshotSource);
         DemandCount = snapshot.DemandCount;
         AvailabilityCount = snapshot.AvailabilityCount;
         StartedAtUtc = DateTimeOffset.UtcNow;
