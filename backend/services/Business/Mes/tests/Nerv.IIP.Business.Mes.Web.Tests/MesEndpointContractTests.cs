@@ -263,6 +263,9 @@ public sealed class MesEndpointContractTests
         var invalidClose = await Assert.ThrowsAsync<KnownException>(() => closeHandler.Handle(
             new CloseWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", now.AddHours(2)),
             CancellationToken.None));
+        var invalidCancel = await Assert.ThrowsAsync<KnownException>(() => new CancelWorkOrderCommandHandler(dbContext).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "duplicate cancellation", now.AddMinutes(30)),
+            CancellationToken.None));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("Accepted", closeResponse.Status);
@@ -275,6 +278,8 @@ public sealed class MesEndpointContractTests
         Assert.Equal("plan cancelled", active.CancelReason);
         Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
+        Assert.Contains("closed", invalidCancel.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(invalidCancel.InnerException);
     }
 
     [Fact]
