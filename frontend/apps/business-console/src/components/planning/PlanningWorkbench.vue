@@ -10,7 +10,6 @@ import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/u
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import {
   Button,
-  Checkbox,
   DataTable,
   DatePicker,
   Dialog,
@@ -39,16 +38,10 @@ import {
   TabsList,
   TabsTrigger,
 } from '@nerv-iip/ui'
-import { CheckCheckIcon, CornerDownRightIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CornerDownRightIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
 
 const {
-  acceptSelectedSuggestions,
-  acceptSuggestion,
-  acceptSuggestionError,
-  acceptSuggestionPending,
-  batchAcceptPending,
-  clearSuggestionSelection,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -67,15 +60,11 @@ const {
   runMrpPending,
   runRequest,
   runSelection,
-  selectedSuggestionCount,
-  selectedSuggestionIds,
-  setSuggestionSelection,
   suggestionFilters,
   suggestionTypeFilter,
   suggestions,
   suggestionsError,
   suggestionsPending,
-  toggleSuggestionSelection,
 } = useBusinessPlanning()
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
@@ -130,7 +119,7 @@ const canSubmitDemand = computed(() =>
 )
 
 const errorMessage = computed(() =>
-  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError, acceptSuggestionError]
+  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError]
     .map((ref) => formatError(ref.value)).find(Boolean) ?? '',
 )
 function formatError(error: unknown) {
@@ -241,32 +230,6 @@ const suggestionTypeFilterOptions = [
   { label: '采购建议 (→ERP)', value: 'planned-purchase' },
 ]
 
-// 当前可见且待评审、可被批量接受的建议 id。
-const acceptableSuggestionIds = computed(() =>
-  visibleSuggestions.value.filter((s) => isOpen(s.status) && s.suggestionId).map((s) => s.suggestionId as string),
-)
-const suggestionTypeById = computed(() => {
-  const map = new Map<string, string | null | undefined>()
-  for (const s of suggestions.value) {
-    if (s.suggestionId) map.set(s.suggestionId, s.suggestionType)
-  }
-  return map
-})
-const allAcceptableSelected = computed(() =>
-  acceptableSuggestionIds.value.length > 0
-  && acceptableSuggestionIds.value.every((id) => selectedSuggestionIds.value.has(id)),
-)
-function isSuggestionSelected(id?: string | null) {
-  return !!id && selectedSuggestionIds.value.has(id)
-}
-function toggleSelectAllAcceptable(checked: boolean) {
-  if (checked) setSuggestionSelection(acceptableSuggestionIds.value)
-  else clearSuggestionSelection()
-}
-async function acceptSelected() {
-  await acceptSelectedSuggestions((id) => suggestionTypeById.value.get(id))
-}
-
 const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
   { key: 'demandType', header: '类型', width: 'w-24' },
@@ -296,14 +259,12 @@ const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
 ]
 const suggestionColumns: DataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
-  { key: 'select', header: '', width: 'w-10' },
   { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
   { key: 'reasonCode', header: '原因' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-20' },
 ]
 
 async function submitDemand() {
@@ -313,15 +274,6 @@ async function submitDemand() {
 async function submitMrpRun() {
   await runMrp()
   mrpOpen.value = false
-}
-async function acceptPlanningSuggestion(suggestionId?: string, suggestionType?: string) {
-  if (!suggestionId) return
-  const isWorkOrder = suggestionType === 'planned-work-order'
-  await acceptSuggestion(suggestionId, {
-    downstreamService: isWorkOrder ? 'MES' : 'ERP',
-    downstreamDocumentType: isWorkOrder ? 'planned-work-order' : 'planned-purchase-order',
-    downstreamDocumentId: `${isWorkOrder ? 'WO-PLAN' : 'PO-PLAN'}-${suggestionId}`,
-  })
 }
 
 function planningStatus(status?: string | null): { label: string, tone: StatusTone } {
@@ -597,25 +549,6 @@ function formatQuantity(value?: number | null, uom?: string | null) {
           生产建议 → MES · 采购建议 → ERP
         </span>
         <div class="ms-auto flex items-center gap-2">
-          <label class="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Checkbox
-              :model-value="allAcceptableSelected"
-              :disabled="acceptableSuggestionIds.length === 0"
-              aria-label="全选可接受建议"
-              @update:model-value="(v) => toggleSelectAllAcceptable(v === true)"
-            />
-            全选待评审
-          </label>
-          <Button
-            size="sm"
-            type="button"
-            :disabled="selectedSuggestionCount === 0 || batchAcceptPending || acceptSuggestionPending"
-            @click="acceptSelected"
-          >
-            <Spinner v-if="batchAcceptPending" aria-hidden="true" />
-            <CheckCheckIcon v-else aria-hidden="true" />
-            批量接受{{ selectedSuggestionCount > 0 ? ` 选中 ${selectedSuggestionCount} 条` : '' }}
-          </Button>
           <Select v-model="suggestionFilters.status">
             <SelectTrigger class="h-9 w-32" aria-label="建议状态"><SelectValue placeholder="建议状态" /></SelectTrigger>
             <SelectContent>
@@ -625,14 +558,6 @@ function formatQuantity(value?: number | null, uom?: string | null) {
         </div>
       </div>
       <DataTable :columns="suggestionColumns" :rows="visibleSuggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
-        <template #cell-select="{ row }">
-          <Checkbox
-            :model-value="isSuggestionSelected(row.suggestionId)"
-            :disabled="!isOpen(row.status)"
-            :aria-label="`选择建议 ${skuLabel(row.skuCode)}`"
-            @update:model-value="() => toggleSuggestionSelection(row.suggestionId)"
-          />
-        </template>
         <template #cell-suggestionType="{ row }">
           <StatusBadge
             :label="suggestionTypeLabel(row.suggestionType)"
@@ -649,17 +574,6 @@ function formatQuantity(value?: number | null, uom?: string | null) {
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
         <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
         <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
-        <template #cell-actions="{ row }">
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            :disabled="acceptSuggestionPending || batchAcceptPending || planningStatus(row.status).label === '已接受'"
-            @click="acceptPlanningSuggestion(row.suggestionId, row.suggestionType)"
-          >
-            接受
-          </Button>
-        </template>
       </DataTable>
     </TabsContent>
   </Tabs>

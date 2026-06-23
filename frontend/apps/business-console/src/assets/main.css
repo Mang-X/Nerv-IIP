@@ -17,4 +17,3 @@
 [data-slot='sidebar-menu-item'] a[data-active='true'] {
   background-color: color-mix(in oklab, var(--primary) 16%, transparent);
 }
-

@@ -3,7 +3,6 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  acceptBusinessConsolePlanningSuggestionMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
@@ -21,9 +20,6 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
-  acceptBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { accepted: true, vars } })),
-  })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
   })),
@@ -138,8 +134,8 @@ describe('business planning composable', () => {
     expect(demandForm.quantity).toBe(0)
   })
 
-  it('submits demand, MRP run, and suggestion acceptance payloads through generated mutations', async () => {
-    const { acceptSuggestion, createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
+  it('submits demand and MRP run payloads through generated mutations', async () => {
+    const { createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
 
     demandForm.sourceReference = 'SO-2026-001'
     demandForm.skuCode = 'FG-SHOCK'
@@ -149,12 +145,6 @@ describe('business planning composable', () => {
     runRequest.horizonStart = '2026-06-01'
     runRequest.horizonEnd = '2026-06-30'
     await runMrp()
-
-    await acceptSuggestion('suggestion-1', {
-      downstreamService: 'MES',
-      downstreamDocumentType: 'planned-work-order',
-      downstreamDocumentId: 'WO-PLAN-1',
-    })
 
     expect(createOrUpdateBusinessConsolePlanningDemandMutationOptions).toHaveBeenCalled()
     expect(
@@ -175,64 +165,6 @@ describe('business planning composable', () => {
           horizonEnd: '2026-06-30',
         }),
       })
-    expect(acceptBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
-        .mutation,
-    ).toHaveBeenCalledWith({
-      path: { suggestionId: 'suggestion-1' },
-      query: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-      },
-      body: {
-        downstreamService: 'MES',
-        downstreamDocumentType: 'planned-work-order',
-        downstreamDocumentId: 'WO-PLAN-1',
-      },
-    })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
-  })
-
-  it('accepts the selected suggestions in bulk and clears them as each succeeds', async () => {
-    const {
-      acceptSelectedSuggestions,
-      selectedSuggestionCount,
-      setSuggestionSelection,
-      toggleSuggestionSelection,
-    } = useBusinessPlanning()
-
-    setSuggestionSelection(['s-wo', 's-po'])
-    expect(selectedSuggestionCount.value).toBe(2)
-
-    const typeById: Record<string, string> = {
-      's-wo': 'planned-work-order',
-      's-po': 'planned-purchase',
-    }
-    await acceptSelectedSuggestions((id) => typeById[id])
-
-    const acceptMutation = vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock
-      .results[0]?.value.mutation
-    expect(acceptMutation).toHaveBeenCalledTimes(2)
-    expect(acceptMutation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: { suggestionId: 's-wo' },
-        body: expect.objectContaining({ downstreamService: 'MES' }),
-      }),
-    )
-    expect(acceptMutation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: { suggestionId: 's-po' },
-        body: expect.objectContaining({ downstreamService: 'ERP' }),
-      }),
-    )
-    // 全部成功后选中集合清空。
-    expect(selectedSuggestionCount.value).toBe(0)
-
-    // 切换选择互斥：再次切换同一 id 取消选择。
-    toggleSuggestionSelection('s-wo')
-    expect(selectedSuggestionCount.value).toBe(1)
-    toggleSuggestionSelection('s-wo')
-    expect(selectedSuggestionCount.value).toBe(0)
   })
 })

@@ -83,6 +83,10 @@ const TRANSFORM_LABEL: Record<FieldTransform, string> = {
   lower: '小写',
 }
 
+// 后端 CodeRuleDefinition.Validate() 允许的日期格式 / 校验算法，下拉给定避免提交必被拒。
+const DATE_FORMAT_OPTIONS = ['yyyyMMdd', 'yyMMdd', 'yyyyMM', 'yyMM', 'yyyy', 'yy']
+const CHECKSUM_ALGORITHM_OPTIONS = ['hash-mod10', 'hash-mod11']
+
 const SEGMENT_TYPE_OPTIONS = (Object.keys(SEGMENT_TYPE_LABEL) as SegmentType[])
   .map((value) => ({ value, label: SEGMENT_TYPE_LABEL[value] }))
 const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as ScopeDimension[])
@@ -324,8 +328,51 @@ function parseNumber(value: string): number | undefined {
 
 const displayNameValid = computed(() => form.displayName.trim().length > 0)
 const createdByValid = computed(() => form.createdBy.trim().length > 0)
+
+// 单段校验，对齐后端 CodeRuleDefinition.Validate()：返回 null 表示该段合法，否则给中文错误。
+function segmentError(row: SegmentRow): string | null {
+  if (row.type === '') return '请选择段类型。'
+  switch (row.type) {
+    case 'constant':
+      return row.value.trim() ? null : '常量段的常量值必填。'
+    case 'date':
+      return DATE_FORMAT_OPTIONS.includes(row.format.trim())
+        ? null
+        : '请选择有效的日期格式。'
+    case 'sequence': {
+      const width = parseNumber(row.width)
+      const start = parseNumber(row.start)
+      if (width == null || width <= 0) return '流水段宽度必须大于 0。'
+      if (start == null || start <= 0) return '流水段起始值必须大于 0。'
+      return null
+    }
+    case 'field': {
+      if (!row.source.trim()) return '字段段的源必填。'
+      const maxLength = parseNumber(row.maxLength)
+      if (maxLength == null || maxLength <= 0) return '字段段的上限必须大于 0。'
+      return null
+    }
+    case 'checksum':
+      return CHECKSUM_ALGORITHM_OPTIONS.includes(row.algorithm.trim())
+        ? null
+        : '请选择有效的校验算法。'
+    default:
+      return null
+  }
+}
+
+const segmentErrors = computed(() => form.segments.map(segmentError))
+// 后端要求有且仅有 1 个流水段（0 或 ≥2 都报错）。
+const sequenceCount = computed(() => form.segments.filter((s) => s.type === 'sequence').length)
+const sequenceCountError = computed(() => {
+  if (sequenceCount.value === 0) return '至少需要 1 个流水段。'
+  if (sequenceCount.value > 1) return '只能有 1 个流水段。'
+  return ''
+})
 const segmentsValid = computed(() =>
-  form.segments.length > 0 && form.segments.every((s) => s.type !== ''),
+  form.segments.length > 0
+  && segmentErrors.value.every((e) => e === null)
+  && sequenceCountError.value === '',
 )
 const canSubmit = computed(() =>
   displayNameValid.value && createdByValid.value && segmentsValid.value,
@@ -389,6 +436,10 @@ function removeSegment(index: number) {
 
 async function previewFormSample() {
   if (!editingRuleKey.value) return
+  if (!canSubmit.value) {
+    showErrors.value = true
+    return
+  }
   formPreviewPending.value = true
   formPreview.value = ''
   try {
@@ -604,7 +655,7 @@ async function submitForm() {
         </DialogHeader>
         <form class="grid gap-5" @submit.prevent="submitForm">
           <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写带 * 的必填项（名称、创建人），并确保至少 1 个段且每段已选类型。
+            请填写带 * 的必填项（名称、创建人），并修正下方红字提示的段定义。
           </p>
 
           <FormSectionTitle>版本信息</FormSectionTitle>
@@ -649,6 +700,10 @@ async function submitForm() {
             </Button>
           </div>
 
+          <p v-if="showErrors && sequenceCountError" class="text-sm text-destructive" role="alert">
+            {{ sequenceCountError }}
+          </p>
+
           <div class="grid gap-2">
             <div
               v-for="(segment, index) in form.segments"
@@ -667,26 +722,31 @@ async function submitForm() {
                 </Field>
 
                 <!-- 常量 -->
-                <Field v-if="segment.type === 'constant'">
-                  <FieldLabel :for="`cr-value-${index}`">常量值</FieldLabel>
+                <Field v-if="segment.type === 'constant'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldLabel :for="`cr-value-${index}`">常量值 <span class="text-destructive">*</span></FieldLabel>
                   <Input :id="`cr-value-${index}`" v-model="segment.value" placeholder="如 SKU" />
                 </Field>
 
                 <!-- 日期 -->
-                <Field v-else-if="segment.type === 'date'">
-                  <FieldLabel :for="`cr-format-${index}`">日期格式</FieldLabel>
-                  <Input :id="`cr-format-${index}`" v-model="segment.format" placeholder="yyMM" />
+                <Field v-else-if="segment.type === 'date'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldLabel :for="`cr-format-${index}`">日期格式 <span class="text-destructive">*</span></FieldLabel>
+                  <Select v-model="segment.format">
+                    <SelectTrigger :id="`cr-format-${index}`"><SelectValue placeholder="选择日期格式" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="f in DATE_FORMAT_OPTIONS" :key="f" :value="f">{{ f }}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </Field>
 
                 <!-- 流水号 -->
                 <div v-else-if="segment.type === 'sequence'" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Field>
-                    <FieldLabel :for="`cr-width-${index}`">宽度</FieldLabel>
-                    <Input :id="`cr-width-${index}`" v-model="segment.width" type="number" min="0" placeholder="4" />
+                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldLabel :for="`cr-width-${index}`">宽度 <span class="text-destructive">*</span></FieldLabel>
+                    <Input :id="`cr-width-${index}`" v-model="segment.width" type="number" min="1" placeholder="4" />
                   </Field>
-                  <Field>
-                    <FieldLabel :for="`cr-start-${index}`">起始</FieldLabel>
-                    <Input :id="`cr-start-${index}`" v-model="segment.start" type="number" placeholder="1" />
+                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldLabel :for="`cr-start-${index}`">起始 <span class="text-destructive">*</span></FieldLabel>
+                    <Input :id="`cr-start-${index}`" v-model="segment.start" type="number" min="1" placeholder="1" />
                   </Field>
                   <Field>
                     <FieldLabel :for="`cr-pad-${index}`">补位字符</FieldLabel>
@@ -705,8 +765,8 @@ async function submitForm() {
 
                 <!-- 字段 -->
                 <div v-else-if="segment.type === 'field'" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <Field>
-                    <FieldLabel :for="`cr-source-${index}`">源</FieldLabel>
+                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldLabel :for="`cr-source-${index}`">源 <span class="text-destructive">*</span></FieldLabel>
                     <Input :id="`cr-source-${index}`" v-model="segment.source" placeholder="如 categoryCode" />
                   </Field>
                   <Field>
@@ -718,16 +778,21 @@ async function submitForm() {
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field>
-                    <FieldLabel :for="`cr-maxlen-${index}`">上限</FieldLabel>
-                    <Input :id="`cr-maxlen-${index}`" v-model="segment.maxLength" type="number" min="0" placeholder="不限" />
+                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldLabel :for="`cr-maxlen-${index}`">上限 <span class="text-destructive">*</span></FieldLabel>
+                    <Input :id="`cr-maxlen-${index}`" v-model="segment.maxLength" type="number" min="1" placeholder="如 8" />
                   </Field>
                 </div>
 
                 <!-- 校验位 -->
-                <Field v-else-if="segment.type === 'checksum'">
-                  <FieldLabel :for="`cr-algo-${index}`">算法</FieldLabel>
-                  <Input :id="`cr-algo-${index}`" v-model="segment.algorithm" placeholder="如 mod10" />
+                <Field v-else-if="segment.type === 'checksum'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldLabel :for="`cr-algo-${index}`">算法 <span class="text-destructive">*</span></FieldLabel>
+                  <Select v-model="segment.algorithm">
+                    <SelectTrigger :id="`cr-algo-${index}`"><SelectValue placeholder="选择校验算法" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem v-for="a in CHECKSUM_ALGORITHM_OPTIONS" :key="a" :value="a">{{ a }}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </Field>
 
                 <div v-else />
@@ -744,10 +809,15 @@ async function submitForm() {
                 </Button>
               </div>
 
-              <label :for="`cr-required-${index}`" class="flex cursor-pointer select-none items-center gap-2 text-sm">
-                <Checkbox :id="`cr-required-${index}`" v-model:checked="segment.required" />
-                <span>必填</span>
-              </label>
+              <div class="flex items-center justify-between gap-3">
+                <label :for="`cr-required-${index}`" class="flex cursor-pointer select-none items-center gap-2 text-sm">
+                  <Checkbox :id="`cr-required-${index}`" v-model:checked="segment.required" />
+                  <span>必填</span>
+                </label>
+                <p v-if="showErrors && segmentErrors[index]" class="text-sm text-destructive" role="alert">
+                  {{ segmentErrors[index] }}
+                </p>
+              </div>
             </div>
           </div>
 
