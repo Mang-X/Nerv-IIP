@@ -1,5 +1,7 @@
 ---
 title: DataTable 数据表格
+pageClass: ds-wide
+aside: false
 ---
 
 <script setup>
@@ -76,7 +78,7 @@ const pageSize = ref(10)
 
 ## 完整表格
 
-<Demo>
+<Demo block>
   <DataTablePro
     :columns="columns"
     :rows="rows"
@@ -133,7 +135,7 @@ const pageSize = ref(10)
 
 ## 操作栏 Toolbar
 
-<Demo>
+<Demo block>
   <DataTableToolbarPro
     v-model:search="tbSearch"
     v-model:tab="tbTab"
@@ -180,7 +182,7 @@ const pageSize = ref(10)
 
 ## 分页 Pagination
 
-<Demo>
+<Demo block>
   <DataTablePaginationPro
     :page="page"
     :page-size="pageSize"
