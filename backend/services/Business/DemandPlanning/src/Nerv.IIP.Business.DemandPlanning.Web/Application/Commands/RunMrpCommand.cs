@@ -55,7 +55,8 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
             snapshot.ProductionVersions,
             snapshot.BomComponents,
             snapshot.ScheduledReceipts,
-            snapshot.PlanningParameters));
+            snapshot.PlanningParameters,
+            snapshot.UomConversions));
 
         foreach (var calculatedSuggestion in calculated)
         {

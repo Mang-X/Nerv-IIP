@@ -10,7 +10,8 @@ public sealed record MrpCalculationInput(
     IReadOnlyCollection<ProductionVersionSnapshot> ProductionVersions,
     IReadOnlyCollection<BomComponentSnapshot> BomComponents,
     IReadOnlyCollection<ScheduledReceiptSnapshot> ScheduledReceipts,
-    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters);
+    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters,
+    IReadOnlyCollection<UomConversionSnapshot> UomConversions);
 
 public sealed record DemandSnapshot(
     string DemandSourceReference,
@@ -61,6 +62,14 @@ public sealed record PlanningParameterSnapshot(
     decimal? LotSizeMax,
     decimal? LotSizeMultiple);
 
+public sealed record UomConversionSnapshot(
+    string FromUomCode,
+    string ToUomCode,
+    decimal Factor,
+    decimal Offset,
+    int Precision,
+    string RoundingMode);
+
 public sealed record CalculatedPlanningSuggestion(
     string SuggestionType,
     string SkuCode,
@@ -88,10 +97,16 @@ public static class MrpCalculator
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        var planningParameters = input.PlanningParameters
+            .GroupBy(x => SkuSiteKey.Create(x.SkuCode, x.SiteCode))
+            .ToDictionary(x => x.Key, x => x.First());
+        var converter = UomConverter.Create(input.UomConversions);
         var availability = input.Availability
+            .Select(x => NormalizeAvailability(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
             .ToDictionary(x => x.Key, x => x.Sum(y => y.AvailableQuantity));
         var scheduledReceipts = input.ScheduledReceipts
+            .Select(x => NormalizeScheduledReceipt(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
             .ToDictionary(
                 x => x.Key,
@@ -101,9 +116,6 @@ public static class MrpCalculator
                     .ThenBy(y => y.SourceDocumentId, StringComparer.OrdinalIgnoreCase)
                     .Select(y => new ScheduledReceiptState(y))
                     .ToList());
-        var planningParameters = input.PlanningParameters
-            .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
-            .ToDictionary(x => x.Key, x => x.First());
         var productionVersions = input.ProductionVersions
             .GroupBy(x => x.ParentSkuCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
@@ -116,14 +128,7 @@ public static class MrpCalculator
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DemandSourceReference, StringComparer.Ordinal)
-            .Select(x => new Requirement(
-                x.SkuCode,
-                x.UomCode,
-                x.SiteCode,
-                x.Quantity,
-                x.DueDate,
-                [new DemandPegging(x.DemandSourceReference, x.SkuCode, null, x.Quantity)],
-                [Normalize(x.SkuCode)]))
+            .Select(x => NormalizeDemand(x, planningParameters, converter))
             .ToList();
 
         while (pending.Count > 0)
@@ -147,7 +152,7 @@ public static class MrpCalculator
                         x.First().ComponentSkuCode,
                         x.Sum(y => y.Quantity)))
                     .ToArray();
-                planningParameters.TryGetValue(key, out var planningParameter);
+                planningParameters.TryGetValue(SkuSiteKey.Create(first.SkuCode, first.SiteCode), out var planningParameter);
                 productionVersions.TryGetValue(first.SkuCode, out var version);
                 var supply = ConsumeSupply(
                     key,
@@ -216,10 +221,16 @@ public static class MrpCalculator
                         continue;
                     }
 
-                    var componentRequirement = plannedQuantity * component.QuantityPerParent;
-                    pending.Add(new Requirement(
+                    var componentUomCode = ResolvePlanningUom(component.ComponentSkuCode, first.SiteCode, component.ComponentUomCode, planningParameters);
+                    var componentRequirement = ConvertQuantity(
                         component.ComponentSkuCode,
                         component.ComponentUomCode,
+                        componentUomCode,
+                        plannedQuantity * component.QuantityPerParent,
+                        converter);
+                    pending.Add(new Requirement(
+                        component.ComponentSkuCode,
+                        componentUomCode,
                         first.SiteCode,
                         componentRequirement,
                         releaseDate,
@@ -237,6 +248,73 @@ public static class MrpCalculator
         }
 
         return suggestions;
+    }
+
+    private static Requirement NormalizeDemand(
+        DemandSnapshot demand,
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        UomConverter converter)
+    {
+        var planningUom = ResolvePlanningUom(demand.SkuCode, demand.SiteCode, demand.UomCode, planningParameters);
+        var quantity = ConvertQuantity(demand.SkuCode, demand.UomCode, planningUom, demand.Quantity, converter);
+        return new Requirement(
+            demand.SkuCode,
+            planningUom,
+            demand.SiteCode,
+            quantity,
+            demand.DueDate,
+            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, quantity)],
+            [Normalize(demand.SkuCode)]);
+    }
+
+    private static InventoryAvailabilitySnapshot NormalizeAvailability(
+        InventoryAvailabilitySnapshot availability,
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        UomConverter converter)
+    {
+        var planningUom = ResolvePlanningUom(availability.SkuCode, availability.SiteCode, availability.UomCode, planningParameters);
+        return availability with
+        {
+            UomCode = planningUom,
+            AvailableQuantity = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.AvailableQuantity, converter),
+        };
+    }
+
+    private static ScheduledReceiptSnapshot NormalizeScheduledReceipt(
+        ScheduledReceiptSnapshot receipt,
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        UomConverter converter)
+    {
+        var planningUom = ResolvePlanningUom(receipt.SkuCode, receipt.SiteCode, receipt.UomCode, planningParameters);
+        return receipt with
+        {
+            UomCode = planningUom,
+            Quantity = ConvertQuantity(receipt.SkuCode, receipt.UomCode, planningUom, receipt.Quantity, converter),
+        };
+    }
+
+    private static string ResolvePlanningUom(
+        string skuCode,
+        string siteCode,
+        string fallbackUomCode,
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters)
+    {
+        return planningParameters.TryGetValue(SkuSiteKey.Create(skuCode, siteCode), out var parameter)
+            && !string.IsNullOrWhiteSpace(parameter.UomCode)
+            ? parameter.UomCode
+            : fallbackUomCode;
+    }
+
+    private static decimal ConvertQuantity(
+        string triggerSkuCode,
+        string fromUomCode,
+        string toUomCode,
+        decimal quantity,
+        UomConverter converter)
+    {
+        return string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal)
+            ? quantity
+            : converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
     }
 
     private static SupplyConsumption ConsumeSupply(
@@ -332,6 +410,14 @@ public static class MrpCalculator
         }
     }
 
+    private readonly record struct SkuSiteKey(string SkuCode, string SiteCode)
+    {
+        public static SkuSiteKey Create(string skuCode, string siteCode)
+        {
+            return new SkuSiteKey(Normalize(skuCode), Normalize(siteCode));
+        }
+    }
+
     private sealed record RequirementBucket(ItemKey Key, DateOnly RequiredDate);
 
     private sealed record DemandPegging(string DemandSourceReference, string ParentSkuCode, string? ComponentSkuCode, decimal Quantity);
@@ -357,4 +443,52 @@ public static class MrpCalculator
     private sealed record UsedScheduledReceipt(string SourceSystem, string SourceDocumentType, string SourceDocumentId, decimal Quantity);
 
     private sealed record SupplyConsumption(decimal Shortage, IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts);
+
+    private sealed class UomConverter
+    {
+        private readonly IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions;
+
+        private UomConverter(IReadOnlyDictionary<(string FromUomCode, string ToUomCode), UomConversionSnapshot> conversions)
+        {
+            this.conversions = conversions;
+        }
+
+        public static UomConverter Create(IReadOnlyCollection<UomConversionSnapshot> conversions)
+        {
+            return new UomConverter(conversions
+                .GroupBy(x => (Normalize(x.FromUomCode), Normalize(x.ToUomCode)))
+                .ToDictionary(x => x.Key, x => x.First()));
+        }
+
+        // MasterData UOM conversions are global by unit pair; triggerSkuCode is only diagnostic context.
+        public decimal Convert(string triggerSkuCode, string fromUomCode, string toUomCode, decimal quantity)
+        {
+            var from = Normalize(fromUomCode);
+            var to = Normalize(toUomCode);
+            if (!conversions.TryGetValue((from, to), out var conversion))
+            {
+                throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
+            }
+
+            return Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
+        }
+
+        private static decimal Round(decimal value, int precision, string roundingMode)
+        {
+            var digits = Math.Clamp(precision, 0, 12);
+            return Normalize(roundingMode) switch
+            {
+                "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
+                "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
+                "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
+                _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
+            };
+        }
+
+        private static decimal RoundToward(decimal value, int digits, bool ceiling)
+        {
+            var scale = (decimal)Math.Pow(10, digits);
+            return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
+        }
+    }
 }

@@ -27,7 +27,8 @@ public sealed record PlanningInputSnapshotResult(
     IReadOnlyCollection<ProductionVersionSnapshot> ProductionVersions,
     IReadOnlyCollection<BomComponentSnapshot> BomComponents,
     IReadOnlyCollection<ScheduledReceiptSnapshot> ScheduledReceipts,
-    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters);
+    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters,
+    IReadOnlyCollection<UomConversionSnapshot> UomConversions);
 
 public sealed record PlanningProductEngineeringSnapshotRequest(
     string OrganizationId,
@@ -94,11 +95,13 @@ public sealed record PlanningParameterSnapshotItem(string SkuCode, string UomCod
 public sealed record PlanningParameterSnapshotRequest(
     string OrganizationId,
     string EnvironmentId,
-    IReadOnlyCollection<PlanningParameterSnapshotItem> Items);
+    IReadOnlyCollection<PlanningParameterSnapshotItem> Items,
+    DateOnly? AsOfDate = null);
 
 public sealed record PlanningParameterSnapshotResult(
     string SnapshotSource,
-    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters);
+    IReadOnlyCollection<PlanningParameterSnapshot> PlanningParameters,
+    IReadOnlyCollection<UomConversionSnapshot> UomConversions);
 
 public sealed class OptionalPlanningSnapshotException : Exception
 {
@@ -109,6 +112,14 @@ public sealed class OptionalPlanningSnapshotException : Exception
 
     public OptionalPlanningSnapshotException(string message, Exception innerException)
         : base(message, innerException)
+    {
+    }
+}
+
+public sealed class RequiredPlanningSnapshotException : Exception
+{
+    public RequiredPlanningSnapshotException(string message)
+        : base(message)
     {
     }
 }
@@ -148,12 +159,13 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 [],
                 [],
                 [],
+                [],
                 []);
         }
 
         var internalBearerToken = internalTokenProvider?.BearerToken ?? string.Empty;
         var engineering = await LoadEngineeringClosureAsync(internalBearerToken, organizationId, environmentId, horizonStart, horizonEnd, demands, cancellationToken);
-        var availabilityItems = demands
+        var sourceItems = demands
             .Select(x => new PlanningInventorySnapshotItem(x.SkuCode, x.UomCode, x.SiteCode))
             .Concat(engineering.BomComponents.SelectMany(component => demands.Select(demand =>
                 new PlanningInventorySnapshotItem(component.ComponentSkuCode, component.ComponentUomCode, demand.SiteCode))))
@@ -161,6 +173,14 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.SiteCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var planningParameters = await LoadPlanningParametersOrEmptyAsync(
+            internalBearerToken,
+            organizationId,
+            environmentId,
+            horizonStart,
+            sourceItems,
+            cancellationToken);
+        var availabilityItems = ExpandWithPlanningUom(sourceItems, planningParameters.PlanningParameters);
         var inventorySnapshot = await inventory.GetAvailabilitySnapshotAsync(
             internalBearerToken,
             new PlanningInventorySnapshotRequest(organizationId, environmentId, availabilityItems),
@@ -171,12 +191,6 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             environmentId,
             horizonStart,
             horizonEnd,
-            availabilityItems,
-            cancellationToken);
-        var planningParameters = await LoadPlanningParametersOrEmptyAsync(
-            internalBearerToken,
-            organizationId,
-            environmentId,
             availabilityItems,
             cancellationToken);
 
@@ -191,7 +205,29 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             engineering.ProductionVersions,
             engineering.BomComponents,
             scheduledReceipts.ScheduledReceipts,
-            planningParameters.PlanningParameters);
+            planningParameters.PlanningParameters,
+            planningParameters.UomConversions);
+    }
+
+    private static IReadOnlyCollection<PlanningInventorySnapshotItem> ExpandWithPlanningUom(
+        IReadOnlyCollection<PlanningInventorySnapshotItem> sourceItems,
+        IReadOnlyCollection<PlanningParameterSnapshot> planningParameters)
+    {
+        var parameterBySkuSite = planningParameters
+            .GroupBy(x => $"{x.SkuCode}\u001f{x.SiteCode}", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+        return sourceItems
+            .Concat(sourceItems
+                .Where(x => parameterBySkuSite.ContainsKey($"{x.SkuCode}\u001f{x.SiteCode}"))
+                .Select(x => new PlanningInventorySnapshotItem(
+                    x.SkuCode,
+                    parameterBySkuSite[$"{x.SkuCode}\u001f{x.SiteCode}"].UomCode,
+                    x.SiteCode)))
+            .DistinctBy(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}", StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.SiteCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.UomCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private async Task<PlanningScheduledReceiptSnapshot> LoadScheduledReceiptsOrEmptyAsync(
@@ -235,12 +271,13 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         string internalBearerToken,
         string organizationId,
         string environmentId,
+        DateOnly asOfDate,
         IReadOnlyCollection<PlanningInventorySnapshotItem> availabilityItems,
         CancellationToken cancellationToken)
     {
         if (planningParameterClient is null)
         {
-            return new PlanningParameterSnapshotResult("master-data-planning-parameters:none", []);
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:none", [], []);
         }
 
         try
@@ -250,7 +287,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 new PlanningParameterSnapshotRequest(
                     organizationId,
                     environmentId,
-                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
+                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray(),
+                    asOfDate),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -260,7 +298,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         catch (Exception ex) when (IsOptionalPlanningSourceFailure(ex))
         {
             logger?.LogWarning(ex, "DemandPlanning MRP planning parameter snapshot failed; continuing with an empty optional snapshot.");
-            return new PlanningParameterSnapshotResult("master-data-planning-parameters:error", []);
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:error", [], []);
         }
     }
 
@@ -524,7 +562,7 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
     {
         if (request.Items.Count == 0)
         {
-            return new PlanningParameterSnapshotResult("master-data-planning-parameters:0", []);
+            return new PlanningParameterSnapshotResult("master-data-planning-parameters:0;master-data-uom-conversions:0", [], []);
         }
 
         using var throttle = new SemaphoreSlim(MaxConcurrentSkuDetailRequests);
@@ -547,9 +585,10 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             .Select(x =>
             {
                 var detail = detailBySku[x.SkuCode];
+                var planningUomCode = string.IsNullOrWhiteSpace(detail.BaseUomCode) ? x.UomCode : detail.BaseUomCode;
                 return new PlanningParameterSnapshot(
                     x.SkuCode,
-                    x.UomCode,
+                    planningUomCode,
                     x.SiteCode,
                     ComputeLeadTimeDays(detail),
                     Math.Max(0, detail.SafetyStockQuantity ?? 0m),
@@ -558,8 +597,83 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
                     detail.LotSizeMultiple);
             })
             .ToArray();
+        var conversions = await GetRequiredUomConversionsAsync(
+            internalBearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+            parameters,
+            request.Items,
+            cancellationToken);
 
-        return new PlanningParameterSnapshotResult($"master-data-planning-parameters:{parameters.Length}", parameters);
+        return new PlanningParameterSnapshotResult(
+            $"master-data-planning-parameters:{parameters.Length};master-data-uom-conversions:{conversions.Count}",
+            parameters,
+            conversions);
+    }
+
+    private async Task<IReadOnlyCollection<UomConversionSnapshot>> GetRequiredUomConversionsAsync(
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        DateOnly asOfDate,
+        IReadOnlyCollection<PlanningParameterSnapshot> parameters,
+        IReadOnlyCollection<PlanningParameterSnapshotItem> requestedItems,
+        CancellationToken cancellationToken)
+    {
+        var parameterBySkuSite = parameters
+            .GroupBy(x => $"{x.SkuCode}\u001f{x.SiteCode}", StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+        var requiredPairs = requestedItems
+            .Where(x => parameterBySkuSite.ContainsKey($"{x.SkuCode}\u001f{x.SiteCode}"))
+            .Select(x => new
+            {
+                x.UomCode,
+                PlanningUomCode = parameterBySkuSite[$"{x.SkuCode}\u001f{x.SiteCode}"].UomCode,
+            })
+            .Where(x => !string.Equals(x.UomCode, x.PlanningUomCode, StringComparison.OrdinalIgnoreCase))
+            .Select(x => $"{NormalizeUom(x.UomCode)}\u001f{NormalizeUom(x.PlanningUomCode)}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (requiredPairs.Count == 0)
+        {
+            return [];
+        }
+
+        var response = await SendMasterDataAsync<MasterDataResourceListResponse>(
+            internalBearerToken,
+            "/api/business/v1/master-data/resources?" + Query(
+                ("organizationId", organizationId),
+                ("environmentId", environmentId),
+                ("resourceType", "uom-conversion"),
+                ("all", true)),
+            cancellationToken);
+        if (response.Truncated)
+        {
+            var limit = response.Limit ?? response.Resources.Count;
+            throw new RequiredPlanningSnapshotException($"MasterData UOM conversion list was truncated at {limit} of {response.Total}; DemandPlanning cannot reliably select required UOM conversions.");
+        }
+
+        return response.Resources
+            .Where(x => x.Active)
+            .Where(x => !string.IsNullOrWhiteSpace(x.FromUomCode) && !string.IsNullOrWhiteSpace(x.ToUomCode))
+            .Where(x => x.Factor is > 0)
+            .Where(x => (x.EffectiveFrom ?? DateOnly.MinValue) <= asOfDate)
+            .Where(x => x.EffectiveTo is null || x.EffectiveTo.Value >= asOfDate)
+            .Where(x => requiredPairs.Contains($"{NormalizeUom(x.FromUomCode!)}\u001f{NormalizeUom(x.ToUomCode!)}"))
+            .GroupBy(x => $"{NormalizeUom(x.FromUomCode!)}\u001f{NormalizeUom(x.ToUomCode!)}", StringComparer.OrdinalIgnoreCase)
+            .Select(x => x
+                .OrderByDescending(y => y.EffectiveFrom ?? DateOnly.MinValue)
+                .ThenBy(y => y.SnapshotVersion, StringComparer.Ordinal)
+                .ThenBy(y => y.Code, StringComparer.Ordinal)
+                .First())
+            .Select(x => new UomConversionSnapshot(
+                x.FromUomCode!,
+                x.ToUomCode!,
+                x.Factor!.Value,
+                x.Offset ?? 0m,
+                Math.Max(0, x.Precision ?? 0),
+                string.IsNullOrWhiteSpace(x.RoundingMode) ? "half-up" : x.RoundingMode))
+            .ToArray();
     }
 
     private async Task<MasterDataSkuPlanningDetail?> GetSkuPlanningDetailThrottledAsync(
@@ -611,6 +725,24 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             cancellationToken);
     }
 
+    private async Task<T> SendMasterDataAsync<T>(string internalBearerToken, string requestUri, CancellationToken cancellationToken)
+        where T : class
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        if (!string.IsNullOrWhiteSpace(internalBearerToken))
+        {
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+        }
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<T>(
+            response,
+            "MasterData returned an invalid resource list response.",
+            "MasterData returned an empty resource list response envelope.",
+            cancellationToken);
+    }
+
     private static int ComputeLeadTimeDays(MasterDataSkuPlanningDetail detail)
     {
         var goodsReceiptDays = Math.Max(0, detail.GoodsReceiptProcessingTimeDays ?? 0);
@@ -637,6 +769,8 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             && string.Equals(lifecycleStatus, "active", StringComparison.OrdinalIgnoreCase)
             && hasPlanningUsage;
     }
+
+    private static string NormalizeUom(string value) => value.Trim().ToUpperInvariant();
 }
 
 public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) : IPlanningInventorySnapshotClient
@@ -821,6 +955,47 @@ internal sealed record MasterDataSkuPlanningDetail(
     bool? ManufacturingEnabled,
     bool? SalesEnabled);
 
+internal sealed record MasterDataResourceListResponse(
+    IReadOnlyCollection<MasterDataResourceListItem> Resources,
+    int Total,
+    bool Truncated = false,
+    int? Limit = null);
+
+internal sealed record MasterDataResourceListItem(
+    string ResourceType,
+    string Code,
+    string DisplayName,
+    bool Active,
+    string SnapshotVersion,
+    string? PartnerType = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? SiteCode = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? WorkCenterCode = null,
+    string? Status = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? CodeSet = null,
+    string? BaseUomCode = null,
+    string? TaxId = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    int? Precision = null,
+    string? RoundingMode = null);
+
 public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbContext dbContext) : IPlanningInputSnapshotProvider
 {
     public async Task<PlanningInputSnapshotResult> GetSnapshotAsync(
@@ -855,6 +1030,7 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
             [
                 new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m),
             ],
+            [],
             [],
             []);
     }
