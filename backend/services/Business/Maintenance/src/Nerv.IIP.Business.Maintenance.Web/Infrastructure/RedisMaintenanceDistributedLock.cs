@@ -38,7 +38,11 @@ public sealed class RedisMaintenanceDistributedLock(IRedisCommandLockStore store
             }
 
             var remaining = deadlineUtc - timeProvider.GetUtcNow();
-            await Task.Delay(remaining < RetryDelay ? remaining : RetryDelay, cancellationToken);
+            var delay = remaining < RetryDelay ? remaining : RetryDelay;
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
         }
     }
 

@@ -78,6 +78,7 @@ try
 
     builder.Services.AddMaintenancePostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<MaintenanceUnavailableWindowRuntimeHoursProvider>();
+    builder.Services.AddScoped<IAssetRuntimeHoursFallbackProvider>(sp => sp.GetRequiredService<MaintenanceUnavailableWindowRuntimeHoursProvider>());
     if (isTesting)
     {
         builder.Services.AddScoped<IAssetRuntimeHoursProvider, MaintenanceUnavailableWindowRuntimeHoursProvider>();

@@ -2,6 +2,11 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedLocks;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -19,7 +24,7 @@ public sealed class MaintenanceCommandLockTests
     }
 
     [Fact]
-    public async Task Redis_distributed_lock_releases_after_exception_and_allows_retry()
+    public async Task Redis_distributed_lock_releases_after_normal_dispose_and_allows_retry()
     {
         var store = new InMemoryRedisCommandLockStore();
         var distributedLock = new RedisMaintenanceDistributedLock(store, TimeProvider.System);
@@ -29,6 +34,27 @@ public sealed class MaintenanceCommandLockTests
         await Task.Delay(50);
         await first.DisposeAsync();
         await using var retry = await retryTask;
+
+        Assert.NotNull(retry);
+    }
+
+    [Fact]
+    public async Task Command_lock_behavior_releases_after_handler_exception_and_allows_retry()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IRedisCommandLockStore, InMemoryRedisCommandLockStore>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IDistributedLock, RedisMaintenanceDistributedLock>();
+        services.AddScoped<ICommandLock<ThrowingLockedCommand>, ThrowingLockedCommandLock>();
+        services.AddScoped<IRequestHandler<ThrowingLockedCommand>, ThrowingLockedCommandHandler>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssemblyContaining<MaintenanceCommandLockTests>()
+            .AddCommandLockBehavior());
+        await using var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<ISender>();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sender.Send(new ThrowingLockedCommand("pm-lock"), CancellationToken.None));
+        await using var retry = await provider.GetRequiredService<IDistributedLock>().TryAcquireAsync("pm-lock", TimeSpan.Zero, CancellationToken.None);
 
         Assert.NotNull(retry);
     }
@@ -48,5 +74,26 @@ public sealed class MaintenanceCommandLockTests
         Assert.Equal(1, first.GeneratedCount);
         Assert.Equal(0, second.GeneratedCount);
         Assert.Single(dbContext.MaintenanceWorkOrders);
+    }
+
+    public sealed record ThrowingLockedCommand(string LockKey) : ICommand;
+
+    public sealed class ThrowingLockedCommandLock : ICommandLock<ThrowingLockedCommand>
+    {
+        public Task<CommandLockSettings> GetLockKeysAsync(ThrowingLockedCommand command, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new CommandLockSettings(command.LockKey, 1));
+        }
+    }
+
+    public sealed class ThrowingLockedCommandHandler : IRequestHandler<ThrowingLockedCommand>
+    {
+        public Task Handle(ThrowingLockedCommand request, CancellationToken cancellationToken)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new InvalidOperationException("handler failed after command lock acquisition.");
+        }
     }
 }

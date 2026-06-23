@@ -241,9 +241,31 @@ public interface IAssetRuntimeHoursProvider
         CancellationToken cancellationToken);
 }
 
-public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(ApplicationDbContext dbContext) : IAssetRuntimeHoursProvider
+public interface IAssetRuntimeHoursFallbackProvider
+{
+    Task<AssetRuntimeHoursResult> CalculateFallbackAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken);
+}
+
+public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(ApplicationDbContext dbContext) : IAssetRuntimeHoursProvider, IAssetRuntimeHoursFallbackProvider
 {
     public async Task<AssetRuntimeHoursResult> CalculateAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        return await CalculateFallbackAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
+    }
+
+    public async Task<AssetRuntimeHoursResult> CalculateFallbackAsync(
         string organizationId,
         string environmentId,
         string deviceAssetId,
@@ -319,7 +341,7 @@ public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(Application
 public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
     IHttpClientFactory httpClientFactory,
     IInternalServiceTokenProvider? tokenProvider,
-    MaintenanceUnavailableWindowRuntimeHoursProvider fallbackProvider,
+    IAssetRuntimeHoursFallbackProvider fallbackProvider,
     ILogger<HttpIndustrialTelemetryAssetRuntimeHoursProvider> logger) : IAssetRuntimeHoursProvider
 {
     public const string ClientName = "MaintenanceIndustrialTelemetryRuntime";
@@ -334,7 +356,6 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
         DateTimeOffset windowEndUtc,
         CancellationToken cancellationToken)
     {
-        var fallback = await fallbackProvider.CalculateAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, BuildOeePath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
@@ -351,7 +372,7 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             var data = envelope?.Data;
             if (data is null || data.StateSampleCount == 0)
             {
-                return fallback;
+                return await CalculateFallbackAsync();
             }
 
             var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
@@ -360,13 +381,16 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
         catch (HttpRequestException exception)
         {
             logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source was unavailable for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
-            return fallback;
+            return await CalculateFallbackAsync();
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source timed out for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
-            return fallback;
+            return await CalculateFallbackAsync();
         }
+
+        Task<AssetRuntimeHoursResult> CalculateFallbackAsync() =>
+            fallbackProvider.CalculateFallbackAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
     }
 
     private static string BuildOeePath(
