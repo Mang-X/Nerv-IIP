@@ -9,8 +9,11 @@ using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Business.Maintenance.Web.Application.Scheduling;
 using Nerv.IIP.Business.Maintenance.Web.Endpoints.Maintenance;
+using Nerv.IIP.Business.Maintenance.Web.Infrastructure;
+using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -20,6 +23,7 @@ using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
 using NetCorePal.Extensions.DistributedTransactions.CAP;
 using Prometheus;
+using StackExchange.Redis;
 
 
 var isTesting = false;
@@ -34,6 +38,11 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
+    builder.Services.AddHttpClient(HttpIndustrialTelemetryAssetRuntimeHoursProvider.ClientName, client =>
+    {
+        client.BaseAddress = industrialTelemetryBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
@@ -57,6 +66,7 @@ try
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
+    builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<MaintenancePlanDueScheduler>();
 
@@ -67,7 +77,17 @@ try
     }
 
     builder.Services.AddMaintenancePostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddInMemoryDistributedLock();
+    builder.Services.AddScoped<MaintenanceUnavailableWindowRuntimeHoursProvider>();
+    if (isTesting)
+    {
+        builder.Services.AddScoped<IAssetRuntimeHoursProvider, MaintenanceUnavailableWindowRuntimeHoursProvider>();
+    }
+    else
+    {
+        builder.Services.AddScoped<IAssetRuntimeHoursProvider, HttpIndustrialTelemetryAssetRuntimeHoursProvider>();
+    }
+
+    AddMaintenanceDistributedLock(builder.Services, builder.Configuration, builder.Environment, isTesting);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -157,6 +177,47 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(IConfiguration configuration, string configurationKey, string fallback)
+{
+    var value = configuration[configurationKey];
+    return Uri.TryCreate(value, UriKind.Absolute, out var configured)
+        ? configured
+        : new Uri(fallback, UriKind.Absolute);
+}
+
+static void AddMaintenanceDistributedLock(IServiceCollection services, IConfiguration configuration, IHostEnvironment environment, bool isTesting)
+{
+    if (isTesting)
+    {
+        services.AddInMemoryDistributedLock();
+        return;
+    }
+
+    var redisConnectionString = ResolveRedisConnectionString(configuration);
+    if (string.IsNullOrWhiteSpace(redisConnectionString))
+    {
+        if (environment.IsDevelopment())
+        {
+            services.AddInMemoryDistributedLock();
+            return;
+        }
+
+        throw new InvalidOperationException("BusinessMaintenance distributed command locks require a Redis connection string outside Development. Set ConnectionStrings:Redis, Messaging:Redis:ConnectionString, or Caching:Redis.");
+    }
+
+    services.AddSingleton<IConnectionMultiplexer>(_ => NervIipRedisConnection.ConnectAsync(redisConnectionString).GetAwaiter().GetResult());
+    services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
+    services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(sp.GetRequiredService<IRedisCommandLockStore>(), sp.GetRequiredService<TimeProvider>()));
+}
+
+static string? ResolveRedisConnectionString(IConfiguration configuration)
+{
+    return configuration.GetConnectionString("Redis")
+        ?? configuration["Messaging:Redis:ConnectionString"]
+        ?? configuration["ConnectionStrings:Redis"]
+        ?? configuration["Caching:Redis"];
 }
 
 #pragma warning disable S1118

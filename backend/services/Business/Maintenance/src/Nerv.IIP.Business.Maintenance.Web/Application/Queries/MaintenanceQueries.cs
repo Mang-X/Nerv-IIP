@@ -1,8 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
@@ -163,9 +168,22 @@ public sealed class QueryAssetReliabilityQueryValidator : AbstractValidator<Quer
     }
 }
 
-public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<QueryAssetReliabilityQuery, AssetReliabilityResponse>
+public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAssetReliabilityQuery, AssetReliabilityResponse>
 {
+    private readonly ApplicationDbContext dbContext;
+    private readonly IAssetRuntimeHoursProvider runtimeHoursProvider;
+
+    public QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext)
+        : this(dbContext, new MaintenanceUnavailableWindowRuntimeHoursProvider(dbContext))
+    {
+    }
+
+    public QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext, IAssetRuntimeHoursProvider runtimeHoursProvider)
+    {
+        this.dbContext = dbContext;
+        this.runtimeHoursProvider = runtimeHoursProvider;
+    }
+
     public async Task<AssetReliabilityResponse> Handle(QueryAssetReliabilityQuery request, CancellationToken cancellationToken)
     {
         var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
@@ -178,15 +196,21 @@ public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbCon
             .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
             .Select(x => new ReliabilityWorkOrderProjection(x.OpenedAtUtc, x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
+        var runtimeHours = await runtimeHoursProvider.CalculateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            cancellationToken);
 
         var completedDurations = faultOrders
             .Where(x => x.CompletedAtUtc is not null && x.CompletedAtUtc > x.OpenedAtUtc)
             .Select(x => (decimal)(x.CompletedAtUtc!.Value - x.OpenedAtUtc).TotalMinutes)
             .ToArray();
-        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
         var failureCount = faultOrders.Length;
         var repairCount = completedDurations.Length;
-        var mtbfHours = failureCount == 0 ? null : (decimal?)(windowHours / failureCount);
+        var mtbfHours = failureCount == 0 ? null : (decimal?)(runtimeHours.RuntimeHours / failureCount);
         var mttrMinutes = repairCount == 0 ? null : (decimal?)(completedDurations.Sum() / repairCount);
 
         return new AssetReliabilityResponse(
@@ -203,6 +227,181 @@ public sealed class QueryAssetReliabilityQueryHandler(ApplicationDbContext dbCon
 }
 
 internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? CompletedAtUtc);
+
+public sealed record AssetRuntimeHoursResult(decimal RuntimeHours, bool HasRuntimeSamples);
+
+public interface IAssetRuntimeHoursProvider
+{
+    Task<AssetRuntimeHoursResult> CalculateAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken);
+}
+
+public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(ApplicationDbContext dbContext) : IAssetRuntimeHoursProvider
+{
+    public async Task<AssetRuntimeHoursResult> CalculateAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
+        if (windowHours <= 0)
+        {
+            return new AssetRuntimeHoursResult(0m, HasRuntimeSamples: false);
+        }
+
+        var availability = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+            new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
+                organizationId,
+                environmentId,
+                windowStartUtc,
+                windowEndUtc,
+                [deviceAssetId],
+                null)),
+            cancellationToken);
+
+        var unavailableHours = CalculateUnavailableHours(availability.Items, deviceAssetId, windowStartUtc, windowEndUtc);
+        return new AssetRuntimeHoursResult(Math.Max(0m, windowHours - unavailableHours), HasRuntimeSamples: false);
+    }
+
+    private static decimal CalculateUnavailableHours(
+        IReadOnlyCollection<EquipmentRuntimeAvailabilityWindowContract> windows,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc)
+    {
+        var intervals = windows
+            .Where(x => string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase))
+            .Where(x => x.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Unavailable)
+            .Select(x => new RuntimeInterval(Max(x.StartUtc, windowStartUtc), Min(x.EndUtc, windowEndUtc)))
+            .Where(x => x.EndUtc > x.StartUtc)
+            .OrderBy(x => x.StartUtc)
+            .ToArray();
+        if (intervals.Length == 0)
+        {
+            return 0m;
+        }
+
+        var totalTicks = 0L;
+        var currentStart = intervals[0].StartUtc;
+        var currentEnd = intervals[0].EndUtc;
+        foreach (var interval in intervals.Skip(1))
+        {
+            if (interval.StartUtc <= currentEnd)
+            {
+                currentEnd = Max(currentEnd, interval.EndUtc);
+                continue;
+            }
+
+            totalTicks += currentEnd.UtcTicks - currentStart.UtcTicks;
+            currentStart = interval.StartUtc;
+            currentEnd = interval.EndUtc;
+        }
+
+        totalTicks += currentEnd.UtcTicks - currentStart.UtcTicks;
+        return (decimal)TimeSpan.FromTicks(totalTicks).TotalHours;
+    }
+
+    private static DateTimeOffset Max(DateTimeOffset left, DateTimeOffset right) => left > right ? left : right;
+
+    private static DateTimeOffset Min(DateTimeOffset left, DateTimeOffset right) => left < right ? left : right;
+
+    private sealed record RuntimeInterval(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
+}
+
+public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
+    IHttpClientFactory httpClientFactory,
+    IInternalServiceTokenProvider? tokenProvider,
+    MaintenanceUnavailableWindowRuntimeHoursProvider fallbackProvider,
+    ILogger<HttpIndustrialTelemetryAssetRuntimeHoursProvider> logger) : IAssetRuntimeHoursProvider
+{
+    public const string ClientName = "MaintenanceIndustrialTelemetryRuntime";
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<AssetRuntimeHoursResult> CalculateAsync(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var fallback = await fallbackProvider.CalculateAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildOeePath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
+            var token = tokenProvider?.BearerToken;
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+
+            var client = httpClientFactory.CreateClient(ClientName);
+            using var response = await client.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<IndustrialTelemetryOeeResponse>>(JsonOptions, cancellationToken);
+            var data = envelope?.Data;
+            if (data is null || data.StateSampleCount == 0)
+            {
+                return fallback;
+            }
+
+            var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
+            return new AssetRuntimeHoursResult(Math.Round(windowHours * data.AvailabilityRate, 6), HasRuntimeSamples: true);
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source was unavailable for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
+            return fallback;
+        }
+        catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source timed out for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
+            return fallback;
+        }
+    }
+
+    private static string BuildOeePath(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc)
+    {
+        return "/api/business/v1/iiot/oee?" + string.Join('&',
+            Query("organizationId", organizationId),
+            Query("environmentId", environmentId),
+            Query("deviceAssetId", deviceAssetId),
+            Query("windowStartUtc", windowStartUtc.ToString("O", CultureInfo.InvariantCulture)),
+            Query("windowEndUtc", windowEndUtc.ToString("O", CultureInfo.InvariantCulture)));
+    }
+
+    private static string Query(string name, string value) => $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}";
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private sealed record IndustrialTelemetryOeeResponse(
+        string OrganizationId,
+        string EnvironmentId,
+        string DeviceAssetId,
+        DateTimeOffset WindowStartUtc,
+        DateTimeOffset WindowEndUtc,
+        int StateSampleCount,
+        decimal AvailabilityRate,
+        decimal PerformanceRate,
+        decimal QualityRate,
+        decimal OeeRate,
+        bool PerformanceRateEstimated,
+        bool QualityRateEstimated);
+}
 
 public sealed record GetMaintenanceAssetAvailabilityWindowsQuery(
     string OrganizationId,

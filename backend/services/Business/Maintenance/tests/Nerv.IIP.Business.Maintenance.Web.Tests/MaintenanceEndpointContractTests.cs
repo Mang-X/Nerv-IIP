@@ -540,6 +540,33 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Reliability_query_uses_actual_runtime_hours_for_mtbf()
+    {
+        await using var dbContext = CreateDbContext();
+        var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddHours(24);
+        var completed = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        completed.Complete("fixed", "equipment-failure", 120, []);
+        var open = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-002", "critical");
+        dbContext.MaintenanceWorkOrders.AddRange(completed, open);
+        dbContext.Entry(completed).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(2);
+        dbContext.Entry(completed).Property(x => x.CompletedAtUtc).CurrentValue = windowStart.AddHours(4);
+        dbContext.Entry(open).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(10);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryAssetReliabilityQueryHandler(
+                dbContext,
+                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(6m, HasRuntimeSamples: true)))
+            .Handle(
+                new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
+                CancellationToken.None);
+
+        Assert.Equal(2, response.FailureCount);
+        Assert.Equal(3m, response.MtbfHours);
+        Assert.Equal(120m, response.MttrMinutes);
+    }
+
+    [Fact]
     public async Task Reliability_query_returns_null_metrics_when_no_fault_samples_exist()
     {
         await using var dbContext = CreateDbContext();
@@ -618,12 +645,34 @@ public sealed class MaintenanceEndpointContractTests
         return MaintenanceEndpointContracts.All.Select(x => new object[] { x.EndpointType });
     }
 
-    private static ApplicationDbContext CreateDbContext()
+    internal static ApplicationDbContext CreateTestDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"maintenance-availability-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static ApplicationDbContext CreateDbContext() => CreateTestDbContext();
+
+    private sealed class FixedAssetRuntimeHoursProvider(AssetRuntimeHoursResult result) : IAssetRuntimeHoursProvider
+    {
+        public Task<AssetRuntimeHoursResult> CalculateAsync(
+            string organizationId,
+            string environmentId,
+            string deviceAssetId,
+            DateTimeOffset windowStartUtc,
+            DateTimeOffset windowEndUtc,
+            CancellationToken cancellationToken)
+        {
+            _ = organizationId;
+            _ = environmentId;
+            _ = deviceAssetId;
+            _ = windowStartUtc;
+            _ = windowEndUtc;
+            _ = cancellationToken;
+            return Task.FromResult(result);
+        }
     }
 
     private static string GetWorkOrderStringProperty(MaintenanceWorkOrder workOrder, string propertyName)
