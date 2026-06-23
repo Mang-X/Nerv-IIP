@@ -59,7 +59,11 @@ const columns: DataTableColumn<BusinessService>[] = [
       />
 
       <SectionCards :columns="3">
-        <SectionCard description="已交付服务" :value="businessServices.length" hint="业务后端能力层" />
+        <SectionCard
+          description="已交付服务"
+          :value="businessServices.length"
+          hint="业务后端能力层"
+        />
         <SectionCard description="就绪状态" value="已交付" hint="后端能力可用" />
         <SectionCard description="覆盖范围" value="主线 MVP" hint="跨服务全链路验收推进中" />
       </SectionCards>
@@ -87,8 +91,12 @@ const columns: DataTableColumn<BusinessService>[] = [
             <CardDescription>业务平台在本控制台的能力边界。</CardDescription>
           </CardHeader>
           <CardContent class="grid gap-2 text-sm text-muted-foreground">
-            <p>下一步聚焦打通各业务服务的全链路验收路径，将已交付的 MVP 事实串成可验证的跨服务链路。</p>
-            <p>甘特图 / RFC 等排程编辑能力不在本控制台 MVP 范围，此处不引入时间线编辑器或排程工作流。</p>
+            <p>
+              下一步聚焦打通各业务服务的全链路验收路径，将已交付的 MVP 事实串成可验证的跨服务链路。
+            </p>
+            <p>
+              甘特图 / RFC 等排程编辑能力不在本控制台 MVP 范围，此处不引入时间线编辑器或排程工作流。
+            </p>
           </CardContent>
         </Card>
       </div>

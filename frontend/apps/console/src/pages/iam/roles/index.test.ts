@@ -28,7 +28,12 @@ vi.mock('@/composables/useIamAdmin', () => ({
     filters: reactive(iamState.filters),
     permissions: computed(() => [
       { code: 'iam.users.read', domain: 'IAM', description: 'Read IAM users', seeded: true },
-      { code: 'iam.roles.update', domain: 'IAM', description: 'Update IAM role permissions', seeded: true },
+      {
+        code: 'iam.roles.update',
+        domain: 'IAM',
+        description: 'Update IAM role permissions',
+        seeded: true,
+      },
     ]),
     permissionsError: computed(() => undefined),
     permissionsPending: shallowRef(false),

@@ -5,7 +5,11 @@ import AppShellMobile from './AppShellMobile.vue'
 describe('AppShellMobile', () => {
   it('renders header / content / footer slots', () => {
     const wrapper = mount(AppShellMobile, {
-      slots: { header: '<div>标题栏</div>', default: '<div>内容</div>', footer: '<nav>底部导航</nav>' },
+      slots: {
+        header: '<div>标题栏</div>',
+        default: '<div>内容</div>',
+        footer: '<nav>底部导航</nav>',
+      },
     })
     expect(wrapper.text()).toContain('标题栏')
     expect(wrapper.text()).toContain('内容')

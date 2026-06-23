@@ -22,10 +22,10 @@ const label = computed(() => props.label ?? resolved.value.label)
 // Tones render on the unmodified original Badge via semantic token classes —
 // success/warning/info do NOT rely on Badge variant customization (FE-1 rule).
 const toneClass: Record<StatusTone, string> = {
-  success: 'border-success/30 bg-success/10 text-success',
-  warning: 'border-warning/30 bg-warning/10 text-warning',
-  danger: 'border-destructive/30 bg-destructive/10 text-destructive',
-  info: 'border-brand/30 bg-brand/10 text-brand',
+  success: 'border-success/30 bg-success/10 text-success-strong',
+  warning: 'border-warning/30 bg-warning/10 text-warning-strong',
+  danger: 'border-destructive/30 bg-destructive/10 text-destructive-strong',
+  info: 'border-brand/30 bg-brand/10 text-brand-strong',
   neutral: 'border-border bg-muted text-muted-foreground',
 }
 </script>
