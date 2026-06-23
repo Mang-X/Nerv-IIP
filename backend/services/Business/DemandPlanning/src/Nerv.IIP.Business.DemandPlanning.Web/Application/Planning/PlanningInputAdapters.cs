@@ -116,6 +116,14 @@ public sealed class OptionalPlanningSnapshotException : Exception
     }
 }
 
+public sealed class RequiredPlanningSnapshotException : Exception
+{
+    public RequiredPlanningSnapshotException(string message)
+        : base(message)
+    {
+    }
+}
+
 public interface IPlanningParameterSnapshotClient
 {
     Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
@@ -642,7 +650,7 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
         if (response.Truncated)
         {
             var limit = response.Limit ?? response.Resources.Count;
-            throw new OptionalPlanningSnapshotException($"MasterData UOM conversion list was truncated at {limit} of {response.Total}; DemandPlanning cannot reliably select required UOM conversions.");
+            throw new RequiredPlanningSnapshotException($"MasterData UOM conversion list was truncated at {limit} of {response.Total}; DemandPlanning cannot reliably select required UOM conversions.");
         }
 
         return response.Resources

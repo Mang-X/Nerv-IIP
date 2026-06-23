@@ -177,6 +177,33 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Upstream_adapter_propagates_truncated_uom_conversion_source()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "box", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            new TruncatedUomConversionPlanningParameterClient());
+
+        var exception = await Assert.ThrowsAsync<RequiredPlanningSnapshotException>(() => providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None));
+
+        Assert.Contains("truncated", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Upstream_adapter_propagates_unexpected_erp_invalid_operation()
     {
         await using var provider = CreateInMemoryProvider();
@@ -759,7 +786,7 @@ public sealed class PlanningInputAdapterTests
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
         var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
 
-        var exception = await Assert.ThrowsAsync<OptionalPlanningSnapshotException>(() => client.GetPlanningParametersAsync(
+        var exception = await Assert.ThrowsAsync<RequiredPlanningSnapshotException>(() => client.GetPlanningParametersAsync(
             "token",
             new PlanningParameterSnapshotRequest(
                 "org-001",
@@ -930,6 +957,17 @@ public sealed class PlanningInputAdapterTests
             CancellationToken cancellationToken)
         {
             throw new OptionalPlanningSnapshotException("MasterData unavailable");
+        }
+    }
+
+    private sealed class TruncatedUomConversionPlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new RequiredPlanningSnapshotException("MasterData UOM conversion list was truncated at 5000 of 5001.");
         }
     }
 
