@@ -182,8 +182,10 @@ public sealed class MrpCalculatorTests
         Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public void Invalid_uom_conversion_factor_fails_instead_of_zeroing_requirement()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Invalid_uom_conversion_factor_fails_instead_of_zeroing_requirement(int conversionFactor)
     {
         var input = NewInput(
             demands:
@@ -197,7 +199,7 @@ public sealed class MrpCalculatorTests
             ],
             uomConversions:
             [
-                new UomConversionSnapshot("box", "pcs", 0m, 0m, 0, "half-up"),
+                new UomConversionSnapshot("box", "pcs", conversionFactor, 0m, 0, "half-up"),
             ]);
 
         var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
