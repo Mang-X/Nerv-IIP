@@ -95,7 +95,8 @@ public sealed record PlanningParameterSnapshotItem(string SkuCode, string UomCod
 public sealed record PlanningParameterSnapshotRequest(
     string OrganizationId,
     string EnvironmentId,
-    IReadOnlyCollection<PlanningParameterSnapshotItem> Items);
+    IReadOnlyCollection<PlanningParameterSnapshotItem> Items,
+    DateOnly? AsOfDate = null);
 
 public sealed record PlanningParameterSnapshotResult(
     string SnapshotSource,
@@ -168,6 +169,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             internalBearerToken,
             organizationId,
             environmentId,
+            horizonStart,
             sourceItems,
             cancellationToken);
         var availabilityItems = ExpandWithPlanningUom(sourceItems, planningParameters.PlanningParameters);
@@ -261,6 +263,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         string internalBearerToken,
         string organizationId,
         string environmentId,
+        DateOnly asOfDate,
         IReadOnlyCollection<PlanningInventorySnapshotItem> availabilityItems,
         CancellationToken cancellationToken)
     {
@@ -276,7 +279,8 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 new PlanningParameterSnapshotRequest(
                     organizationId,
                     environmentId,
-                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray()),
+                    availabilityItems.Select(x => new PlanningParameterSnapshotItem(x.SkuCode, x.UomCode, x.SiteCode)).ToArray(),
+                    asOfDate),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -589,6 +593,7 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
             internalBearerToken,
             request.OrganizationId,
             request.EnvironmentId,
+            request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
             parameters,
             request.Items,
             cancellationToken);
@@ -603,6 +608,7 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
         string internalBearerToken,
         string organizationId,
         string environmentId,
+        DateOnly asOfDate,
         IReadOnlyCollection<PlanningParameterSnapshot> parameters,
         IReadOnlyCollection<PlanningParameterSnapshotItem> requestedItems,
         CancellationToken cancellationToken)
@@ -633,15 +639,25 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
                 ("resourceType", "uom-conversion"),
                 ("all", true)),
             cancellationToken);
+        if (response.Truncated)
+        {
+            var limit = response.Limit ?? response.Resources.Count;
+            throw new OptionalPlanningSnapshotException($"MasterData UOM conversion list was truncated at {limit} of {response.Total}; DemandPlanning cannot reliably select required UOM conversions.");
+        }
+
         return response.Resources
             .Where(x => x.Active)
             .Where(x => !string.IsNullOrWhiteSpace(x.FromUomCode) && !string.IsNullOrWhiteSpace(x.ToUomCode))
+            .Where(x => x.Factor is > 0)
+            .Where(x => (x.EffectiveFrom ?? DateOnly.MinValue) <= asOfDate)
+            .Where(x => x.EffectiveTo is null || x.EffectiveTo.Value >= asOfDate)
             .Where(x => requiredPairs.Contains($"{NormalizeUom(x.FromUomCode!)}\u001f{NormalizeUom(x.ToUomCode!)}"))
             .GroupBy(x => $"{NormalizeUom(x.FromUomCode!)}\u001f{NormalizeUom(x.ToUomCode!)}", StringComparer.OrdinalIgnoreCase)
             .Select(x => x
                 .OrderByDescending(y => y.EffectiveFrom ?? DateOnly.MinValue)
+                .ThenBy(y => y.SnapshotVersion, StringComparer.Ordinal)
+                .ThenBy(y => y.Code, StringComparer.Ordinal)
                 .First())
-            .Where(x => x.Factor is > 0)
             .Select(x => new UomConversionSnapshot(
                 x.FromUomCode!,
                 x.ToUomCode!,

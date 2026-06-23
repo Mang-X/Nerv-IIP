@@ -605,6 +605,174 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Master_data_planning_parameter_client_selects_uom_conversion_by_as_of_date()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/resources", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "total": 4,
+                        "resources": [
+                          {
+                            "resourceType": "uom-conversion",
+                            "code": "box->pcs",
+                            "displayName": "expired",
+                            "active": true,
+                            "snapshotVersion": "v1",
+                            "fromUomCode": "box",
+                            "toUomCode": "pcs",
+                            "factor": 10,
+                            "offset": 0,
+                            "precision": 0,
+                            "roundingMode": "half-up",
+                            "effectiveFrom": "2026-01-01",
+                            "effectiveTo": "2026-05-31"
+                          },
+                          {
+                            "resourceType": "uom-conversion",
+                            "code": "box->pcs",
+                            "displayName": "current",
+                            "active": true,
+                            "snapshotVersion": "v2",
+                            "fromUomCode": "box",
+                            "toUomCode": "pcs",
+                            "factor": 12,
+                            "offset": 0,
+                            "precision": 0,
+                            "roundingMode": "half-up",
+                            "effectiveFrom": "2026-06-01"
+                          },
+                          {
+                            "resourceType": "uom-conversion",
+                            "code": "box->pcs",
+                            "displayName": "invalid latest",
+                            "active": true,
+                            "snapshotVersion": "v3",
+                            "fromUomCode": "box",
+                            "toUomCode": "pcs",
+                            "factor": 0,
+                            "offset": 0,
+                            "precision": 0,
+                            "roundingMode": "half-up",
+                            "effectiveFrom": "2026-06-15"
+                          },
+                          {
+                            "resourceType": "uom-conversion",
+                            "code": "box->pcs",
+                            "displayName": "future",
+                            "active": true,
+                            "snapshotVersion": "v4",
+                            "fromUomCode": "box",
+                            "toUomCode": "pcs",
+                            "factor": 24,
+                            "offset": 0,
+                            "precision": 0,
+                            "roundingMode": "half-up",
+                            "effectiveFrom": "2026-07-01"
+                          }
+                        ]
+                      }
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-FG-1000",
+                    "displayName": "Finished good",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs"
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [new PlanningParameterSnapshotItem("SKU-FG-1000", "box", "SITE-01")],
+                new DateOnly(2026, 6, 20)),
+            CancellationToken.None);
+
+        var conversion = Assert.Single(snapshot.UomConversions);
+        Assert.Equal(12m, conversion.Factor);
+    }
+
+    [Fact]
+    public async Task Master_data_planning_parameter_client_reports_truncated_uom_conversion_list()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/resources", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "total": 5001,
+                        "truncated": true,
+                        "limit": 5000,
+                        "resources": []
+                      }
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-FG-1000",
+                    "displayName": "Finished good",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs"
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<OptionalPlanningSnapshotException>(() => client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [new PlanningParameterSnapshotItem("SKU-FG-1000", "box", "SITE-01")],
+                new DateOnly(2026, 6, 20)),
+            CancellationToken.None));
+
+        Assert.Contains("truncated", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("5000", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Master_data_planning_parameter_client_limits_sku_detail_concurrency()
     {
         var current = 0;

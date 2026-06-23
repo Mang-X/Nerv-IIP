@@ -170,7 +170,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 null,
                 null,
                 x.EffectiveFrom,
-                null,
+                x.EffectiveTo,
                 x.FromUomCode,
                 x.ToUomCode,
                 x.Factor,

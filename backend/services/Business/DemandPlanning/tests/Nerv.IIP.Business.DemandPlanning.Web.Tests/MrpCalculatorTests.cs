@@ -126,6 +126,40 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Bom_component_conversion_rounds_after_total_component_requirement()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-001", "SKU-FG-1000", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            productionVersions:
+            [
+                new ProductionVersionSnapshot("SKU-FG-1000", "PV-001", "MBOM-001", "ROUTING-001"),
+            ],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "lb", 1m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+                new PlanningParameterSnapshot("SKU-RM-1000", "kg", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("lb", "kg", 0.45359237m, 0m, 2, "half-up"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var purchase = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase");
+        Assert.Equal("kg", purchase.UomCode);
+        Assert.Equal(1.36m, purchase.Quantity);
+    }
+
+    [Fact]
     public void Missing_required_uom_conversion_fails_instead_of_silently_mismatching_units()
     {
         var input = NewInput(
@@ -142,7 +176,7 @@ public sealed class MrpCalculatorTests
 
         var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
 
-        Assert.Contains("Missing UOM conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Missing global UOM conversion", exception.Message, StringComparison.Ordinal);
         Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
         Assert.Contains("box", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);

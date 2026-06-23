@@ -998,6 +998,12 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
 
         Assert.Equal(new DateOnly(2026, 12, 31), detail.EffectiveTo);
+
+        var list = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "uom-conversion"),
+            CancellationToken.None);
+        var item = Assert.Single(list.Resources);
+        Assert.Equal(new DateOnly(2026, 12, 31), item.EffectiveTo);
     }
 
     [Fact]

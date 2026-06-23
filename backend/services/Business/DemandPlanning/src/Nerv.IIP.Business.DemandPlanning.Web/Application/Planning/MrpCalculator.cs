@@ -222,13 +222,12 @@ public static class MrpCalculator
                     }
 
                     var componentUomCode = ResolvePlanningUom(component.ComponentSkuCode, first.SiteCode, component.ComponentUomCode, planningParameters);
-                    var quantityPerParent = ConvertQuantity(
+                    var componentRequirement = ConvertQuantity(
                         component.ComponentSkuCode,
                         component.ComponentUomCode,
                         componentUomCode,
-                        component.QuantityPerParent,
+                        plannedQuantity * component.QuantityPerParent,
                         converter);
-                    var componentRequirement = plannedQuantity * quantityPerParent;
                     pending.Add(new Requirement(
                         component.ComponentSkuCode,
                         componentUomCode,
@@ -307,7 +306,7 @@ public static class MrpCalculator
     }
 
     private static decimal ConvertQuantity(
-        string skuCode,
+        string triggerSkuCode,
         string fromUomCode,
         string toUomCode,
         decimal quantity,
@@ -315,7 +314,7 @@ public static class MrpCalculator
     {
         return string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal)
             ? quantity
-            : converter.Convert(skuCode, fromUomCode, toUomCode, quantity);
+            : converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
     }
 
     private static SupplyConsumption ConsumeSupply(
@@ -461,13 +460,14 @@ public static class MrpCalculator
                 .ToDictionary(x => x.Key, x => x.First()));
         }
 
-        public decimal Convert(string skuCode, string fromUomCode, string toUomCode, decimal quantity)
+        // MasterData UOM conversions are global by unit pair; triggerSkuCode is only diagnostic context.
+        public decimal Convert(string triggerSkuCode, string fromUomCode, string toUomCode, decimal quantity)
         {
             var from = Normalize(fromUomCode);
             var to = Normalize(toUomCode);
             if (!conversions.TryGetValue((from, to), out var conversion))
             {
-                throw new InvalidOperationException($"Missing UOM conversion for SKU '{skuCode}' from '{fromUomCode}' to planning UOM '{toUomCode}'.");
+                throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
             }
 
             return Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
