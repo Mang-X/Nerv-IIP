@@ -14,6 +14,16 @@ export type { ColorMode } from './composables/useTheme'
 // FE-2 custom block component library (distinct from原版 primitives above).
 export * from './components/blocks'
 
+// FE-2 Pro — copy-rebuilt premium components (restrained Vercel/Linear craft).
+export * from './components/pro'
+
+// Touch — large touch-optimized components for tablet boards / workshop kiosks.
+export * from './components/touch'
+
+// Layout — page scaffolding primitives (container, page+asides, grid, columns, sections).
+export * from './components/layout'
+
+
 export {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -126,6 +136,7 @@ export {
   FieldTitle,
 } from './components/ui/field'
 export { Input } from './components/ui/input'
+export { Label } from './components/ui/label'
 export {
   Pagination,
   PaginationContent,

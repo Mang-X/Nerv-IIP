@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "console",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/console", "run", "dev"],
+      "port": 5105
+    },
+    {
+      "name": "design-system",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/design-system", "run", "dev"],
+      "port": 5180
+    },
+    {
+      "name": "design-system-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "frontend/apps/design-system", "exec", "vitepress", "preview", "docs", "--port", "4174"],
+      "port": 4174
+    }
+  ]
+}

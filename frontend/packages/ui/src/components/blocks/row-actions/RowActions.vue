@@ -2,11 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 import { Button } from '../../ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '../../ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../ui/dropdown-menu'
 import { cn } from '../../../lib/utils'
 
 withDefaults(

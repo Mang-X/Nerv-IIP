@@ -3,13 +3,7 @@ import NotificationMessageList from '@/components/notifications/NotificationMess
 import NotificationTaskList from '@/components/notifications/NotificationTaskList.vue'
 import { useNotifications } from '@/composables/useNotifications'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import {
-  Button,
-  PageHeader,
-  SectionCard,
-  SectionCards,
-  toast,
-} from '@nerv-iip/ui'
+import { Button, PageHeader, SectionCard, SectionCards, toast } from '@nerv-iip/ui'
 import { CheckCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
@@ -37,7 +31,11 @@ const {
 const pending = computed(() => messagesPending.value || tasksPending.value)
 const errorMessage = computed(() => (allError.value ? allError.value.message : ''))
 const markAllDisabled = computed(
-  () => batchPending.value || markReadPending.value || pending.value || unreadMessages.value.length === 0,
+  () =>
+    batchPending.value ||
+    markReadPending.value ||
+    pending.value ||
+    unreadMessages.value.length === 0,
 )
 const ignoreHandledError = (_error: unknown) => {}
 
@@ -67,7 +65,11 @@ async function handleMarkAllRead() {
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader title="通知" :breadcrumbs="[{ label: '平台' }]" :count="`${unreadMessages.length} 条未读`">
+      <PageHeader
+        title="通知"
+        :breadcrumbs="[{ label: '平台' }]"
+        :count="`${unreadMessages.length} 条未读`"
+      >
         <template #actions>
           <Button
             :disabled="pending"
