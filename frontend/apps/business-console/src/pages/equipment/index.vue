@@ -80,15 +80,15 @@ function formatError(error: unknown) {
     </PageHeader>
 
     <SectionCards :columns="4">
-      <SectionCard description="设备数" :value="devices.length" hint="当前范围" />
-      <SectionCard description="运行就绪" :value="runningCount" hint="running / ready / idle" />
-      <SectionCard description="异常停机" :value="faultCount" hint="faulted / stopped / offline / down" />
+      <SectionCard description="运行就绪" :value="runningCount" hint="运行 / 就绪 / 空闲" />
+      <SectionCard description="异常停机" :value="faultCount" hint="故障 / 停止 / 离线 / 停机" />
       <SectionCard description="未解除报警" :value="alarmCount" hint="设备当前报警" />
+      <SectionCard description="阻塞中" :value="activeBlocks.length" hint="影响排程或执行" />
     </SectionCards>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.deviceAssetIds" class="h-9 w-72" placeholder="DEV-OIL-01,DEV-PACK-01" aria-label="设备范围" />
+        <Input v-model="filters.deviceAssetIds" class="h-9 w-72" placeholder="默认全部设备；逗号分隔设备号可缩小范围" aria-label="设备范围（留空显示全部）" />
       </template>
     </Toolbar>
 
@@ -100,7 +100,7 @@ function formatError(error: unknown) {
         :rows="devices"
         :row-key="(r) => r.deviceAssetId ?? '无'"
         :loading="overviewPending"
-        empty-message="当前范围没有设备运行事实。调整设备范围后再试。"
+        empty-message="暂无设备运行事实。请先在基础数据登记设备资产，或调整上方设备范围后再试。"
       >
         <template #cell-deviceAssetId="{ row }">
           <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="font-medium text-brand underline-offset-4 hover:underline">

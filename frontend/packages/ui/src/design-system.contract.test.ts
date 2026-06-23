@@ -9,11 +9,27 @@ const themePath = resolve(dirname(fileURLToPath(import.meta.url)), 'styles/theme
 const css = readFileSync(themePath, 'utf8')
 
 describe('design system v2 token contract', () => {
-  it('uses a near-black primary (no longer the legacy blue)', () => {
+  it('keeps a neutral (black/white) primary as the light/dark baseline', () => {
+    // `neutral` theme falls back to these baked-in values: near-black in light,
+    // near-white in dark. The runtime theme picker overrides them via inline
+    // styles on <html>, but the neutral baseline must stay correct per mode.
     expect.soft(css).toContain('--primary: oklch(0.205 0 0);')
     expect.soft(css).toContain('--primary-foreground: oklch(0.985 0 0);')
-    // The old Calm Control Plane blue must be gone as primary.
+    // The old Calm Control Plane blue must never be the baked primary.
     expect.soft(css).not.toContain('--primary: oklch(0.49 0.17 255);')
+  })
+
+  it('bridges primary tokens to Tailwind so utilities resolve to var(--primary)', () => {
+    // The mechanism that makes the primary colour runtime-themeable: `@theme
+    // inline` maps each --color-* to its var(--*). Tailwind then inlines
+    // `var(--primary)` into `.bg-primary` (rather than a frozen oklch literal),
+    // so an inline `--primary` on <html> re-colours every primary utility live.
+    // These bridges must exist for the theme picker to drive primary/ring/sidebar.
+    expect.soft(css).toContain('@theme inline')
+    expect.soft(css).toContain('--color-primary: var(--primary);')
+    expect.soft(css).toContain('--color-primary-foreground: var(--primary-foreground);')
+    expect.soft(css).toContain('--color-ring: var(--ring);')
+    expect.soft(css).toContain('--color-sidebar-primary: var(--sidebar-primary);')
   })
 
   it('exposes a runtime-overridable brand accent', () => {

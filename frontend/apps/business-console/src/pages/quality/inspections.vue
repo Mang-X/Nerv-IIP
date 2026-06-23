@@ -25,8 +25,6 @@ import {
   Input,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -269,11 +267,6 @@ function isPresent(value: string | undefined | null): value is string {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="2">
-      <SectionCard description="检验方案" :value="inspectionPlansTotal" hint="后端筛选总数" />
-      <SectionCard description="本页方案" :value="inspectionPlans.length" hint="当前页数量" />
-    </SectionCards>
-
     <Toolbar :show-search="false">
       <template #filters>
         <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="检验状态" />
@@ -293,10 +286,7 @@ function isPresent(value: string | undefined | null): value is string {
       empty-message="当前筛选下没有检验方案。检验记录应从工单、收货或检验任务进入；也可用右上角创建检验记录临时补录。"
     >
       <template #cell-code="{ row }">
-        <div class="flex flex-col gap-0.5">
-          <span class="font-medium">{{ row.code ?? '无' }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.id ?? '无方案 ID' }}</span>
-        </div>
+        <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">

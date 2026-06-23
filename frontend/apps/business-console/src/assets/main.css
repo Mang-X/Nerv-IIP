@@ -9,3 +9,11 @@
 
 /* Design System v2 tokens — single source of truth in @nerv-iip/ui */
 @import '../../../../packages/ui/src/styles/theme.css';
+
+/*
+ * 当前选中的左侧菜单项：用主题色（`--primary`，随主题切换；中性主题即中性）淡染高亮。
+ * 用 `--primary` 而非 `--brand`，这样选「中性」菜单也回中性、选彩色菜单跟着变；不加额外竖条/标记。
+ */
+[data-slot='sidebar-menu-item'] a[data-active='true'] {
+  background-color: color-mix(in oklab, var(--primary) 16%, transparent);
+}

@@ -48,9 +48,9 @@ let adjustmentKeySequence = 0
 
 const taskForm = reactive({
   countTaskCode: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   uomCode: 'EA',
-  siteCode: 'S1',
+  siteCode: '',
   locationCode: '',
   lotNo: '',
   serialNo: '',
@@ -214,10 +214,6 @@ function isNonEmpty(value: string) {
         </Button>
       </template>
     </PageHeader>
-
-    <p class="text-sm text-muted-foreground">
-      以盘点任务为中心：创建任务后进入处理队列，实盘完成后从任务行进入差异确认；重复提交保护由系统处理。
-    </p>
 
     <DataTable
       :columns="columns"

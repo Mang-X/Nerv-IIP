@@ -21,8 +21,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -34,11 +32,14 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '数据字典' } })
 
 // 平台预置的受控值分组（CodeSet → 中文名，对齐产品文档 §5.1）。Phase 1 作左侧固定主列表，
 // Phase 2 后端字典就绪后可改为动态拉取，UI 不变。
+// kind 决定可维护性：system-enum=系统枚举（只读，不可新增）；platform-preset=平台预置（可新增）；
+// factory-custom=工厂自定义（可新增）。对齐数据字典规则 §2 的治理分级。
 interface CodeSetMeta {
   codeSet: string
   label: string
@@ -46,7 +47,7 @@ interface CodeSetMeta {
 }
 const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'material-type', label: '物料类型', kind: 'system-enum' },
-  { codeSet: 'product-category', label: '产品/物料分类', kind: 'platform-preset' },
+  // 产品/物料分类已升为分类树主数据（#400，见 /master-data/product-categories），从数据字典迁出。
   { codeSet: 'uom-dimension', label: '计量量纲', kind: 'system-enum' },
   { codeSet: 'batch-tracking-policy', label: '批次策略', kind: 'system-enum' },
   { codeSet: 'serial-tracking-policy', label: '序列策略', kind: 'system-enum' },
@@ -54,9 +55,9 @@ const CODE_SETS: CodeSetMeta[] = [
   { codeSet: 'storage-condition', label: '仓储条件', kind: 'platform-preset' },
   { codeSet: 'barcode-rule', label: '条码规则', kind: 'platform-preset' },
   { codeSet: 'partner-type', label: '伙伴角色', kind: 'system-enum' },
+  // 技能已升为技能目录主数据（#402，见 /master-data/skill-catalog），从数据字典迁出。
   { codeSet: 'skill-level', label: '技能等级', kind: 'system-enum' },
-  { codeSet: 'operation', label: '标准工序', kind: 'factory-custom' },
-  { codeSet: 'quality-reason', label: '质量原因', kind: 'factory-custom' },
+  // 标准工序（#397）/ 质量原因（#401，见 /quality/reason-codes）已升为主数据，从数据字典迁出。
   { codeSet: 'compliance-tag', label: '合规标签', kind: 'platform-preset' },
   { codeSet: 'device-status', label: '设备状态', kind: 'system-enum' },
   { codeSet: 'line-type', label: '产线类型', kind: 'system-enum' },
@@ -69,7 +70,6 @@ const {
   codesPending,
   codesTotal,
   createCode,
-  createCodeError,
   createCodePending,
   filters,
   refreshCodes,
@@ -84,12 +84,14 @@ const pageSize = ref('10')
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
-const createSuccess = shallowRef('')
+// 编辑态：null=新建，否则=正在编辑的码值编码（codeSet/code 是身份，编辑态只读）。
+const editingCode = shallowRef<string | null>(null)
+const editLoading = shallowRef(false)
 
 const selectedCodeSetMeta = computed(() => CODE_SETS.find((s) => s.codeSet === selectedCodeSet.value) ?? CODE_SETS[0]!)
 const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
+// 系统枚举由平台维护，不可新增条目；平台预置 / 工厂自定义可新增。
 const selectedCodeSetCanAdd = computed(() => selectedCodeSetMeta.value.kind !== 'system-enum')
-const activeCount = computed(() => codes.value.filter((r) => r.active !== false).length)
 
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -111,8 +113,6 @@ const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
 const listErrorMessage = computed(() => formatError(codesError.value))
-const createErrorMessage = computed(() => formatError(createCodeError.value))
-const actionErrorMessage = computed(() => formatError(codeActions.actionError.value))
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -134,17 +134,11 @@ const createForm = reactive({
 const canCreateCode = computed(() =>
   selectedCodeSetCanAdd.value && [createForm.codeSet, createForm.code, createForm.name].every(isNonEmpty),
 )
-const referenceDataActions = {
-  update: (code: string, patch: { name: string }) =>
-    codeActions.update(code, { ...patch, codeSet: selectedCodeSet.value }),
-  disable: (code: string) =>
-    codeActions.disable(code, { codeSet: selectedCodeSet.value }),
-  enable: (code: string) =>
-    codeActions.enable(code, { codeSet: selectedCodeSet.value }),
-  updatePending: codeActions.updatePending,
-  disablePending: codeActions.disablePending,
-  enablePending: codeActions.enablePending,
-}
+// 提交校验区分新建/编辑：新建受 kind 守卫（系统枚举不可新增）；编辑只改名称，
+// 名称非空即可——系统枚举允许改名（治理规则：Name 可改，只是不能新增/改 code）。
+const canSubmitCode = computed(() =>
+  editingCode.value ? isNonEmpty(createForm.name) : canCreateCode.value,
+)
 
 // 选中 CodeSet 即服务端过滤（真分页：codeSet + skip/take 都交给后端）。
 watch(selectedCodeSet, (value) => {
@@ -181,24 +175,63 @@ function codeDetailFields(row: BusinessConsoleResourceItem) {
 function resetCreateForm() {
   Object.assign(createForm, { ...CREATE_FORM_DEFAULTS, codeSet: selectedCodeSet.value })
 }
+function openCreate() {
+  editingCode.value = null
+  resetCreateForm()
+  createShowErrors.value = false
+  createForm.organizationId = filters.organizationId
+  createForm.environmentId = filters.environmentId
+  createForm.codeSet = selectedCodeSet.value
+  createOpen.value = true
+}
+async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  editingCode.value = row.code
+  createShowErrors.value = false
+  editLoading.value = true
+  createOpen.value = true
+  try {
+    const d = await codeActions.fetchDetail(row.code)
+    Object.assign(createForm, {
+      codeSet: row.codeSet ?? selectedCodeSet.value,
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+    })
+  }
+  finally {
+    editLoading.value = false
+  }
+}
 async function submitCode() {
-  if (!canCreateCode.value) {
+  if (!canSubmitCode.value) {
     createShowErrors.value = true
     return
   }
-  const body: BusinessConsoleCreateReferenceDataCodeRequest = {
-    organizationId: createForm.organizationId.trim(),
-    environmentId: createForm.environmentId.trim(),
-    codeSet: createForm.codeSet.trim(),
-    code: createForm.code.trim(),
-    name: createForm.name.trim(),
+  try {
+    if (editingCode.value) {
+      await codeActions.update(editingCode.value, { name: createForm.name.trim() })
+      notifySuccess(`字典条目「${createForm.name.trim()}」已更新。`)
+    }
+    else {
+      const body: BusinessConsoleCreateReferenceDataCodeRequest = {
+        organizationId: createForm.organizationId.trim(),
+        environmentId: createForm.environmentId.trim(),
+        codeSet: createForm.codeSet.trim(),
+        code: createForm.code.trim(),
+        name: createForm.name.trim(),
+      }
+      await createCode(body)
+      notifySuccess(`字典条目「${body.name}」已创建。`)
+      selectedCodeSet.value = body.codeSet
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
   }
-  await createCode(body)
-  createSuccess.value = `字典条目「${body.name}」已创建。`
-  selectedCodeSet.value = body.codeSet
-  resetCreateForm()
-  createShowErrors.value = false
-  createOpen.value = false
+  catch (error) {
+    notifyError(error)
+  }
 }
 function syncFormOnOpen(open: boolean) {
   if (!open) return
@@ -225,22 +258,22 @@ function isNonEmpty(value: string) {
         </Button>
         <Dialog v-model:open="createOpen" @update:open="syncFormOnOpen">
           <DialogTrigger as-child>
-            <Button size="sm" type="button" :disabled="!selectedCodeSetCanAdd">
+            <Button size="sm" type="button" :disabled="!selectedCodeSetCanAdd" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建字典条目
             </Button>
           </DialogTrigger>
           <DialogContent class="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>新建字典条目</DialogTitle>
-              <DialogDescription>选择所属字典，填写编码与名称。带 * 为必填项。</DialogDescription>
+              <DialogTitle>{{ editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目' }}</DialogTitle>
+              <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canSubmitCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <Field>
+              <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
                 <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
-                <Select v-model="createForm.codeSet">
+                <Select v-model="createForm.codeSet" :disabled="!!editingCode">
                   <SelectTrigger id="ref-code-set"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem
@@ -259,7 +292,7 @@ function isNonEmpty(value: string) {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
                   <FieldLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" required />
+                  <Input id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldLabel>
@@ -269,9 +302,9 @@ function isNonEmpty(value: string) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createCodePending || !canCreateCode">
-                  <Spinner v-if="createCodePending" aria-hidden="true" />
-                  保存条目
+                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || !canSubmitCode">
+                  <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
+                  {{ editingCode ? '保存修改' : '保存条目' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -280,17 +313,8 @@ function isNonEmpty(value: string) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="字典分组" :value="CODE_SETS.length" hint="平台预置的受控值分组" />
-      <SectionCard description="当前分组条目" :value="codesTotal" hint="选中字典的码值数量" />
-      <SectionCard description="本页启用" :value="activeCount" hint="当前页可用于新建与计划的码值" />
-    </SectionCards>
 
-    <p class="text-sm text-muted-foreground">
-      字典是平台受控值来源；平台维护的分组可停用或启用，工厂可维护的分组可新增条目。
-    </p>
-
-    <div class="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+    <div class="grid items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
       <nav class="grid h-fit gap-1 rounded-lg border p-2" aria-label="字典分组">
         <Button
           v-for="s in CODE_SETS"
@@ -307,12 +331,10 @@ function isNonEmpty(value: string) {
         </Button>
       </nav>
 
-      <div class="grid gap-4">
+      <div class="grid min-h-[32rem] content-start gap-4">
         <Toolbar v-model:search="keyword" :search-placeholder="`在「${selectedLabel}」内筛选编码、名称`" />
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-        <p v-else-if="actionErrorMessage" class="text-sm text-destructive" role="alert">{{ actionErrorMessage }}</p>
-        <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
         <DataTable
           v-model:sort="sort"
@@ -327,13 +349,7 @@ function isNonEmpty(value: string) {
             <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
-            <MasterDataRowActions
-              :row="row"
-              entity-label="字典条目"
-              :detail-fields="codeDetailFields(row)"
-              :actions="referenceDataActions"
-              :can-edit-name="selectedCodeSetCanAdd"
-            />
+            <MasterDataRowActions :row="row" entity-label="字典条目" :detail-fields="codeDetailFields(row)" :actions="codeActions" @edit="openEdit" />
           </template>
         </DataTable>
 

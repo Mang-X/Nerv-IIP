@@ -15,8 +15,13 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { useBusinessMasterDataResources } from './useBusinessMasterData'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
+
+// 看板默认范围 = 全部设备。后端 overview/availability 要求 deviceAssetIds 非空（最多 50 个），
+// 故未手动指定范围时，自动取设备资源列表（device-asset）的全部编号带入。
+const MAX_DEVICE_ASSET_IDS = 50
 
 export type EquipmentTone = 'success' | 'danger' | 'muted'
 
@@ -124,7 +129,7 @@ function defaultAvailabilityFilters(): BusinessEquipmentAvailabilityFilters {
   })
 }
 
-function defaultDeviceFilters(deviceAssetId = 'DEV-OIL-01'): BusinessEquipmentDeviceFilters {
+function defaultDeviceFilters(deviceAssetId = ''): BusinessEquipmentDeviceFilters {
   return reactive({
     deviceAssetId,
   })
@@ -191,13 +196,41 @@ function listItems<TItem, TEnvelope extends { success?: boolean; data?: { items?
   return envelope.data?.items ?? []
 }
 
+/**
+ * 看板默认范围解析：用户手动输入了设备号则按输入过滤；未输入时回退到「全部设备」——
+ * 取设备资源列表（device-asset）的全部编号（后端最多 50 个，超出截断）。返回逗号分隔串。
+ */
+function useEffectiveDeviceAssetIds(filters: BusinessEquipmentOverviewFilters) {
+  const { resources: deviceResources, resourcesPending: deviceResourcesPending }
+    = useBusinessMasterDataResources('device-asset')
+
+  const allDeviceAssetIds = computed(() =>
+    deviceResources.value
+      .map((device) => device.code?.trim())
+      .filter((code): code is string => Boolean(code))
+      .slice(0, MAX_DEVICE_ASSET_IDS)
+      .join(','),
+  )
+
+  const effectiveDeviceAssetIds = computed(() => {
+    const manual = normalizeDeviceAssetIds(filters.deviceAssetIds)
+    return manual.length > 0 ? manual : allDeviceAssetIds.value
+  })
+
+  return { effectiveDeviceAssetIds, deviceResourcesPending }
+}
+
 export function useBusinessEquipmentOverview() {
   const businessContext = useBusinessContextStore()
   const filters = defaultOverviewFilters()
-  const overviewEnabled = computed(() => normalizeDeviceAssetIds(filters.deviceAssetIds).length > 0)
+  const { effectiveDeviceAssetIds, deviceResourcesPending } = useEffectiveDeviceAssetIds(filters)
+  const overviewEnabled = computed(() => effectiveDeviceAssetIds.value.length > 0)
   const overviewQuery = useQuery(() => ({
     ...getBusinessConsoleEquipmentOverviewQueryOptions({
-      query: toOverviewQuery(businessContext, filters),
+      query: {
+        ...toContextQuery(businessContext),
+        deviceAssetIds: effectiveDeviceAssetIds.value,
+      },
     }),
     enabled: overviewEnabled.value,
   }))
@@ -214,7 +247,7 @@ export function useBusinessEquipmentOverview() {
     filters,
     overview,
     overviewError: overviewQuery.error,
-    overviewPending: overviewQuery.isLoading,
+    overviewPending: computed(() => deviceResourcesPending.value || overviewQuery.isLoading.value),
     refreshOverview: () => overviewEnabled.value ? overviewQuery.refetch() : Promise.resolve(),
   }
 }
@@ -252,12 +285,14 @@ export function useBusinessEquipmentAvailability() {
 export function useBusinessEquipmentDevice(deviceAssetId?: string) {
   const businessContext = useBusinessContextStore()
   const filters = defaultDeviceFilters(deviceAssetId)
-  const deviceQuery = useQuery(() =>
-    getBusinessConsoleEquipmentDeviceQueryOptions({
+  const deviceEnabled = computed(() => filters.deviceAssetId.trim().length > 0)
+  const deviceQuery = useQuery(() => ({
+    ...getBusinessConsoleEquipmentDeviceQueryOptions({
       path: { deviceAssetId: filters.deviceAssetId },
       query: toContextQuery(businessContext),
     }),
-  )
+    enabled: deviceEnabled.value,
+  }))
 
   const device = computed<BusinessConsoleEquipmentDeviceDetailResponse | undefined>(() =>
     unwrapData<BusinessConsoleEquipmentDeviceDetailResponse, BusinessConsoleEquipmentDeviceDetailEnvelope>(
@@ -272,7 +307,7 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
     deviceError: deviceQuery.error,
     devicePending: deviceQuery.isLoading,
     filters,
-    refreshDevice: deviceQuery.refetch,
+    refreshDevice: () => deviceEnabled.value ? deviceQuery.refetch() : Promise.resolve(),
   }
 }
 

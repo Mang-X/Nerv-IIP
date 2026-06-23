@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import OperationTasksPage from './operation-tasks.vue'
@@ -94,6 +94,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     productionPlansPending: ref(false),
     productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
+  }),
+  useMesWorkOrderDetail: () => ({
+    detail: ref(null),
+    detailError: ref(null),
+    detailPending: ref(false),
+    filters: reactive({ workOrderId: '' }),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -327,7 +333,7 @@ describe('MES workflow copy', () => {
   it('keeps operation tasks focused on supported row actions', () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    expect(wrapper.text()).toContain('打开报工表单')
+    expect(wrapper.text()).toContain('报工')
     expect(wrapper.text()).not.toContain('带入工单报工')
     expect(wrapper.text()).not.toContain('进入执行')
     expectNoForbiddenVisibleTerms(wrapper.text())
@@ -336,7 +342,7 @@ describe('MES workflow copy', () => {
   it('carries operation-task context into the work-order reporting sheet route', async () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    await wrapper.findAll('button').find((button) => button.text().includes('打开报工表单'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('报工'))!.trigger('click')
 
     expect(routerState.push).toHaveBeenCalledWith({
       path: '/mes/work-orders',

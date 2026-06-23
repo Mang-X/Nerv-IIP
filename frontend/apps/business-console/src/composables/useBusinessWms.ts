@@ -1,21 +1,35 @@
 import {
+  completeBusinessConsoleWmsCountExecutionMutationOptions,
   completeBusinessConsoleWmsInboundOrderMutationOptions,
   completeBusinessConsoleWmsOutboundOrderMutationOptions,
   completeBusinessConsoleWmsWcsTaskMutationOptions,
+  createBusinessConsoleWmsCountExecutionMutationOptions,
   createBusinessConsoleWmsInboundOrderMutationOptions,
   createBusinessConsoleWmsOutboundOrderMutationOptions,
+  createBusinessConsoleWmsPickingTaskMutationOptions,
+  createBusinessConsoleWmsPutawayTaskMutationOptions,
   dispatchBusinessConsoleWmsWcsTaskMutationOptions,
   failBusinessConsoleWmsWcsTaskMutationOptions,
+  listBusinessConsoleWmsCountExecutionsQueryOptions,
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
+  listBusinessConsoleWmsPickingTasksQueryOptions,
+  listBusinessConsoleWmsPutawayTasksQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  type BusinessConsoleCreateWmsCountExecutionRequest,
   type BusinessConsoleCreateWmsInboundOrderRequest,
   type BusinessConsoleCreateWmsOutboundOrderRequest,
+  type BusinessConsoleCreateWmsPickingTaskRequest,
+  type BusinessConsoleCreateWmsPutawayTaskRequest,
+  type BusinessConsoleWmsCountExecutionItem,
+  type BusinessConsoleWmsCountExecutionListEnvelope,
   type BusinessConsoleWmsInboundOrderItem,
   type BusinessConsoleWmsInboundOrderListEnvelope,
   type BusinessConsoleWmsInventoryContext,
   type BusinessConsoleWmsOutboundOrderItem,
   type BusinessConsoleWmsOutboundOrderListEnvelope,
+  type BusinessConsoleWmsWarehouseTaskItem,
+  type BusinessConsoleWmsWarehouseTaskListEnvelope,
   type BusinessConsoleWmsWcsTaskItem,
   type BusinessConsoleWmsWcsTaskListEnvelope,
 } from '@nerv-iip/api-client'
@@ -49,6 +63,10 @@ export interface WmsWcsTaskListFilters extends WmsListFilters {
   externalTaskId?: string
   warehouseTaskId?: string
   failed?: boolean
+}
+
+export interface WmsWarehouseTaskListFilters extends WmsListFilters {
+  locationCode?: string
 }
 
 function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
@@ -262,5 +280,133 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
       completeMutation.mutateAsync({ path: { externalTaskId }, query: withQuery(), body: payload }),
     completeWcsPending: completeMutation.isLoading,
     completeWcsError: completeMutation.error,
+  }
+}
+
+function warehouseTaskQuery(filters: WmsWarehouseTaskListFilters) {
+  return {
+    ...baseQuery(filters),
+    ...optionalQuery('locationCode', filters.locationCode),
+  }
+}
+
+// 上架任务（完工入库 → 上架增量）。后端在收货入库单下挂上架任务；创建需绑定 inboundOrderId。
+export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
+  const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
+  const putawayTasksQuery = useQuery(() =>
+    listBusinessConsoleWmsPutawayTasksQueryOptions({
+      query: warehouseTaskQuery(filters),
+    }),
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
+    onSuccess() {
+      void putawayTasksQuery.refetch()
+    },
+  })
+
+  return {
+    filters,
+    putawayTasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
+      listItems<BusinessConsoleWmsWarehouseTaskItem>(putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
+    ),
+    putawayTasksError: putawayTasksQuery.error,
+    putawayTasksPending: putawayTasksQuery.isLoading,
+    putawayTasksTotal: computed(() => listTotal(putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined)),
+    refreshPutawayTasks: putawayTasksQuery.refetch,
+    createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
+      createMutation.mutateAsync({
+        path: { inboundOrderId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body,
+      }),
+    createPutawayPending: createMutation.isLoading,
+    createPutawayError: createMutation.error,
+  }
+}
+
+// 拣货任务（领料齐套 → 出库拣货扣减）。后端在出库单下挂拣货任务；创建需绑定 outboundOrderId。
+export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
+  const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
+  const pickingTasksQuery = useQuery(() =>
+    listBusinessConsoleWmsPickingTasksQueryOptions({
+      query: warehouseTaskQuery(filters),
+    }),
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsPickingTaskMutationOptions(),
+    onSuccess() {
+      void pickingTasksQuery.refetch()
+    },
+  })
+
+  return {
+    filters,
+    pickingTasks: computed<BusinessConsoleWmsWarehouseTaskItem[]>(() =>
+      listItems<BusinessConsoleWmsWarehouseTaskItem>(pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined),
+    ),
+    pickingTasksError: pickingTasksQuery.error,
+    pickingTasksPending: pickingTasksQuery.isLoading,
+    pickingTasksTotal: computed(() => listTotal(pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined)),
+    refreshPickingTasks: pickingTasksQuery.refetch,
+    createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
+      createMutation.mutateAsync({
+        path: { outboundOrderId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body,
+      }),
+    createPickingPending: createMutation.isLoading,
+    createPickingError: createMutation.error,
+  }
+}
+
+// 盘点执行（库位 × SKU 的账面 vs 实盘）。完成盘点按差额触发库存调整移动。
+export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
+  const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
+  const countExecutionsQuery = useQuery(() =>
+    listBusinessConsoleWmsCountExecutionsQueryOptions({
+      query: {
+        ...baseQuery(filters),
+        ...optionalQuery('locationCode', filters.locationCode),
+      },
+    }),
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleWmsCountExecutionMutationOptions(),
+    onSuccess() {
+      void countExecutionsQuery.refetch()
+    },
+  })
+  const completeMutation = useMutation({
+    ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
+    onSuccess() {
+      void countExecutionsQuery.refetch()
+    },
+  })
+
+  return {
+    filters,
+    countExecutions: computed<BusinessConsoleWmsCountExecutionItem[]>(() =>
+      listItems<BusinessConsoleWmsCountExecutionItem>(countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined),
+    ),
+    countExecutionsError: countExecutionsQuery.error,
+    countExecutionsPending: countExecutionsQuery.isLoading,
+    countExecutionsTotal: computed(() => listTotal(countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined)),
+    refreshCountExecutions: countExecutionsQuery.refetch,
+    createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
+      createMutation.mutateAsync({ body }),
+    createCountExecutionPending: createMutation.isLoading,
+    createCountExecutionError: createMutation.error,
+    completeCountExecution: (countExecutionId: string, countedQuantity: number) =>
+      completeMutation.mutateAsync({
+        path: { countExecutionId },
+        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
+        body: { countedQuantity, idempotencyKey: makeIdempotencyKey() },
+      }),
+    completeCountExecutionPending: completeMutation.isLoading,
+    completeCountExecutionError: completeMutation.error,
   }
 }

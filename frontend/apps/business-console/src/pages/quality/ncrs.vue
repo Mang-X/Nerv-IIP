@@ -28,8 +28,6 @@ import {
   Input,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -111,8 +109,6 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
 })
-const openCount = computed(() => ncrs.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length)
-const closedCount = computed(() => ncrs.value.filter((r) => (r.status ?? '').toLowerCase() === 'closed').length)
 
 type NcrRow = BusinessConsoleQualityItem
 const columns: DataTableColumn<NcrRow>[] = [
@@ -224,12 +220,6 @@ watch(targetNcr, (ncr) => {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="不合格报告" :value="ncrsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页待处理" :value="openCount" hint="当前页未关闭" />
-      <SectionCard description="本页已关闭" :value="closedCount" hint="当前页已关闭" />
-    </SectionCards>
-
     <Toolbar :show-search="false">
       <template #filters>
         <Select v-model="statusFilter">
@@ -254,10 +244,7 @@ watch(targetNcr, (ncr) => {
       empty-message="未返回不合格报告。检验不合格或质量阻塞会在这里生成 NCR。"
     >
       <template #cell-code="{ row }">
-        <div class="flex flex-col gap-0.5">
-          <span class="font-medium">{{ row.code ?? '无' }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.id ?? '无 NCR ID' }}</span>
-        </div>
+        <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
       <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
       <template #cell-actions="{ row }">
@@ -282,10 +269,7 @@ watch(targetNcr, (ncr) => {
               <span class="text-sm font-medium text-foreground">状态</span>
               <StatusBadge :value="selectedNcr?.status" />
             </div>
-            <div class="grid gap-1 text-sm text-muted-foreground">
-              <span>ID: {{ selectedNcr?.id ?? '无' }}</span>
-              <span>编码: {{ selectedNcr?.code ?? '无' }}</span>
-            </div>
+            <p class="text-sm text-muted-foreground">{{ selectedNcr ? qualityItemSummary(selectedNcr) : '无' }}</p>
           </div>
 
           <form class="grid gap-3 rounded-lg border p-3" @submit.prevent="submitNcrDisposition">

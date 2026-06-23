@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
@@ -14,8 +16,6 @@ import {
   DropdownMenuSeparator,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -43,8 +43,11 @@ const {
 } = useMesOperationTasks()
 
 const router = useRouter()
+const { resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
+
+const quickViewWorkOrderId = ref<string | null>(null)
 
 // --- Filters (live) ---
 const keyword = ref('')
@@ -71,10 +74,6 @@ const shiftOptions = computed(() => toResourceOptions(shiftResources.value))
 
 const visibleTasks = computed(() => operationTasks.value)
 
-const readyCount = computed(() => visibleTasks.value.filter((t) => t.status?.toLowerCase() === 'ready').length)
-const runningCount = computed(() => visibleTasks.value.filter((t) => ['inprogress', 'active'].includes(t.status?.toLowerCase() ?? '')).length)
-const blockedCount = computed(() => visibleTasks.value.filter((t) => t.status?.toLowerCase() === 'blocked').length)
-
 // --- Sort (page-owned, before pagination) ---
 const sort = ref<DataTableSort | null>(null)
 function sortValue(task: Row, key: string): string | number {
@@ -98,17 +97,19 @@ const sortedTasks = computed(() => {
 const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter] })
 const pagedTasks = computed(() => sortedTasks.value)
 
+// facade 返回人读编码（workOrderId=WO-…、workCenterId=WC-…、operationTaskId=WO-…-OP-序号）：
+// 工序序号(operationSequence)作主锚点，工单/工作中心直接展示编码即可分辨。
 const columns: DataTableColumn<Row>[] = [
   { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'operationSequence', header: '序号', align: 'end', width: 'w-16', accessor: (r) => r.operationSequence ?? 0 },
-  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? r.workCenterCode ?? r.workCenterId ?? '无' },
+  { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetName ?? r.deviceAssetCode ?? r.deviceAssetId ?? '未指定' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '未指定' },
   { key: 'plannedStartUtc', header: '计划开始', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'qualityStatus', header: '质量状态' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 function rowKey(task: Row) {
@@ -125,8 +126,7 @@ function resetFilters() {
 }
 
 function openWorkOrder(workOrderId?: string | null) {
-  if (!workOrderId) return
-  void router.push({ path: `/mes/work-orders/${encodeURIComponent(workOrderId)}` })
+  if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
 function openRoute(path: string, task: Row) {
   void router.push({
@@ -140,6 +140,14 @@ function openRoute(path: string, task: Row) {
 }
 function canOpenReport(task: Row) {
   return Boolean(task.workOrderId && task.operationTaskId)
+}
+// 可开工 / 执行中的工序才是一线现在能动手报工的；据此把行尾报工入口直接显出来，不必再翻下拉。
+function isReportableStatus(status?: string | null) {
+  return ['Ready', 'Running', 'Started', 'InProgress'].includes(status ?? '')
+}
+// 行尾是否直显「报工」按钮：状态能报工 且 工单/工序上下文齐全（跳转报工表单要带这两个 id）。
+function showReportButton(task: Row) {
+  return isReportableStatus(task.status) && canOpenReport(task)
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '无'
@@ -177,13 +185,6 @@ function formatError(error: unknown) {
         </Button>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="4">
-      <SectionCard description="本页可开工" :value="readyCount" hint="确认人员、设备、物料后进入报工" />
-      <SectionCard description="本页执行中" :value="runningCount" hint="关注报工节拍与质量确认" />
-      <SectionCard description="本页受阻" :value="blockedCount" hint="需班组长 / 质检 / 设备处理" />
-      <SectionCard description="任务总数" :value="operationTasksTotal" hint="后端分页总数" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
@@ -224,22 +225,22 @@ function formatError(error: unknown) {
       :loading="operationTasksPending"
       empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
     >
+      <template #cell-operationSequence="{ row }">
+        <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
+      </template>
       <template #cell-workOrderId="{ row }">
         <button
           v-if="row.workOrderId"
           type="button"
-          class="font-medium text-brand underline-offset-4 hover:underline"
+          class="text-brand underline-offset-4 hover:underline"
           @click="openWorkOrder(row.workOrderId)"
         >
-          {{ row.workOrderId }}
+          {{ row.workOrderNo ?? row.workOrderId }}
         </button>
-        <span v-else class="text-muted-foreground">无</span>
+        <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
         <StatusBadge :value="row.status" />
-      </template>
-      <template #cell-operationSequence="{ row }">
-        <span class="tabular-nums">{{ row.operationSequence ?? 0 }}</span>
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}
@@ -253,25 +254,40 @@ function formatError(error: unknown) {
         </div>
       </template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`工序任务操作 ${row.operationTaskId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
-            <EyeIcon aria-hidden="true" />
-            查看工单
-          </DropdownMenuItem>
-          <DropdownMenuItem :disabled="!canOpenReport(row)" @click="openRoute('/mes/work-orders', row)">
+        <div class="flex items-center justify-end gap-1">
+          <Button
+            v-if="showReportButton(row)"
+            size="sm"
+            type="button"
+            @click="openRoute('/mes/work-orders', row)"
+          >
             <ClipboardCheckIcon aria-hidden="true" />
-            {{ canOpenReport(row) ? '打开报工表单' : '缺少工单上下文' }}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem @click="openRoute('/quality/inspections', row)">
-            <ShieldCheckIcon aria-hidden="true" />
-            呼叫质检
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRoute('/mes/downtime', row)">
-            <WrenchIcon aria-hidden="true" />
-            记录异常
-          </DropdownMenuItem>
-        </RowActions>
+            报工
+          </Button>
+          <RowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
+            <DropdownMenuItem
+              v-if="!showReportButton(row)"
+              :disabled="!canOpenReport(row)"
+              @click="openRoute('/mes/work-orders', row)"
+            >
+              <ClipboardCheckIcon aria-hidden="true" />
+              {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
+            </DropdownMenuItem>
+            <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+              <EyeIcon aria-hidden="true" />
+              查看工单
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem @click="openRoute('/quality/inspections', row)">
+              <ShieldCheckIcon aria-hidden="true" />
+              呼叫质检
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="openRoute('/mes/downtime', row)">
+              <WrenchIcon aria-hidden="true" />
+              记录异常
+            </DropdownMenuItem>
+          </RowActions>
+        </div>
       </template>
     </DataTable>
 
@@ -280,5 +296,7 @@ function formatError(error: unknown) {
       v-model:page-size="pageSize"
       :total-items="operationTasksTotal"
     />
+
+    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>
 </template>

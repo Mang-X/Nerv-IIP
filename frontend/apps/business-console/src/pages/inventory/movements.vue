@@ -2,6 +2,7 @@
 import type { BusinessConsolePostStockMovementRequest } from '@nerv-iip/api-client'
 import type { DataTableColumn } from '@nerv-iip/ui'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   Button,
@@ -30,19 +31,18 @@ import { RouterLink, useRoute } from 'vue-router'
 definePage({ meta: { requiresAuth: true, title: '库存移动过账' } })
 
 const route = useRoute()
+const businessContext = useBusinessContextStore()
 const { postMovement, postMovementError, postMovementPending } = useInventoryMovement()
 
 const form = reactive({
-  organizationId: 'org-001',
-  environmentId: 'env-dev',
   movementType: 'receipt',
   sourceService: 'business-console',
   sourceDocumentId: '',
   sourceDocumentLineId: '',
   idempotencyKey: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   uomCode: 'EA',
-  siteCode: 'S1',
+  siteCode: '',
   locationCode: '',
   lotNo: '',
   serialNo: '',
@@ -96,8 +96,8 @@ const stableSubmissionKey = computed(() =>
 )
 const canSubmit = computed(
   () =>
-    isNonEmpty(form.organizationId) &&
-    isNonEmpty(form.environmentId) &&
+    isNonEmpty(businessContext.organizationId) &&
+    isNonEmpty(businessContext.environmentId) &&
     isNonEmpty(form.movementType) &&
     isNonEmpty(form.sourceDocumentId) &&
     isNonEmpty(form.skuCode) &&
@@ -120,8 +120,8 @@ const columns: DataTableColumn<QueueRow>[] = [
 async function submitMovement() {
   if (!canSubmit.value) return
   const body: BusinessConsolePostStockMovementRequest = {
-    organizationId: form.organizationId.trim(),
-    environmentId: form.environmentId.trim(),
+    organizationId: businessContext.organizationId.trim(),
+    environmentId: businessContext.environmentId.trim(),
     movementType: form.movementType,
     sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
@@ -188,10 +188,6 @@ function isNonEmpty(value: string) {
         </Button>
       </template>
     </PageHeader>
-
-    <p class="text-sm text-muted-foreground">
-      常规业务应从收货、完工入库、领料或盘点单据自动发起；移动来源由业务单据带出，重复提交保护由系统处理。提交后回到库存可用量确认影响。
-    </p>
 
     <DataTable
       :columns="columns"

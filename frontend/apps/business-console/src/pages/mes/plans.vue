@@ -5,6 +5,7 @@ import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterD
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   Button,
   DataTable,
@@ -15,15 +16,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
   Input,
   PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -34,7 +31,7 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -42,7 +39,6 @@ definePage({ meta: { requiresAuth: true, title: '生产计划' } })
 
 const {
   convertPlanToWorkOrder,
-  convertPlanToWorkOrderError,
   convertPlanToWorkOrderPending,
   filters,
   productionPlans,
@@ -62,7 +58,6 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, sourceFilt
 
 const convertOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
-const convertSuccess = shallowRef('')
 const convertForm = reactive({
   workCenterId: '',
   dueUtc: '',
@@ -94,8 +89,6 @@ watch(readinessFilter, (value) => {
   filters.readinessStatus = value === 'all' ? undefined : value
 }, { immediate: true })
 const visiblePlans = computed(() => productionPlans.value)
-const readyCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus === 'Ready').length)
-const blockedCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus !== 'Ready').length)
 
 const sortedPlans = computed(() => {
   if (!sort.value) return visiblePlans.value
@@ -116,21 +109,27 @@ const selectedPlanBlocked = computed(
 )
 const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId) && !selectedPlanBlocked.value)
 const errorMessage = computed(() => formatError(productionPlansError.value))
-const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
+const hasActiveFilters = computed(
+  () => Boolean(keyword.value.trim()) || sourceFilter.value !== 'all' || readinessFilter.value !== 'all',
+)
+const emptyMessage = computed(() =>
+  hasActiveFilters.value
+    ? '没有符合当前筛选的计划。可点上方「重置」清空筛选。'
+    : '还没有可执行的生产计划。需求与计划（MRP/MPS）下达后，计划会自动出现在这里。',
+)
 
 const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
   { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
   { key: 'sourceSystem', header: '来源计划' },
-  { key: 'skuId', header: 'SKU' },
+  { key: 'skuId', header: '物料' },
   { key: 'plannedQuantity', header: '数量', align: 'end', width: 'w-24', accessor: (r) => r.plannedQuantity ?? 0 },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'actions', header: '转工单', align: 'end', width: 'w-40' },
 ]
 
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
-  convertSuccess.value = ''
   convertForm.workCenterId = ''
   convertForm.dueUtc = toLocalDateTimeInput(plan.plannedEndUtc ?? plan.plannedStartUtc)
   convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
@@ -139,16 +138,22 @@ function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
 async function submitConvertPlan() {
   const planId = selectedPlan.value?.productionPlanId
   if (!planId || !canConvert.value) return
-  await convertPlanToWorkOrder(planId, {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    workCenterId: optionalText(convertForm.workCenterId),
-    dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
-    idempotencyKey: convertForm.idempotencyKey,
-  })
-  convertSuccess.value = `计划 ${planId} 已提交转工单。`
-  convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
-  convertOpen.value = false
+  try {
+    await convertPlanToWorkOrder(planId, {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workCenterId: optionalText(convertForm.workCenterId),
+      dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
+      idempotencyKey: convertForm.idempotencyKey,
+    })
+    notifySuccess('已下达工单：该计划已转为工单，进入工单与派工。')
+    convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
+    convertOpen.value = false
+    refreshProductionPlans()
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 function resetFilters() {
   keyword.value = ''
@@ -161,6 +166,19 @@ function planReadiness(status?: string | null): { label: string, tone: StatusTon
   if (status === 'Warning') return { label: '有预警', tone: 'warning' }
   if (status === 'Blocked') return { label: '受阻', tone: 'danger' }
   return { label: status || '未知', tone: 'neutral' }
+}
+// 行是否就绪可转：受阻或带阻塞原因的计划先处理后才能转。
+function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
+  return Boolean(plan.productionPlanId)
+    && plan.readinessStatus !== 'Blocked'
+    && (plan.blockingReasons?.length ?? 0) === 0
+}
+// 受阻行的一句话原因（取首条），用于禁用入口的说明。
+function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
+  const first = plan.blockingReasons?.[0]
+  if (first) return describeMesReadinessReason(first).label
+  if (plan.readinessStatus === 'Warning') return '有预警，建议处理后再转'
+  return '尚未就绪，需处理后再转'
 }
 function sortValue(plan: BusinessConsoleMesProductionPlanRow, key: string) {
   if (key === 'plannedQuantity') return plan.plannedQuantity ?? 0
@@ -228,13 +246,7 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="本页可转工单" :value="readyCount" hint="人员/设备/物料就绪" />
-      <SectionCard description="本页受阻或预警" :value="blockedCount" hint="需处理后再释放" />
-      <SectionCard description="计划总数" :value="productionPlansTotal" hint="后端分页总数" />
-    </SectionCards>
-
-    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、SKU">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、物料">
       <template #filters>
         <Select v-model="sourceFilter">
           <SelectTrigger class="h-9 w-36" aria-label="来源"><SelectValue /></SelectTrigger>
@@ -263,7 +275,7 @@ function formatError(error: unknown) {
       row-key="productionPlanId"
       :client-sort="false"
       :loading="productionPlansPending"
-      empty-message="当前没有生产计划。来源计划由需求与计划（MRP/MPS）下达后出现在这里。"
+      :empty-message="emptyMessage"
     >
       <template #cell-sourceSystem="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -271,18 +283,41 @@ function formatError(error: unknown) {
           <span v-if="row.sourceDocumentId" class="text-xs text-muted-foreground">{{ row.sourceDocumentId }}</span>
         </div>
       </template>
-      <template #cell-plannedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span></template>
+      <template #cell-skuId="{ row }">
+        <span v-if="row.skuId">{{ row.skuId }}</span>
+        <span v-else class="text-muted-foreground">—</span>
+      </template>
+      <template #cell-plannedQuantity="{ row }">
+        <span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span>
+        <span v-if="row.uomCode" class="ml-1 text-xs text-muted-foreground">{{ row.uomCode }}</span>
+      </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-readinessStatus="{ row }">
         <StatusBadge :label="planReadiness(row.readinessStatus).label" :tone="planReadiness(row.readinessStatus).tone" />
       </template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`生产计划操作 ${row.productionPlanId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.productionPlanId" @click="openConvert(row)">
+        <div class="flex justify-end">
+          <Button
+            v-if="planConvertible(row)"
+            size="sm"
+            type="button"
+            @click="openConvert(row)"
+          >
             <FactoryIcon aria-hidden="true" />
             转工单
-          </DropdownMenuItem>
-        </RowActions>
+          </Button>
+          <Button
+            v-else
+            size="sm"
+            type="button"
+            variant="outline"
+            disabled
+            :title="planBlockHint(row)"
+            :aria-label="`暂不可转：${planBlockHint(row)}`"
+          >
+            {{ planBlockHint(row) }}
+          </Button>
+        </div>
       </template>
     </DataTable>
 
@@ -291,13 +326,12 @@ function formatError(error: unknown) {
     <Dialog v-model:open="convertOpen">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>计划转工单</DialogTitle>
+          <DialogTitle>下达工单</DialogTitle>
           <DialogDescription>
-            来自来源计划 {{ selectedPlan?.productionPlanId ?? '' }}（{{ formatPlanSource(selectedPlan?.sourceSystem) }}）。释放后进入工单与派工。
+            把计划 {{ selectedPlan?.productionPlanId ?? '' }}（来源：{{ formatPlanSource(selectedPlan?.sourceSystem) }}）下达为工单。下达后进入「工单与派工」安排生产。工作中心与交期可留空，按工艺路线默认。
           </DialogDescription>
         </DialogHeader>
         <form class="grid gap-4" @submit.prevent="submitConvertPlan">
-          <p v-if="convertErrorMessage" class="text-sm text-destructive" role="alert">{{ convertErrorMessage }}</p>
           <div v-if="selectedBlockingReasons.length" class="grid gap-1 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
             <span class="font-medium text-warning">转工单前需处理：</span>
             <span v-for="(reason, i) in selectedBlockingReasons" :key="i" class="text-muted-foreground">· {{ reason.label }}（{{ reason.nextStep }}）</span>
@@ -321,7 +355,8 @@ function formatError(error: unknown) {
             <Button type="button" variant="outline" @click="convertOpen = false">取消</Button>
             <Button type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">
               <Spinner v-if="convertPlanToWorkOrderPending" aria-hidden="true" />
-              转工单
+              <ArrowRightIcon v-else aria-hidden="true" />
+              确认下达工单
             </Button>
           </DialogFooter>
         </form>

@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import type { DateRange } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
 import type { DateRangeValue } from './types'
+import { DateFormatter, parseDate } from '@internationalized/date'
 import { CalendarRangeIcon, XIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, shallowRef } from 'vue'
 import { cn } from '../../../lib/utils'
 import { Button } from '../button'
-import { Input } from '../input'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover'
+import { RangeCalendar } from '../range-calendar'
 
 const props = withDefaults(defineProps<{
   modelValue?: DateRangeValue | null
@@ -15,57 +17,58 @@ const props = withDefaults(defineProps<{
   class?: HTMLAttributes['class']
 }>(), {
   modelValue: null,
-  placeholder: 'Pick a range',
+  placeholder: '选择日期范围',
 })
 
 const emits = defineEmits<{
   'update:modelValue': [value: DateRangeValue | null]
   apply: [value: DateRangeValue | null]
-  cancel: []
   clear: []
 }>()
 
-const draft = reactive<DateRangeValue>({
-  from: props.modelValue?.from ?? null,
-  to: props.modelValue?.to ?? null,
-})
 const open = shallowRef(false)
 
-watch(() => props.modelValue, (value) => {
-  draft.from = value?.from ?? null
-  draft.to = value?.to ?? null
+const formatter = new DateFormatter('zh-CN', { dateStyle: 'medium' })
+
+function toDateValue(value: string | null | undefined) {
+  if (!value)
+    return undefined
+  try {
+    return parseDate(value)
+  }
+  catch {
+    return undefined
+  }
+}
+
+const calendarValue = computed<DateRange>({
+  get: () => ({
+    start: toDateValue(props.modelValue?.from),
+    end: toDateValue(props.modelValue?.to),
+  }),
+  set: (value) => {
+    const from = value.start ? value.start.toString() : null
+    const to = value.end ? value.end.toString() : null
+    const next = from || to ? { from, to } : null
+    emits('update:modelValue', next)
+    if (from && to) {
+      emits('apply', next)
+      open.value = false
+    }
+  },
 })
 
 const label = computed(() => {
-  if (props.modelValue?.from && props.modelValue?.to) {
-    return `${props.modelValue.from} - ${props.modelValue.to}`
-  }
-
-  if (props.modelValue?.from) {
-    return `${props.modelValue.from} - ...`
-  }
-
+  const start = toDateValue(props.modelValue?.from)
+  const end = toDateValue(props.modelValue?.to)
+  if (start && end)
+    return `${formatter.format(start.toDate('UTC'))} - ${formatter.format(end.toDate('UTC'))}`
+  if (start)
+    return `${formatter.format(start.toDate('UTC'))} - ...`
   return props.placeholder
 })
 
-function apply() {
-  const value = draft.from || draft.to ? { from: draft.from, to: draft.to } : null
-  emits('update:modelValue', value)
-  emits('apply', value)
-  open.value = false
-}
-
-function cancel() {
-  draft.from = props.modelValue?.from ?? null
-  draft.to = props.modelValue?.to ?? null
-  emits('update:modelValue', props.modelValue ?? null)
-  emits('cancel')
-  open.value = false
-}
-
 function clear() {
-  draft.from = null
-  draft.to = null
   emits('update:modelValue', null)
   emits('clear')
   open.value = false
@@ -85,38 +88,13 @@ function clear() {
         <span class="truncate">{{ label }}</span>
       </Button>
     </PopoverTrigger>
-    <PopoverContent class="w-80">
-      <div class="flex flex-col gap-3">
-        <div class="grid grid-cols-2 gap-2">
-          <Input
-            :model-value="draft.from ?? ''"
-            type="date"
-            :disabled="disabled"
-            aria-label="Start date"
-            @update:model-value="draft.from = String($event || '') || null"
-          />
-          <Input
-            :model-value="draft.to ?? ''"
-            type="date"
-            :disabled="disabled"
-            aria-label="End date"
-            @update:model-value="draft.to = String($event || '') || null"
-          />
-        </div>
-        <div class="flex justify-between gap-2">
-          <Button type="button" variant="ghost" size="sm" @click="clear">
-            <XIcon data-icon="inline-start" />
-            Clear
-          </Button>
-          <div class="flex gap-2">
-            <Button type="button" variant="outline" size="sm" @click="cancel">
-              Cancel
-            </Button>
-            <Button type="button" size="sm" @click="apply">
-              Apply
-            </Button>
-          </div>
-        </div>
+    <PopoverContent class="w-auto p-0">
+      <RangeCalendar v-model="calendarValue" :number-of-months="2" initial-focus />
+      <div v-if="modelValue" class="flex justify-end border-t p-2">
+        <Button type="button" variant="ghost" size="sm" @click="clear">
+          <XIcon data-icon="inline-start" />
+          清除
+        </Button>
       </div>
     </PopoverContent>
   </Popover>

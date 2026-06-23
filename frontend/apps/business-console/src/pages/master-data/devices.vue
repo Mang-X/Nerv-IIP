@@ -25,8 +25,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -34,11 +32,12 @@ import {
   SelectValue,
   Spinner,
   StatusBadge,
-  toast,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '设备台账' } })
 
@@ -48,7 +47,7 @@ const CRITICALITY_OPTIONS = [
   { value: 'low', label: '低' },
 ]
 const DEVICE_DEFAULTS = {
-  capacityUomCode: 'PCS',
+  capacityUomCode: 'pcs',
   criticality: 'medium',
   maintainable: true,
   telemetryEnabled: false,
@@ -59,12 +58,22 @@ const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('
 const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
 const deviceActions = useMasterDataResourceActions('device-asset')
 
+// 列表回传的是 lineCode/workCenterCode（编码）；解析成名称显示（取自产线/工作中心实体，找不到回退编码）。
+const lineNameByCode = computed(() => new Map(lines.items.value.map((r) => [r.code ?? '', r.displayName ?? r.code ?? ''])))
+const wcNameByCode = computed(() => new Map(workCenters.items.value.map((r) => [r.code ?? '', r.displayName ?? r.code ?? ''])))
+function lineName(code?: string | null) { return code ? (lineNameByCode.value.get(code) ?? code) : '无' }
+function wcName(code?: string | null) { return code ? (wcNameByCode.value.get(code) ?? code) : '无' }
+
 const keyword = ref('')
 const page = ref(1)
 const pageSize = ref('10')
 const createOpen = ref(false)
 const createShowErrors = ref(false)
+// 编辑态：null=新建，否则=正在编辑的设备编码（编码不可改）。
+const editingCode = shallowRef<string | null>(null)
+const editLoading = shallowRef(false)
 const createForm = reactive({
+  code: '',
   model: '',
   manufacturer: '',
   serialNo: '',
@@ -78,8 +87,10 @@ const createForm = reactive({
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
+  { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => lineName(r.lineCode) },
+  { key: 'workCenterCode', header: '所属工作中心', width: 'w-36', accessor: (r) => wcName(r.workCenterCode) },
   { key: 'active', header: '状态', width: 'w-24' },
-  { key: 'snapshotVersion', header: '版本', width: 'w-28', accessor: (r) => r.snapshotVersion ?? '无' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -87,12 +98,10 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
   return [
     { label: '设备编码', value: row.code ?? '' },
     { label: '设备名称', value: row.displayName ?? '' },
-    { label: '所属产线', value: row.lineCode ?? '' },
-    { label: '所属工作中心', value: row.workCenterCode ?? '' },
+    { label: '所属产线', value: lineName(row.lineCode) },
+    { label: '所属工作中心', value: wcName(row.workCenterCode) },
   ]
 }
-
-const deviceActionErrorMessage = computed(() => formatError(deviceActions.actionError.value))
 
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -105,7 +114,6 @@ const canCreateDevice = computed(() =>
   [createForm.model, createForm.manufacturer, createForm.serialNo,
     createForm.assetClassCode, createForm.lineCode, createForm.workCenterCode, createForm.criticality].every(isNonEmpty),
 )
-const createErrorMessage = computed(() => formatError(devices.createError.value))
 const listErrorMessage = computed(() => formatError(devices.error.value))
 
 watch(createOpen, (open) => { if (open) createShowErrors.value = false })
@@ -129,32 +137,89 @@ function refreshAll() {
   void lines.refresh()
   void workCenters.refresh()
 }
+function resetCreateForm() {
+  Object.assign(createForm, {
+    code: '', model: '', manufacturer: '', serialNo: '', assetClassCode: '',
+    lineCode: '', workCenterCode: '', criticality: DEVICE_DEFAULTS.criticality, maintainable: DEVICE_DEFAULTS.maintainable,
+  })
+}
+function openCreate() {
+  editingCode.value = null
+  resetCreateForm()
+  createShowErrors.value = false
+  createOpen.value = true
+}
+async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  editingCode.value = row.code
+  createShowErrors.value = false
+  editLoading.value = true
+  createOpen.value = true
+  try {
+    const d = await deviceActions.fetchDetail(row.code)
+    Object.assign(createForm, {
+      code: row.code,
+      model: d?.model ?? '',
+      manufacturer: d?.manufacturer ?? '',
+      serialNo: d?.serialNo ?? '',
+      assetClassCode: d?.assetClassCode ?? '',
+      lineCode: d?.lineCode ?? row.lineCode ?? '',
+      workCenterCode: d?.workCenterCode ?? row.workCenterCode ?? '',
+      criticality: d?.criticality ?? DEVICE_DEFAULTS.criticality,
+      maintainable: d?.maintainable ?? DEVICE_DEFAULTS.maintainable,
+    })
+  }
+  finally {
+    editLoading.value = false
+  }
+}
 async function submitDevice() {
   if (!canCreateDevice.value) {
     createShowErrors.value = true
     return
   }
-  await devices.create({
-    organizationId: devices.filters.organizationId,
-    environmentId: devices.filters.environmentId,
-    model: createForm.model.trim(),
-    manufacturer: createForm.manufacturer.trim(),
-    serialNo: createForm.serialNo.trim(),
-    assetClassCode: createForm.assetClassCode.trim(),
-    lineCode: createForm.lineCode.trim(),
-    workCenterCode: createForm.workCenterCode.trim(),
-    capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
-    criticality: createForm.criticality,
-    maintainable: createForm.maintainable,
-    telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
-  })
-  toast.success(`设备「${createForm.model.trim()}」已登记。`)
-  Object.assign(createForm, {
-    model: '', manufacturer: '', serialNo: '', assetClassCode: '',
-    lineCode: '', workCenterCode: '', criticality: DEVICE_DEFAULTS.criticality, maintainable: DEVICE_DEFAULTS.maintainable,
-  })
-  createShowErrors.value = false
-  createOpen.value = false
+  try {
+    if (editingCode.value) {
+      await deviceActions.update(editingCode.value, {
+        name: createForm.model.trim(),
+        model: createForm.model.trim(),
+        manufacturer: createForm.manufacturer.trim(),
+        serialNo: createForm.serialNo.trim(),
+        assetClassCode: createForm.assetClassCode.trim(),
+        lineCode: createForm.lineCode.trim(),
+        workCenterCode: createForm.workCenterCode.trim(),
+        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
+        criticality: createForm.criticality,
+        maintainable: createForm.maintainable,
+        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
+      })
+      notifySuccess(`设备「${createForm.model.trim()}」已更新。`)
+    }
+    else {
+      await devices.create({
+        organizationId: devices.filters.organizationId,
+        environmentId: devices.filters.environmentId,
+        model: createForm.model.trim(),
+        manufacturer: createForm.manufacturer.trim(),
+        serialNo: createForm.serialNo.trim(),
+        assetClassCode: createForm.assetClassCode.trim(),
+        lineCode: createForm.lineCode.trim(),
+        workCenterCode: createForm.workCenterCode.trim(),
+        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
+        criticality: createForm.criticality,
+        maintainable: createForm.maintainable,
+        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
+      })
+      notifySuccess(`设备「${createForm.model.trim()}」已登记。`)
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 </script>
 
@@ -168,22 +233,27 @@ async function submitDevice() {
         </Button>
         <Dialog v-model:open="createOpen">
           <DialogTrigger as-child>
-            <Button size="sm" type="button">
+            <Button size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建设备
             </Button>
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>新建设备</DialogTitle>
-              <DialogDescription>为产线与工作中心登记一台设备资产。带 * 为必填项。</DialogDescription>
+              <DialogTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</DialogTitle>
+              <DialogDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                <Field v-if="editingCode">
+                  <FieldLabel for="dev-code">设备编码</FieldLabel>
+                  <Input id="dev-code" :model-value="createForm.code" disabled />
+                </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
                   <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="dev-model" v-model="createForm.model" autocomplete="off" required />
+                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
                   <FieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldLabel>
@@ -198,7 +268,7 @@ async function submitDevice() {
                   <Input id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
                   <FieldDescription>填写「数据字典」中维护的设备类别编码。</FieldDescription>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
                   <FieldLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.criticality">
                     <SelectTrigger id="dev-criticality"><SelectValue /></SelectTrigger>
@@ -207,7 +277,7 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
                   <FieldLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.lineCode">
                     <SelectTrigger id="dev-line"><SelectValue placeholder="请选择产线" /></SelectTrigger>
@@ -218,7 +288,7 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
                   <FieldLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.workCenterCode">
                     <SelectTrigger id="dev-wc"><SelectValue placeholder="请选择工作中心" /></SelectTrigger>
@@ -229,16 +299,16 @@ async function submitDevice() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3 sm:col-span-2">
-                  <FieldLabel for="dev-maintainable">纳入维护计划</FieldLabel>
+                <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
+                  <FieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldLabel>
                   <Checkbox id="dev-maintainable" v-model:checked="createForm.maintainable" />
                 </Field>
               </FieldGroup>
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="devices.createPending.value">
-                  <Spinner v-if="devices.createPending.value" aria-hidden="true" />
-                  保存设备
+                <Button type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
+                  <Spinner v-if="devices.createPending.value || deviceActions.updatePending.value" aria-hidden="true" />
+                  {{ editingCode ? '保存修改' : '保存设备' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -247,18 +317,9 @@ async function submitDevice() {
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">层级：工厂 → 车间 → 产线 → 工作中心 → 设备（设备归属产线与工作中心）</p>
-
-    <SectionCards :columns="3">
-      <SectionCard description="设备数" :value="devices.total.value" hint="后端分页总数" />
-      <SectionCard description="关联产线" :value="lines.total.value" hint="可挂载设备的产线" />
-      <SectionCard description="关联工作中心" :value="workCenters.total.value" hint="可挂载设备的工作中心" />
-    </SectionCards>
-
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选设备编码、名称" />
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <p v-else-if="deviceActionErrorMessage" class="text-sm text-destructive" role="alert">{{ deviceActionErrorMessage }}</p>
 
     <DataTable
       :columns="columns"
@@ -267,11 +328,13 @@ async function submitDevice() {
       :loading="devices.pending.value"
       empty-message="暂无设备。可清空筛选或新建设备。"
     >
+      <template #cell-lineCode="{ row }">{{ lineName(row.lineCode) }}</template>
+      <template #cell-workCenterCode="{ row }">{{ wcName(row.workCenterCode) }}</template>
       <template #cell-active="{ row }">
         <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
-        <MasterDataRowActions :row="row" entity-label="设备" :detail-fields="deviceDetailFields(row)" :actions="deviceActions" />
+        <MasterDataRowActions :row="row" entity-label="设备" :detail-fields="deviceDetailFields(row)" :actions="deviceActions" @edit="openEdit" />
       </template>
     </DataTable>
 

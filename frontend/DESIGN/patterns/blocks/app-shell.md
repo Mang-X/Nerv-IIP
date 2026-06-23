@@ -28,6 +28,19 @@ The consuming app owns the nav model + RBAC filtering (e.g. business-console
 `src/navigation.ts`) and route→domain resolution; the shell does **no** enforcement.
 See `docs/architecture/frontend-navigation-map.md` for the Business Console menu division.
 
+### Icons are required on every nav entry
+
+Both top `NavDomain`s **and every `SideNav` leaf item** must set `icon` (a lucide-vue-next
+component). The side-nav rail / collapsed states render the icon; an item with **no** icon
+degrades to a first-character glyph (生 / 工 / 派 …) — it looks broken and is unreadable. This
+is the single most-forgotten nav defect; treat a missing `icon` as a bug, not a style choice.
+
+- Give each item a *distinct, semantic* icon; mirror the worked example domains (`master-data`,
+  `engineering`) in `src/navigation.ts`.
+- Use only icon names **already imported somewhere in the app** (proven to exist in the pinned
+  lucide version) — do not guess renamed names like `AlertTriangleIcon`/`CheckSquareIcon`.
+  Quick palette check: `grep -rhoE '\b[A-Z][a-zA-Z0-9]+Icon\b' apps packages | sort -u`.
+
 ## Legacy: AppShell (collapsible sidebar + inset content)
 
 The legacy chrome combining **sidebar-07** (collapsible sidebar with icon-only mode) and **sidebar-01** (header with `border-b` separator and `p-4` content spacing). Kept for compatibility; new layouts use `AppShellT`.
@@ -146,7 +159,7 @@ SidebarProvider          (state management + TooltipProvider)
 1. Add a `NavItem` to the `navItems` array in `DefaultLayout.vue`.
 2. Leaf items must have `to` (a valid `RouteLocationRaw`).
 3. Group items must have `items` and no `to`.
-4. Icons are optional but recommended for top-level items.
+4. Icons are **required** on every entry — see "Icons are required on every nav entry" above (a missing icon degrades to an ugly first-character glyph).
 5. Set `isActive: true` on groups that should be expanded by default.
 
 ## Do NOT

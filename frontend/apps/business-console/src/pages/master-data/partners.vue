@@ -23,8 +23,6 @@ import {
   FieldLabel,
   Input,
   PageHeader,
-  SectionCard,
-  SectionCards,
   Select,
   SelectContent,
   SelectItem,
@@ -36,12 +34,13 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 definePage({ meta: { requiresAuth: true, title: '业务伙伴' } })
 
 const {
   createPartner,
-  createPartnerError,
   createPartnerPending,
   filters,
   partners,
@@ -54,7 +53,9 @@ const partnerActions = useMasterDataResourceActions('business-partner')
 
 const createOpen = shallowRef(false)
 const createShowErrors = ref(false)
-const createSuccess = shallowRef('')
+// 编辑态：null=新建，否则=正在编辑的伙伴编码（编码不可改）。
+const editingCode = shallowRef<string | null>(null)
+const editLoading = shallowRef(false)
 
 const keyword = ref('')
 const roleFilter = ref('all')
@@ -101,13 +102,10 @@ const sortedRows = computed(() => {
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
-const customerCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('customer')).length)
-const supplierCount = computed(() => partners.value.filter((r) => partnerRoles(r).includes('supplier')).length)
 const listErrorMessage = computed(() => formatError(partnersError.value))
-const createErrorMessage = computed(() => formatError(createPartnerError.value))
-const partnerActionErrorMessage = computed(() => formatError(partnerActions.actionError.value))
 
 const PARTNER_FORM_DEFAULTS = {
+  code: '',
   name: '',
   partnerType: 'customer',
   taxId: '',
@@ -135,7 +133,9 @@ const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
+  { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
+  { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
 ]
 
@@ -173,6 +173,38 @@ function resetCreateForm() {
   Object.assign(createForm, { ...PARTNER_FORM_DEFAULTS })
   for (const key of Object.keys(extraRoleState)) extraRoleState[key] = false
 }
+function openCreate() {
+  editingCode.value = null
+  resetCreateForm()
+  createShowErrors.value = false
+  createForm.organizationId = filters.organizationId
+  createForm.environmentId = filters.environmentId
+  createOpen.value = true
+}
+async function openEdit(row: BusinessConsoleResourceItem) {
+  if (!row.code) return
+  editingCode.value = row.code
+  createShowErrors.value = false
+  editLoading.value = true
+  createOpen.value = true
+  try {
+    const d = await partnerActions.fetchDetail(row.code)
+    const type = d?.partnerType ?? row.partnerType ?? PARTNER_FORM_DEFAULTS.partnerType
+    Object.assign(createForm, {
+      code: row.code,
+      name: d?.name ?? row.displayName ?? '',
+      partnerType: type,
+      taxId: d?.taxId ?? row.taxId ?? '',
+    })
+    const extras = new Set((d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean))
+    for (const o of PARTNER_TYPE_OPTIONS) {
+      extraRoleState[o.value] = extras.has(o.value) && o.value !== type
+    }
+  }
+  finally {
+    editLoading.value = false
+  }
+}
 async function submitPartner() {
   if (!canCreatePartner.value) {
     createShowErrors.value = true
@@ -180,19 +212,36 @@ async function submitPartner() {
   }
   const roles = selectedExtraRoles()
   const taxId = createForm.taxId.trim()
-  const body: BusinessConsoleCreateBusinessPartnerRequest = {
-    organizationId: createForm.organizationId.trim(),
-    environmentId: createForm.environmentId.trim(),
-    name: createForm.name.trim(),
-    partnerType: createForm.partnerType.trim(),
-    ...(roles.length ? { partnerRoles: roles } : {}),
-    ...(taxId ? { taxId } : {}),
+  try {
+    if (editingCode.value) {
+      await partnerActions.update(editingCode.value, {
+        name: createForm.name.trim(),
+        partnerType: createForm.partnerType.trim(),
+        partnerRoles: roles,
+        taxId: taxId || null,
+      })
+      notifySuccess(`业务伙伴「${createForm.name.trim()}」已更新。`)
+    }
+    else {
+      const body: BusinessConsoleCreateBusinessPartnerRequest = {
+        organizationId: createForm.organizationId.trim(),
+        environmentId: createForm.environmentId.trim(),
+        name: createForm.name.trim(),
+        partnerType: createForm.partnerType.trim(),
+        ...(roles.length ? { partnerRoles: roles } : {}),
+        ...(taxId ? { taxId } : {}),
+      }
+      await createPartner(body)
+      notifySuccess(`业务伙伴「${body.name}」已创建。`)
+    }
+    resetCreateForm()
+    editingCode.value = null
+    createShowErrors.value = false
+    createOpen.value = false
   }
-  await createPartner(body)
-  createSuccess.value = `业务伙伴「${body.name}」已创建。`
-  resetCreateForm()
-  createShowErrors.value = false
-  createOpen.value = false
+  catch (error) {
+    notifyError(error)
+  }
 }
 function syncContextFromFilters(open: boolean) {
   if (open) createShowErrors.value = false
@@ -217,25 +266,30 @@ function isNonEmpty(value: string) {
         </Button>
         <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
           <DialogTrigger as-child>
-            <Button size="sm" type="button">
+            <Button size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建伙伴
             </Button>
           </DialogTrigger>
           <DialogContent class="sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>新建业务伙伴</DialogTitle>
-              <DialogDescription>客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。</DialogDescription>
+              <DialogTitle>{{ editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴' }}</DialogTitle>
+              <DialogDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogDescription>
             </DialogHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
-              <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
+              <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
+                <Field v-if="editingCode">
+                  <FieldLabel for="partner-code">编码</FieldLabel>
+                  <Input id="partner-code" :model-value="createForm.code" disabled />
+                </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldLabel>
                   <Input id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
                 </Field>
-                <Field>
+                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
                   <FieldLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldLabel>
                   <Select v-model="createForm.partnerType">
                     <SelectTrigger id="partner-type"><SelectValue /></SelectTrigger>
@@ -269,9 +323,9 @@ function isNonEmpty(value: string) {
 
               <DialogFooter>
                 <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPartnerPending">
-                  <Spinner v-if="createPartnerPending" aria-hidden="true" />
-                  保存伙伴
+                <Button type="submit" :disabled="createPartnerPending || partnerActions.updatePending.value || editLoading">
+                  <Spinner v-if="createPartnerPending || partnerActions.updatePending.value" aria-hidden="true" />
+                  {{ editingCode ? '保存修改' : '保存伙伴' }}
                 </Button>
               </DialogFooter>
             </form>
@@ -279,12 +333,6 @@ function isNonEmpty(value: string) {
         </Dialog>
       </template>
     </PageHeader>
-
-    <SectionCards :columns="3">
-      <SectionCard description="伙伴总数" :value="partnersTotal" hint="客户、供应商、承运商档案" />
-      <SectionCard description="本页客户" :value="customerCount" hint="支撑销售需求与发货" />
-      <SectionCard description="本页供应商" :value="supplierCount" hint="支撑采购与收货检验" />
-    </SectionCards>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
       <template #filters>
@@ -302,8 +350,6 @@ function isNonEmpty(value: string) {
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
-    <p v-else-if="partnerActionErrorMessage" class="text-sm text-destructive" role="alert">{{ partnerActionErrorMessage }}</p>
-    <p v-else-if="createSuccess" class="text-sm text-success" role="status">{{ createSuccess }}</p>
 
     <DataTable
       v-model:sort="sort"
@@ -324,7 +370,7 @@ function isNonEmpty(value: string) {
         <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
-        <MasterDataRowActions :row="row" entity-label="伙伴" :detail-fields="partnerDetailFields(row)" :actions="partnerActions" />
+        <MasterDataRowActions :row="row" entity-label="伙伴" :detail-fields="partnerDetailFields(row)" :actions="partnerActions" @edit="openEdit" />
       </template>
     </DataTable>
 
