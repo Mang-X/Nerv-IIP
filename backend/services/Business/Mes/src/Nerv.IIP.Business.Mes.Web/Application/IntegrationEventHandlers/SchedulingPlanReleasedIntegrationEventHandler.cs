@@ -112,6 +112,18 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             dbContext.OperationTasks.Add(task);
         }
 
+        if (task.Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused)
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "mes.schedulePlanReleased.operationTaskInExecution",
+                    $"MES operation task is already {task.Status} and cannot be overwritten by released schedule assignment, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}."),
+                cancellationToken);
+            return;
+        }
+
         // APS ResourceId is the selected executable device resource; MES stores that value as DeviceAssetId.
         task.ApplyScheduleAssignment(
             operation.WorkCenterId,

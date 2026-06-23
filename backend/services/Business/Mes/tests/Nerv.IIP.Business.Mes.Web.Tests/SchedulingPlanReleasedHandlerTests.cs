@@ -53,6 +53,70 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:30:00Z"), task.AssignedAtUtc);
     }
 
+    [Theory]
+    [InlineData(OperationTaskLifecycleStatus.InProgress)]
+    [InlineData(OperationTaskLifecycleStatus.Paused)]
+    public async Task SchedulePlanReleasedHandler_DeadLettersRescheduleForActiveOperationTaskWithoutOverwritingAssignment(
+        OperationTaskLifecycleStatus status)
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "FG-APS",
+            "PV-001",
+            1m,
+            10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+            "PCS",
+            null));
+        var task = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "OP-10",
+            status,
+            10,
+            "WC-OLD",
+            [],
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+            TimeSpan.FromMinutes(30),
+            DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+            null);
+        task.Assign(
+            "operator-001",
+            "DEV-OLD-01",
+            "shift-a",
+            DateTimeOffset.Parse("2026-06-01T07:45:00Z"));
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext,
+            deadLetterStore);
+
+        await handler.HandleAsync(CreateReleasedEvent(), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var persisted = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal(status, persisted.Status);
+        Assert.Equal("WC-OLD", persisted.WorkCenterId);
+        Assert.Equal("DEV-OLD-01", persisted.DeviceAssetId);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T08:00:00Z"), persisted.EarliestStartUtc);
+        Assert.Equal(TimeSpan.FromMinutes(30), persisted.Duration);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T07:45:00Z"), persisted.AssignedAtUtc);
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("mes.schedulePlanReleased.operationTaskInExecution", deadLetter.FailureCode);
+        Assert.Contains("OP-10", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(), deadLetter.FailureMessage, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task SchedulePlanReleasedHandler_SkipsDuplicateReleaseEvent()
     {
