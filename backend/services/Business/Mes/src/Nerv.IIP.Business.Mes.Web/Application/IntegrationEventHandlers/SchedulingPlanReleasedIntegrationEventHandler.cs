@@ -56,16 +56,26 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             return;
         }
 
+        var deadLetters = new List<IntegrationEventDeadLetterMessage>();
         foreach (var operation in integrationEvent.Payload.AffectedOperations
                      .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
                      .ThenBy(x => x.OperationSequence)
                      .ThenBy(x => x.OperationId, StringComparer.Ordinal))
         {
-            await UpsertOperationTaskAsync(integrationEvent, operation, cancellationToken);
+            var deadLetter = await UpsertOperationTaskAsync(integrationEvent, operation, cancellationToken);
+            if (deadLetter is not null)
+            {
+                deadLetters.Add(deadLetter);
+            }
+        }
+
+        foreach (var deadLetter in deadLetters)
+        {
+            await deadLetterStore.AddAsync(deadLetter, cancellationToken);
         }
     }
 
-    private async Task UpsertOperationTaskAsync(
+    private async Task<IntegrationEventDeadLetterMessage?> UpsertOperationTaskAsync(
         SchedulePlanReleasedIntegrationEvent integrationEvent,
         SchedulePlanAffectedOperationPayload operation,
         CancellationToken cancellationToken)
@@ -89,14 +99,11 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 cancellationToken);
             if (!hasWorkOrder)
             {
-                await deadLetterStore.AddAsync(
-                    IntegrationEventDeadLetterMessage.Create(
+                return IntegrationEventDeadLetterMessage.Create(
                         ConsumerName,
                         integrationEvent,
                         "mes.schedulePlanReleased.workOrderNotFound",
-                        $"MES work order was not found for released schedule operation, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}."),
-                    cancellationToken);
-                return;
+                        $"MES work order was not found for released schedule operation, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}.");
             }
 
             task = OperationTask.Queue(
@@ -114,14 +121,11 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
 
         if (task.Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused)
         {
-            await deadLetterStore.AddAsync(
-                IntegrationEventDeadLetterMessage.Create(
+            return IntegrationEventDeadLetterMessage.Create(
                     ConsumerName,
                     integrationEvent,
                     "mes.schedulePlanReleased.operationTaskInExecution",
-                    $"MES operation task is already {task.Status} and cannot be overwritten by released schedule assignment, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}."),
-                cancellationToken);
-            return;
+                    $"MES operation task is already {task.Status} and cannot be overwritten by released schedule assignment, WorkOrderId = {operation.WorkOrderId}, OperationId = {operation.OperationId}, TargetWorkCenterId = {operation.WorkCenterId}, TargetResourceId = {operation.ResourceId}, TargetStartUtc = {operation.StartUtc:O}, TargetEndUtc = {operation.EndUtc:O}.");
         }
 
         // APS ResourceId is the selected executable device resource; MES stores that value as DeviceAssetId.
@@ -131,6 +135,7 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             operation.StartUtc,
             operation.EndUtc,
             integrationEvent.OccurredAtUtc);
+        return null;
     }
 }
 

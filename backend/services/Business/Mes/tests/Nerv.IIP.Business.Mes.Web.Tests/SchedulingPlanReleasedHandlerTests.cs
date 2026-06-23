@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -118,6 +119,165 @@ public sealed class SchedulingPlanReleasedHandlerTests
     }
 
     [Fact]
+    public async Task SchedulePlanReleasedHandler_DeadLettersActiveOperationTaskAndStillAssignsQueuedOperations()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "FG-APS",
+            "PV-001",
+            1m,
+            10,
+            DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+            "PCS",
+            null));
+        var activeTask = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "OP-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-OLD",
+            [],
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+            TimeSpan.FromMinutes(30),
+            DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+            null);
+        activeTask.Assign(
+            "operator-001",
+            "DEV-OLD-01",
+            "shift-a",
+            DateTimeOffset.Parse("2026-06-01T07:45:00Z"));
+        dbContext.OperationTasks.Add(activeTask);
+        dbContext.OperationTasks.Add(OperationTask.Queue(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "OP-20",
+            20,
+            "WC-PACK-OLD",
+            [],
+            DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
+            TimeSpan.FromMinutes(45)));
+        await dbContext.SaveChangesAsync();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+            dbContext,
+            deadLetterStore);
+
+        await handler.HandleAsync(
+            CreateReleasedEvent(
+                new SchedulePlanAffectedOperationPayload(
+                    "WO-APS-001",
+                    "OP-10",
+                    10,
+                    "DEV-OIL-01",
+                    "WC-OIL",
+                    DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                    DateTimeOffset.Parse("2026-06-01T13:30:00Z")),
+                new SchedulePlanAffectedOperationPayload(
+                    "WO-APS-001",
+                    "OP-20",
+                    20,
+                    "DEV-PACK-01",
+                    "WC-PACK",
+                    DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
+                    DateTimeOffset.Parse("2026-06-01T14:45:00Z"))),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var persistedActiveTask = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal("WC-OLD", persistedActiveTask.WorkCenterId);
+        Assert.Equal("DEV-OLD-01", persistedActiveTask.DeviceAssetId);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T08:00:00Z"), persistedActiveTask.EarliestStartUtc);
+        Assert.Equal(TimeSpan.FromMinutes(30), persistedActiveTask.Duration);
+        var persistedQueuedTask = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-20");
+        Assert.Equal("WC-PACK", persistedQueuedTask.WorkCenterId);
+        Assert.Equal("DEV-PACK-01", persistedQueuedTask.DeviceAssetId);
+        Assert.Equal(DateTimeOffset.Parse("2026-06-01T14:00:00Z"), persistedQueuedTask.EarliestStartUtc);
+        Assert.Equal(TimeSpan.FromMinutes(45), persistedQueuedTask.Duration);
+
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            SchedulePlanReleasedIntegrationEventHandlerForDispatch.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("mes.schedulePlanReleased.operationTaskInExecution", deadLetter.FailureCode);
+        Assert.Contains("OperationId = OP-10", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("TargetWorkCenterId = WC-OIL", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("TargetResourceId = DEV-OIL-01", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("TargetStartUtc = 2026-06-01T12:00:00.0000000+00:00", deadLetter.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("TargetEndUtc = 2026-06-01T13:30:00.0000000+00:00", deadLetter.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SchedulePlanReleasedHandler_DoesNotPersistInboxWhenRejectedOperationPrecedesInvalidOperation()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-scheduling-release-{Guid.CreateVersion7():N}", databaseRoot);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "FG-APS",
+                "PV-001",
+                1m,
+                10,
+                DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+                "PCS",
+                null));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-10",
+                OperationTaskLifecycleStatus.InProgress,
+                10,
+                "WC-OLD",
+                [],
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+                TimeSpan.FromMinutes(30),
+                DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+                null));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+                dbContext,
+                new SaveChangesDeadLetterStore(dbContext));
+
+            await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+                CreateReleasedEvent(
+                    new SchedulePlanAffectedOperationPayload(
+                        "WO-APS-001",
+                        "OP-10",
+                        10,
+                        "DEV-OIL-01",
+                        "WC-OIL",
+                        DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        DateTimeOffset.Parse("2026-06-01T13:30:00Z")),
+                    new SchedulePlanAffectedOperationPayload(
+                        "WO-APS-001",
+                        "OP-20",
+                        20,
+                        "DEV-PACK-01",
+                        "WC-PACK",
+                        DateTimeOffset.Parse("2026-06-01T14:45:00Z"),
+                        DateTimeOffset.Parse("2026-06-01T14:00:00Z"))),
+                CancellationToken.None));
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Empty(assertionDbContext.ProcessedIntegrationEvents);
+    }
+
+    [Fact]
     public async Task SchedulePlanReleasedHandler_SkipsDuplicateReleaseEvent()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -183,8 +343,24 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Contains("WO-APS-001", deadLetter.FailureMessage, StringComparison.Ordinal);
     }
 
-    private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent()
+    private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent(
+        params SchedulePlanAffectedOperationPayload[] affectedOperations)
     {
+        if (affectedOperations.Length == 0)
+        {
+            affectedOperations =
+            [
+                new SchedulePlanAffectedOperationPayload(
+                    "WO-APS-001",
+                    "OP-10",
+                    10,
+                    "DEV-OIL-01",
+                    "WC-OIL",
+                    DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                    DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+            ];
+        }
+
         return new SchedulePlanReleasedIntegrationEvent(
             "evt-scheduling-release-001",
             SchedulingIntegrationEventTypes.SchedulePlanReleased,
@@ -204,16 +380,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "aps-lite-v1",
                 "fingerprint-001",
                 "released",
-                [
-                    new SchedulePlanAffectedOperationPayload(
-                        "WO-APS-001",
-                        "OP-10",
-                        10,
-                        "DEV-OIL-01",
-                        "WC-OIL",
-                        DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-                        DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
-                ]));
+                affectedOperations));
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -267,6 +434,42 @@ public sealed class SchedulingPlanReleasedHandlerTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+    }
+
+    private sealed class SaveChangesDeadLetterStore(ApplicationDbContext dbContext) : IIntegrationEventDeadLetterStore
+    {
+        private readonly List<IntegrationEventDeadLetterMessage> messages = [];
+
+        public async Task<IntegrationEventDeadLetterMessage> AddAsync(
+            IntegrationEventDeadLetterMessage message,
+            CancellationToken cancellationToken)
+        {
+            messages.Add(message);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return message;
+        }
+
+        public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+            string? consumerName,
+            IntegrationEventDeadLetterStatus? status,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>(
+                messages
+                    .Where(message => consumerName is null || message.ConsumerName == consumerName)
+                    .Where(message => status is null || message.Status == status)
+                    .ToArray());
+        }
+
+        public Task MarkReplayedAsync(
+            Guid id,
+            DateTimeOffset replayedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
         }
     }
 }
