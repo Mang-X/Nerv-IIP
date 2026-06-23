@@ -1,0 +1,61 @@
+name: 🏭 业务闭环缺口 (business-gap)
+description: 记录业务逻辑闭环断点或行业标准缺口的审计发现
+title: "[Gap] "
+labels: ["type:business-gap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用于行业标准 / 业务闭环审计。请明确「缺什么」「依据什么标准」「不补会怎样」。
+  - type: textarea
+    id: gap
+    attributes:
+      label: 缺口描述
+      description: 当前业务闭环在哪一步断裂，或缺失了哪个能力/字段/状态流转。
+    validations:
+      required: true
+  - type: textarea
+    id: standard
+    attributes:
+      label: 行业标准 / 业务依据
+      description: 引用的行业标准、规范条目、客户要求或最佳实践来源。
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: 影响范围
+      description: 涉及的业务流程、岗位、单据，以及不补齐造成的后果。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议补齐方向
+      description: 初步设想的闭环方式（可选）。
+  - type: dropdown
+    id: domain
+    attributes:
+      label: 业务领域
+      multiple: true
+      options:
+        - domain:business-platform
+        - domain:mes
+        - domain:quality
+        - domain:demand-planning
+        - domain:industrial-telemetry
+        - domain:maintenance
+        - domain:product-engineering
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - "priority:p0 — 破坏核心业务闭环或数据完整性"
+        - "priority:p1 — 重要行业标准缺口"
+        - "priority:p2 — 增强项"
+        - "priority:p3 — 可延后"
+    validations:
+      required: true

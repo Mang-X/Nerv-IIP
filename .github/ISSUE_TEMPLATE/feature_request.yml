@@ -1,0 +1,73 @@
+name: ✨ 功能 / 增强需求
+description: 提出新功能或对现有能力的改进
+title: "[Feature] "
+labels: ["type:enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先查阅 `docs/architecture/implementation-readiness.md` 确认相关服务/能力的当前阶段。
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景与动机
+      description: 当前缺什么、解决谁的什么问题。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 期望的行为或交互；如涉及契约/事件/SDK 变更请说明。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案
+      description: 考虑过的其它做法及取舍（可选）。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响分层
+      multiple: true
+      options:
+        - area:backend
+        - area:frontend
+        - area:architecture
+        - area:infra
+        - area:sdk
+        - area:observability
+    validations:
+      required: true
+  - type: dropdown
+    id: domain
+    attributes:
+      label: 业务领域
+      multiple: true
+      options:
+        - domain:business-platform
+        - domain:mes
+        - domain:quality
+        - domain:demand-planning
+        - domain:industrial-telemetry
+        - domain:maintenance
+        - domain:product-engineering
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      options:
+        - "priority:p0"
+        - "priority:p1"
+        - "priority:p2"
+        - "priority:p3"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 满足哪些条件即视为完成（Definition of Done）。
+    validations:
+      required: true
