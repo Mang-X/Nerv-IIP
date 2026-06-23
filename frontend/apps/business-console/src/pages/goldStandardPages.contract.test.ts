@@ -50,6 +50,9 @@ const GOLD_STANDARD_PAGES = [
   'wms/counts.vue',
   'maintenance/work-orders.vue',
   'maintenance/plans.vue',
+  'erp/index.vue',
+  'erp/sales.vue',
+  'erp/finance.vue',
 ]
 
 // SectionCards is NOT required: KPI cards are decided per page (business-meaningful,
