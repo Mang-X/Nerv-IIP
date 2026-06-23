@@ -17,7 +17,7 @@ public sealed class ApprovalOverdueScheduler(
             return;
         }
 
-        var scopes = GetConfiguredScopes().ToArray();
+        var scopes = GetConfiguredScopes().Distinct().ToArray();
         if (scopes.Length == 0)
         {
             logger.LogWarning("Approval overdue check is enabled but no organization/environment scope is configured.");

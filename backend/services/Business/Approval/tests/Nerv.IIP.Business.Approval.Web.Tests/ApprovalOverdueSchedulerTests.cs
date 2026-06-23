@@ -73,6 +73,37 @@ public sealed class ApprovalOverdueSchedulerTests
     }
 
     [Fact]
+    public async Task Scheduler_deduplicates_matching_scopes_from_array_and_legacy_keys()
+    {
+        var sender = new CapturingSender();
+        await using var services = new ServiceCollection()
+            .AddSingleton<ISender>(sender)
+            .BuildServiceProvider();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Approval:OverdueCheck:Enabled"] = "true",
+                ["Approval:OverdueCheck:Scopes:0:OrganizationId"] = "org-001",
+                ["Approval:OverdueCheck:Scopes:0:EnvironmentId"] = "env-dev",
+                ["Approval:OverdueCheck:OrganizationId"] = "org-001",
+                ["Approval:OverdueCheck:EnvironmentId"] = "env-dev",
+                ["Approval:OverdueCheck:Interval"] = "01:00:00",
+            })
+            .Build();
+        var scheduler = new ApprovalOverdueScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<ApprovalOverdueScheduler>.Instance);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(() => sender.Commands.Count > 0 || scheduler.ExecuteTask?.IsCompleted == true);
+        await Task.Delay(100);
+
+        Assert.Equal([new CheckOverdueApprovalStepsCommand("org-001", "env-dev")], sender.Commands);
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Scheduler_keeps_running_when_one_overdue_check_fails()
     {
         var sender = new ThrowingSender();
