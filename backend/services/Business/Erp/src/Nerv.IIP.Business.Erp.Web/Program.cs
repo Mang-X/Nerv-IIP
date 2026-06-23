@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -32,6 +33,11 @@ try
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
+    }).UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    builder.Services.AddHttpClient<ICustomerCreditProfileReader, HttpCustomerCreditProfileReader>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services

@@ -56,6 +56,7 @@ public sealed class ApprovalStepResolvedIntegrationEventConverter
                 chain.OrganizationId,
                 chain.EnvironmentId,
                 chain.Id.ToString(),
+                decision.RoundNo.ToString(),
                 decision.StepNo.ToString(),
                 decision.ActorType,
                 decision.ActorRef,
@@ -102,6 +103,48 @@ public sealed class ApprovalStepOverdueIntegrationEventConverter
                 step.ApproverRef,
                 step.DueAtUtc!.Value,
                 domainEvent.MarkedAtUtc,
+                ApprovalIntegrationEventConverterHelpers.ToPayload(chain.DocumentReference)));
+    }
+}
+
+public sealed class ApprovalChainActionRecordedIntegrationEventConverter
+    : IIntegrationEventConverter<ApprovalChainActionRecordedDomainEvent, ApprovalActionRecordedIntegrationEvent>
+{
+    public ApprovalActionRecordedIntegrationEvent Convert(ApprovalChainActionRecordedDomainEvent domainEvent)
+    {
+        var chain = domainEvent.Chain;
+        var decision = domainEvent.Decision;
+        return new ApprovalActionRecordedIntegrationEvent(
+            EventIds.New(),
+            ApprovalIntegrationEventTypes.ActionRecorded,
+            ApprovalIntegrationEventVersions.V1,
+            decision.DecidedAtUtc,
+            ApprovalIntegrationEventSources.BusinessApproval,
+            chain.Id.ToString(),
+            decision.Id.ToString(),
+            chain.OrganizationId,
+            chain.EnvironmentId,
+            $"{decision.ActorType}:{decision.ActorRef}",
+            EventIds.Idempotency(
+                "action-recorded",
+                chain.OrganizationId,
+                chain.EnvironmentId,
+                chain.Id.ToString(),
+                decision.RoundNo.ToString(),
+                decision.StepNo.ToString(),
+                decision.Decision,
+                decision.ActorType,
+                decision.ActorRef,
+                decision.Id.ToString()),
+            new ApprovalActionRecordedPayload(
+                chain.Id.ToString(),
+                decision.StepId.ToString(),
+                decision.StepNo,
+                decision.Decision,
+                decision.ActorType,
+                decision.ActorRef,
+                decision.Comment,
+                domainEvent.SuggestedRecipientRefs,
                 ApprovalIntegrationEventConverterHelpers.ToPayload(chain.DocumentReference)));
     }
 }
@@ -162,7 +205,7 @@ internal static class ApprovalIntegrationEventConverterHelpers
             chain.OrganizationId,
             chain.EnvironmentId,
             $"{decision.ActorType}:{decision.ActorRef}",
-            EventIds.Idempotency(result, chain.OrganizationId, chain.EnvironmentId, chain.Id.ToString()),
+            EventIds.Idempotency(result, chain.OrganizationId, chain.EnvironmentId, chain.Id.ToString(), decision.RoundNo.ToString()),
             new ApprovalCompletedPayload(
                 chain.Id.ToString(),
                 result,

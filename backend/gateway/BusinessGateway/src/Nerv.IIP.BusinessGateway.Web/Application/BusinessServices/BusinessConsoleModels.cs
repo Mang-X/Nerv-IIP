@@ -1399,7 +1399,11 @@ public sealed record BusinessConsoleRunMrpRequest(
     DateOnly HorizonStart,
     DateOnly HorizonEnd);
 
-public sealed record BusinessConsoleRunMrpResponse(string RunId, int SuggestionCount);
+public sealed record BusinessConsoleRunMrpResponse(
+    string RunId,
+    int SuggestionCount,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed record BusinessConsoleMrpRunItem(
     string RunId,
@@ -1410,7 +1414,9 @@ public sealed record BusinessConsoleMrpRunItem(
     int AvailabilityCount,
     int SuggestionCount,
     string ProductionEngineeringSnapshotSource,
-    string InventorySnapshotSource);
+    string InventorySnapshotSource,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 

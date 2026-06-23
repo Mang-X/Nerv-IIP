@@ -30,6 +30,7 @@
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Domain\Nerv.IIP.Notification.Domain.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Infrastructure\Nerv.IIP.Notification.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Ops\Nerv.IIP.Contracts.Ops.csproj" />
   </ItemGroup>

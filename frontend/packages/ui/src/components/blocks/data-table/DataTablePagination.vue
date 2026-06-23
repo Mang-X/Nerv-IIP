@@ -6,13 +6,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '../../ui/pagination'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select'
 
 const props = withDefaults(
   defineProps<{
@@ -59,7 +53,9 @@ function updatePageSize(value: unknown) {
 
 <template>
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <p class="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">显示 {{ summary }}</p>
+    <p class="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">
+      显示 {{ summary }}
+    </p>
     <div class="flex items-center gap-3">
       <div class="flex items-center gap-2">
         <span class="shrink-0 text-sm text-muted-foreground">每页</span>
@@ -84,7 +80,10 @@ function updatePageSize(value: unknown) {
       >
         <PaginationContent>
           <PaginationPrevious size="sm">上一页</PaginationPrevious>
-          <span class="min-w-14 px-2 text-center text-sm tabular-nums text-muted-foreground" aria-label="当前页">
+          <span
+            class="min-w-14 px-2 text-center text-sm tabular-nums text-muted-foreground"
+            aria-label="当前页"
+          >
             {{ currentPage }} / {{ totalPages }}
           </span>
           <PaginationNext size="sm">下一页</PaginationNext>

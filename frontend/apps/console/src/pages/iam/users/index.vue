@@ -121,9 +121,19 @@ const statusModel = computed({
 })
 
 const columns: DataTableColumn<UserRow>[] = [
-  { key: 'loginName', header: '登录名', cellClass: 'font-medium', accessor: (r) => r.loginName || '—' },
+  {
+    key: 'loginName',
+    header: '登录名',
+    cellClass: 'font-medium',
+    accessor: (r) => r.loginName || '—',
+  },
   { key: 'email', header: '邮箱', accessor: (r) => r.email || '—' },
-  { key: 'userId', header: '用户 ID', cellClass: 'font-mono text-xs text-muted-foreground', accessor: (r) => r.userId || '—' },
+  {
+    key: 'userId',
+    header: '用户 ID',
+    cellClass: 'font-mono text-xs text-muted-foreground',
+    accessor: (r) => r.userId || '—',
+  },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-56' },
 ]
@@ -210,9 +220,15 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader title="用户" :breadcrumbs="[{ label: '身份与访问' }]" :count="`${totalCount} 个用户`">
+      <PageHeader
+        title="用户"
+        :breadcrumbs="[{ label: '身份与访问' }]"
+        :count="`${totalCount} 个用户`"
+      >
         <template #actions>
-          <Button type="button" :disabled="!canManageUsers" @click="openCreateDialog">新建用户</Button>
+          <Button type="button" :disabled="!canManageUsers" @click="openCreateDialog"
+            >新建用户</Button
+          >
         </template>
       </PageHeader>
 
@@ -287,7 +303,11 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
         </template>
       </DataTable>
 
-      <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalCount" />
+      <DataTablePagination
+        v-model:page="page"
+        v-model:page-size="pageSize"
+        :total-items="totalCount"
+      />
 
       <UserCreateDialog v-model:open="createDialogOpen" @submit="handleCreate" />
       <UserEditDialog v-model:open="editDialogOpen" :user="selectedUser" @submit="handleUpdate" />
@@ -302,12 +322,20 @@ async function handleResetPassword(payload: Required<ConsoleResetIamUserPassword
           <AlertDialogHeader>
             <AlertDialogTitle>停用用户</AlertDialogTitle>
             <AlertDialogDescription>
-              确认停用用户 {{ pendingDisableUser ? userLabel(pendingDisableUser) : '' }}？停用后该用户将无法登录控制台。
+              确认停用用户
+              {{
+                pendingDisableUser ? userLabel(pendingDisableUser) : ''
+              }}？停用后该用户将无法登录控制台。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel :disabled="disableUserPending">取消</AlertDialogCancel>
-            <Button type="button" variant="destructive" :disabled="disableUserPending" @click="confirmDisable">
+            <Button
+              type="button"
+              variant="destructive"
+              :disabled="disableUserPending"
+              @click="confirmDisable"
+            >
               停用
             </Button>
           </AlertDialogFooter>

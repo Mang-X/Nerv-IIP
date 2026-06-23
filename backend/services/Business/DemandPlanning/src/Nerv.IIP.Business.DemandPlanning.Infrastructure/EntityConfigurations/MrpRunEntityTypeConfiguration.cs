@@ -16,6 +16,8 @@ public sealed class MrpRunEntityTypeConfiguration : IEntityTypeConfiguration<Mrp
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("MRP run status.");
         builder.Property(x => x.ProductionEngineeringSnapshotSource).HasColumnName("production_engineering_snapshot_source").HasMaxLength(128).HasComment("Source adapter used for released version and MBOM snapshots.");
         builder.Property(x => x.InventorySnapshotSource).HasColumnName("inventory_snapshot_source").HasMaxLength(128).HasComment("Source adapter used for inventory availability snapshots.");
+        builder.Ignore(x => x.HasInputDegradation);
+        builder.Ignore(x => x.InputDegradationSources);
         builder.Property(x => x.DemandCount).HasColumnName("demand_count").HasComment("Number of demand source snapshots included in the run.");
         builder.Property(x => x.AvailabilityCount).HasColumnName("availability_count").HasComment("Number of availability snapshots included in the run.");
         builder.Property(x => x.SuggestionCount).HasColumnName("suggestion_count").HasComment("Number of planning suggestions created by the run.");

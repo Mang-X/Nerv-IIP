@@ -19,9 +19,13 @@ public sealed class ApprovalDecisionEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Decision).HasColumnName("decision").IsRequired().HasMaxLength(50).HasComment("Decision action: approve, reject or return.");
         builder.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(1000).HasComment("Optional approver comment.");
         builder.Property(x => x.DecidedAtUtc).HasColumnName("decided_at_utc").IsRequired().HasComment("UTC time when the decision was recorded.");
+        builder.Property(x => x.RoundNo).HasColumnName("round_no").IsRequired().HasComment("Approval submission round when the decision or action was recorded.");
         builder.HasIndex(x => new { x.ChainId, x.StepNo, x.ActorType, x.ActorRef, x.OnBehalfOfActorType, x.OnBehalfOfActorRef })
-            .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf")
+            .HasDatabaseName("IX_approval_decisions_chain_step_actor_on_behalf");
+        builder.HasIndex(x => new { x.ChainId, x.RoundNo, x.StepNo, x.ActorType, x.ActorRef, x.OnBehalfOfActorType, x.OnBehalfOfActorRef })
             .IsUnique()
+            .HasFilter("decision IN ('approve', 'reject', 'return')")
+            .HasDatabaseName("UX_approval_decisions_resolution_actor_round")
             .AreNullsDistinct(false);
     }
 }

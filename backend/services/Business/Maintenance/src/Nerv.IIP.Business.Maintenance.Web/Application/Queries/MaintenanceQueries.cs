@@ -257,8 +257,6 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryValidator : Abstract
 public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryMaintenanceAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
-    private static readonly string[] InspectionRequiredResults = ["failed", "fail", "blocked", "not-ok", "not ok", "nok"];
-
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
         var originalContract = request.Request;
@@ -472,7 +470,7 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationD
 
     private static bool IsInspectionRequired(string result)
     {
-        return InspectionRequiredResults.Contains(result.Trim(), StringComparer.OrdinalIgnoreCase);
+        return MaintenanceInspectionResults.IsFailed(result);
     }
 
     private static DateTimeOffset Max(DateTimeOffset left, DateTimeOffset right)

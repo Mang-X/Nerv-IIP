@@ -25,7 +25,11 @@ const errorMessage = computed(() => (operationError.value ? operationError.value
 <template>
   <DefaultLayout>
     <section class="grid gap-6">
-      <PageHeader title="运维任务" :breadcrumbs="[{ label: '平台' }, { label: '实例' }]" :count="operationTaskId">
+      <PageHeader
+        title="运维任务"
+        :breadcrumbs="[{ label: '平台' }, { label: '实例' }]"
+        :count="operationTaskId"
+      >
         <template #actions>
           <Button size="sm" type="button" variant="outline" as-child>
             <RouterLink to="/">

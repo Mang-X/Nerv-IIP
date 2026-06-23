@@ -24,7 +24,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         string? primaryAddress = null,
         string? primaryContactName = null,
         string? primaryContactEmail = null,
-        string? primaryContactPhone = null)
+        string? primaryContactPhone = null,
+        decimal? creditLimit = null,
+        string? creditCurrencyCode = null)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -40,6 +42,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         PrimaryContactName = Optional(primaryContactName);
         PrimaryContactEmail = Optional(primaryContactEmail);
         PrimaryContactPhone = Optional(primaryContactPhone);
+        (CreditLimit, CreditCurrencyCode) = NormalizeCreditLimit(creditLimit, creditCurrencyCode);
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
         this.AddDomainEvent(new MasterDataAggregateCreatedDomainEvent(nameof(BusinessPartner), OrganizationId, EnvironmentId, Code));
@@ -60,6 +63,8 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     public string? PrimaryContactName { get; private set; }
     public string? PrimaryContactEmail { get; private set; }
     public string? PrimaryContactPhone { get; private set; }
+    public decimal? CreditLimit { get; private set; }
+    public string? CreditCurrencyCode { get; private set; }
     public bool Disabled { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
@@ -83,7 +88,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         string? primaryAddress = null,
         string? primaryContactName = null,
         string? primaryContactEmail = null,
-        string? primaryContactPhone = null)
+        string? primaryContactPhone = null,
+        decimal? creditLimit = null,
+        string? creditCurrencyCode = null)
     {
         return new BusinessPartner(
             organizationId,
@@ -99,7 +106,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
             primaryAddress,
             primaryContactName,
             primaryContactEmail,
-            primaryContactPhone);
+            primaryContactPhone,
+            creditLimit,
+            creditCurrencyCode);
     }
 
     public void Rename(string name)
@@ -117,7 +126,7 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
 
     public void Update(string name, IReadOnlyCollection<string>? partnerRoles, string? taxId)
     {
-        Update(name, partnerRoles, taxId, TaxRegionCode, DefaultCurrencyCode, PaymentTermsCode, PrimaryAddress, PrimaryContactName, PrimaryContactEmail, PrimaryContactPhone);
+        Update(name, partnerRoles, taxId, TaxRegionCode, DefaultCurrencyCode, PaymentTermsCode, PrimaryAddress, PrimaryContactName, PrimaryContactEmail, PrimaryContactPhone, CreditLimit, CreditCurrencyCode);
     }
 
     public void Update(
@@ -130,7 +139,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         string? primaryAddress,
         string? primaryContactName,
         string? primaryContactEmail,
-        string? primaryContactPhone)
+        string? primaryContactPhone,
+        decimal? creditLimit = null,
+        string? creditCurrencyCode = null)
     {
         EnsureEnabled();
         Name = Required(name);
@@ -144,6 +155,14 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         PrimaryContactName = Optional(primaryContactName);
         PrimaryContactEmail = Optional(primaryContactEmail);
         PrimaryContactPhone = Optional(primaryContactPhone);
+        (CreditLimit, CreditCurrencyCode) = NormalizeCreditLimit(creditLimit, creditCurrencyCode);
+        Touch();
+    }
+
+    public void UpdateCreditLimit(decimal? creditLimit, string? creditCurrencyCode)
+    {
+        EnsureEnabled();
+        (CreditLimit, CreditCurrencyCode) = NormalizeCreditLimit(creditLimit, creditCurrencyCode);
         Touch();
     }
 
@@ -192,6 +211,32 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     private static string? Optional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static (decimal? CreditLimit, string? CurrencyCode) NormalizeCreditLimit(decimal? creditLimit, string? creditCurrencyCode)
+    {
+        if (!creditLimit.HasValue)
+        {
+            if (!string.IsNullOrWhiteSpace(creditCurrencyCode))
+            {
+                throw new ArgumentException("Credit currency requires a credit limit.", nameof(creditCurrencyCode));
+            }
+
+            return (null, null);
+        }
+
+        if (creditLimit.Value < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(creditLimit), creditLimit.Value, "Credit limit cannot be negative.");
+        }
+
+        if (string.IsNullOrWhiteSpace(creditCurrencyCode))
+        {
+            throw new ArgumentException("Credit limit requires a currency code.", nameof(creditCurrencyCode));
+        }
+
+        var currency = Required(creditCurrencyCode ?? string.Empty).ToUpperInvariant();
+        return (creditLimit.Value, currency);
     }
 
     private static string[] NormalizeRoles(string partnerType, IReadOnlyCollection<string>? partnerRoles)

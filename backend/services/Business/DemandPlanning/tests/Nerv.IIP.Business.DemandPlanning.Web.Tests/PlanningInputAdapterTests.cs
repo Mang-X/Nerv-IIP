@@ -177,6 +177,163 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Upstream_adapter_propagates_unexpected_erp_invalid_operation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            new BuggyPlanningErpScheduledReceiptClient());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None));
+
+        Assert.Equal("ERP optional source bug", exception.Message);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_propagates_unexpected_master_data_invalid_operation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1000", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient(),
+            null,
+            new BuggyPlanningParameterClient());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 5, 25),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None));
+
+        Assert.Equal("MasterData optional source bug", exception.Message);
+    }
+
+    [Fact]
+    public async Task Erp_scheduled_receipt_client_wraps_empty_response_envelope_as_optional_snapshot_failure()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
+            {
+              "success": true,
+              "message": "ok",
+              "code": 0,
+              "data": null
+            }
+            """));
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://erp.test") };
+        var client = new HttpPlanningErpScheduledReceiptSnapshotClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<OptionalPlanningSnapshotException>(() => client.GetScheduledReceiptsAsync(
+            "token",
+            new PlanningScheduledReceiptSnapshotRequest(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 5, 25),
+                new DateOnly(2026, 6, 30),
+                [new PlanningScheduledReceiptSnapshotItem("SKU-RM-1000", "pcs", "SITE-01")]),
+            CancellationToken.None));
+
+        Assert.Contains("ERP", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_planning_parameter_client_wraps_invalid_json_as_optional_snapshot_failure()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("not-json", Encoding.UTF8, "application/json"),
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<OptionalPlanningSnapshotException>(() => client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [new PlanningParameterSnapshotItem("SKU-FG-1000", "pcs", "SITE-01")]),
+            CancellationToken.None));
+
+        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_planning_parameter_client_skips_empty_single_sku_envelope()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/sku/SKU-MISSING", StringComparison.OrdinalIgnoreCase))
+            {
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": null
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-RM-1000",
+                    "displayName": "Raw material",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs",
+                    "plannedDeliveryTimeDays": 3,
+                    "safetyStockQuantity": 2
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [
+                    new PlanningParameterSnapshotItem("SKU-MISSING", "pcs", "SITE-01"),
+                    new PlanningParameterSnapshotItem("SKU-RM-1000", "pcs", "SITE-01"),
+                ]),
+            CancellationToken.None);
+
+        var parameter = Assert.Single(snapshot.PlanningParameters);
+        Assert.Equal("master-data-planning-parameters:1", snapshot.SnapshotSource);
+        Assert.Equal("SKU-RM-1000", parameter.SkuCode);
+    }
+
+    [Fact]
     public async Task Erp_scheduled_receipt_client_maps_open_purchase_order_lines_across_pages()
     {
         var handler = new StubHttpMessageHandler(request =>
@@ -526,7 +683,29 @@ public sealed class PlanningInputAdapterTests
             PlanningParameterSnapshotRequest request,
             CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("MasterData unavailable");
+            throw new OptionalPlanningSnapshotException("MasterData unavailable");
+        }
+    }
+
+    private sealed class BuggyPlanningErpScheduledReceiptClient : IPlanningScheduledReceiptSnapshotClient
+    {
+        public Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+            string internalBearerToken,
+            PlanningScheduledReceiptSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("ERP optional source bug");
+        }
+    }
+
+    private sealed class BuggyPlanningParameterClient : IPlanningParameterSnapshotClient
+    {
+        public Task<PlanningParameterSnapshotResult> GetPlanningParametersAsync(
+            string internalBearerToken,
+            PlanningParameterSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("MasterData optional source bug");
         }
     }
 

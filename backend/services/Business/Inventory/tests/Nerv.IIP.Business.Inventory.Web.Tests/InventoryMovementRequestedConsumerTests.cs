@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
@@ -192,8 +193,9 @@ public sealed class InventoryMovementRequestedConsumerTests
     }
 
     [Theory]
-    [InlineData(QualityIntegrationEventTypes.InspectionPassed, "unrestricted")]
-    [InlineData(QualityIntegrationEventTypes.InspectionRejected, "blocked")]
+    [InlineData(QualityIntegrationEventTypes.InspectionPassed, StockQualityStatus.Unrestricted)]
+    [InlineData(QualityIntegrationEventTypes.InspectionRejected, StockQualityStatus.Blocked)]
+    [InlineData(QualityIntegrationEventTypes.InspectionConditionalReleased, StockQualityStatus.Restricted)]
     public async Task Quality_inspection_result_consumer_transfers_quality_stock(string eventType, string targetStatus)
     {
         await using var dbContext = CreateContext();
@@ -206,7 +208,7 @@ public sealed class InventoryMovementRequestedConsumerTests
             "LOC-A-01",
             "LOT-001",
             null,
-            "quality",
+            StockQualityStatus.Quality,
             "company",
             "owner-001");
         ledger.ApplyMovement(StockMovement.Post(
@@ -223,7 +225,7 @@ public sealed class InventoryMovementRequestedConsumerTests
             "LOC-A-01",
             "LOT-001",
             null,
-            "quality",
+            StockQualityStatus.Quality,
             "company",
             "owner-001",
             5m,
@@ -240,7 +242,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Contains(dbContext.StockLedgers, x => x.QualityStatus == targetStatus && x.OnHandQuantity == 3m);
-        Assert.Contains(dbContext.StockLedgers, x => x.QualityStatus == "quality" && x.OnHandQuantity == 2m);
+        Assert.Contains(dbContext.StockLedgers, x => x.QualityStatus == StockQualityStatus.Quality && x.OnHandQuantity == 2m);
         Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
     }
 
@@ -327,16 +329,223 @@ public sealed class InventoryMovementRequestedConsumerTests
                     "LOC-B-02",
                     "LOT-002",
                     null,
-                    "quality",
+                    StockQualityStatus.Quality,
                     "company",
-                    "owner-001")),
+                    "owner-001",
+                    QualityStockReleaseTargetStatuses.Blocked)),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.QualityStatus == "quality" && x.LocationCode == "LOC-A-01").OnHandQuantity);
-        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == "quality" && x.LocationCode == "LOC-B-02").OnHandQuantity);
-        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked" && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality && x.LocationCode == "LOC-A-01").OnHandQuantity);
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Blocked && x.LocationCode == "LOC-B-02").OnHandQuantity);
         Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_normalizes_optional_stock_release_locator_blanks()
+    {
+        await using var dbContext = CreateContext();
+        var targetLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            null,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            null);
+        targetLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-NO-LOT",
+            "LINE-001",
+            "idem-quality-in-no-lot",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            null,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            null,
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(targetLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "   ",
+                    "",
+                    StockQualityStatus.Quality,
+                    "company",
+                    " ")),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality).OnHandQuantity);
+        var unrestrictedLedger = dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Unrestricted);
+        Assert.Null(unrestrictedLedger.LotNo);
+        Assert.Null(unrestrictedLedger.SerialNo);
+        Assert.Null(unrestrictedLedger.OwnerId);
+        Assert.Equal(3m, unrestrictedLedger.OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Theory]
+    [InlineData(QualityIntegrationEventTypes.InspectionPassed, StockQualityStatus.Unrestricted)]
+    [InlineData(QualityIntegrationEventTypes.InspectionRejected, StockQualityStatus.Blocked)]
+    public async Task Quality_inspection_result_consumer_uses_payload_stock_locator_dimensions_for_multi_lot_release(
+        string eventType,
+        string targetStatus)
+    {
+        await using var dbContext = CreateContext();
+        var untouchedLedger = CreateQualityLedger("LOC-A-01", "LOT-001", 5m);
+        var targetLedger = CreateQualityLedger("LOC-B-02", "LOT-002", 5m);
+        dbContext.StockLedgers.AddRange(untouchedLedger, targetLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateInspectionEventWithPayloadStockLocator(eventType), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality && x.LocationCode == "LOC-A-01").OnHandQuantity);
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == targetStatus && x.LocationCode == "LOC-B-02").OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_ambiguous_legacy_event_without_stock_locator()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.StockLedgers.AddRange(
+            CreateQualityLedger("LOC-A-01", "LOT-001", 5m),
+            CreateQualityLedger("LOC-B-02", "LOT-002", 5m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed),
+            CancellationToken.None));
+
+        Assert.Contains("exactly one matching quality stock ledger", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-A-01").OnHandQuantity);
+        Assert.Equal(5m, dbContext.StockLedgers.Single(x => x.LocationCode == "LOC-B-02").OnHandQuantity);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_accepts_matching_stock_release_target_status()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            "LOT-002",
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-002",
+            "LINE-001",
+            "idem-quality-in-002",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-B-02",
+            "LOT-002",
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionConditionalReleased,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "LOT-002",
+                    null,
+                    StockQualityStatus.Quality,
+                    "company",
+                    "owner-001",
+                    QualityStockReleaseTargetStatuses.Restricted)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Quality).OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Restricted).OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_stock_release_target_mismatch()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            new CommandExecutingSender(dbContext),
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionPassed,
+                new StockReleaseDimensionPayload(
+                    "kg",
+                    "SITE-01",
+                    "LOC-B-02",
+                    "LOT-002",
+                    null,
+                    StockQualityStatus.Quality,
+                    "company",
+                    "owner-001",
+                    QualityStockReleaseTargetStatuses.Blocked)),
+            CancellationToken.None));
+
+        Assert.Contains("target status", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.StockMovements);
     }
 
     [Fact]
@@ -594,11 +803,69 @@ public sealed class InventoryMovementRequestedConsumerTests
                 "QI-001",
                 "SKU-FG-1000",
                 3m,
-                eventType == QualityIntegrationEventTypes.InspectionPassed ? "passed" : "rejected",
+                eventType == QualityIntegrationEventTypes.InspectionPassed
+                    ? "passed"
+                    : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
+                        ? "conditional-release"
+                        : "rejected",
                 null,
                 [],
                 DateTimeOffset.UtcNow,
                 stockRelease));
+    }
+
+    private static InspectionResultIntegrationEvent CreateInspectionEventWithPayloadStockLocator(string eventType)
+    {
+        var integrationEvent = CreateInspectionEvent(eventType);
+        return integrationEvent with
+        {
+            Payload = integrationEvent.Payload with
+            {
+                LotNo = "LOT-002",
+                SerialNo = null,
+                SiteCode = "SITE-01",
+                LocationCode = "LOC-B-02",
+                OwnerType = "company",
+                OwnerId = "owner-001",
+                UomCode = "kg",
+            },
+        };
+    }
+
+    private static StockLedger CreateQualityLedger(string locationCode, string lotNo, decimal quantity)
+    {
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            locationCode,
+            lotNo,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            $"IN-{lotNo}",
+            "LINE-001",
+            $"idem-quality-in-{lotNo}",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            locationCode,
+            lotNo,
+            null,
+            StockQualityStatus.Quality,
+            "company",
+            "owner-001",
+            quantity,
+            2m));
+        return ledger;
     }
 
     private static ApplicationDbContext CreateContext()

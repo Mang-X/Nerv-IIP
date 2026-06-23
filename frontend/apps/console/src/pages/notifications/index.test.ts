@@ -33,7 +33,9 @@ vi.mock('@nerv-iip/ui', async () => {
 
 vi.mock('@/composables/useNotifications', () => ({
   useNotifications: () => ({
-    allError: computed(() => notificationState.batchError.value ?? notificationState.markReadError.value),
+    allError: computed(
+      () => notificationState.batchError.value ?? notificationState.markReadError.value,
+    ),
     batchPending: notificationState.batchPending,
     markAllUnreadRead: notificationState.markAllUnreadRead,
     markRead: notificationState.markRead,
@@ -149,9 +151,7 @@ describe('Notifications page', () => {
     notificationState.markReadPending.value = true
     const wrapper = mountPage()
 
-    expect(
-      wrapper.find('button[aria-label="全部标记已读"]').attributes('disabled'),
-    ).toBeDefined()
+    expect(wrapper.find('button[aria-label="全部标记已读"]').attributes('disabled')).toBeDefined()
   })
 
   it('renders notification errors', () => {

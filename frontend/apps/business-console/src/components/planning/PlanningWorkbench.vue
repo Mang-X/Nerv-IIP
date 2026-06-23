@@ -245,6 +245,7 @@ const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
   { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
+  { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
   { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
   { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
@@ -311,6 +312,15 @@ function formatDate(value?: string | null) {
 }
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
+}
+function inputDegradationLabel(sources?: readonly string[] | null) {
+  return sources && sources.length > 0 ? sources.map(inputDegradationSourceLabel).join('、') : '正常'
+}
+function inputDegradationSourceLabel(source: string) {
+  return ({
+    'scheduled-receipts': '在途到货',
+    'master-data-planning-parameters': '主数据规划参数',
+  } as Record<string, string>)[source] ?? source
 }
 </script>
 
@@ -474,6 +484,12 @@ function formatQuantity(value?: number | null, uom?: string | null) {
         <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
         <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
         <template #cell-demandCount="{ row }"><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template>
+        <template #cell-inputDegradationSources="{ row }">
+          <StatusBadge
+            :label="inputDegradationLabel(row.inputDegradationSources)"
+            :tone="row.hasInputDegradation ? 'warning' : 'success'"
+          />
+        </template>
         <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
         <template #cell-coverage="{ row }"><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template>
         <template #cell-availabilityCount="{ row }"><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template>

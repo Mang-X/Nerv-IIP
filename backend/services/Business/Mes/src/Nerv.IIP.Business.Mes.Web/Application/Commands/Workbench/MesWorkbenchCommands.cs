@@ -102,6 +102,142 @@ public sealed class ReleaseWorkOrderCommandHandler(
     }
 }
 
+public sealed record CloseWorkOrderCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    DateTimeOffset ClosedAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class CloseWorkOrderCommandValidator : AbstractValidator<CloseWorkOrderCommand>
+{
+    public CloseWorkOrderCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class CloseWorkOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CloseWorkOrderCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(CloseWorkOrderCommand request, CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            cancellationToken);
+
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Close(request.ClosedAtUtc));
+
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.ClosedAtUtc);
+    }
+}
+
+public sealed record HoldWorkOrderCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string Reason,
+    DateTimeOffset HeldAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class HoldWorkOrderCommandValidator : AbstractValidator<HoldWorkOrderCommand>
+{
+    public HoldWorkOrderCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class HoldWorkOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<HoldWorkOrderCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(HoldWorkOrderCommand request, CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            cancellationToken);
+
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Hold(request.Reason));
+
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.HeldAtUtc);
+    }
+}
+
+public sealed record CancelWorkOrderCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string Reason,
+    DateTimeOffset CancelledAtUtc) : ICommand<MesAcceptedResponse>;
+
+public sealed class CancelWorkOrderCommandValidator : AbstractValidator<CancelWorkOrderCommand>
+{
+    public CancelWorkOrderCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CancelWorkOrderCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(CancelWorkOrderCommand request, CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            cancellationToken);
+
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(request.Reason));
+
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
+    }
+}
+
+internal static class WorkOrderLifecycleCommandGuards
+{
+    public static async Task<WorkOrder> GetWorkOrderAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderIdValue == workOrderId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {workOrderId}");
+    }
+
+    public static void ApplyTransition(WorkOrder workOrder, Action<WorkOrder> transition)
+    {
+        try
+        {
+            transition(workOrder);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
 public sealed record ConvertPlanToWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -620,13 +756,18 @@ public sealed class ChangeOperationTaskStateCommandHandler(
                     throw new KnownException($"物料齐套未满足：{string.Join("; ", shortages)}");
                 }
             }
+
+            task.Start(request.ChangedAtUtc);
+            if (workOrder.Status is WorkOrder.ReleasedStatus or WorkOrder.HoldStatus)
+            {
+                workOrder.Start(request.ChangedAtUtc);
+            }
+
+            return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
         }
 
         switch (request.Action)
         {
-            case "start":
-                task.Start(request.ChangedAtUtc);
-                break;
             case "pause":
                 task.Pause();
                 break;

@@ -40,7 +40,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("AssignedMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("assigned_minutes")
-                        .HasComment("Total assigned operation duration in minutes.");
+                        .HasComment("Total resource occupied minutes, including operation processing plus setup/changeover time.");
 
                     b.Property<decimal>("AverageResourceUtilization")
                         .HasPrecision(18, 6)
@@ -73,7 +73,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("MakespanMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("makespan_minutes")
-                        .HasComment("Minutes between the earliest assignment start and latest assignment end.");
+                        .HasComment("Minutes between the earliest resource occupancy start and latest assignment end.");
 
                     b.Property<decimal>("OnTimeRate")
                         .HasPrecision(18, 6)
@@ -313,7 +313,7 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Property<int>("AssignedMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("assigned_minutes")
-                        .HasComment("Assigned production minutes in the window.");
+                        .HasComment("Resource occupied minutes in the window, including processing plus setup/changeover time.");
 
                     b.Property<int>("AvailableMinutes")
                         .HasColumnType("integer")

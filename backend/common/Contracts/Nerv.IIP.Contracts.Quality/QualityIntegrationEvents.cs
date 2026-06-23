@@ -5,6 +5,7 @@ namespace Nerv.IIP.Contracts.Quality;
 public static class QualityIntegrationEventTypes
 {
     public const string InspectionPassed = "quality.InspectionPassed";
+    public const string InspectionConditionalReleased = "quality.InspectionConditionalReleased";
     public const string InspectionRejected = "quality.InspectionRejected";
     public const string DefectRaised = "quality.DefectRaised";
     public const string NcrOpened = "quality.NcrOpened";
@@ -21,6 +22,13 @@ public static class QualityIntegrationEventSources
 {
     public const string BusinessQuality = "business-quality";
     public const string BusinessMes = "business-mes";
+}
+
+public static class QualityStockReleaseTargetStatuses
+{
+    public const string Unrestricted = "unrestricted";
+    public const string Restricted = "restricted";
+    public const string Blocked = "blocked";
 }
 
 public sealed record DefectRaisedIntegrationEvent(
@@ -129,7 +137,14 @@ public sealed record InspectionResultPayload(
     IReadOnlyCollection<string> DispositionAttachmentFileIds,
     DateTimeOffset RecordedAtUtc,
     StockReleaseDimensionPayload? StockRelease = null,
-    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null);
+    IReadOnlyCollection<InspectionResultLinePayload>? ResultLines = null,
+    string? LotNo = null,
+    string? SerialNo = null,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? OwnerType = null,
+    string? OwnerId = null,
+    string? UomCode = null);
 
 public sealed record StockReleaseDimensionPayload(
     string UomCode,
@@ -139,7 +154,8 @@ public sealed record StockReleaseDimensionPayload(
     string? SerialNo,
     string SourceQualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    string? TargetQualityStatus = null);
 
 public sealed record InspectionResultLinePayload(
     string CharacteristicCode,

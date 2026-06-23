@@ -33,6 +33,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         Status = ApprovalChainStatuses.Pending;
         StartedBy = ApprovalText.Required(startedBy);
         StartedAtUtc = DateTimeOffset.UtcNow;
+        RoundNo = 1;
         foreach (var templateStep in template.Steps
             .Where(x => ApprovalConditionMatcher.Matches(x.ConditionExpression, documentReference))
             .OrderBy(x => x.StepNo)
@@ -60,6 +61,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     public string StartedBy { get; private set; } = string.Empty;
     public DateTimeOffset StartedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
+    public int RoundNo { get; private set; }
     public IReadOnlyCollection<ApprovalStep> Steps => steps;
     public IReadOnlyCollection<ApprovalDecision> Decisions => decisions;
 
@@ -88,7 +90,9 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             && x.ActorType == normalizedActorType
             && x.ActorRef == normalizedActorRef
             && x.OnBehalfOfActorType == normalizedOnBehalfOfActorType
-            && x.OnBehalfOfActorRef == normalizedOnBehalfOfActorRef);
+            && x.OnBehalfOfActorRef == normalizedOnBehalfOfActorRef
+            && SupportedDecisions.Contains(x.Decision)
+            && x.RoundNo == RoundNo);
         if (sameActorDecision is not null)
         {
             if (sameActorDecision.Decision == normalizedDecision && sameActorDecision.Comment == normalizedComment)
@@ -130,6 +134,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedDecision,
             normalizedComment,
             decidedAtUtc,
+            RoundNo,
             normalizedOnBehalfOfActorType,
             normalizedOnBehalfOfActorRef);
         decisions.Add(approvalDecision);
@@ -169,6 +174,162 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         return approvalDecision;
     }
 
+    public void Withdraw(string actorType, string actorRef, string? reason, DateTimeOffset withdrawnAtUtc)
+    {
+        var normalizedActorType = ApprovalText.RequiredLower(actorType);
+        var normalizedActorRef = ApprovalText.Required(actorRef);
+        var normalizedReason = ApprovalText.Optional(reason);
+        if (Status is not ApprovalChainStatuses.Pending)
+        {
+            throw new InvalidOperationException("Only pending approval chains can be withdrawn.");
+        }
+
+        var affectedSteps = steps.Where(x => x.Status == ApprovalStepStatuses.Pending).ToArray();
+        var recipientRefs = affectedSteps.Select(ToRecipientRef).Distinct(StringComparer.Ordinal).ToArray();
+        foreach (var step in affectedSteps)
+        {
+            step.Withdraw(withdrawnAtUtc);
+        }
+
+        var decision = RecordActionDecision(
+            affectedSteps.OrderBy(x => x.StepNo).First(),
+            normalizedActorType,
+            normalizedActorRef,
+            ApprovalDecisions.Withdraw,
+            normalizedReason,
+            withdrawnAtUtc);
+        Status = ApprovalChainStatuses.Withdrawn;
+        CompletedAtUtc = withdrawnAtUtc;
+        this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));
+    }
+
+    public void Resubmit(string actorType, string actorRef, string? reason, DateTimeOffset resubmittedAtUtc)
+    {
+        var normalizedActorType = ApprovalText.RequiredLower(actorType);
+        var normalizedActorRef = ApprovalText.Required(actorRef);
+        var normalizedReason = ApprovalText.Optional(reason);
+        if (Status is not (ApprovalChainStatuses.Returned or ApprovalChainStatuses.Withdrawn))
+        {
+            throw new InvalidOperationException("Only returned or withdrawn approval chains can be resubmitted.");
+        }
+
+        var previousStartedAtUtc = StartedAtUtc;
+        var stepsToReset = steps.Where(x => x.Status is ApprovalStepStatuses.Returned or ApprovalStepStatuses.Rejected or ApprovalStepStatuses.Withdrawn).ToArray();
+        foreach (var step in stepsToReset)
+        {
+            step.ResetForResubmission(previousStartedAtUtc, resubmittedAtUtc);
+        }
+
+        foreach (var step in steps.Where(x => x.Status == ApprovalStepStatuses.Pending && !stepsToReset.Contains(x)))
+        {
+            step.RebaseDueAt(previousStartedAtUtc, resubmittedAtUtc);
+        }
+
+        Status = ApprovalChainStatuses.Pending;
+        StartedAtUtc = resubmittedAtUtc;
+        CompletedAtUtc = null;
+        RoundNo++;
+        var firstCurrentStepNo = steps.Where(x => x.Status == ApprovalStepStatuses.Pending).Min(x => x.StepNo);
+        var currentSteps = steps.Where(x => x.StepNo == firstCurrentStepNo && x.Status == ApprovalStepStatuses.Pending).ToArray();
+        var decision = RecordActionDecision(
+            currentSteps.OrderBy(x => x.StepName).First(),
+            normalizedActorType,
+            normalizedActorRef,
+            ApprovalDecisions.Resubmit,
+            normalizedReason,
+            resubmittedAtUtc);
+        this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, currentSteps.Select(ToRecipientRef).Distinct(StringComparer.Ordinal).ToArray()));
+    }
+
+    public ApprovalStep AddSigner(
+        int stepNo,
+        string approverType,
+        string approverRef,
+        string requestedByActorType,
+        string requestedByActorRef,
+        string? reason,
+        DateTimeOffset? requestedAtUtc = null)
+    {
+        EnsureCurrentPendingStepNo(stepNo);
+        var normalizedApproverType = ApprovalText.RequiredLower(approverType);
+        var normalizedApproverRef = ApprovalText.Required(approverRef);
+        var normalizedRequestedByActorType = ApprovalText.RequiredLower(requestedByActorType);
+        var normalizedRequestedByActorRef = ApprovalText.Required(requestedByActorRef);
+        var normalizedReason = ApprovalText.Optional(reason);
+        if (steps.Any(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedApproverType
+                && x.ApproverRef == normalizedApproverRef
+                && x.Status == ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Approval signer already exists on the pending step.");
+        }
+
+        var baseStep = steps
+            .Where(x => x.StepNo == stepNo)
+            .OrderBy(x => x.StepName)
+            .First();
+        // Adding a signer makes the current step group all-required so the new signer cannot be bypassed by an existing any policy.
+        foreach (var step in steps.Where(x => x.StepNo == stepNo && x.Status == ApprovalStepStatuses.Pending))
+        {
+            step.RequireAllCompletionPolicy();
+        }
+
+        var addedStep = ApprovalStep.AdditionalSigner(baseStep, normalizedApproverType, normalizedApproverRef);
+        steps.Add(addedStep);
+        var decision = RecordActionDecision(
+            addedStep,
+            normalizedRequestedByActorType,
+            normalizedRequestedByActorRef,
+            ApprovalDecisions.AddSigner,
+            normalizedReason,
+            requestedAtUtc ?? DateTimeOffset.UtcNow);
+        this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, [ToRecipientRef(addedStep)]));
+        return addedStep;
+    }
+
+    public void Transfer(
+        int stepNo,
+        string fromActorType,
+        string fromActorRef,
+        string toActorType,
+        string toActorRef,
+        string requestedByActorType,
+        string requestedByActorRef,
+        string? reason,
+        DateTimeOffset? requestedAtUtc = null)
+    {
+        EnsureCurrentPendingStepNo(stepNo);
+        var normalizedFromActorType = ApprovalText.RequiredLower(fromActorType);
+        var normalizedFromActorRef = ApprovalText.Required(fromActorRef);
+        var normalizedToActorType = ApprovalText.RequiredLower(toActorType);
+        var normalizedToActorRef = ApprovalText.Required(toActorRef);
+        var normalizedRequestedByActorType = ApprovalText.RequiredLower(requestedByActorType);
+        var normalizedRequestedByActorRef = ApprovalText.Required(requestedByActorRef);
+        var normalizedReason = ApprovalText.Optional(reason);
+        if (steps.Any(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedToActorType
+                && x.ApproverRef == normalizedToActorRef
+                && x.Status == ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Transfer target is already assigned to the pending step.");
+        }
+
+        var step = steps.SingleOrDefault(x => x.StepNo == stepNo
+                && x.ApproverType == normalizedFromActorType
+                && x.ApproverRef == normalizedFromActorRef
+                && x.Status == ApprovalStepStatuses.Pending)
+            ?? throw new InvalidOperationException("No pending approval step is assigned to the transfer source actor.");
+        step.TransferTo(normalizedToActorType, normalizedToActorRef);
+        var decision = RecordActionDecision(
+            step,
+            normalizedRequestedByActorType,
+            normalizedRequestedByActorRef,
+            ApprovalDecisions.Transfer,
+            normalizedReason,
+            requestedAtUtc ?? DateTimeOffset.UtcNow);
+        this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, [ToRecipientRef(step)]));
+    }
+
     public int MarkOverdueSteps(DateTimeOffset nowUtc)
     {
         if (Status is not ApprovalChainStatuses.Pending)
@@ -191,12 +352,67 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         return marked;
     }
 
+    private void EnsureCurrentPendingStepNo(int stepNo)
+    {
+        if (Status is not ApprovalChainStatuses.Pending)
+        {
+            throw new InvalidOperationException("Approval chain is terminal.");
+        }
+
+        if (stepNo <= 0)
+        {
+            throw new InvalidOperationException("Approval step number must be positive.");
+        }
+
+        if (steps.All(x => x.StepNo != stepNo))
+        {
+            throw new InvalidOperationException("Approval step was not found.");
+        }
+
+        if (CanActOnStepNo(stepNo) is false)
+        {
+            throw new InvalidOperationException("Approval steps must be changed in sequence.");
+        }
+
+        if (steps.All(x => x.StepNo != stepNo || x.Status != ApprovalStepStatuses.Pending))
+        {
+            throw new InvalidOperationException("Approval step is already resolved.");
+        }
+    }
+
     private bool CanActOnStepNo(int stepNo)
     {
         return steps
             .Where(x => x.StepNo < stepNo)
             .GroupBy(x => x.StepNo)
             .All(ApprovalStep.IsGroupComplete);
+    }
+
+    private ApprovalDecision RecordActionDecision(
+        ApprovalStep step,
+        string actorType,
+        string actorRef,
+        string decision,
+        string? comment,
+        DateTimeOffset decidedAtUtc)
+    {
+        var approvalDecision = ApprovalDecision.Record(
+            step,
+            actorType,
+            actorRef,
+            decision,
+            comment,
+            decidedAtUtc,
+            RoundNo,
+            null,
+            null);
+        decisions.Add(approvalDecision);
+        return approvalDecision;
+    }
+
+    private static string ToRecipientRef(ApprovalStep step)
+    {
+        return $"{step.ApproverType}:{step.ApproverRef}";
     }
 }
 
@@ -220,6 +436,28 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
         DueAtUtc = templateStep.DueInHours.HasValue ? startedAtUtc.AddHours(templateStep.DueInHours.Value) : null;
     }
 
+    private ApprovalStep(
+        int stepNo,
+        string stepName,
+        string? parallelGroupKey,
+        string completionPolicy,
+        string? conditionExpression,
+        string approverType,
+        string approverRef,
+        DateTimeOffset? dueAtUtc)
+    {
+        Id = new ApprovalStepId(Guid.CreateVersion7());
+        StepNo = stepNo;
+        StepName = stepName;
+        ParallelGroupKey = parallelGroupKey;
+        CompletionPolicy = completionPolicy;
+        ConditionExpression = conditionExpression;
+        ApproverType = approverType;
+        ApproverRef = approverRef;
+        Status = ApprovalStepStatuses.Pending;
+        DueAtUtc = dueAtUtc;
+    }
+
     public ApprovalChainId ChainId { get; private set; } = null!;
     public int StepNo { get; private set; }
     public string StepName { get; private set; } = string.Empty;
@@ -240,6 +478,19 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
     internal static ApprovalStep FromTemplate(ApprovalTemplateStep templateStep, DateTimeOffset startedAtUtc)
     {
         return new ApprovalStep(templateStep, startedAtUtc);
+    }
+
+    internal static ApprovalStep AdditionalSigner(ApprovalStep baseStep, string approverType, string approverRef)
+    {
+        return new ApprovalStep(
+            baseStep.StepNo,
+            $"{baseStep.StepName} additional signer",
+            baseStep.ParallelGroupKey,
+            ApprovalCompletionPolicies.All,
+            baseStep.ConditionExpression,
+            approverType,
+            approverRef,
+            baseStep.DueAtUtc);
     }
 
     public bool MatchesApprover(string actorType, string actorRef)
@@ -291,6 +542,56 @@ public sealed class ApprovalStep : Entity<ApprovalStepId>
         OverdueNotifiedAtUtc ??= nowUtc;
     }
 
+    public void Withdraw(DateTimeOffset withdrawnAtUtc)
+    {
+        if (Status != ApprovalStepStatuses.Pending)
+        {
+            return;
+        }
+
+        Status = ApprovalStepStatuses.Withdrawn;
+        ResolvedDecision = ApprovalDecisions.Withdraw;
+        ResolvedComment = "Withdrawn by requester.";
+        ResolvedAtUtc = withdrawnAtUtc;
+    }
+
+    public void ResetForResubmission(DateTimeOffset previousStartedAtUtc, DateTimeOffset resubmittedAtUtc)
+    {
+        Status = ApprovalStepStatuses.Pending;
+        ResolvedByActorType = null;
+        ResolvedByActorRef = null;
+        ResolvedDecision = null;
+        ResolvedComment = null;
+        ResolvedAtUtc = null;
+        OverdueNotifiedAtUtc = null;
+        RebaseDueAt(previousStartedAtUtc, resubmittedAtUtc);
+    }
+
+    public void RebaseDueAt(DateTimeOffset previousStartedAtUtc, DateTimeOffset resubmittedAtUtc)
+    {
+        if (DueAtUtc.HasValue)
+        {
+            DueAtUtc = resubmittedAtUtc + (DueAtUtc.Value - previousStartedAtUtc);
+        }
+    }
+
+    public void RequireAllCompletionPolicy()
+    {
+        CompletionPolicy = ApprovalCompletionPolicies.All;
+    }
+
+    public void TransferTo(string approverType, string approverRef)
+    {
+        if (Status != ApprovalStepStatuses.Pending)
+        {
+            throw new InvalidOperationException("Only pending approval steps can be transferred.");
+        }
+
+        ApproverType = approverType;
+        ApproverRef = approverRef;
+        OverdueNotifiedAtUtc = null;
+    }
+
     public static bool IsGroupComplete(IEnumerable<ApprovalStep> group)
     {
         var stepsInGroup = group.ToArray();
@@ -318,6 +619,7 @@ public sealed class ApprovalDecision : Entity<ApprovalDecisionId>
         string decision,
         string? comment,
         DateTimeOffset decidedAtUtc,
+        int roundNo,
         string? onBehalfOfActorType,
         string? onBehalfOfActorRef)
     {
@@ -329,6 +631,7 @@ public sealed class ApprovalDecision : Entity<ApprovalDecisionId>
         Decision = decision;
         Comment = comment;
         DecidedAtUtc = decidedAtUtc;
+        RoundNo = roundNo;
         OnBehalfOfActorType = onBehalfOfActorType;
         OnBehalfOfActorRef = onBehalfOfActorRef;
     }
@@ -341,6 +644,7 @@ public sealed class ApprovalDecision : Entity<ApprovalDecisionId>
     public string Decision { get; private set; } = string.Empty;
     public string? Comment { get; private set; }
     public DateTimeOffset DecidedAtUtc { get; private set; }
+    public int RoundNo { get; private set; }
     public string? OnBehalfOfActorType { get; private set; }
     public string? OnBehalfOfActorRef { get; private set; }
 
@@ -351,10 +655,11 @@ public sealed class ApprovalDecision : Entity<ApprovalDecisionId>
         string decision,
         string? comment,
         DateTimeOffset decidedAtUtc,
+        int roundNo,
         string? onBehalfOfActorType,
         string? onBehalfOfActorRef)
     {
-        return new ApprovalDecision(step, actorType, actorRef, decision, comment, decidedAtUtc, onBehalfOfActorType, onBehalfOfActorRef);
+        return new ApprovalDecision(step, actorType, actorRef, decision, comment, decidedAtUtc, roundNo, onBehalfOfActorType, onBehalfOfActorRef);
     }
 }
 
@@ -386,6 +691,7 @@ public static class ApprovalChainStatuses
     public const string Approved = "approved";
     public const string Rejected = "rejected";
     public const string Returned = "returned";
+    public const string Withdrawn = "withdrawn";
 }
 
 public static class ApprovalStepStatuses
@@ -395,6 +701,7 @@ public static class ApprovalStepStatuses
     public const string Rejected = "rejected";
     public const string Returned = "returned";
     public const string Skipped = "skipped";
+    public const string Withdrawn = "withdrawn";
 }
 
 public static class ApprovalDecisions
@@ -402,6 +709,10 @@ public static class ApprovalDecisions
     public const string Approve = "approve";
     public const string Reject = "reject";
     public const string Return = "return";
+    public const string Withdraw = "withdraw";
+    public const string Resubmit = "resubmit";
+    public const string AddSigner = "add_signer";
+    public const string Transfer = "transfer";
 }
 
 public static class ApprovalConditionMatcher

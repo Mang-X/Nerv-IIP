@@ -24,8 +24,8 @@ In scope for this issue:
 2. Structured AQL sampling fields: inspection level, AQL, sample size, acceptance number and rejection number.
 3. Numeric measured value on inspection result lines and automatic pass/fail calculation for planned inspections.
 4. Plan coverage validation for required characteristics and source category matching.
-5. Public Quality inspection event payload enrichment with stock release dimensions needed by Inventory.
-6. Inventory consumer for `quality.InspectionPassed` and `quality.InspectionRejected`, posting public status transfer commands from `quality` to `unrestricted` or `blocked`. When Quality supplies stock release dimensions, Inventory uses them to target the exact ledger; otherwise it keeps the #412 single matching `quality` ledger fallback.
+5. Public Quality inspection event payload enrichment with stock release dimensions needed by Inventory. `InspectionResultPayload` exposes the locator fields at the top level as additive v1 fields while retaining nested `StockRelease` for compatibility.
+6. Inventory consumer for `quality.InspectionPassed`, `quality.InspectionRejected` and `quality.InspectionConditionalReleased`, posting public status transfer commands from `quality` to `unrestricted`, `blocked` or `restricted`. When Quality supplies stock release dimensions, Inventory uses them to target the exact ledger; otherwise it keeps the #412 single matching `quality` ledger fallback.
 7. NCR disposition MRB review records and event payload fields.
 8. CAPA aggregate, persistence and internal service API.
 9. Schema catalog/readiness/API contract docs updates and focused verification.
@@ -56,11 +56,12 @@ Explicitly out of scope:
 
 ### Inventory Release
 
-1. Quality event payloads include optional stock release dimensions: UOM, site, location, lot, serial, source quality status, owner type and owner id.
-2. Inventory ignores Quality inspection events that lack stock release dimensions.
+1. Quality event payloads include optional top-level stock locator dimensions: lot, serial, site, location, owner type, owner id and UOM. Nested `StockRelease` additionally carries source and target quality-status compatibility metadata.
+2. Inventory uses the supplied stock locator to target one ledger by the full Inventory balance dimension. Events without locator dimensions use the legacy single-ledger fallback and fail visibly when the source ledger cannot be uniquely resolved.
 3. Passed inspections transfer inspected quantity from `quality` to `unrestricted`.
 4. Rejected inspections transfer inspected quantity from `quality` to `blocked`.
-5. Inventory uses deterministic idempotency keys derived from the Quality event id and target status.
+5. Conditional releases transfer inspected quantity from `quality` to `restricted`.
+6. Inventory preserves deterministic `:out` / `:in` idempotency key suffixes for the status-transfer movement pair.
 
 ### NCR/MRB/CAPA
 

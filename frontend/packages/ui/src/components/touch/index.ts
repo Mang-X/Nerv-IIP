@@ -1,0 +1,10 @@
+/**
+ * Touch — large, touch-optimized components for tablet station boards (工位看板)
+ * and workshop all-in-one kiosks (车间一体机). Principles: minimal operation
+ * paths, big tap targets, glanceable at distance. Token-driven; never edits原版.
+ */
+export { default as TouchButton } from './TouchButton.vue'
+export { default as StatTile } from './StatTile.vue'
+export { default as QtyStepper } from './QtyStepper.vue'
+export { default as TouchSegmented, type SegmentOption } from './TouchSegmented.vue'
+export { default as StationBar } from './StationBar.vue'

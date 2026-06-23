@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Inventory;
@@ -442,8 +443,10 @@ public sealed class ErpBusinessGapClosureTests
             new ApproveQuotationCommand("org-001", "env-dev", "QT-001"),
             CancellationToken.None);
 
-        await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(dbContext).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", CustomerCreditLimit: 100m),
+        await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
+            dbContext,
+            new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 100m, "CNY"))).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
             CancellationToken.None));
     }
 
@@ -501,8 +504,10 @@ public sealed class ErpBusinessGapClosureTests
         await new ApproveQuotationCommandHandler(dbContext).Handle(
             new ApproveQuotationCommand("org-001", "env-dev", "QT-001"),
             CancellationToken.None);
-        await new CreateSalesOrderCommandHandler(dbContext).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001", CustomerCreditLimit: 100m),
+        await new CreateSalesOrderCommandHandler(
+            dbContext,
+            new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 100m, "CNY"))).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-001", "QT-001"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
@@ -527,8 +532,10 @@ public sealed class ErpBusinessGapClosureTests
             new ApproveQuotationCommand("org-001", "env-dev", "QT-002"),
             CancellationToken.None);
 
-        var salesOrderId = await new CreateSalesOrderCommandHandler(dbContext).Handle(
-            new CreateSalesOrderCommand("org-001", "env-dev", "SO-002", "QT-002", CustomerCreditLimit: 60m),
+        var salesOrderId = await new CreateSalesOrderCommandHandler(
+            dbContext,
+            new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 60m, "CNY"))).Handle(
+            new CreateSalesOrderCommand("org-001", "env-dev", "SO-002", "QT-002"),
             CancellationToken.None);
 
         Assert.NotNull(salesOrderId);

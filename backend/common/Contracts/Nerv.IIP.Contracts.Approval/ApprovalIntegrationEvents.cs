@@ -7,6 +7,7 @@ public static class ApprovalIntegrationEventTypes
     public const string ApprovalStarted = "businessApproval.ApprovalStarted";
     public const string StepResolved = "businessApproval.StepResolved";
     public const string StepOverdue = "businessApproval.StepOverdue";
+    public const string ActionRecorded = "businessApproval.ActionRecorded";
     public const string ApprovalApproved = "businessApproval.ApprovalApproved";
     public const string ApprovalRejected = "businessApproval.ApprovalRejected";
     public const string ApprovalReturned = "businessApproval.ApprovalReturned";
@@ -113,6 +114,34 @@ public sealed record ApprovalStepOverduePayload(
     string ApproverRef,
     DateTimeOffset DueAtUtc,
     DateTimeOffset MarkedAtUtc,
+    ApprovalDocumentReferencePayload DocumentReference);
+
+public sealed record ApprovalActionRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ApprovalActionRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record ApprovalActionRecordedPayload(
+    string ChainId,
+    string StepId,
+    int StepNo,
+    string Action,
+    string ActorType,
+    string ActorRef,
+    string? Reason,
+    IReadOnlyCollection<string> SuggestedRecipientRefs,
     ApprovalDocumentReferencePayload DocumentReference);
 
 public sealed record ApprovalCompletedIntegrationEvent(

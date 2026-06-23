@@ -272,6 +272,33 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Ad_hoc_inspection_record_preserves_stock_release_dimension()
+    {
+        var record = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            10m,
+            "BATCH-001",
+            "SER-001",
+            [InspectionResultLineInput.Pass("appearance", "visual ok", null, [])],
+            null,
+            [],
+            stockRelease: StockReleaseDimension.Create("kg", "SITE-01", "IQC-HOLD", "quality", "supplier", "supplier-001"));
+
+        Assert.Equal("kg", record.UomCode);
+        Assert.Equal("SITE-01", record.SiteCode);
+        Assert.Equal("IQC-HOLD", record.LocationCode);
+        Assert.Equal("quality", record.SourceQualityStatus);
+        Assert.Equal("supplier", record.OwnerType);
+        Assert.Equal("supplier-001", record.OwnerId);
+    }
+
+    [Fact]
     public void Inspection_record_rejects_when_required_characteristic_fails()
     {
         var record = InspectionRecord.Create(
@@ -320,7 +347,7 @@ public sealed class InspectionAggregateTests
         Assert.Equal("Released by MRB waiver", record.DispositionReason);
         Assert.Equal(["file-waiver-001"], record.DispositionAttachmentFileIds);
         Assert.Equal(1m, record.FailedQuantity());
-        Assert.IsType<InspectionRejectedDomainEvent>(record.GetDomainEvents().Single());
+        Assert.IsType<InspectionConditionalReleasedDomainEvent>(record.GetDomainEvents().Single());
     }
 
     [Fact]

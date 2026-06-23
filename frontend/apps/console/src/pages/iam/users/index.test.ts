@@ -105,7 +105,7 @@ describe('IAM users page', () => {
     const enabledBadge = wrapper.find('[aria-label="状态：启用"]')
     expect(enabledBadge.exists()).toBe(true)
     expect(enabledBadge.text()).toBe('启用')
-    expect(enabledBadge.classes()).toContain('text-success')
+    expect(enabledBadge.classes()).toContain('text-success-strong')
   })
 
   it('labels search and row actions for assistive technology', async () => {
@@ -224,7 +224,12 @@ describe('IAM users form dialogs', () => {
     const wrapper = mount(UserResetPasswordDialog, {
       props: {
         open: true,
-        user: { userId: 'user-admin', loginName: 'admin', email: 'admin@nerv-iip.local', enabled: true },
+        user: {
+          userId: 'user-admin',
+          loginName: 'admin',
+          email: 'admin@nerv-iip.local',
+          enabled: true,
+        },
       },
       global: { stubs: { ...dialogStubs } },
     })

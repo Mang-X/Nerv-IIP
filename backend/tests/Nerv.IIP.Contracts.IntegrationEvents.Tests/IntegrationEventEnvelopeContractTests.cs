@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.BarcodeLabel;
 using Nerv.IIP.Contracts.Inventory;
@@ -102,5 +103,106 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.NotNull(payloadProperty);
         Assert.False(payloadProperty.PropertyType == typeof(string), $"{eventType.FullName} payload must be structured.");
         Assert.True(payloadProperty.PropertyType.Namespace?.StartsWith("Nerv.IIP.Contracts.", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    public void Quality_inspection_result_payload_exposes_optional_stock_locator_dimensions_in_v1()
+    {
+        var payload = new InspectionResultPayload(
+            "QI-001",
+            "PLAN-001",
+            "receiving",
+            "quality",
+            "RCV-001",
+            "SKU-FG-1000",
+            3m,
+            "passed",
+            null,
+            [],
+            DateTimeOffset.Parse("2026-06-22T00:00:00Z"),
+            StockRelease: null,
+            ResultLines: null,
+            LotNo: "LOT-002",
+            SerialNo: "SER-002",
+            SiteCode: "SITE-01",
+            LocationCode: "IQC-HOLD",
+            OwnerType: "company",
+            OwnerId: "owner-001",
+            UomCode: "kg");
+        var integrationEvent = new InspectionResultIntegrationEvent(
+            "evt-001",
+            QualityIntegrationEventTypes.InspectionPassed,
+            QualityIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-22T00:00:01Z"),
+            QualityIntegrationEventSources.BusinessQuality,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:quality",
+            "idem-001",
+            payload);
+
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("LOT-002", integrationEvent.Payload.LotNo);
+        Assert.Equal("SER-002", integrationEvent.Payload.SerialNo);
+        Assert.Equal("SITE-01", integrationEvent.Payload.SiteCode);
+        Assert.Equal("IQC-HOLD", integrationEvent.Payload.LocationCode);
+        Assert.Equal("company", integrationEvent.Payload.OwnerType);
+        Assert.Equal("owner-001", integrationEvent.Payload.OwnerId);
+        Assert.Equal("kg", integrationEvent.Payload.UomCode);
+        Assert.Contains("\"lotNo\":\"LOT-002\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"uomCode\":\"kg\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Quality_inspection_result_payload_deserializes_legacy_v1_without_stock_locator_dimensions()
+    {
+        var json = """
+            {
+              "eventId": "evt-legacy-001",
+              "eventType": "quality.InspectionPassed",
+              "eventVersion": 1,
+              "occurredAtUtc": "2026-06-22T00:00:01Z",
+              "sourceService": "business-quality",
+              "correlationId": "corr-001",
+              "causationId": "cause-001",
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "actor": "system:quality",
+              "idempotencyKey": "idem-legacy-001",
+              "payload": {
+                "inspectionRecordId": "QI-001",
+                "inspectionPlanId": "PLAN-001",
+                "sourceType": "receiving",
+                "sourceService": "quality",
+                "sourceDocumentId": "RCV-001",
+                "skuCode": "SKU-FG-1000",
+                "inspectedQuantity": 3,
+                "result": "passed",
+                "dispositionReason": null,
+                "dispositionAttachmentFileIds": [],
+                "recordedAtUtc": "2026-06-22T00:00:00Z",
+                "stockRelease": null,
+                "resultLines": []
+              }
+            }
+            """;
+
+        var integrationEvent = JsonSerializer.Deserialize<InspectionResultIntegrationEvent>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(integrationEvent);
+        Assert.Equal(QualityIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Null(integrationEvent.Payload.LotNo);
+        Assert.Null(integrationEvent.Payload.SerialNo);
+        Assert.Null(integrationEvent.Payload.SiteCode);
+        Assert.Null(integrationEvent.Payload.LocationCode);
+        Assert.Null(integrationEvent.Payload.OwnerType);
+        Assert.Null(integrationEvent.Payload.OwnerId);
+        Assert.Null(integrationEvent.Payload.UomCode);
     }
 }

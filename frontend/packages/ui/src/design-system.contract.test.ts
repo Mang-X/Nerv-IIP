@@ -33,7 +33,7 @@ describe('design system v2 token contract', () => {
   })
 
   it('exposes a runtime-overridable brand accent', () => {
-    expect.soft(css).toContain('--brand: oklch(0.55 0.18 255);')
+    expect.soft(css).toContain('--brand: oklch(0.54 0.16 256);')
     expect.soft(css).toContain('--brand-foreground:')
     expect.soft(css).toContain('--color-brand: var(--brand);')
     // chart-1 tracks the dynamic brand.

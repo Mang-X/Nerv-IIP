@@ -11,7 +11,11 @@ public sealed record RunMrpCommand(
     DateOnly HorizonStart,
     DateOnly HorizonEnd) : ICommand<RunMrpCommandResult>;
 
-public sealed record RunMrpCommandResult(MrpRunId RunId, int SuggestionCount);
+public sealed record RunMrpCommandResult(
+    MrpRunId RunId,
+    int SuggestionCount,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed class RunMrpCommandValidator : AbstractValidator<RunMrpCommand>
 {
@@ -84,6 +88,6 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
         }
 
         run.Complete(calculated.Count);
-        return new RunMrpCommandResult(run.Id, calculated.Count);
+        return new RunMrpCommandResult(run.Id, calculated.Count, run.HasInputDegradation, run.InputDegradationSources);
     }
 }

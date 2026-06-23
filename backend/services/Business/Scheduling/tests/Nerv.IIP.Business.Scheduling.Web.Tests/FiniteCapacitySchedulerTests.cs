@@ -468,6 +468,121 @@ public class FiniteCapacitySchedulerTests
     }
 
     [Fact]
+    public void Schedule_counts_setup_time_as_resource_load_and_plan_assigned_minutes()
+    {
+        var problem = CreateSingleOperationProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "WO-SNAPSHOT-001-OP20",
+            OperationSequence = 20,
+            PredecessorOperationIds = ["WO-SNAPSHOT-001-OP10"],
+            SetupMinutes = 15
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-setup-load-001", GeneratedAtUtc);
+
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-SNAPSHOT-01");
+        Assert.Equal(135, plan.Metrics.AssignedMinutes);
+        Assert.Equal(135, load.AssignedMinutes);
+        Assert.Equal(0.2812m, plan.Metrics.AverageResourceUtilization);
+        Assert.Equal(0.2812m, load.Utilization);
+    }
+
+    [Fact]
+    public void Schedule_accumulates_multiple_setup_windows_in_resource_load()
+    {
+        var problem = CreateSingleOperationProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "WO-SNAPSHOT-001-OP20",
+            OperationSequence = 20,
+            PredecessorOperationIds = ["WO-SNAPSHOT-001-OP10"],
+            SetupMinutes = 15
+        };
+        var thirdOperation = firstOperation with
+        {
+            OperationId = "WO-SNAPSHOT-001-OP30",
+            OperationSequence = 30,
+            PredecessorOperationIds = ["WO-SNAPSHOT-001-OP20"],
+            SetupMinutes = 20
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation, thirdOperation]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-setup-load-multiple-001", GeneratedAtUtc);
+
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-SNAPSHOT-01");
+        Assert.Equal(215, plan.Metrics.AssignedMinutes);
+        Assert.Equal(215, load.AssignedMinutes);
+        Assert.Equal(0.4479m, plan.Metrics.AverageResourceUtilization);
+        Assert.Equal(0.4479m, load.Utilization);
+    }
+
+    [Fact]
+    public void Schedule_advances_setup_after_pre_processing_resource_block()
+    {
+        var problem = CreateSingleOperationProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "WO-SNAPSHOT-001-OP20",
+            OperationSequence = 20,
+            PredecessorOperationIds = ["WO-SNAPSHOT-001-OP10"],
+            SetupMinutes = 15
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation]
+                }
+            ],
+            UnavailabilityWindows =
+            [
+                new SchedulingUnavailabilityWindowContract(
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    StartUtc: new DateTimeOffset(2026, 6, 1, 9, 5, 0, TimeSpan.Zero),
+                    EndUtc: new DateTimeOffset(2026, 6, 1, 9, 15, 0, TimeSpan.Zero),
+                    ReasonCode: "maintenance")
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-setup-block-001", GeneratedAtUtc);
+
+        var second = Assignment(plan, "WO-SNAPSHOT-001-OP20");
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero), second.StartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 10, 30, 0, TimeSpan.Zero), second.EndUtc);
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-SNAPSHOT-01");
+        Assert.Equal(135, load.AssignedMinutes);
+    }
+
+    [Fact]
     public void Schedule_requires_declared_skill_and_tooling_codes_on_selected_resource()
     {
         var problem = CreateSingleOperationProblem();
@@ -653,6 +768,43 @@ public class FiniteCapacitySchedulerTests
 
         var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-PARALLEL-01");
         Assert.Equal(360, load.AvailableMinutes);
+    }
+
+    [Fact]
+    public void Schedule_does_not_count_setup_for_parallel_capacity_assignment_without_prior_completed_occupancy()
+    {
+        var problem = CreateParallelCapacityProblem();
+        var firstOperation = problem.Orders.Single().Operations.Single();
+        var secondOperation = firstOperation with
+        {
+            OperationId = "OP-CAPACITY-B",
+            OperationSequence = 20,
+            SetupMinutes = 15,
+            SourceReference = "TEST:PARALLEL-B"
+        };
+        problem = problem with
+        {
+            Orders =
+            [
+                problem.Orders.Single() with
+                {
+                    Operations = [firstOperation, secondOperation]
+                }
+            ]
+        };
+        var scheduler = new FiniteCapacityScheduler();
+
+        var plan = scheduler.Schedule(problem, "plan-parallel-capacity-setup-001", GeneratedAtUtc);
+
+        AssertAssignment(plan, "OP-CAPACITY", "DEV-PARALLEL-01",
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
+        AssertAssignment(plan, "OP-CAPACITY-B", "DEV-PARALLEL-01",
+            new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
+        var load = Assert.Single(plan.ResourceLoads, x => x.ResourceId == "DEV-PARALLEL-01");
+        Assert.Equal(360, plan.Metrics.AssignedMinutes);
+        Assert.Equal(360, load.AssignedMinutes);
     }
 
     [Fact]
