@@ -43,6 +43,9 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
     public const string MaintenanceClientName = "SchedulingMaintenanceAvailability";
     public const string SourceUnavailableReasonCode = "equipment.availabilitySourceUnavailable";
     public const int MaxAvailabilityQueryIdsPerBatch = 50;
+    public const int MaxConcurrentAvailabilityQueries = 8;
+
+    private static readonly SemaphoreSlim DownstreamQueryGate = new(MaxConcurrentAvailabilityQueries);
 
     public async Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
         SchedulingProblemContract problem,
@@ -53,13 +56,12 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
         var batches = CreateBatches(problem).ToArray();
         if (batches.Length == 0)
         {
-            return new EquipmentRuntimeAvailabilityResponse(
-                ContractVersion: 1,
-                OrganizationId: problem.OrganizationId,
-                EnvironmentId: problem.EnvironmentId,
-                QueryWindowStartUtc: problem.HorizonStartUtc,
-                QueryWindowEndUtc: problem.HorizonEndUtc,
-                Items: []);
+            return MergeResponses(
+                problem,
+                [
+                    SourceUnavailable(problem, IndustrialTelemetryClientName),
+                    SourceUnavailable(problem, MaintenanceClientName)
+                ]);
         }
 
         var requests = batches.SelectMany((batch, index) =>
@@ -90,6 +92,13 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
         });
 
         var responses = await Task.WhenAll(requests);
+        return MergeResponses(problem, responses);
+    }
+
+    private static EquipmentRuntimeAvailabilityResponse MergeResponses(
+        SchedulingProblemContract problem,
+        IEnumerable<EquipmentRuntimeAvailabilityResponse> responses)
+    {
         return new EquipmentRuntimeAvailabilityResponse(
             ContractVersion: 1,
             OrganizationId: problem.OrganizationId,
@@ -121,6 +130,7 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
         }
 
+        await DownstreamQueryGate.WaitAsync(cancellationToken);
         try
         {
             var client = httpClientFactory.CreateClient(clientName);
@@ -154,6 +164,10 @@ public sealed class HttpSchedulingEquipmentAvailabilityProvider(
                 batchCount,
                 problem.Resources.Count);
             return SourceUnavailable(problem, clientName);
+        }
+        finally
+        {
+            DownstreamQueryGate.Release();
         }
     }
 

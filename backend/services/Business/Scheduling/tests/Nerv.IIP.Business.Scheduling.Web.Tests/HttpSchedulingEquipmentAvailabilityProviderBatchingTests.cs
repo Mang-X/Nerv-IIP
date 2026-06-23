@@ -96,6 +96,55 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
             x.ReasonCode == HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode);
     }
 
+    [Fact]
+    public async Task QueryAsync_LargeResourceSet_LimitsConcurrentDownstreamRequests()
+    {
+        var tracker = new ConcurrentRequestTracker();
+        var provider = new HttpSchedulingEquipmentAvailabilityProvider(
+            new ConcurrentHttpClientFactory(tracker),
+            null,
+            NullLogger<HttpSchedulingEquipmentAvailabilityProvider>.Instance);
+        var problem = CreateProblem(451);
+
+        await provider.QueryAsync(problem, CancellationToken.None);
+
+        Assert.Equal(20, tracker.TotalRequests);
+        Assert.InRange(tracker.MaxInFlight, 1, HttpSchedulingEquipmentAvailabilityProvider.MaxConcurrentAvailabilityQueries);
+    }
+
+    [Fact]
+    public async Task QueryAsync_WhenNoValidDeviceIds_ReturnsFailClosedWindows()
+    {
+        var handler = new CapturingAvailabilityHandler((_, _) => throw new InvalidOperationException("No downstream request expected."));
+        var provider = CreateProvider(handler);
+        var problem = CreateProblem(0) with
+        {
+            Resources =
+            [
+                new SchedulingResourceContract(
+                    ResourceId: " ",
+                    WorkCenterId: "WC-BLANK",
+                    CapabilityCodes: ["CAP-SNAPSHOT"],
+                    CapacityUnits: 1,
+                    CalendarId: "CAL-SNAPSHOT",
+                    SortKey: "001")
+            ]
+        };
+
+        var response = await provider.QueryAsync(problem, CancellationToken.None);
+
+        Assert.Empty(handler.Requests);
+        Assert.Equal(2, response.Items.Count);
+        Assert.Contains(response.Items, x =>
+            x.WorkCenterId == "WC-BLANK" &&
+            x.ReasonCode == HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode &&
+            x.SourceReferenceId == HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName);
+        Assert.Contains(response.Items, x =>
+            x.WorkCenterId == "WC-BLANK" &&
+            x.ReasonCode == HttpSchedulingEquipmentAvailabilityProvider.SourceUnavailableReasonCode &&
+            x.SourceReferenceId == HttpSchedulingEquipmentAvailabilityProvider.MaintenanceClientName);
+    }
+
     private static HttpSchedulingEquipmentAvailabilityProvider CreateProvider(CapturingAvailabilityHandler handler) =>
         new(
             new CapturingHttpClientFactory(handler),
@@ -214,4 +263,75 @@ public sealed class HttpSchedulingEquipmentAvailabilityProviderBatchingTests
     }
 
     private sealed record CapturedRequest(string ClientName, HttpRequestMessage Request);
+
+    private sealed class ConcurrentHttpClientFactory(ConcurrentRequestTracker tracker) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new ConcurrentAvailabilityHandler(tracker, name))
+            {
+                BaseAddress = new Uri("http://localhost")
+            };
+    }
+
+    private sealed class ConcurrentAvailabilityHandler(
+        ConcurrentRequestTracker tracker,
+        string clientName) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            tracker.SendAsync(request, clientName, cancellationToken);
+    }
+
+    private sealed class ConcurrentRequestTracker
+    {
+        private int currentInFlight;
+        private int maxInFlight;
+        private int totalRequests;
+
+        public int MaxInFlight => maxInFlight;
+
+        public int TotalRequests => totalRequests;
+
+        public async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            string clientName,
+            CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref totalRequests);
+            var current = Interlocked.Increment(ref currentInFlight);
+            TrackMax(current);
+
+            try
+            {
+                await Task.Delay(50, cancellationToken);
+                var deviceAssetId = QueryList(request, "deviceAssetIds").First();
+                var reasonCode = clientName == HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName
+                    ? EquipmentRuntimeReasonCodes.ActiveAlarm
+                    : EquipmentRuntimeReasonCodes.MaintenanceWindow;
+                return AvailabilityResponse(deviceAssetId, reasonCode);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref currentInFlight);
+            }
+        }
+
+        private void TrackMax(int current)
+        {
+            while (true)
+            {
+                var snapshot = maxInFlight;
+                if (current <= snapshot)
+                {
+                    return;
+                }
+
+                if (Interlocked.CompareExchange(ref maxInFlight, current, snapshot) == snapshot)
+                {
+                    return;
+                }
+            }
+        }
+    }
 }
