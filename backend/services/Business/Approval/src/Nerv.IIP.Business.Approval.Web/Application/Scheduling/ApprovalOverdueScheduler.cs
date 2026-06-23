@@ -17,11 +17,10 @@ public sealed class ApprovalOverdueScheduler(
             return;
         }
 
-        var organizationId = configuration["Approval:OverdueCheck:OrganizationId"];
-        var environmentId = configuration["Approval:OverdueCheck:EnvironmentId"];
-        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
+        var scopes = GetConfiguredScopes().ToArray();
+        if (scopes.Length == 0)
         {
-            logger.LogWarning("Approval overdue check is enabled but OrganizationId or EnvironmentId is missing.");
+            logger.LogWarning("Approval overdue check is enabled but no organization/environment scope is configured.");
             return;
         }
 
@@ -36,10 +35,40 @@ public sealed class ApprovalOverdueScheduler(
         }
 
         using var timer = new PeriodicTimer(interval);
-        await TryCheckAsync(organizationId, environmentId, stoppingToken);
+        await TryCheckAllScopesAsync(scopes, stoppingToken);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            await TryCheckAsync(organizationId, environmentId, stoppingToken);
+            await TryCheckAllScopesAsync(scopes, stoppingToken);
+        }
+    }
+
+    private IEnumerable<ApprovalOverdueCheckScope> GetConfiguredScopes()
+    {
+        foreach (var scopeSection in configuration.GetSection("Approval:OverdueCheck:Scopes").GetChildren())
+        {
+            var scopeOrganizationId = scopeSection["OrganizationId"];
+            var scopeEnvironmentId = scopeSection["EnvironmentId"];
+            if (!string.IsNullOrWhiteSpace(scopeOrganizationId) && !string.IsNullOrWhiteSpace(scopeEnvironmentId))
+            {
+                yield return new ApprovalOverdueCheckScope(scopeOrganizationId, scopeEnvironmentId);
+            }
+        }
+
+        var organizationId = configuration["Approval:OverdueCheck:OrganizationId"];
+        var environmentId = configuration["Approval:OverdueCheck:EnvironmentId"];
+        if (!string.IsNullOrWhiteSpace(organizationId) && !string.IsNullOrWhiteSpace(environmentId))
+        {
+            yield return new ApprovalOverdueCheckScope(organizationId, environmentId);
+        }
+    }
+
+    private async Task TryCheckAllScopesAsync(
+        IReadOnlyCollection<ApprovalOverdueCheckScope> scopes,
+        CancellationToken cancellationToken)
+    {
+        foreach (var scope in scopes)
+        {
+            await TryCheckAsync(scope.OrganizationId, scope.EnvironmentId, cancellationToken);
         }
     }
 
@@ -72,4 +101,6 @@ public sealed class ApprovalOverdueScheduler(
                 environmentId);
         }
     }
+
+    private sealed record ApprovalOverdueCheckScope(string OrganizationId, string EnvironmentId);
 }
