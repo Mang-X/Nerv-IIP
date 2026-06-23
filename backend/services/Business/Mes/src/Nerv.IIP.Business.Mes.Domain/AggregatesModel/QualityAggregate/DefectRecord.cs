@@ -90,7 +90,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         {
             "rework" => ReworkPendingStatus,
             "scrap" => ScrapAcceptedStatus,
-            "return" => ReturnAcceptedStatus,
+            "return-to-supplier" => ReturnAcceptedStatus,
             _ => DispositionAcceptedStatus,
         };
         ClosedAtUtc = Status == ReworkPendingStatus ? null : changedAtUtc;

@@ -62,9 +62,9 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
 
         var referenceId = integrationEvent.Payload.DispositionType.Trim().ToLowerInvariant() switch
         {
-            "rework" => integrationEvent.Payload.ReworkWorkOrderId,
-            "scrap" => integrationEvent.Payload.ScrapMovementId,
-            "return" => integrationEvent.Payload.ReturnDocumentId,
+            QualityNcrDispositionTypes.Rework => integrationEvent.Payload.ReworkWorkOrderId,
+            QualityNcrDispositionTypes.Scrap => integrationEvent.Payload.ScrapMovementId,
+            QualityNcrDispositionTypes.ReturnToSupplier => integrationEvent.Payload.ReturnDocumentId,
             _ => integrationEvent.Payload.ReworkWorkOrderId ??
                 integrationEvent.Payload.ScrapMovementId ??
                 integrationEvent.Payload.ReturnDocumentId,

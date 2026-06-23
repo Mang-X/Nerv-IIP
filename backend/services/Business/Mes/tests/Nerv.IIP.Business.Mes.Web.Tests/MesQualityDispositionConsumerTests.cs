@@ -71,6 +71,39 @@ public sealed class MesQualityDispositionConsumerTests
     }
 
     [Fact]
+    public async Task Ncr_disposition_consumer_maps_return_to_supplier_disposition_to_return_status()
+    {
+        await using var dbContext = CreateDbContext(nameof(Ncr_disposition_consumer_maps_return_to_supplier_disposition_to_return_status));
+        dbContext.DefectRecords.Add(DefectRecord.Create(
+            "org-001",
+            "env-dev",
+            "DEF-RETURN-001",
+            "WO-001",
+            "OP-10",
+            "SURFACE",
+            1m,
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z")));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateDispositionEvent(
+                sourceDocumentId: "DEF-RETURN-001",
+                dispositionType: QualityNcrDispositionTypes.ReturnToSupplier,
+                returnDocumentId: "RTV-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var defect = await dbContext.DefectRecords.SingleAsync();
+        Assert.Equal(DefectRecord.ReturnAcceptedStatus, defect.Status);
+        Assert.Equal(QualityNcrDispositionTypes.ReturnToSupplier, defect.DispositionType);
+        Assert.Equal("RTV-001", defect.DispositionReferenceId);
+    }
+
+    [Fact]
     public async Task Ncr_disposition_consumer_ignores_unmatched_ncr_without_dead_letter()
     {
         await using var dbContext = CreateDbContext(nameof(Ncr_disposition_consumer_ignores_unmatched_ncr_without_dead_letter));
@@ -91,7 +124,8 @@ public sealed class MesQualityDispositionConsumerTests
         string dispositionType,
         string causationId = "quality-command-001",
         string? reworkWorkOrderId = null,
-        string? scrapMovementId = null)
+        string? scrapMovementId = null,
+        string? returnDocumentId = null)
     {
         return new NcrDispositionDecidedIntegrationEvent(
             "evt-quality-disposition-001",
@@ -114,7 +148,7 @@ public sealed class MesQualityDispositionConsumerTests
                 "approval-001",
                 reworkWorkOrderId,
                 scrapMovementId,
-                null,
+                returnDocumentId,
                 DateTimeOffset.Parse("2026-06-15T11:00:00Z"))
             {
                 SourceDocumentId = sourceDocumentId
