@@ -65,9 +65,8 @@ public sealed class NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefe
             QualityNcrDispositionTypes.Rework => integrationEvent.Payload.ReworkWorkOrderId,
             QualityNcrDispositionTypes.Scrap => integrationEvent.Payload.ScrapMovementId,
             QualityNcrDispositionTypes.ReturnToSupplier => integrationEvent.Payload.ReturnDocumentId,
-            _ => integrationEvent.Payload.ReworkWorkOrderId ??
-                integrationEvent.Payload.ScrapMovementId ??
-                integrationEvent.Payload.ReturnDocumentId,
+            QualityNcrDispositionTypes.ConditionalRelease or QualityNcrDispositionTypes.SortAndScreen => null,
+            _ => null,
         };
         defect.AcceptDisposition(
             integrationEvent.Payload.NcrId,

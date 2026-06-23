@@ -349,6 +349,28 @@ public sealed class MesAggregateTests
     }
 
     [Theory]
+    [InlineData("conditional-release")]
+    [InlineData("sort-and-screen")]
+    public void DefectRecord_explicitly_accepts_quality_dispositions_without_mes_specific_state(string dispositionType)
+    {
+        var defect = DefectRecord.Create(
+            "org-001",
+            "env-dev",
+            "DEF-001",
+            "WO-001",
+            "OP-10",
+            "SURFACE",
+            1m,
+            DateTimeOffset.Parse("2026-05-23T09:20:00Z"));
+
+        defect.AcceptDisposition("NCR-001", "NCR-2026-001", dispositionType, null, DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+
+        Assert.Equal(DefectRecord.DispositionAcceptedStatus, defect.Status);
+        Assert.Equal(dispositionType, defect.DispositionType);
+        Assert.Null(defect.DispositionReferenceId);
+    }
+
+    [Theory]
     [InlineData("completed")]
     [InlineData("cancelled")]
     public void WorkOrder_mark_released_rejects_closed_states(string closedStatus)

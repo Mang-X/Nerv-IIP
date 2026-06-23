@@ -103,6 +103,43 @@ public sealed class MesQualityDispositionConsumerTests
         Assert.Equal("RTV-001", defect.DispositionReferenceId);
     }
 
+    [Theory]
+    [InlineData(QualityNcrDispositionTypes.ConditionalRelease)]
+    [InlineData(QualityNcrDispositionTypes.SortAndScreen)]
+    public async Task Ncr_disposition_consumer_does_not_guess_reference_for_dispositions_without_mes_specific_reference(
+        string dispositionType)
+    {
+        await using var dbContext = CreateDbContext($"{nameof(Ncr_disposition_consumer_does_not_guess_reference_for_dispositions_without_mes_specific_reference)}-{dispositionType}");
+        dbContext.DefectRecords.Add(DefectRecord.Create(
+            "org-001",
+            "env-dev",
+            "DEF-GENERIC-001",
+            "WO-001",
+            "OP-10",
+            "SURFACE",
+            1m,
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z")));
+        await dbContext.SaveChangesAsync();
+        var handler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(
+            CreateDispositionEvent(
+                sourceDocumentId: "DEF-GENERIC-001",
+                dispositionType: dispositionType,
+                reworkWorkOrderId: "RW-SHOULD-NOT-BE-USED",
+                scrapMovementId: "SCRAP-SHOULD-NOT-BE-USED",
+                returnDocumentId: "RTV-SHOULD-NOT-BE-USED"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var defect = await dbContext.DefectRecords.SingleAsync();
+        Assert.Equal(DefectRecord.DispositionAcceptedStatus, defect.Status);
+        Assert.Equal(dispositionType, defect.DispositionType);
+        Assert.Null(defect.DispositionReferenceId);
+    }
+
     [Fact]
     public async Task Ncr_disposition_consumer_ignores_unmatched_ncr_without_dead_letter()
     {
