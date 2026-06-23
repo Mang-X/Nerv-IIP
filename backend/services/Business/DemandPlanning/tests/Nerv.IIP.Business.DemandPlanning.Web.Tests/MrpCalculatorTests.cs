@@ -183,6 +183,32 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Invalid_uom_conversion_factor_fails_instead_of_zeroing_requirement()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("box", "pcs", 0m, 0m, 0, "half-up"),
+            ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
+
+        Assert.Contains("Invalid global UOM conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("box", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Multi_level_bom_creates_make_suggestion_for_subassembly_then_purchase_for_raw_material()
     {
         var input = NewInput(

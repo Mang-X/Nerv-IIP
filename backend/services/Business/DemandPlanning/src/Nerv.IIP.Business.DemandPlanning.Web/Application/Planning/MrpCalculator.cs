@@ -470,6 +470,11 @@ public static class MrpCalculator
                 throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
             }
 
+            if (conversion.Factor <= 0m)
+            {
+                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': factor must be positive.");
+            }
+
             return Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
         }
 
