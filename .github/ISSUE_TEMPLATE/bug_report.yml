@@ -42,6 +42,7 @@ body:
     id: area
     attributes:
       label: 影响分层
+      description: 维护者据此打 area:* 标签（GitHub 表单不会自动应用标签）。
       multiple: true
       options:
         - area:backend
@@ -56,6 +57,7 @@ body:
     id: domain
     attributes:
       label: 业务领域
+      description: 维护者据此打 domain:* 标签（GitHub 表单不会自动应用标签）。
       multiple: true
       options:
         - domain:business-platform
@@ -69,11 +71,16 @@ body:
     id: priority
     attributes:
       label: 优先级
+      description: |
+        - priority:p0：破坏核心业务闭环或数据完整性，须立即处理
+        - priority:p1：重要行业标准缺口 / 高优先
+        - priority:p2：增强项 / 中优先
+        - priority:p3：低优先 / 可延后
       options:
-        - "priority:p0 — 破坏核心业务闭环或数据完整性"
-        - "priority:p1 — 高优先"
-        - "priority:p2 — 中优先"
-        - "priority:p3 — 低优先"
+        - priority:p0
+        - priority:p1
+        - priority:p2
+        - priority:p3
     validations:
       required: true
   - type: textarea
@@ -81,3 +88,5 @@ body:
     attributes:
       label: 环境信息
       description: 分支 / commit、运行方式（Aspire、单机部署）、浏览器或 PDA 等。
+    validations:
+      required: true
