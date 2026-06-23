@@ -41,17 +41,18 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         return new EngineeringChange(organizationId, environmentId, changeNumber, reason);
     }
 
-    public EngineeringChange Affect(string versionKind, string versionId)
+    public EngineeringChange Affect(string versionKind, string versionId, string? supersededByVersionId = null)
     {
         EnsureDraft();
         versionKind = Required(versionKind);
         versionId = Required(versionId);
+        supersededByVersionId = Optional(supersededByVersionId);
         if (affectedVersions.Any(x => x.VersionKind == versionKind && x.VersionId == versionId))
         {
             return this;
         }
 
-        affectedVersions.Add(new EngineeringChangeAffectedVersion(versionKind, versionId));
+        affectedVersions.Add(new EngineeringChangeAffectedVersion(versionKind, versionId, supersededByVersionId));
         Touch();
         return this;
     }
@@ -103,12 +104,14 @@ public sealed class EngineeringChangeAffectedVersion
     {
     }
 
-    internal EngineeringChangeAffectedVersion(string versionKind, string versionId)
+    internal EngineeringChangeAffectedVersion(string versionKind, string versionId, string? supersededByVersionId)
     {
         VersionKind = versionKind;
         VersionId = versionId;
+        SupersededByVersionId = supersededByVersionId;
     }
 
     public string VersionKind { get; private set; } = string.Empty;
     public string VersionId { get; private set; } = string.Empty;
+    public string? SupersededByVersionId { get; private set; }
 }

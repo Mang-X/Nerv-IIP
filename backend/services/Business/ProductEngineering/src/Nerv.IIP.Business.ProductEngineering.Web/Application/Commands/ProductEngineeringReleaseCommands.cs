@@ -539,7 +539,7 @@ public sealed record ReleaseEngineeringChangeCommand(
     IReadOnlyCollection<AffectedVersionCommand> AffectedVersions,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record AffectedVersionCommand(string VersionKind, string VersionId);
+public sealed record AffectedVersionCommand(string VersionKind, string VersionId, string? SupersededByVersionId = null);
 
 public sealed class ReleaseEngineeringChangeCommandValidator : AbstractValidator<ReleaseEngineeringChangeCommand>
 {
@@ -551,6 +551,12 @@ public sealed class ReleaseEngineeringChangeCommandValidator : AbstractValidator
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.ApprovalReferenceId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AffectedVersions).NotEmpty();
+        RuleForEach(x => x.AffectedVersions).ChildRules(affectedVersion =>
+        {
+            affectedVersion.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
+            affectedVersion.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
+            affectedVersion.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
+        });
     }
 }
 
@@ -574,7 +580,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             request.EnvironmentId, "engineering-change",
             request.ChangeNumber,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")),
+            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}->{x.SupersededByVersionId}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -594,7 +600,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         foreach (var affectedVersion in request.AffectedVersions)
         {
             affectedVersions.Add(await ResolveAffectedVersionAsync(request, affectedVersion, cancellationToken));
-            change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId);
+            change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId, affectedVersion.SupersededByVersionId);
         }
 
         change.Release(request.EffectiveDate);
@@ -618,52 +624,159 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), affectedVersion.VersionId),
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringBomAsync(request, affectedVersion, cancellationToken)),
             "manufacturing-bom" => ArchiveManufacturingBom(await manufacturingBomRepository.GetByVersionIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), affectedVersion.VersionId),
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorManufacturingBomAsync(request, affectedVersion, cancellationToken)),
             "routing" => ArchiveRouting(await routingRepository.GetByVersionIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), affectedVersion.VersionId),
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorRoutingAsync(request, affectedVersion, cancellationToken)),
             "production-version" => ArchiveProductionVersion(await productionVersionRepository.GetByIdAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
                 affectedVersion.VersionId,
-                cancellationToken), affectedVersion.VersionId),
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
         };
     }
 
-    private static Action<string> ArchiveEngineeringBom(EngineeringBom? bom, string versionId)
+    private async Task<EngineeringBom?> GetSuccessorEngineeringBomAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
     {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await engineeringBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor engineering BOM version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<ManufacturingBom?> GetSuccessorManufacturingBomAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await manufacturingBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor manufacturing BOM version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<Routing?> GetSuccessorRoutingAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await routingRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor routing version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<ProductionVersion?> GetSuccessorProductionVersionAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await productionVersionRepository.GetByIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor production version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private static Action<string> ArchiveEngineeringBom(EngineeringBom? bom, string versionId, EngineeringBom? successor)
+    {
+        if (bom is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, "engineering BOM", successor.BomCode, versionId);
+        }
+
         return bom is null
             ? throw new KnownException($"Engineering BOM version '{versionId}' was not found.")
-            : reason => bom.Archive(reason);
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
+            {
+                bom.Archive(reason);
+                return true;
+            });
     }
 
-    private static Action<string> ArchiveManufacturingBom(ManufacturingBom? bom, string versionId)
+    private static Action<string> ArchiveManufacturingBom(ManufacturingBom? bom, string versionId, ManufacturingBom? successor)
     {
+        if (bom is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, "manufacturing BOM", successor.BomCode, versionId);
+        }
+
         return bom is null
             ? throw new KnownException($"Manufacturing BOM version '{versionId}' was not found.")
-            : reason => bom.Archive(reason);
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
+            {
+                bom.Archive(reason);
+                return true;
+            });
     }
 
-    private static Action<string> ArchiveRouting(Routing? routing, string versionId)
+    private static Action<string> ArchiveRouting(Routing? routing, string versionId, Routing? successor)
     {
+        if (routing is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.RoutingCode == routing.RoutingCode, "routing", successor.RoutingCode, versionId);
+        }
+
         return routing is null
             ? throw new KnownException($"Routing version '{versionId}' was not found.")
-            : reason => routing.Archive(reason);
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
+            {
+                routing.Archive(reason);
+                return true;
+            });
     }
 
-    private static Action<string> ArchiveProductionVersion(ProductionVersion? version, string versionId)
+    private static Action<string> ArchiveProductionVersion(ProductionVersion? version, string versionId, ProductionVersion? successor)
     {
+        if (version is not null && successor is not null)
+        {
+            if (successor.Status != ProductionVersionStatus.Active || successor.SkuCode != version.SkuCode)
+            {
+                throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
+            }
+        }
+
         return version is null
             ? throw new KnownException($"Production version '{versionId}' was not found.")
-            : reason => version.Archive(reason);
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
+            {
+                version.Archive(reason);
+                return true;
+            });
+    }
+
+    private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)
+    {
+        if (status != EngineeringVersionStatus.Published || !sameBusinessCode)
+        {
+            throw new KnownException($"Successor {versionKind} version '{successorCode}' must be published for the same code before it can supersede '{versionId}'.");
+        }
     }
 }
 

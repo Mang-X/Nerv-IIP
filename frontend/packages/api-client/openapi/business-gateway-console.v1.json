@@ -22426,6 +22426,10 @@
           },
           "versionId": {
             "type": "string"
+          },
+          "supersededByVersionId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -22512,6 +22516,10 @@
           },
           "versionId": {
             "type": "string"
+          },
+          "supersededByVersionId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

@@ -1058,6 +1058,80 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_change_records_supersede_successor_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-SUP", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        oldBom.Release(new DateOnly(2026, 1, 1));
+        var successorBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-SUP", "B", "ENG-3000")
+            .AddLine("ENG-3001", 2m, "EA");
+        successorBom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.AddRange(oldBom, successorBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-SUPERSEDE",
+                "Supersede EBOM A with EBOM B",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-SUP:A", "EBOM-SUP:B")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var affectedVersion = Assert.Single(dbContext.EngineeringChanges.Include(x => x.AffectedVersions).Single().AffectedVersions);
+        Assert.Equal("EBOM-SUP:A", affectedVersion.VersionId);
+        Assert.Equal("EBOM-SUP:B", affectedVersion.SupersededByVersionId);
+        Assert.Equal(EngineeringVersionStatus.Archived, oldBom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, successorBom.Status);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_wraps_archive_invalid_state_as_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var draftBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DRAFT", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        dbContext.EngineeringBoms.Add(draftBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-DRAFT-ARCHIVE",
+                "Reject draft archive as business error",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-DRAFT:A")]),
+            CancellationToken.None));
+
+        Assert.Contains("Only released engineering BOM versions can be archived", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_requires_matching_approved_business_approval_chain()
     {
         await using var provider = CreateInMemoryProvider();

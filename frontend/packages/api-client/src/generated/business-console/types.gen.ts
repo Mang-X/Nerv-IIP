@@ -1411,6 +1411,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest = {
     versionKind?: string;
     versionId?: string;
+    supersededByVersionId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1436,6 +1437,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeAffectedVersionItem = {
     versionKind?: string;
     versionId?: string;
+    supersededByVersionId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListEngineeringChangesRequest = {
