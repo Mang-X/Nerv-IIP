@@ -177,6 +177,18 @@ public sealed class InventoryAggregateTests
     }
 
     [Fact]
+    public void Moving_average_valuation_rounds_to_storage_precision()
+    {
+        var ledger = NewLedger();
+
+        ledger.ApplyMovement(NewMovement("inbound", 1m, "idem-in-001", unitCost: 1m));
+        ledger.ApplyMovement(NewMovement("inbound", 2m, "idem-in-002", unitCost: 2m));
+
+        Assert.Equal(1.666667m, ledger.MovingAverageUnitCost);
+        Assert.Equal(5m, ledger.InventoryValue);
+    }
+
+    [Fact]
     public void Outbound_movement_ignores_external_unit_cost_and_uses_moving_average()
     {
         var ledger = NewLedger();

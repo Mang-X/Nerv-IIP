@@ -115,8 +115,7 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             request.ProducedLotNo,
             request.Quantity,
             occurredAtUtc,
-            request.UnitCost ?? throw new InvalidOperationException(
-                $"MES finished goods receipt cannot emit Inventory request without unit cost, SourceDocumentId = {request.RequestNo}"));
+            request.UnitCost);
     }
 }
 
