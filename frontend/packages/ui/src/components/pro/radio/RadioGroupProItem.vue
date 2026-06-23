@@ -41,7 +41,13 @@ const id = props.id ?? generatedId
 .ds-radio {
   transition:
     border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
+    box-shadow 0.15s var(--ease-out-quart, ease-out),
+    transform 0.18s var(--ease-out-quart, ease-out);
+}
+/* Press: the control depresses while held, then decelerates back — unified with
+   Switch/Checkbox. No bounce (per our motion philosophy). */
+.ds-radio:active:not([data-disabled]) {
+  transform: scale(0.9);
 }
 .ds-radio-ind {
   animation: ds-radio-in 0.16s var(--ease-out-quart, ease-out);
