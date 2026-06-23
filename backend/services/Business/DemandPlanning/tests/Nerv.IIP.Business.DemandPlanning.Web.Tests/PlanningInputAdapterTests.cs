@@ -94,7 +94,7 @@ public sealed class PlanningInputAdapterTests
             new DateOnly(2026, 6, 30),
             CancellationToken.None);
 
-        Assert.Equal("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:2", snapshot.InventorySnapshotSource);
+        Assert.Equal("inventory-http:2;scheduled-receipts:none;master-data-planning-parameters:2;master-data-uom-conversions:0", snapshot.InventorySnapshotSource);
         Assert.Contains(snapshot.PlanningParameters, x =>
             x.SkuCode == "SKU-FG-1000"
             && x.LeadTimeDays == 6
@@ -329,7 +329,7 @@ public sealed class PlanningInputAdapterTests
             CancellationToken.None);
 
         var parameter = Assert.Single(snapshot.PlanningParameters);
-        Assert.Equal("master-data-planning-parameters:1", snapshot.SnapshotSource);
+        Assert.Equal("master-data-planning-parameters:1;master-data-uom-conversions:0", snapshot.SnapshotSource);
         Assert.Equal("SKU-RM-1000", parameter.SkuCode);
     }
 
@@ -519,12 +519,89 @@ public sealed class PlanningInputAdapterTests
                 ]),
             CancellationToken.None);
 
-        Assert.Equal("master-data-planning-parameters:3", snapshot.SnapshotSource);
+        Assert.Equal("master-data-planning-parameters:3;master-data-uom-conversions:0", snapshot.SnapshotSource);
         Assert.Equal(3, handler.Requests.Count);
         Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "sku-fg-1000" && x.SiteCode == "SITE-01" && x.LeadTimeDays == 6);
         Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-FG-1000" && x.SiteCode == "SITE-02" && x.LotSizeMultiple == 5m);
         Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-RM-1000" && x.LeadTimeDays == 3 && x.SafetyStockQuantity == 2m);
         Assert.DoesNotContain(snapshot.PlanningParameters, x => x.SkuCode == "SKU-BLOCKED");
+    }
+
+    [Fact]
+    public async Task Master_data_planning_parameter_client_maps_required_uom_conversions_to_planning_uom()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/resources", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.Contains("resourceType=uom-conversion", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("all=True", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+                return JsonResponse("""
+                    {
+                      "success": true,
+                      "message": "ok",
+                      "code": 0,
+                      "data": {
+                        "total": 1,
+                        "resources": [
+                          {
+                            "resourceType": "uom-conversion",
+                            "code": "box->pcs",
+                            "displayName": "box to pcs",
+                            "active": true,
+                            "snapshotVersion": "v1",
+                            "fromUomCode": "box",
+                            "toUomCode": "pcs",
+                            "factor": 12,
+                            "offset": 0,
+                            "precision": 0,
+                            "roundingMode": "half-up",
+                            "effectiveFrom": "2026-01-01"
+                          }
+                        ]
+                      }
+                    }
+                    """);
+            }
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "resourceType": "sku",
+                    "code": "SKU-FG-1000",
+                    "displayName": "Finished good",
+                    "active": true,
+                    "snapshotVersion": "v1",
+                    "organizationId": "org-001",
+                    "environmentId": "env-dev",
+                    "baseUomCode": "pcs",
+                    "plannedDeliveryTimeDays": 1
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.test") };
+        var client = new HttpPlanningMasterDataPlanningParameterSnapshotClient(httpClient);
+
+        var snapshot = await client.GetPlanningParametersAsync(
+            "token",
+            new PlanningParameterSnapshotRequest(
+                "org-001",
+                "env-dev",
+                [new PlanningParameterSnapshotItem("SKU-FG-1000", "box", "SITE-01")]),
+            CancellationToken.None);
+
+        Assert.Equal("master-data-planning-parameters:1;master-data-uom-conversions:1", snapshot.SnapshotSource);
+        var parameter = Assert.Single(snapshot.PlanningParameters);
+        Assert.Equal("pcs", parameter.UomCode);
+        var conversion = Assert.Single(snapshot.UomConversions);
+        Assert.Equal("box", conversion.FromUomCode);
+        Assert.Equal("pcs", conversion.ToUomCode);
+        Assert.Equal(12m, conversion.Factor);
+        Assert.Equal(2, handler.Requests.Count);
     }
 
     [Fact]
@@ -657,11 +734,12 @@ public sealed class PlanningInputAdapterTests
         {
             RequestedSkuCodes = request.Items.Select(x => x.SkuCode).ToArray();
             return Task.FromResult(new PlanningParameterSnapshotResult(
-                "master-data-planning-parameters:2",
+                "master-data-planning-parameters:2;master-data-uom-conversions:0",
                 [
                     new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 6, 4m, 10m, 50m, 5m),
                     new PlanningParameterSnapshot("SKU-RM-1000", "pcs", "SITE-01", 3, 2m, null, null, 10m),
-                ]));
+                ],
+                []));
         }
     }
 

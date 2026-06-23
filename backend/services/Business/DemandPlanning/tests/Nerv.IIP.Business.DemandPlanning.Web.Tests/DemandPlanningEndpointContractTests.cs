@@ -306,6 +306,7 @@ public sealed class DemandPlanningEndpointContractTests
                 [],
                 [],
                 [],
+                [],
                 []));
         }
     }

@@ -26,6 +26,7 @@ public sealed class MrpCalculatorTests
                 new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m),
             ],
             [],
+            [],
             []);
 
         var suggestions = MrpCalculator.Calculate(input);
@@ -61,6 +62,90 @@ public sealed class MrpCalculatorTests
         var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
         Assert.Equal(3m, workOrder.Quantity);
         Assert.Contains(workOrder.PeggingLinks, x => x.PeggingType == "scheduled-receipt" && x.DemandSourceReference == "erp:purchase-order:PO-001");
+    }
+
+    [Fact]
+    public void Multi_uom_inputs_are_normalized_to_planning_uom_before_netting_and_pegging()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 2m, new DateOnly(2026, 6, 1)),
+            ],
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 6m),
+                new InventoryAvailabilitySnapshot("SKU-RM-1000", "g", "SITE-01", 500m),
+            ],
+            productionVersions:
+            [
+                new ProductionVersionSnapshot("SKU-FG-1000", "PV-001", "MBOM-001", "ROUTING-001"),
+            ],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "kg", 1.5m),
+            ],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 5, 31), "mes", "work-order", "WO-001"),
+                new ScheduledReceiptSnapshot("SKU-RM-1000", "kg", "SITE-01", 1m, new DateOnly(2026, 5, 30), "erp", "purchase-order", "PO-001"),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+                new PlanningParameterSnapshot("SKU-RM-1000", "g", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("box", "pcs", 12m, 0m, 0, "half-up"),
+                new UomConversionSnapshot("kg", "g", 1000m, 0m, 0, "half-up"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        Assert.Equal("pcs", workOrder.UomCode);
+        Assert.Equal(6m, workOrder.Quantity);
+        Assert.Contains(workOrder.PeggingLinks, x =>
+            x.PeggingType == "demand"
+            && x.DemandSourceReference == "DEMAND-BOX"
+            && x.Quantity == 24m);
+        Assert.Contains(workOrder.PeggingLinks, x =>
+            x.PeggingType == "scheduled-receipt"
+            && x.DemandSourceReference == "mes:work-order:WO-001"
+            && x.Quantity == 12m);
+
+        var purchase = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase");
+        Assert.Equal("SKU-RM-1000", purchase.SkuCode);
+        Assert.Equal("g", purchase.UomCode);
+        Assert.Equal(7500m, purchase.Quantity);
+        Assert.Contains(purchase.PeggingLinks, x =>
+            x.PeggingType == "scheduled-receipt"
+            && x.DemandSourceReference == "erp:purchase-order:PO-001"
+            && x.Quantity == 1000m);
+    }
+
+    [Fact]
+    public void Missing_required_uom_conversion_fails_instead_of_silently_mismatching_units()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions: []);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
+
+        Assert.Contains("Missing UOM conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("box", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -281,7 +366,8 @@ public sealed class MrpCalculatorTests
         IReadOnlyCollection<ProductionVersionSnapshot>? productionVersions = null,
         IReadOnlyCollection<BomComponentSnapshot>? bomComponents = null,
         IReadOnlyCollection<ScheduledReceiptSnapshot>? scheduledReceipts = null,
-        IReadOnlyCollection<PlanningParameterSnapshot>? planningParameters = null)
+        IReadOnlyCollection<PlanningParameterSnapshot>? planningParameters = null,
+        IReadOnlyCollection<UomConversionSnapshot>? uomConversions = null)
     {
         return new MrpCalculationInput(
             "org-001",
@@ -306,6 +392,7 @@ public sealed class MrpCalculatorTests
                 new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 3m),
             ],
             scheduledReceipts ?? [],
-            planningParameters ?? []);
+            planningParameters ?? [],
+            uomConversions ?? []);
     }
 }
