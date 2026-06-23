@@ -57,7 +57,8 @@ public sealed class MesIntegrationEventTests
             "PCS",
             DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
             "LOT-FG-001",
-            null);
+            null,
+            12.34m);
 
         var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
             .Convert(new FinishedGoodsReceiptRequestedDomainEvent(request));
@@ -68,6 +69,7 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("SKU-FG", integrationEvent.Payload.SkuCode);
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
+        Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
     }
 

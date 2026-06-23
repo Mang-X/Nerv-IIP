@@ -40,6 +40,34 @@ public sealed class InventoryMovementRequestedConsumerTests
     }
 
     [Fact]
+    public async Task Movement_requested_consumer_applies_payload_unit_cost_to_inbound_valuation()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-unit-cost") with
+        {
+            Payload = CreateRequestedEvent("evt-unit-cost").Payload with
+            {
+                IdempotencyKey = "idem-in-unit-cost-001",
+                UnitCost = 12.34m,
+            },
+        }, CancellationToken.None);
+
+        var movement = Assert.Single(dbContext.StockMovements);
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        Assert.Equal(12.34m, movement.UnitCost);
+        Assert.Equal(61.70m, movement.MovementAmount);
+        Assert.Equal(12.34m, ledger.MovingAverageUnitCost);
+        Assert.Equal(61.70m, ledger.InventoryValue);
+    }
+
+    [Fact]
     public async Task Duplicate_movement_requested_event_uses_inventory_command_idempotency()
     {
         await using var dbContext = CreateContext();

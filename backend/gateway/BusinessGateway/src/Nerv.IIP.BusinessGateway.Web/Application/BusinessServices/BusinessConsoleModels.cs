@@ -2743,6 +2743,7 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
+    decimal? UnitCost,
     string ReceiptStatus,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
@@ -2760,6 +2761,7 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
+    decimal? UnitCost,
     string IdempotencyKey,
     string? ProducedLotNo = null,
     string? SerialNo = null);
