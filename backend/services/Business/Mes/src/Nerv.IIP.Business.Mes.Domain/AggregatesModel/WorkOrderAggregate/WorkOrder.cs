@@ -212,7 +212,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         if (Status is CancelledStatus or ScrappedStatus)
         {
-            throw new InvalidOperationException("Closed work orders cannot be cancelled.");
+            throw new InvalidOperationException("Cancelled or scrapped work orders cannot be cancelled again.");
         }
 
         CancelReason = DomainGuard.Required(reason, nameof(reason));

@@ -276,9 +276,10 @@ public sealed class MesEndpointContractTests
         Assert.Equal(WorkOrder.CancelledStatus, active.Status);
         Assert.Equal("material shortage", active.HoldReason);
         Assert.Equal("plan cancelled", active.CancelReason);
+        Assert.NotEqual("duplicate cancellation", active.CancelReason);
         Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
-        Assert.Contains("closed", invalidCancel.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("cancelled or scrapped", invalidCancel.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsType<InvalidOperationException>(invalidCancel.InnerException);
     }
 
