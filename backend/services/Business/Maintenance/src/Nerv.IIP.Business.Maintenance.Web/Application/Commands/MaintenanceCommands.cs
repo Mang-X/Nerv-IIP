@@ -362,7 +362,7 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
     {
         var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
         var normalizedResult = MaintenanceInspectionResults.Normalize(request.Result);
-        var inspection = await dbContext.MaintenanceInspections
+        var matchingInspections = await dbContext.MaintenanceInspections
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.PlanId == request.PlanId)
@@ -370,7 +370,8 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
             .Where(x => x.Inspector == request.Inspector)
             .Where(x => x.Result == normalizedResult)
             .Where(x => x.InspectedAtUtc == inspectedAtUtc)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var inspection = await SelectInspectionForReplayAsync(matchingInspections, cancellationToken);
         if (inspection is null)
         {
             inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc);
@@ -383,6 +384,24 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
         }
 
         return inspection.Id;
+    }
+
+    private async Task<MaintenanceInspection?> SelectInspectionForReplayAsync(IReadOnlyCollection<MaintenanceInspection> inspections, CancellationToken cancellationToken)
+    {
+        if (inspections.Count <= 1)
+        {
+            return inspections.SingleOrDefault();
+        }
+
+        var sourceReferenceIds = inspections.Select(x => x.Id.ToString()).ToArray();
+        var existingSourceReferenceId = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.SourceType == MaintenanceWorkOrderSourceTypes.Inspection)
+            .Where(x => x.SourceReferenceId != null && sourceReferenceIds.Contains(x.SourceReferenceId))
+            .Select(x => x.SourceReferenceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return inspections.FirstOrDefault(x => x.Id.ToString() == existingSourceReferenceId)
+            ?? inspections.First();
     }
 
     private async Task OpenInspectionWorkOrderIfNeededAsync(MaintenanceInspection inspection, CancellationToken cancellationToken)
