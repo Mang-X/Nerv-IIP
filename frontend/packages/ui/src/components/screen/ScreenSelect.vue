@@ -180,8 +180,7 @@ onBeforeUnmount(() => {
   border-color: var(--sb-cyan);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 3px var(--sb-cyan-dim),
-    0 0 12px rgba(0, 229, 255, 0.3);
+    0 0 0 3px var(--sb-cyan-dim);
 }
 .sb-sel.disabled {
   opacity: 0.5;
@@ -217,12 +216,14 @@ onBeforeUnmount(() => {
   max-height: 264px;
   overflow-y: auto;
   border-radius: var(--sb-radius);
-  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  border: 1px solid rgba(0, 229, 255, 0.25);
+  /* glass — translucent dark + blur, white highlight edge, no colored bloom */
+  background: rgba(11, 15, 24, 0.72);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
-    0 12px 32px -8px rgba(0, 0, 0, 0.7),
-    0 0 18px rgba(0, 229, 255, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 16px 40px -12px rgba(0, 0, 0, 0.85);
 }
 .sb-sel-opt {
   display: flex;

@@ -280,8 +280,9 @@ const uid = Math.random().toString(36).slice(2, 8)
   fill: var(--sb-cyan);
 }
 .sb-tc-card {
-  fill: #0a1322;
-  stroke: rgba(0, 229, 255, 0.3);
+  /* glassy dark card — translucent so the plot shows faintly through, white edge */
+  fill: rgba(9, 13, 22, 0.9);
+  stroke: rgba(255, 255, 255, 0.16);
 }
 .sb-tc-c-t {
   fill: var(--sb-muted);
