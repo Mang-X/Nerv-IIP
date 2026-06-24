@@ -219,7 +219,14 @@ describe('pda useBusinessMes composables', () => {
   it('forwards the caller-supplied key + injects business fields when creating a finished-goods receipt', async () => {
     const { createReceipt } = useMesReceipts()
 
-    await createReceipt({ workOrderId: 'wo-5', skuId: 'sku-1', quantity: 12, uomCode: 'EA', idempotencyKey: 'op-receipt-1' })
+    await createReceipt({
+      workOrderId: 'wo-5',
+      skuId: 'sku-1',
+      quantity: 12,
+      unitCost: 12.34,
+      uomCode: 'EA',
+      idempotencyKey: 'op-receipt-1',
+    })
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
     const mutateAsync = coladaState.mutateById.get('createBusinessConsoleMesFinishedGoodsReceiptRequest')
@@ -230,6 +237,7 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
+      unitCost: 12.34,
       uomCode: 'EA',
     })
     expect(payload.body.idempotencyKey).toBe('op-receipt-1')
@@ -268,6 +276,7 @@ describe('pda useBusinessMes composables', () => {
       workOrderId: 'wo-5',
       skuId: 'sku-1',
       quantity: 12,
+      unitCost: 12.34,
       uomCode: 'EA',
       idempotencyKey: 'op-receipt-stable',
       organizationId: 'EVIL',
