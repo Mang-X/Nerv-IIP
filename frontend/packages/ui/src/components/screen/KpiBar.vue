@@ -159,7 +159,7 @@ const cells = computed(() =>
   color: var(--sb-text);
 }
 .sb-kpi-v.cyan {
-  color: var(--sb-cyan);
+  color: #fff;
 }
 .sb-kpi-v.green {
   color: var(--sb-green);

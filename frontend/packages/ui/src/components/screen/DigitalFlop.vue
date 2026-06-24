@@ -101,8 +101,8 @@ const cells = computed(() =>
   font-size: 30px;
   font-weight: 700;
   line-height: 1;
-  color: var(--sb-cyan);
-  text-shadow: 0 0 14px rgba(0, 229, 255, 0.45);
+  color: #fff;
+  text-shadow: var(--sb-value-glow);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     inset 0 -8px 14px -10px rgba(0, 0, 0, 0.8);
@@ -125,7 +125,7 @@ const cells = computed(() =>
   background: none;
   border: none;
   box-shadow: none;
-  color: var(--sb-cyan-dim);
+  color: var(--sb-muted);
   text-shadow: none;
 }
 .sb-df-cell.sep::before {

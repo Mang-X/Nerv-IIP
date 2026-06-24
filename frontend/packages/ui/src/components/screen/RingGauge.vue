@@ -96,11 +96,11 @@ const uid = `rg-${Math.random().toString(36).slice(2, 8)}`
   text-align: center;
 }
 .sb-rg-v {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
-  color: var(--sb-cyan);
+  color: #fff;
   line-height: 1;
-  text-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+  text-shadow: var(--sb-value-glow);
 }
 .sb-rg-v small {
   font-size: 14px;

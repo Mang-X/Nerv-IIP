@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * Screen — full-bleed tech frame. Wraps a board in a thin, faintly glowing edge
- * with a minimal L-bracket at each corner (the "현대 vs 廉价" line: short marks,
- * no stacked neon). The accent color tints the edge and the brackets; default is
- * the live-data cyan. Content goes in the default slot — frame draws over it.
+ * Screen — full-bleed tech frame. Wraps a board section in a restrained gradient
+ * hairline (brighter down the two sides, like ScreenPanel) with a short corner
+ * mark at each corner — a thin tick that follows the panel radius, no neon bloom.
+ * The accent tints the corner marks; the edge itself stays quiet. Content goes in
+ * the default slot — the frame draws over it. Built on the independent `--sb-*`.
  */
 withDefaults(
   defineProps<{
-    /** Edge + corner-bracket color. */
+    /** Corner-mark color. */
     accent?: 'cyan' | 'green' | 'amber' | 'red'
   }>(),
   { accent: 'cyan' },
@@ -27,45 +28,57 @@ withDefaults(
 <style scoped>
 .sb-tf {
   position: relative;
-  border: 1px solid var(--sb-edge);
   border-radius: var(--sb-radius);
-  /* faint inner + outer glow on the edge, kept restrained */
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 0 16px -4px var(--sb-edge);
-  /* token defaults to cyan; tone classes below override */
-  --sb-edge: var(--sb-cyan-dim);
+  /* white top highlight (glass) — no colored bloom */
+  box-shadow: inset 0 1px 0 var(--sb-highlight);
   --sb-mark: var(--sb-cyan);
 }
+/* gradient hairline edge — brighter down the two sides, dim top/bottom */
+.sb-tf::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 180, 235, 0.3),
+    rgba(255, 255, 255, 0.05) 16%,
+    rgba(255, 255, 255, 0.05) 84%,
+    rgba(120, 180, 235, 0.3)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
 .sb-tf.cyan {
-  --sb-edge: var(--sb-cyan-dim);
   --sb-mark: var(--sb-cyan);
 }
 .sb-tf.green {
-  --sb-edge: rgba(0, 230, 118, 0.5);
   --sb-mark: var(--sb-green);
 }
 .sb-tf.amber {
-  --sb-edge: rgba(255, 214, 0, 0.5);
   --sb-mark: var(--sb-amber);
 }
 .sb-tf.red {
-  --sb-edge: rgba(255, 23, 68, 0.5);
   --sb-mark: var(--sb-red);
 }
-/* corner L-brackets — two borders per pseudo make the right-angle */
+/* corner marks — a short L tick that follows the panel radius (no abrupt angle),
+   hairline, only a faint presence — not a glowing neon bracket */
 .sb-tf-c {
   position: absolute;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   pointer-events: none;
+  z-index: 1;
 }
 .sb-tf-c::before {
   content: '';
   position: absolute;
   inset: 0;
   border: 0 solid var(--sb-mark);
-  filter: drop-shadow(0 0 3px var(--sb-edge));
+  opacity: 0.85;
 }
 .sb-tf-c.tl {
   top: -1px;

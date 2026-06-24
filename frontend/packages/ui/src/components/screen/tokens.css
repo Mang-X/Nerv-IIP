@@ -23,11 +23,11 @@
   --sb-amber: #f2c14e;
   --sb-red: #ef5a63;
 
-  /* text — values are WHITE; accent is reserved for small live touches only */
+  /* text — WHITE values; greys lifted so labels/axes stay legible at a distance */
   --sb-text: #eef2f8;
-  --sb-text-2: #a8b3c2;
-  --sb-muted: #687486;
-  --sb-faint: #434d5e;
+  --sb-text-2: #c8d2de;
+  --sb-muted: #939fb0;
+  --sb-faint: #667083;
 
   /* effects — restrained: a white highlight carries structure, glow is a whisper */
   --sb-highlight: rgba(255, 255, 255, 0.14); /* top white edge highlight */
