@@ -1706,6 +1706,8 @@ public sealed class BusinessGatewayProxyTests
                     repairCount = 2,
                     mtbfHours = 24.5m,
                     mttrMinutes = 35m,
+                    mtbfRuntimeSource = "oee",
+                    mtbfRuntimeHasSamples = true,
                 },
             }),
             "/api/business/v1/maintenance/inspections" => JsonResponse(HttpStatusCode.OK, new { data = new { inspectionId = "inspection-001" } }),
@@ -5790,7 +5792,9 @@ internal sealed class RecordingMaintenanceClient : IBusinessMaintenanceClient
             0,
             0,
             null,
-            null));
+            null,
+            "fallback",
+            false));
     }
 
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(

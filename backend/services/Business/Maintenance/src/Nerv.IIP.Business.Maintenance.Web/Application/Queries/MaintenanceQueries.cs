@@ -155,7 +155,9 @@ public sealed record AssetReliabilityResponse(
     int FailureCount,
     int RepairCount,
     decimal? MtbfHours,
-    decimal? MttrMinutes);
+    decimal? MttrMinutes,
+    string MtbfRuntimeSource,
+    bool MtbfRuntimeHasSamples);
 
 public sealed class QueryAssetReliabilityQueryValidator : AbstractValidator<QueryAssetReliabilityQuery>
 {
@@ -222,13 +224,21 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
             failureCount,
             repairCount,
             mtbfHours.HasValue ? Math.Round(mtbfHours.Value, 6) : null,
-            mttrMinutes.HasValue ? Math.Round(mttrMinutes.Value, 6) : null);
+            mttrMinutes.HasValue ? Math.Round(mttrMinutes.Value, 6) : null,
+            runtimeHours.RuntimeSource,
+            runtimeHours.HasRuntimeSamples);
     }
 }
 
 internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? CompletedAtUtc);
 
-public sealed record AssetRuntimeHoursResult(decimal RuntimeHours, bool HasRuntimeSamples);
+public static class AssetRuntimeSources
+{
+    public const string Oee = "oee";
+    public const string Fallback = "fallback";
+}
+
+public sealed record AssetRuntimeHoursResult(decimal RuntimeHours, string RuntimeSource, bool HasRuntimeSamples);
 
 public interface IAssetRuntimeHoursProvider
 {
@@ -276,21 +286,22 @@ public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(Application
         var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
         if (windowHours <= 0)
         {
-            return new AssetRuntimeHoursResult(0m, HasRuntimeSamples: false);
+            return new AssetRuntimeHoursResult(0m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false);
         }
 
-        var availability = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
-            new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
+        var availability = await MaintenanceAvailabilityWindowCalculator.CalculateAsync(
+            dbContext,
+            new EquipmentRuntimeAvailabilityRequest(
                 organizationId,
                 environmentId,
                 windowStartUtc,
                 windowEndUtc,
                 [deviceAssetId],
-                null)),
+                null),
             cancellationToken);
 
         var unavailableHours = CalculateUnavailableHours(availability.Items, deviceAssetId, windowStartUtc, windowEndUtc);
-        return new AssetRuntimeHoursResult(Math.Max(0m, windowHours - unavailableHours), HasRuntimeSamples: false);
+        return new AssetRuntimeHoursResult(Math.Max(0m, windowHours - unavailableHours), AssetRuntimeSources.Fallback, HasRuntimeSamples: false);
     }
 
     private static decimal CalculateUnavailableHours(
@@ -376,7 +387,7 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             }
 
             var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
-            return new AssetRuntimeHoursResult(Math.Round(windowHours * data.AvailabilityRate, 6), HasRuntimeSamples: true);
+            return new AssetRuntimeHoursResult(Math.Round(windowHours * data.AvailabilityRate, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
         }
         catch (HttpRequestException exception)
         {
@@ -386,6 +397,11 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source timed out for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
+            return await CalculateFallbackAsync();
+        }
+        catch (JsonException exception)
+        {
+            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source returned an invalid response for {RequestUri}; falling back to Maintenance availability windows.", BuildOeePath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
             return await CalculateFallbackAsync();
         }
 
@@ -452,15 +468,17 @@ public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(Applicati
 {
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(GetMaintenanceAssetAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
-        var query = new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.WindowStartUtc,
-            request.WindowEndUtc,
-            [request.DeviceAssetId],
-            null,
-            request.FreshnessMaxAgeMinutes));
-        return await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(query, cancellationToken);
+        return await MaintenanceAvailabilityWindowCalculator.CalculateAsync(
+            dbContext,
+            new EquipmentRuntimeAvailabilityRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WindowStartUtc,
+                request.WindowEndUtc,
+                [request.DeviceAssetId],
+                null,
+                request.FreshnessMaxAgeMinutes),
+            cancellationToken);
     }
 }
 
@@ -480,9 +498,19 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryValidator : Abstract
 public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryMaintenanceAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
-    public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
+    public Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
-        var originalContract = request.Request;
+        return MaintenanceAvailabilityWindowCalculator.CalculateAsync(dbContext, request.Request, cancellationToken);
+    }
+}
+
+internal static class MaintenanceAvailabilityWindowCalculator
+{
+    public static async Task<EquipmentRuntimeAvailabilityResponse> CalculateAsync(
+        ApplicationDbContext dbContext,
+        EquipmentRuntimeAvailabilityRequest originalContract,
+        CancellationToken cancellationToken)
+    {
         if (originalContract.WindowEndUtc <= originalContract.WindowStartUtc)
         {
             throw new KnownException("Maintenance availability window end must be after start.");

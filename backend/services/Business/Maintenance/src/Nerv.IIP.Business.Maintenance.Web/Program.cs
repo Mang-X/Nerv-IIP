@@ -208,7 +208,12 @@ static void AddMaintenanceDistributedLock(IServiceCollection services, IConfigur
         throw new InvalidOperationException("BusinessMaintenance distributed command locks require a Redis connection string outside Development. Set ConnectionStrings:Redis, Messaging:Redis:ConnectionString, or Caching:Redis.");
     }
 
-    services.AddSingleton<IConnectionMultiplexer>(_ => NervIipRedisConnection.ConnectAsync(redisConnectionString).GetAwaiter().GetResult());
+    services.AddSingleton<IConnectionMultiplexer>(_ =>
+    {
+        var options = ConfigurationOptions.Parse(redisConnectionString);
+        options.AbortOnConnectFail = false;
+        return ConnectionMultiplexer.Connect(options);
+    });
     services.AddSingleton<IRedisCommandLockStore>(sp => new StackExchangeRedisCommandLockStore(sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase()));
     services.AddSingleton<IDistributedLock>(sp => new RedisMaintenanceDistributedLock(sp.GetRequiredService<IRedisCommandLockStore>(), sp.GetRequiredService<TimeProvider>()));
 }

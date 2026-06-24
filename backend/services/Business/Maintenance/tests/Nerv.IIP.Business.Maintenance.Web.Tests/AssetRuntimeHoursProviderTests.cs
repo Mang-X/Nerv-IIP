@@ -10,7 +10,7 @@ public sealed class AssetRuntimeHoursProviderTests
     [Fact]
     public async Task Http_runtime_provider_does_not_query_fallback_when_oee_has_samples()
     {
-        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, HasRuntimeSamples: false));
+        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
         var provider = CreateProvider(fallback, """
             {
               "data": {
@@ -42,6 +42,7 @@ public sealed class AssetRuntimeHoursProviderTests
             CancellationToken.None);
 
         Assert.Equal(1m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Oee, result.RuntimeSource);
         Assert.True(result.HasRuntimeSamples);
         Assert.Equal(0, fallback.CallCount);
     }
@@ -49,7 +50,7 @@ public sealed class AssetRuntimeHoursProviderTests
     [Fact]
     public async Task Http_runtime_provider_queries_fallback_when_oee_has_no_samples()
     {
-        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, HasRuntimeSamples: false));
+        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
         var provider = CreateProvider(fallback, """
             {
               "data": {
@@ -81,6 +82,27 @@ public sealed class AssetRuntimeHoursProviderTests
             CancellationToken.None);
 
         Assert.Equal(3m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, result.RuntimeSource);
+        Assert.False(result.HasRuntimeSamples);
+        Assert.Equal(1, fallback.CallCount);
+    }
+
+    [Fact]
+    public async Task Http_runtime_provider_queries_fallback_when_oee_response_json_is_invalid()
+    {
+        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
+        var provider = CreateProvider(fallback, """{ "data": """);
+
+        var result = await provider.CalculateAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-06-08T04:00:00Z"),
+            CancellationToken.None);
+
+        Assert.Equal(3m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, result.RuntimeSource);
         Assert.False(result.HasRuntimeSamples);
         Assert.Equal(1, fallback.CallCount);
     }

@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using NetCorePal.Extensions.DistributedLocks;
 using StackExchange.Redis;
 
@@ -116,7 +115,7 @@ public sealed class StackExchangeRedisCommandLockStore(IDatabase database) : IRe
         await database.ScriptEvaluateAsync(ReleaseScript, [ToRedisKey(key)], [(RedisValue)token]);
     }
 
-    private static RedisKey ToRedisKey(string key) => KeyPrefix + Convert.ToHexString(Encoding.UTF8.GetBytes(key));
+    private static RedisKey ToRedisKey(string key) => KeyPrefix + key;
 }
 
 public sealed class InMemoryRedisCommandLockStore : IRedisCommandLockStore

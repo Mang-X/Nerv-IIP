@@ -537,6 +537,8 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(1, response.RepairCount);
         Assert.Equal(12m, response.MtbfHours);
         Assert.Equal(120m, response.MttrMinutes);
+        Assert.Equal(AssetRuntimeSources.Fallback, response.MtbfRuntimeSource);
+        Assert.False(response.MtbfRuntimeHasSamples);
     }
 
     [Fact]
@@ -556,7 +558,7 @@ public sealed class MaintenanceEndpointContractTests
 
         var response = await new QueryAssetReliabilityQueryHandler(
                 dbContext,
-                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(6m, HasRuntimeSamples: true)))
+                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(6m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)))
             .Handle(
                 new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
                 CancellationToken.None);
@@ -564,6 +566,8 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(2, response.FailureCount);
         Assert.Equal(3m, response.MtbfHours);
         Assert.Equal(120m, response.MttrMinutes);
+        Assert.Equal(AssetRuntimeSources.Oee, response.MtbfRuntimeSource);
+        Assert.True(response.MtbfRuntimeHasSamples);
     }
 
     [Fact]
@@ -583,6 +587,8 @@ public sealed class MaintenanceEndpointContractTests
         using var document = JsonDocument.Parse(body);
         Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("MtbfHours").ValueKind);
         Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("MttrMinutes").ValueKind);
+        Assert.Equal(AssetRuntimeSources.Fallback, document.RootElement.GetProperty("MtbfRuntimeSource").GetString());
+        Assert.False(document.RootElement.GetProperty("MtbfRuntimeHasSamples").GetBoolean());
     }
 
     [Fact]
