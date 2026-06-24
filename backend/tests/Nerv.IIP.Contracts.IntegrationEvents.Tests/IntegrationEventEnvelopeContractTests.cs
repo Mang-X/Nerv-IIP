@@ -205,4 +205,91 @@ public sealed class IntegrationEventEnvelopeContractTests
         Assert.Null(integrationEvent.Payload.OwnerId);
         Assert.Null(integrationEvent.Payload.UomCode);
     }
+
+    [Fact]
+    public void Inventory_movement_requested_payload_serializes_unit_cost_as_v1_additive_field()
+    {
+        var integrationEvent = new InventoryMovementRequestedIntegrationEvent(
+            "evt-inventory-unit-cost-001",
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-23T00:00:01Z"),
+            InventoryIntegrationEventSources.BusinessMes,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:mes",
+            "idem-unit-cost-001",
+            new InventoryMovementRequestedPayload(
+                "inbound",
+                InventoryIntegrationEventSources.BusinessMes,
+                "FGR-001",
+                "WO-001",
+                "idem-unit-cost-001",
+                "SKU-FG",
+                "PCS",
+                "finished-goods",
+                "receiving",
+                "LOT-FG-001",
+                null,
+                "Unrestricted",
+                "production",
+                null,
+                8m,
+                DateTimeOffset.Parse("2026-06-23T00:00:00Z"),
+                UnitCost: 12.34m));
+
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
+        Assert.Contains("\"unitCost\":12.34", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inventory_movement_requested_payload_deserializes_legacy_v1_without_unit_cost()
+    {
+        var json = """
+            {
+              "eventId": "evt-legacy-inventory-001",
+              "eventType": "inventory.InventoryMovementRequested",
+              "eventVersion": 1,
+              "occurredAtUtc": "2026-06-23T00:00:01Z",
+              "sourceService": "business-mes",
+              "correlationId": "corr-001",
+              "causationId": "cause-001",
+              "organizationId": "org-001",
+              "environmentId": "env-dev",
+              "actor": "system:mes",
+              "idempotencyKey": "idem-legacy-inventory-001",
+              "payload": {
+                "movementType": "inbound",
+                "sourceService": "business-mes",
+                "sourceDocumentId": "FGR-001",
+                "sourceDocumentLineId": "WO-001",
+                "idempotencyKey": "idem-legacy-inventory-001",
+                "skuCode": "SKU-FG",
+                "uomCode": "PCS",
+                "siteCode": "finished-goods",
+                "locationCode": "receiving",
+                "lotNo": "LOT-FG-001",
+                "serialNo": null,
+                "qualityStatus": "Unrestricted",
+                "ownerType": "production",
+                "ownerId": null,
+                "quantity": 8,
+                "requestedAtUtc": "2026-06-23T00:00:00Z"
+              }
+            }
+            """;
+
+        var integrationEvent = JsonSerializer.Deserialize<InventoryMovementRequestedIntegrationEvent>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(integrationEvent);
+        Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Null(integrationEvent.Payload.UnitCost);
+    }
 }

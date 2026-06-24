@@ -1060,6 +1060,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("id"));
 
+                            b1.Property<string>("SupersededByVersionId")
+                                .HasMaxLength(150)
+                                .HasColumnType("character varying(150)")
+                                .HasColumnName("superseded_by_version_id")
+                                .HasComment("Optional successor version id that supersedes this affected version.");
+
                             b1.Property<string>("VersionId")
                                 .IsRequired()
                                 .HasMaxLength(150)

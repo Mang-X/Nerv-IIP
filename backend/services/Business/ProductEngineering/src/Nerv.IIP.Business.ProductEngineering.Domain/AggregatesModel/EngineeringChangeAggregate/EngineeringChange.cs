@@ -41,19 +41,37 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         return new EngineeringChange(organizationId, environmentId, changeNumber, reason);
     }
 
-    public EngineeringChange Affect(string versionKind, string versionId)
+    public EngineeringChange Affect(string versionKind, string versionId, string? supersededByVersionId = null)
     {
         EnsureDraft();
         versionKind = Required(versionKind);
         versionId = Required(versionId);
-        if (affectedVersions.Any(x => x.VersionKind == versionKind && x.VersionId == versionId))
+        supersededByVersionId = Optional(supersededByVersionId);
+        var existing = affectedVersions.SingleOrDefault(x => SameAffectedVersion(x, versionKind, versionId));
+        if (existing is not null)
         {
+            if (!SameOptionalVersionId(existing.SupersededByVersionId, supersededByVersionId))
+            {
+                throw new InvalidOperationException($"Affected {versionKind} version '{versionId}' can only declare one successor in the same engineering change.");
+            }
+
             return this;
         }
 
-        affectedVersions.Add(new EngineeringChangeAffectedVersion(versionKind, versionId));
+        affectedVersions.Add(new EngineeringChangeAffectedVersion(versionKind, versionId, supersededByVersionId));
         Touch();
         return this;
+    }
+
+    private static bool SameAffectedVersion(EngineeringChangeAffectedVersion affectedVersion, string versionKind, string versionId)
+    {
+        return string.Equals(affectedVersion.VersionKind, versionKind, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(affectedVersion.VersionId, versionId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SameOptionalVersionId(string? left, string? right)
+    {
+        return string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     public EngineeringChange Approve(string approvalReferenceId)
@@ -103,12 +121,14 @@ public sealed class EngineeringChangeAffectedVersion
     {
     }
 
-    internal EngineeringChangeAffectedVersion(string versionKind, string versionId)
+    internal EngineeringChangeAffectedVersion(string versionKind, string versionId, string? supersededByVersionId)
     {
         VersionKind = versionKind;
         VersionId = versionId;
+        SupersededByVersionId = supersededByVersionId;
     }
 
     public string VersionKind { get; private set; } = string.Empty;
     public string VersionId { get; private set; } = string.Empty;
+    public string? SupersededByVersionId { get; private set; }
 }

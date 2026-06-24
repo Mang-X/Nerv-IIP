@@ -225,6 +225,7 @@ public sealed record CreateFinishedGoodsReceiptRequestCommand(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
+    decimal? UnitCost,
     string? IdempotencyKey = null,
     string? ProducedLotNo = null,
     string? SerialNo = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
@@ -239,6 +240,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : Abstract
         RuleFor(x => x.SkuId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(30);
+        RuleFor(x => x.UnitCost).NotNull().GreaterThan(0);
     }
 }
 
@@ -254,7 +256,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -276,7 +278,8 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.UomCode,
             request.RequestedAtUtc,
             request.ProducedLotNo,
-            request.SerialNo);
+            request.SerialNo,
+            request.UnitCost);
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
         await Task.CompletedTask;
         return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);

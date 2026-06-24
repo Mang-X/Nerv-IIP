@@ -1022,7 +1022,7 @@ public sealed class MesEndpointContractTests
             new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt),
             CancellationToken.None);
         await new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext).Handle(
-            new CreateFinishedGoodsReceiptRequestCommand("org-001", "env-dev", "WO-001", "SKU-FG-1000", 9m, "PCS", reportedAt.AddMinutes(15)),
+            new CreateFinishedGoodsReceiptRequestCommand("org-001", "env-dev", "WO-001", "SKU-FG-1000", 9m, "PCS", reportedAt.AddMinutes(15), 12.34m),
             CancellationToken.None);
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",

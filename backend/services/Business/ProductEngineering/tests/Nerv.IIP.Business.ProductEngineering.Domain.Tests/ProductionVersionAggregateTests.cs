@@ -106,4 +106,12 @@ public sealed class ProductionVersionAggregateTests
         Assert.False(version.IsResolvableFor(new DateOnly(2026, 7, 1), 50m));
         Assert.IsType<ProductionVersionArchivedDomainEvent>(version.GetDomainEvents().Single());
     }
+
+    [Fact]
+    public void Production_version_does_not_keep_unused_effective_window_overlap_logic()
+    {
+        Assert.DoesNotContain(
+            typeof(ProductionVersion).GetMethods(),
+            method => method.Name == "EffectiveWindowOverlaps");
+    }
 }

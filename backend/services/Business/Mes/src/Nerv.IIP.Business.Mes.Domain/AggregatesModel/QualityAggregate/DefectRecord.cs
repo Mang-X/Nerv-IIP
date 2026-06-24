@@ -11,6 +11,12 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
     public const string ScrapAcceptedStatus = "ScrapAccepted";
     public const string ReturnAcceptedStatus = "ReturnAccepted";
     public const string DispositionAcceptedStatus = "DispositionAccepted";
+    // Keep these wire values in sync with Nerv.IIP.Contracts.Quality.QualityNcrDispositionTypes.
+    private const string ReworkDispositionType = "rework";
+    private const string ScrapDispositionType = "scrap";
+    private const string ReturnToSupplierDispositionType = "return-to-supplier";
+    private const string ConditionalReleaseDispositionType = "conditional-release";
+    private const string SortAndScreenDispositionType = "sort-and-screen";
 
     private DefectRecord()
     {
@@ -88,9 +94,10 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         DispositionReferenceId = string.IsNullOrWhiteSpace(dispositionReferenceId) ? null : dispositionReferenceId.Trim();
         Status = DispositionType.Trim().ToLowerInvariant() switch
         {
-            "rework" => ReworkPendingStatus,
-            "scrap" => ScrapAcceptedStatus,
-            "return" => ReturnAcceptedStatus,
+            ReworkDispositionType => ReworkPendingStatus,
+            ScrapDispositionType => ScrapAcceptedStatus,
+            ReturnToSupplierDispositionType => ReturnAcceptedStatus,
+            ConditionalReleaseDispositionType or SortAndScreenDispositionType => DispositionAcceptedStatus,
             _ => DispositionAcceptedStatus,
         };
         ClosedAtUtc = Status == ReworkPendingStatus ? null : changedAtUtc;

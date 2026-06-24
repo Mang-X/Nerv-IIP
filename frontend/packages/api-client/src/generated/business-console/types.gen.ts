@@ -1411,6 +1411,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest = {
     versionKind?: string;
     versionId?: string;
+    supersededByVersionId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1436,6 +1437,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeAffectedVersionItem = {
     versionKind?: string;
     versionId?: string;
+    supersededByVersionId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListEngineeringChangesRequest = {
@@ -2183,6 +2185,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
+    unitCost?: number | null;
     receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
@@ -2210,6 +2213,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     uomCode?: string;
     requestedAtUtc?: string;
+    unitCost?: number | null;
     idempotencyKey?: string;
     producedLotNo?: string | null;
     serialNo?: string | null;

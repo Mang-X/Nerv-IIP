@@ -31,6 +31,15 @@ public static class QualityStockReleaseTargetStatuses
     public const string Blocked = "blocked";
 }
 
+public static class QualityNcrDispositionTypes
+{
+    public const string Rework = "rework";
+    public const string Scrap = "scrap";
+    public const string ReturnToSupplier = "return-to-supplier";
+    public const string ConditionalRelease = "conditional-release";
+    public const string SortAndScreen = "sort-and-screen";
+}
+
 public sealed record DefectRaisedIntegrationEvent(
     string EventId,
     string EventType,

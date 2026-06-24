@@ -2461,7 +2461,7 @@ public sealed class BusinessGatewayProxyTests
         await client.GetEngineeringChangeAsync("internal-token-001", "ECO-001", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ReleaseEngineeringChangeAsync(
             "internal-token-001",
-            new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A")]),
+            new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A", "MBOM-001:B")]),
             CancellationToken.None);
         await client.CreateProductionVersionAsync(
             "internal-token-001",
@@ -2969,6 +2969,45 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(cases.Select(x => x.Path), handler.Requests.Select(x => x.RequestUri!.PathAndQuery));
         Assert.All(handler.Requests, sent => Assert.Equal("internal-token-001", sent.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task Mes_http_client_forwards_finished_goods_receipt_unit_cost()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            finishedGoodsReceiptRequestId = "receipt-001",
+            requestNo = "FGR-001",
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
+        var client = new HttpBusinessMesClient(httpClient);
+
+        var response = await client.CreateFinishedGoodsReceiptRequestAsync(
+            "internal-token-001",
+            new BusinessConsoleMesCreateReceiptRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "SKU-FG-1000",
+                8m,
+                "PCS",
+                requestedAtUtc,
+                12.34m,
+                "idem-fgr-001",
+                "LOT-FG-001"),
+            CancellationToken.None);
+
+        Assert.Equal("FGR-001", response.RequestNo);
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/mes/finished-goods-receipt-requests", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        var requestBody = Assert.Single(handler.RequestBodies);
+        Assert.NotNull(requestBody);
+        using var document = JsonDocument.Parse(requestBody);
+        Assert.Equal(12.34m, document.RootElement.GetProperty("unitCost").GetDecimal());
+        Assert.Equal("idem-fgr-001", document.RootElement.GetProperty("idempotencyKey").GetString());
     }
 
     [Fact]

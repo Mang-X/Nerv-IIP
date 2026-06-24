@@ -160,6 +160,10 @@ public interface IIntegrationEventDeadLetterStore
         IntegrationEventDeadLetterMessage message,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> AddRangeAsync(
+        IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
         string? consumerName,
         IntegrationEventDeadLetterStatus? status,
@@ -188,6 +192,21 @@ public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventD
         }
 
         return Task.FromResult(message);
+    }
+
+    public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> AddRangeAsync(
+        IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (syncRoot)
+        {
+            this.messages.AddRange(messages);
+        }
+
+        return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>(messages.ToArray());
     }
 
     public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(

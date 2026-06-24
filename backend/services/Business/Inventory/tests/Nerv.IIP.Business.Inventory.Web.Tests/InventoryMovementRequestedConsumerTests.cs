@@ -40,6 +40,111 @@ public sealed class InventoryMovementRequestedConsumerTests
     }
 
     [Fact]
+    public async Task Movement_requested_consumer_applies_payload_unit_cost_to_inbound_valuation()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-unit-cost") with
+        {
+            Payload = CreateRequestedEvent("evt-unit-cost").Payload with
+            {
+                IdempotencyKey = "idem-in-unit-cost-001",
+                UnitCost = 12.34m,
+            },
+        }, CancellationToken.None);
+
+        var movement = Assert.Single(dbContext.StockMovements);
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        Assert.Equal(12.34m, movement.UnitCost);
+        Assert.Equal(61.70m, movement.MovementAmount);
+        Assert.Equal(12.34m, ledger.MovingAverageUnitCost);
+        Assert.Equal(61.70m, ledger.InventoryValue);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_keeps_weighted_moving_average_for_multiple_unit_cost_receipts()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-weighted-001") with
+        {
+            Payload = CreateRequestedEvent("evt-weighted-001").Payload with
+            {
+                SourceDocumentId = "IN-WEIGHTED-001",
+                IdempotencyKey = "idem-in-weighted-001",
+                UnitCost = 12.34m,
+            },
+        }, CancellationToken.None);
+        await handler.HandleAsync(CreateRequestedEvent("evt-weighted-002") with
+        {
+            Payload = CreateRequestedEvent("evt-weighted-002").Payload with
+            {
+                SourceDocumentId = "IN-WEIGHTED-002",
+                IdempotencyKey = "idem-in-weighted-002",
+                UnitCost = 20m,
+            },
+        }, CancellationToken.None);
+
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(161.70m, ledger.InventoryValue);
+        Assert.Equal(16.17m, ledger.MovingAverageUnitCost);
+        Assert.Contains(dbContext.StockMovements, x => x.SourceDocumentId == "IN-WEIGHTED-001" && x.MovementAmount == 61.70m);
+        Assert.Contains(dbContext.StockMovements, x => x.SourceDocumentId == "IN-WEIGHTED-002" && x.MovementAmount == 100m);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_does_not_dilute_existing_average_when_inbound_unit_cost_is_missing()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            sender,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-costed-001") with
+        {
+            Payload = CreateRequestedEvent("evt-costed-001").Payload with
+            {
+                SourceDocumentId = "IN-COSTED-001",
+                IdempotencyKey = "idem-in-costed-001",
+                UnitCost = 12.34m,
+            },
+        }, CancellationToken.None);
+        await handler.HandleAsync(CreateRequestedEvent("evt-legacy-null-cost") with
+        {
+            Payload = CreateRequestedEvent("evt-legacy-null-cost").Payload with
+            {
+                SourceDocumentId = "IN-LEGACY-NULL-COST",
+                IdempotencyKey = "idem-in-legacy-null-cost",
+                UnitCost = null,
+            },
+        }, CancellationToken.None);
+
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        var legacyMovement = dbContext.StockMovements.Single(x => x.SourceDocumentId == "IN-LEGACY-NULL-COST");
+        Assert.Null(legacyMovement.UnitCost);
+        Assert.Equal(61.70m, legacyMovement.MovementAmount);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(123.40m, ledger.InventoryValue);
+        Assert.Equal(12.34m, ledger.MovingAverageUnitCost);
+    }
+
+    [Fact]
     public async Task Duplicate_movement_requested_event_uses_inventory_command_idempotency()
     {
         await using var dbContext = CreateContext();

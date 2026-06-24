@@ -56,7 +56,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
         string locationCode,
         string? lotNo,
         decimal quantity,
-        DateTimeOffset requestedAtUtc)
+        DateTimeOffset requestedAtUtc,
+        decimal? unitCost = null)
     {
         var movementType = quantity < 0 ? "outbound" : "inbound";
         return new InventoryMovementRequestedIntegrationEvent(
@@ -87,7 +88,8 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
                 "production",
                 null,
                 quantity,
-                requestedAtUtc));
+                requestedAtUtc,
+                UnitCost: unitCost));
     }
 }
 
@@ -112,7 +114,8 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             "receiving",
             request.ProducedLotNo,
             request.Quantity,
-            occurredAtUtc);
+            occurredAtUtc,
+            request.UnitCost);
     }
 }
 
