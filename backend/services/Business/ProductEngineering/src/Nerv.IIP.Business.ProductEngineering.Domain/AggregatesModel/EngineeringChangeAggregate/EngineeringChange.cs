@@ -47,10 +47,10 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         versionKind = Required(versionKind);
         versionId = Required(versionId);
         supersededByVersionId = Optional(supersededByVersionId);
-        var existing = affectedVersions.SingleOrDefault(x => x.VersionKind == versionKind && x.VersionId == versionId);
+        var existing = affectedVersions.SingleOrDefault(x => SameAffectedVersion(x, versionKind, versionId));
         if (existing is not null)
         {
-            if (!string.Equals(existing.SupersededByVersionId ?? string.Empty, supersededByVersionId ?? string.Empty, StringComparison.Ordinal))
+            if (!SameOptionalVersionId(existing.SupersededByVersionId, supersededByVersionId))
             {
                 throw new InvalidOperationException($"Affected {versionKind} version '{versionId}' can only declare one successor in the same engineering change.");
             }
@@ -61,6 +61,17 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         affectedVersions.Add(new EngineeringChangeAffectedVersion(versionKind, versionId, supersededByVersionId));
         Touch();
         return this;
+    }
+
+    private static bool SameAffectedVersion(EngineeringChangeAffectedVersion affectedVersion, string versionKind, string versionId)
+    {
+        return string.Equals(affectedVersion.VersionKind, versionKind, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(affectedVersion.VersionId, versionId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SameOptionalVersionId(string? left, string? right)
+    {
+        return string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     public EngineeringChange Approve(string approvalReferenceId)

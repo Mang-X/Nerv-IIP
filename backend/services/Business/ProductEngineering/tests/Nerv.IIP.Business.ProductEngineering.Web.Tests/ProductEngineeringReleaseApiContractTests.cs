@@ -1188,7 +1188,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 new DateOnly(2026, 6, 1),
                 [
                     new AffectedVersionCommand("engineering-bom", "EBOM-DUP:A", "EBOM-DUP:B"),
-                    new AffectedVersionCommand(" engineering-bom ", " EBOM-DUP:A ", "EBOM-DUP:C")
+                    new AffectedVersionCommand(" Engineering-Bom ", " ebom-dup:a ", "EBOM-DUP:C")
                 ]),
             CancellationToken.None));
 

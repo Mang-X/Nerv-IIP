@@ -168,10 +168,11 @@ public sealed class ProductEngineeringReleaseAggregateTests
     public void EngineeringChange_rejects_conflicting_duplicate_successor()
     {
         var change = EngineeringChange.Open("org-001", "env-dev", "ECO-0003", "Supersede EBOM")
-            .Affect("engineering-bom", "EBOM-001:A", "EBOM-001:B");
+            .Affect("Engineering-Bom", "EBOM-001:A", "EBOM-001:B")
+            .Affect("engineering-bom", "ebom-001:a", "ebom-001:b");
 
         var exception = Assert.Throws<InvalidOperationException>(() =>
-            change.Affect("engineering-bom", "EBOM-001:A", "EBOM-001:C"));
+            change.Affect("engineering-bom", "ebom-001:a", "EBOM-001:C"));
 
         Assert.Contains("can only declare one successor", exception.Message, StringComparison.OrdinalIgnoreCase);
         var affectedVersion = Assert.Single(change.AffectedVersions);
