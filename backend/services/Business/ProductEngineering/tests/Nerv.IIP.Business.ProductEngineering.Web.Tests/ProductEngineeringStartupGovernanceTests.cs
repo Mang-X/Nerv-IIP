@@ -94,27 +94,7 @@ public sealed class ProductEngineeringStartupGovernanceTests
     private static WebApplicationFactory<Program> CreateFactory(
         Dictionary<string, string?>? overrides = null)
     {
-        var settings = new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_product_engineering_governance;Username=nerv;Password=nerv",
-            ["InternalService:BearerToken"] = "test-internal-service-token",
-        };
-
-        if (overrides is not null)
-        {
-            foreach (var (key, value) in overrides)
-            {
-                settings[key] = value;
-            }
-        }
-
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(settings));
-            });
+        return ProductEngineeringWebTestFactory.Create("product-engineering-governance-http", overrides);
     }
 
 }

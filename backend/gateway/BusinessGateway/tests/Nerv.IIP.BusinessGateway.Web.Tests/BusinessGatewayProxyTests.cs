@@ -2461,7 +2461,7 @@ public sealed class BusinessGatewayProxyTests
         await client.GetEngineeringChangeAsync("internal-token-001", "ECO-001", new BusinessConsoleEngineeringContextRequest("org-001", "env-dev"), CancellationToken.None);
         await client.ReleaseEngineeringChangeAsync(
             "internal-token-001",
-            new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A")]),
+            new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A", "MBOM-001:B")]),
             CancellationToken.None);
         await client.CreateProductionVersionAsync(
             "internal-token-001",

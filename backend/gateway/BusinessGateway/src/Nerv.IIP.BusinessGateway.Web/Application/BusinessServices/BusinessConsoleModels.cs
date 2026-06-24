@@ -1259,7 +1259,8 @@ public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
 
 public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionKind,
-    string VersionId);
+    string VersionId,
+    string? SupersededByVersionId = null);
 
 public sealed record BusinessConsoleListEngineeringChangesRequest(
     string OrganizationId,
@@ -1284,7 +1285,8 @@ public sealed record BusinessConsoleEngineeringChangeItem(
 
 public sealed record BusinessConsoleEngineeringChangeAffectedVersionItem(
     string VersionKind,
-    string VersionId);
+    string VersionId,
+    string? SupersededByVersionId);
 
 public sealed record BusinessConsoleListProductionVersionsRequest(
     string OrganizationId,
