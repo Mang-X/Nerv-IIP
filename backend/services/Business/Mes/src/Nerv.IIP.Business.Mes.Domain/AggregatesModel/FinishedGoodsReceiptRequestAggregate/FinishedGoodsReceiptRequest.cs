@@ -22,6 +22,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         decimal quantity,
         string uomCode,
         DateTimeOffset requestedAtUtc,
+        decimal? unitCost,
         string? producedLotNo,
         string? serialNo)
     {
@@ -33,6 +34,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
         UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         RequestedAtUtc = requestedAtUtc;
+        UnitCost = unitCost is null ? null : DomainGuard.Positive(unitCost.Value, nameof(unitCost));
         ProducedLotNo = string.IsNullOrWhiteSpace(producedLotNo) ? null : producedLotNo.Trim();
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
         Status = RequestedStatus;
@@ -46,6 +48,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public decimal Quantity { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
     public DateTimeOffset RequestedAtUtc { get; private set; }
+    public decimal? UnitCost { get; private set; }
     public string? ProducedLotNo { get; private set; }
     public string? SerialNo { get; private set; }
     public string Status { get; private set; } = string.Empty;
@@ -62,7 +65,8 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         string uomCode,
         DateTimeOffset requestedAtUtc,
         string? producedLotNo = null,
-        string? serialNo = null)
+        string? serialNo = null,
+        decimal? unitCost = null)
     {
         var request = new FinishedGoodsReceiptRequest(
             organizationId,
@@ -73,6 +77,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
             quantity,
             uomCode,
             requestedAtUtc,
+            unitCost,
             producedLotNo,
             serialNo);
         request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(request));

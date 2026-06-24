@@ -2185,6 +2185,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     skuId?: string;
     quantity?: number;
+    unitCost?: number | null;
     receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'open' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'started' | 'warning';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
@@ -2212,6 +2213,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     uomCode?: string;
     requestedAtUtc?: string;
+    unitCost?: number | null;
     idempotencyKey?: string;
     producedLotNo?: string | null;
     serialNo?: string | null;
@@ -3283,6 +3285,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     repairCount?: number;
     mtbfHours?: number | null;
     mttrMinutes?: number | null;
+    mtbfRuntimeSource?: string;
+    mtbfRuntimeHasSamples?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceAssetReliabilityRequest = {

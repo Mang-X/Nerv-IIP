@@ -57,7 +57,8 @@ public sealed class MesIntegrationEventTests
             "PCS",
             DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
             "LOT-FG-001",
-            null);
+            null,
+            12.34m);
 
         var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
             .Convert(new FinishedGoodsReceiptRequestedDomainEvent(request));
@@ -68,7 +69,31 @@ public sealed class MesIntegrationEventTests
         Assert.Equal("SKU-FG", integrationEvent.Payload.SkuCode);
         Assert.Equal("LOT-FG-001", integrationEvent.Payload.LotNo);
         Assert.Equal(8m, integrationEvent.Payload.Quantity);
+        Assert.Equal(12.34m, integrationEvent.Payload.UnitCost);
         Assert.Equal("WO-001", integrationEvent.CorrelationId);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_converter_keeps_legacy_null_unit_cost_compatible()
+    {
+        var request = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-LEGACY",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001");
+
+        var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+            .Convert(new FinishedGoodsReceiptRequestedDomainEvent(request));
+
+        Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
+        Assert.Equal("inbound", integrationEvent.Payload.MovementType);
+        Assert.Equal("FGR-LEGACY", integrationEvent.Payload.SourceDocumentId);
+        Assert.Null(integrationEvent.Payload.UnitCost);
     }
 
     [Fact]

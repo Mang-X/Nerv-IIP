@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -141,6 +142,26 @@ public sealed record GenerateDueMaintenanceWorkOrdersCommand(
     string EnvironmentId,
     DateOnly BusinessDate,
     string OpenedBy) : ICommand<GenerateDueMaintenanceWorkOrdersResult>;
+
+public sealed class GenerateDueMaintenanceWorkOrdersCommandLock : ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(GenerateDueMaintenanceWorkOrdersCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var lockKey = string.Join(':',
+            "business-maintenance",
+            "pm-generation",
+            Normalize(command.OrganizationId),
+            Normalize(command.EnvironmentId),
+            command.BusinessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+        return Task.FromResult(new CommandLockSettings(lockKey, 30));
+    }
+
+    private static string Normalize(string value)
+    {
+        return Uri.EscapeDataString(value.Trim().ToLowerInvariant());
+    }
+}
 
 public sealed record GenerateDueMaintenanceWorkOrdersResult(int GeneratedCount, IReadOnlyCollection<MaintenanceWorkOrderId> WorkOrderIds);
 

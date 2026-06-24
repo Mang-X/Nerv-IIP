@@ -470,7 +470,18 @@ public static class MrpCalculator
                 throw new InvalidOperationException($"Missing global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}'.");
             }
 
-            return Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
+            if (conversion.Factor <= 0m)
+            {
+                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': factor must be positive.");
+            }
+
+            var converted = Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode);
+            if (converted < 0m)
+            {
+                throw new InvalidOperationException($"Invalid global UOM conversion from '{fromUomCode}' to planning UOM '{toUomCode}' while normalizing SKU '{triggerSkuCode}': negative quantity after conversion is not allowed.");
+            }
+
+            return converted;
         }
 
         private static decimal Round(decimal value, int precision, string roundingMode)
