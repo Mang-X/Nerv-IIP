@@ -83,10 +83,10 @@ function statusProxy(getStatus: () => string | undefined, setStatus: (value: str
     set: (value: string) => setStatus(value === 'all' ? undefined : value),
   })
 }
+// 应收/应付读面后端支持 open/settled 两态过滤；凭证仅 posted、成本候选仅 pending，
+// 单一真值不暴露状态筛选 Select，仅保留关键字搜索。
 const receivableStatus = statusProxy(() => receivables.filters.status, (v) => { receivables.filters.status = v })
 const payableStatus = statusProxy(() => payables.filters.status, (v) => { payables.filters.status = v })
-const voucherStatus = statusProxy(() => vouchers.filters.status, (v) => { vouchers.filters.status = v })
-const costStatus = statusProxy(() => costCandidates.filters.status, (v) => { costCandidates.filters.status = v })
 
 const summaryErrorMessage = computed(() => formatError(summaryError.value))
 function refreshActive() {
@@ -402,14 +402,6 @@ function formatError(error: unknown) {
         <Toolbar :show-search="false">
           <template #filters>
             <Input v-model="vouchers.filters.keyword" class="h-9 w-48" placeholder="凭证号" aria-label="凭证关键字" />
-            <Select v-model="voucherStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="凭证状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="posted">已过账</SelectItem>
-                <SelectItem value="reversed">已冲销</SelectItem>
-              </SelectContent>
-            </Select>
           </template>
           <template #actions>
             <Button size="sm" type="button" @click="openVoucherDialog">
@@ -437,14 +429,6 @@ function formatError(error: unknown) {
         <Toolbar :show-search="false">
           <template #filters>
             <Input v-model="costCandidates.filters.keyword" class="h-9 w-48" placeholder="候选编号 / 来源单据" aria-label="成本候选关键字" />
-            <Select v-model="costStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="成本候选状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="pending">待结转</SelectItem>
-                <SelectItem value="posted">已结转</SelectItem>
-              </SelectContent>
-            </Select>
           </template>
           <template #actions>
             <Button size="sm" type="button" @click="openCostDialog">

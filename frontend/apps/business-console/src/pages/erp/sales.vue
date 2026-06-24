@@ -77,21 +77,21 @@ const deliveriesPaged = usePagedList(deliveries.filters, {
 const activeTab = shallowRef<'opportunities' | 'quotations' | 'orders' | 'deliveries'>('opportunities')
 
 // reka-ui SelectItem 不接受空字符串 value，用 'all' 作「全部」哨兵并映射回 undefined。
+// 仅报价单读面支持多状态过滤（Draft/Approved/Rejected/Expired）；商机/销售订单/发货单
+// 后端各只接受单一状态（open/released/released），筛选无意义，故只保留关键字搜索。
 function statusProxy(getStatus: () => string | undefined, setStatus: (value: string | undefined) => void) {
   return computed({
     get: () => getStatus() || 'all',
     set: (value: string) => setStatus(value === 'all' ? undefined : value),
   })
 }
-const opportunityStatus = statusProxy(() => opportunities.filters.status, (v) => { opportunities.filters.status = v })
 const quotationStatus = statusProxy(() => quotations.filters.status, (v) => { quotations.filters.status = v })
-const orderStatus = statusProxy(() => orders.filters.status, (v) => { orders.filters.status = v })
-const deliveryStatus = statusProxy(() => deliveries.filters.status, (v) => { deliveries.filters.status = v })
 
 // 语义 KPI（可行动数，非机械计数）：基于本页可见行的漏斗推进信号。
-const PENDING_QUOTATION = new Set(['submitted', 'pending', 'pending-approval', 'awaiting-approval'])
-const IN_TRANSIT_DELIVERY = new Set(['released', 'shipping', 'in-transit', 'intransit'])
-const OPEN_OPPORTUNITY = new Set(['open', 'opened', 'qualifying', 'negotiating', 'in-progress'])
+// 取值收敛到后端真实状态：报价待审为 Draft、发货在途为 released、商机跟进为 open。
+const PENDING_QUOTATION = new Set(['draft'])
+const IN_TRANSIT_DELIVERY = new Set(['released'])
+const OPEN_OPPORTUNITY = new Set(['open'])
 
 const pendingApprovalQuotations = computed(() =>
   quotations.items.value.filter((q) => PENDING_QUOTATION.has((q.status ?? '').toLowerCase())).length,
@@ -224,8 +224,13 @@ async function submitQuotation() {
   }
 }
 
+// 仅 Draft 报价可审批：Approved/Rejected/Expired 再审批后端必抛异常，故不渲染该动作。
+function isApprovable(row: BusinessConsoleErpQuotationItem) {
+  return (row.status ?? '').toLowerCase() === 'draft'
+}
+
 async function approveQuotation(row: BusinessConsoleErpQuotationItem) {
-  if (!row.quotationNo) return
+  if (!row.quotationNo || !isApprovable(row)) return
   try {
     await quotations.approveQuotation(row.quotationNo)
     toast.success(`报价单 ${row.quotationNo} 已审批`)
@@ -309,15 +314,6 @@ function formatError(error: unknown) {
         <Toolbar :show-search="false">
           <template #filters>
             <Input v-model="opportunities.filters.keyword" class="h-9 w-48" placeholder="商机编号 / 客户" aria-label="商机关键字" />
-            <Select v-model="opportunityStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="商机阶段"><SelectValue placeholder="全部阶段" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部阶段</SelectItem>
-                <SelectItem value="open">跟进中</SelectItem>
-                <SelectItem value="won">已赢单</SelectItem>
-                <SelectItem value="lost">已丢单</SelectItem>
-              </SelectContent>
-            </Select>
           </template>
           <template #actions>
             <Button size="sm" type="button" @click="openOpportunityDialog">
@@ -347,10 +343,10 @@ function formatError(error: unknown) {
               <SelectTrigger class="h-9 w-32" aria-label="报价单状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="draft">草稿</SelectItem>
-                <SelectItem value="submitted">待审批</SelectItem>
-                <SelectItem value="approved">已批准</SelectItem>
-                <SelectItem value="rejected">已驳回</SelectItem>
+                <SelectItem value="Draft">待审</SelectItem>
+                <SelectItem value="Approved">已批准</SelectItem>
+                <SelectItem value="Rejected">已拒绝</SelectItem>
+                <SelectItem value="Expired">已过期</SelectItem>
               </SelectContent>
             </Select>
           </template>
@@ -372,12 +368,13 @@ function formatError(error: unknown) {
           <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
           <template #cell-actions="{ row }">
-            <RowActions :label="`报价单操作 ${row.quotationNo ?? ''}`">
+            <RowActions v-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
               <DropdownMenuItem :disabled="quotations.approveQuotationPending.value" @click="approveQuotation(row)">
                 <CheckCircle2Icon aria-hidden="true" />
                 审批通过
               </DropdownMenuItem>
             </RowActions>
+            <span v-else class="text-muted-foreground">—</span>
           </template>
         </DataTable>
         <DataTablePagination v-model:page="quotationsPaged.page.value" v-model:page-size="quotationsPaged.pageSize.value" :total-items="quotations.total.value" />
@@ -387,15 +384,6 @@ function formatError(error: unknown) {
         <Toolbar :show-search="false">
           <template #filters>
             <Input v-model="orders.filters.keyword" class="h-9 w-48" placeholder="销售单号 / 客户" aria-label="销售订单关键字" />
-            <Select v-model="orderStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="销售订单状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="open">未发货</SelectItem>
-                <SelectItem value="delivering">发货中</SelectItem>
-                <SelectItem value="closed">已完成</SelectItem>
-              </SelectContent>
-            </Select>
           </template>
           <template #actions>
             <Button size="sm" type="button" @click="openOrderDialog">
@@ -422,14 +410,6 @@ function formatError(error: unknown) {
         <Toolbar :show-search="false">
           <template #filters>
             <Input v-model="deliveries.filters.keyword" class="h-9 w-48" placeholder="发货单号 / 客户" aria-label="发货单关键字" />
-            <Select v-model="deliveryStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="发货单状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="released">已发货</SelectItem>
-                <SelectItem value="delivered">已签收</SelectItem>
-              </SelectContent>
-            </Select>
           </template>
         </Toolbar>
         <p v-if="deliveriesError" class="text-sm text-destructive" role="alert">{{ deliveriesError }}</p>
