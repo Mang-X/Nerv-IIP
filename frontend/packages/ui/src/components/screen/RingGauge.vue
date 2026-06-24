@@ -49,6 +49,7 @@ const uid = `rg-${Math.random().toString(36).slice(2, 8)}`
     >
       <circle class="sb-rg-track" :cx="VB / 2" :cy="VB / 2" :r="R" fill="none" :stroke-width="STROKE" />
       <circle
+        v-if="pct > 0"
         class="sb-rg-arc"
         :cx="VB / 2"
         :cy="VB / 2"

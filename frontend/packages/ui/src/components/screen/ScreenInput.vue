@@ -14,6 +14,8 @@ withDefaults(
     placeholder?: string
     suffix?: string
     disabled?: boolean
+    /** Accessible name when there's no visible <label>. */
+    ariaLabel?: string
   }>(),
   {
     error: false,
@@ -31,6 +33,7 @@ withDefaults(
       type="text"
       :placeholder="placeholder"
       :disabled="disabled"
+      :aria-label="ariaLabel"
       :aria-invalid="error || undefined"
     >
     <span v-if="suffix" class="sb-in-suffix">{{ suffix }}</span>

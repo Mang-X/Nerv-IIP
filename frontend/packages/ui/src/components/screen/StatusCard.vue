@@ -70,6 +70,8 @@ const accent = computed(
 .sb-lc-dot.alarm {
   background: var(--sb-red);
   box-shadow: 0 0 9px var(--sb-red);
+  /* alarm pulses faster than run/idle — urgency, not ambience */
+  animation-duration: 0.9s;
 }
 .sb-lc-state {
   font-size: 13px;

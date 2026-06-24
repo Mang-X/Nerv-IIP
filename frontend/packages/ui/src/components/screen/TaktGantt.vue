@@ -35,6 +35,8 @@ const LEGEND = [
   { tone: 'stop', label: '停机' },
   { tone: 'alarm', label: '报警' },
 ] as const
+
+const TONE_LABEL = { run: '运行', idle: '待机', stop: '停机', alarm: '报警' } as const
 </script>
 
 <template>
@@ -56,6 +58,7 @@ const LEGEND = [
           class="sb-tg-seg"
           :class="s[0]"
           :style="{ width: s[1] + '%' }"
+          :title="`${r.name} · ${TONE_LABEL[s[0]]} ${s[1]}%`"
         />
       </div>
     </div>
@@ -127,5 +130,14 @@ const LEGEND = [
 }
 .sb-tg-seg {
   height: 100%;
+  transition: filter 0.15s var(--sb-ease);
+}
+.sb-tg-seg:hover {
+  filter: brightness(1.3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-tg-seg {
+    transition: none;
+  }
 }
 </style>

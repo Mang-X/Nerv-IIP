@@ -56,7 +56,7 @@ withDefaults(
   width: 22%;
   background: linear-gradient(90deg, transparent, var(--sb-cyan), transparent);
   opacity: 0.7;
-  animation: sb-gd-slide 3.4s var(--sb-ease) infinite;
+  animation: sb-gd-slide 3.4s ease-in-out infinite;
 }
 @keyframes sb-gd-slide {
   0% {

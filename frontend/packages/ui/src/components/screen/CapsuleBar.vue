@@ -47,9 +47,9 @@ const rows = computed(() =>
 <template>
   <div class="sb-cb">
     <div v-for="(r, i) in rows" :key="i" class="sb-cb-row">
-      <span class="sb-cb-label">{{ r.label }}</span>
+      <span class="sb-cb-label" :title="r.label">{{ r.label }}</span>
       <span class="sb-cb-track" :class="r.tone">
-        <span class="sb-cb-fill" :class="r.tone" :style="{ width: `${r.pct}%` }" />
+        <span v-if="r.pct > 0" class="sb-cb-fill" :class="r.tone" :style="{ width: `${r.pct}%` }" />
       </span>
       <span class="sb-cb-val" :class="r.tone">{{ r.value }}{{ suffix }}</span>
     </div>

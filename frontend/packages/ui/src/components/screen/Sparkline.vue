@@ -70,6 +70,15 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
       :filter="`url(#${uid}-glow)`"
     />
   </svg>
+  <svg
+    v-else
+    class="sb-sl"
+    :viewBox="`0 0 ${W} ${H}`"
+    preserveAspectRatio="none"
+    aria-hidden="true"
+  >
+    <line :x1="0" :y1="H / 2" :x2="W" :y2="H / 2" stroke="var(--sb-faint)" stroke-width="1" stroke-dasharray="3 4" />
+  </svg>
 </template>
 
 <style scoped>

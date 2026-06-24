@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 /**
  * Screen — digital flip-counter. Each digit sits in its own dark cell with a top
- * highlight and a cyan glowing glyph; thousands are grouped with thin comma
- * cells. Pass a number (grouped automatically) or a pre-formatted string. Built
- * on the independent `--sb-*` tokens.
+ * highlight and a cyan glowing glyph; thousands are grouped with thin comma cells.
+ * A numeric value rolls (tweens) to its new figure on change — the "flip" — over
+ * 0.6s on the emphasized curve; a pre-formatted string shows verbatim. Under
+ * reduced-motion the value snaps. Built on the independent `--sb-*` tokens.
  */
 const props = withDefaults(
   defineProps<{
-    /** A number (auto thousands-grouped) or a ready string like "1,284". */
+    /** A number (auto thousands-grouped, rolls on change) or a ready string like "1,284". */
     value: number | string
     /** Small unit after the counter, e.g. kWh. */
     suffix?: string
@@ -17,10 +19,47 @@ const props = withDefaults(
   {},
 )
 
-/** Group integers; pass strings through verbatim so callers can pre-format. */
-const text = computed(() =>
-  typeof props.value === 'number' ? props.value.toLocaleString('en-US') : String(props.value),
+const reduce = useMediaQuery('(prefers-reduced-motion: reduce)')
+
+// Tweened display figure for numeric values; strings pass straight through.
+const display = ref(typeof props.value === 'number' ? props.value : 0)
+let raf = 0
+
+watch(
+  () => props.value,
+  (to) => {
+    if (typeof to !== 'number') return
+    cancelAnimationFrame(raf)
+    if (reduce.value) {
+      display.value = to
+      return
+    }
+    const from = display.value
+    const dur = 600
+    let start = 0
+    const step = (ts: number) => {
+      if (!start) start = ts
+      const t = Math.min(1, (ts - start) / dur)
+      // ease-out-expo — matches --sb-ease-emphasized
+      const e = t === 1 ? 1 : 1 - 2 ** (-10 * t)
+      display.value = from + (to - from) * e
+      if (t < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+  },
 )
+onBeforeUnmount(() => cancelAnimationFrame(raf))
+
+/** Group numbers (tweened), preserving the caller's decimal places; strings pass
+ *  through verbatim so callers can pre-format. */
+const text = computed(() => {
+  if (typeof props.value !== 'number') return String(props.value)
+  const dp = (String(props.value).split('.')[1] ?? '').length
+  return display.value.toLocaleString('en-US', {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  })
+})
 
 /** One cell per character; commas/dots/spaces render as thin separators. */
 const cells = computed(() =>

@@ -59,7 +59,7 @@ const cells = computed(() =>
 <template>
   <div class="sb-kpis">
     <div v-for="(k, i) in cells" :key="i" class="sb-kpi">
-      <svg v-if="k.ring != null" width="42" height="42" viewBox="0 0 42 42" class="sb-kpi-ring">
+      <svg v-if="k.ring != null" width="42" height="42" viewBox="0 0 42 42" class="sb-kpi-ring" role="img" :aria-label="`${k.label} ${k.value}`">
         <circle class="sb-kpi-track" cx="21" cy="21" :r="R" fill="none" stroke-width="4" />
         <circle
           class="sb-kpi-arc"
@@ -74,11 +74,11 @@ const cells = computed(() =>
           transform="rotate(-90 21 21)"
         />
       </svg>
-      <span v-else class="sb-kpi-ic" :class="k.tone ?? 'cyan'">
+      <span v-else class="sb-kpi-ic" :class="k.tone ?? 'neutral'">
         <component :is="k.icon" :size="19" />
       </span>
       <div>
-        <div class="sb-kpi-v" :class="k.tone ?? 'cyan'">{{ k.value }}</div>
+        <div class="sb-kpi-v" :class="k.tone ?? 'neutral'">{{ k.value }}</div>
         <div class="sb-kpi-k">{{ k.label }}</div>
       </div>
     </div>
@@ -121,6 +121,11 @@ const cells = computed(() =>
   place-items: center;
   flex: none;
 }
+.sb-kpi-ic.neutral {
+  color: var(--sb-text-2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--sb-line-2);
+}
 .sb-kpi-ic.cyan {
   color: var(--sb-cyan);
   background: rgba(0, 229, 255, 0.08);
@@ -149,6 +154,9 @@ const cells = computed(() =>
 .sb-kpi-v {
   font-size: 22px;
   font-weight: 700;
+}
+.sb-kpi-v.neutral {
+  color: var(--sb-text);
 }
 .sb-kpi-v.cyan {
   color: var(--sb-cyan);

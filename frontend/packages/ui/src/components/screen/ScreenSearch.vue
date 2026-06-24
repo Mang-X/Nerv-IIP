@@ -9,9 +9,10 @@ import { Search, X } from 'lucide-vue-next'
  */
 const model = defineModel<string>({ default: '' })
 
-withDefaults(defineProps<{ placeholder?: string; disabled?: boolean }>(), {
+withDefaults(defineProps<{ placeholder?: string; disabled?: boolean; ariaLabel?: string }>(), {
   placeholder: '搜索工单号 / 产线 / 设备',
   disabled: false,
+  ariaLabel: '搜索',
 })
 
 function clear() {
@@ -26,7 +27,7 @@ function clear() {
       v-model="model"
       class="sb-se-field"
       type="search"
-      role="searchbox"
+      :aria-label="ariaLabel"
       :placeholder="placeholder"
       :disabled="disabled"
     >
@@ -108,7 +109,10 @@ function clear() {
   background: rgba(255, 255, 255, 0.06);
   color: var(--sb-muted);
   cursor: pointer;
-  transition: background 0.15s var(--sb-ease), color 0.15s var(--sb-ease);
+  transition: background 0.15s var(--sb-ease), color 0.15s var(--sb-ease), transform 0.15s var(--sb-ease);
+}
+.sb-se-clear:active {
+  transform: scale(0.88);
 }
 .sb-se-clear:hover {
   background: rgba(255, 255, 255, 0.12);

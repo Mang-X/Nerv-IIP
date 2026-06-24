@@ -38,12 +38,12 @@ withDefaults(
     <table class="sb-at-tbl">
       <thead>
         <tr>
-          <th>告警时间</th>
-          <th>产线</th>
-          <th>告警级别</th>
-          <th>告警内容</th>
-          <th>工单号</th>
-          <th>状态</th>
+          <th scope="col">告警时间</th>
+          <th scope="col">产线</th>
+          <th scope="col">告警级别</th>
+          <th scope="col">告警内容</th>
+          <th scope="col">工单号</th>
+          <th scope="col">状态</th>
         </tr>
       </thead>
       <tbody>
@@ -84,6 +84,17 @@ withDefaults(
   padding: 9px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--sb-text-2);
+}
+.sb-at-tbl tbody tr {
+  transition: background 0.15s var(--sb-ease);
+}
+.sb-at-tbl tbody tr:hover {
+  background: rgba(0, 229, 255, 0.05);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-at-tbl tbody tr {
+    transition: none;
+  }
 }
 .sb-at-mono {
   font-family: ui-monospace, monospace;
