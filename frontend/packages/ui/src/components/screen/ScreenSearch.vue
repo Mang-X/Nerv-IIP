@@ -66,13 +66,7 @@ function clear() {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(140, 195, 245, 0.5),
-    rgba(255, 255, 255, 0.1) 18%,
-    rgba(255, 255, 255, 0.1) 82%,
-    rgba(140, 195, 245, 0.5)
-  );
+  background: var(--sb-edge-gradient);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;

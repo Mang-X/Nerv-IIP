@@ -38,6 +38,15 @@
 
   /* effects — restrained: a white highlight carries structure, glow is a whisper */
   --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
+  /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
+     white is reserved for the top highlight (--sb-highlight), not the edge body. */
+  --sb-edge-gradient: linear-gradient(
+    90deg,
+    rgba(86, 168, 238, 0.65),
+    rgba(86, 168, 238, 0.22) 22%,
+    rgba(86, 168, 238, 0.22) 78%,
+    rgba(86, 168, 238, 0.65)
+  );
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
   --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */

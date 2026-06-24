@@ -39,13 +39,7 @@ withDefaults(
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.12) 20%,
-    rgba(255, 255, 255, 0.12) 80%,
-    rgba(255, 255, 255, 0.3)
-  );
+  background: var(--sb-edge-gradient);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;

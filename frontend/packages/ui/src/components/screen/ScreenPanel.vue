@@ -48,13 +48,7 @@ defineProps<{
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(
-    90deg,
-    rgba(140, 195, 245, 0.5),
-    rgba(255, 255, 255, 0.1) 14%,
-    rgba(255, 255, 255, 0.1) 86%,
-    rgba(140, 195, 245, 0.5)
-  );
+  background: var(--sb-edge-gradient);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
