@@ -9,6 +9,153 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
     [Fact]
+    public async Task Http_provider_aggregates_inventory_sites_and_converts_available_quantities_to_bom_uom()
+    {
+        var productEngineeringHandler = new StubHttpMessageHandler(request =>
+        {
+            Assert.NotNull(request.RequestUri);
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(new
+                {
+                    items = new[]
+                    {
+                        new
+                        {
+                            productionVersionId = "PV-001",
+                            organizationId = "org-001",
+                            environmentId = "env-dev",
+                            skuCode = "FG-FSA",
+                            mbomVersionId = "MBOM-1000:A",
+                            routingVersionId = "ROUTE-1000:A",
+                            validFrom = "2026-06-01",
+                            validTo = (string?)null,
+                            lotSizeMin = (decimal?)null,
+                            lotSizeMax = (decimal?)null,
+                            priority = 10,
+                            isDefault = true,
+                            status = "active",
+                        },
+                    },
+                    total = 1,
+                });
+            }
+
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/manufacturing-boms/MBOM-1000/A?", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(new
+                {
+                    bomCode = "MBOM-1000",
+                    revision = "A",
+                    skuCode = "FG-FSA",
+                    engineeringBomVersionId = "EBOM-1000:A",
+                    status = "Published",
+                    effectiveDate = "2026-06-01",
+                    materialLines = new object[]
+                    {
+                        new
+                        {
+                            skuCode = "MAT-POWDER",
+                            quantity = 2m,
+                            unitOfMeasureCode = "kg",
+                            scrapRate = 0m,
+                            isPhantom = false,
+                            alternateGroup = (string?)null,
+                            alternatePriority = (int?)null,
+                            substituteSkuCodes = (string?)null,
+                            referenceDesignators = (string?)null,
+                            yieldRate = 1m,
+                            backflush = false,
+                        },
+                    },
+                    recipeLines = Array.Empty<object>(),
+                });
+            }
+
+            throw new InvalidOperationException($"Unexpected ProductEngineering request: {pathAndQuery}");
+        });
+        var masterDataHandler = new StubHttpMessageHandler(request =>
+        {
+            Assert.NotNull(request.RequestUri);
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            Assert.StartsWith("/api/business/v1/master-data/resources?", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("resourceType=uom-conversion", pathAndQuery, StringComparison.Ordinal);
+            Assert.Contains("all=True", pathAndQuery, StringComparison.Ordinal);
+            return JsonEnvelope(new
+            {
+                resources = new[]
+                {
+                    new
+                    {
+                        resourceType = "uom-conversion",
+                        code = "kg->g",
+                        displayName = "kg to g",
+                        active = true,
+                        snapshotVersion = "2026-06-01T00:00:00Z",
+                        effectiveFrom = "2026-01-01",
+                        effectiveTo = (string?)null,
+                        fromUomCode = "kg",
+                        toUomCode = "g",
+                        factor = 1000m,
+                        offset = 0m,
+                        precision = 3,
+                        roundingMode = "half-up",
+                    },
+                },
+                total = 1,
+                truncated = false,
+                limit = (int?)null,
+            });
+        });
+        var inventoryRequests = new List<string>();
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+        {
+            Assert.NotNull(request.RequestUri);
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            inventoryRequests.Add(pathAndQuery);
+            if (pathAndQuery.Contains("skuCode=MAT-POWDER", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=g", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("siteCode=SITE-A", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(Availability("MAT-POWDER", "g", "SITE-A", 5000m));
+            }
+
+            if (pathAndQuery.Contains("skuCode=MAT-POWDER", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("uomCode=g", StringComparison.Ordinal) &&
+                pathAndQuery.Contains("siteCode=SITE-B", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(Availability("MAT-POWDER", "g", "SITE-B", 7000m));
+            }
+
+            return JsonEnvelope(Availability("MAT-POWDER", "kg", "production", 0m));
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMasterDataHttpClient(new HttpClient(masterDataHandler) { BaseAddress = new Uri("http://master-data") }),
+            new MesMaterialRequirementInventoryOptions { SiteCodes = ["SITE-A", "SITE-B"] });
+
+        var result = await provider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-FSA",
+                "PV-001",
+                10m,
+                DateTimeOffset.Parse("2026-06-19T08:00:00Z")),
+            CancellationToken.None);
+
+        var line = Assert.Single(result.Lines);
+        Assert.Equal("MAT-POWDER", line.MaterialId);
+        Assert.Equal(20m, line.RequiredQuantity);
+        Assert.Equal(12m, line.AvailableQuantity);
+        Assert.Contains(inventoryRequests, x => x.Contains("uomCode=g", StringComparison.Ordinal) && x.Contains("siteCode=SITE-A", StringComparison.Ordinal));
+        Assert.Contains(inventoryRequests, x => x.Contains("uomCode=g", StringComparison.Ordinal) && x.Contains("siteCode=SITE-B", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Http_provider_captures_mbom_requirements_with_inventory_availability()
     {
         var productEngineeringHandler = new StubHttpMessageHandler(request =>
@@ -234,7 +381,10 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         };
     }
 
-    private static object Availability(string skuCode, string uomCode, decimal availableQuantity)
+    private static object Availability(string skuCode, string uomCode, decimal availableQuantity) =>
+        Availability(skuCode, uomCode, "production", availableQuantity);
+
+    private static object Availability(string skuCode, string uomCode, string siteCode, decimal availableQuantity)
     {
         return new
         {
@@ -242,7 +392,7 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
             environmentId = "env-dev",
             skuCode,
             uomCode,
-            siteCode = "production",
+            siteCode,
             locationCode = (string?)null,
             lotNo = (string?)null,
             serialNo = (string?)null,

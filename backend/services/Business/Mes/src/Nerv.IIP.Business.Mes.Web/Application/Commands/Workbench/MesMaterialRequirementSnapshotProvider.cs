@@ -76,14 +76,21 @@ public sealed class MesInventoryHttpClient(HttpClient httpClient)
     public HttpClient HttpClient { get; } = httpClient;
 }
 
+public sealed class MesMasterDataHttpClient(HttpClient httpClient)
+{
+    public HttpClient HttpClient { get; } = httpClient;
+}
+
 public sealed class MesMaterialRequirementInventoryOptions
 {
     public string DefaultSiteCode { get; init; } = "production";
+    public IReadOnlyCollection<string>? SiteCodes { get; init; }
 }
 
 public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
     MesProductEngineeringHttpClient productEngineeringClient,
     MesInventoryHttpClient inventoryClient,
+    MesMasterDataHttpClient? masterDataClient = null,
     MesMaterialRequirementInventoryOptions? inventoryOptions = null,
     IInternalServiceTokenProvider? internalTokenProvider = null)
     : IMesMaterialRequirementSnapshotProvider
@@ -91,6 +98,15 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
     private const string ActiveProductionVersionStatus = "active";
     private const string PublishedEngineeringStatus = "published";
     private readonly MesMaterialRequirementInventoryOptions inventoryOptions = inventoryOptions ?? new MesMaterialRequirementInventoryOptions();
+
+    public HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+        MesProductEngineeringHttpClient productEngineeringClient,
+        MesInventoryHttpClient inventoryClient,
+        MesMaterialRequirementInventoryOptions? inventoryOptions = null,
+        IInternalServiceTokenProvider? internalTokenProvider = null)
+        : this(productEngineeringClient, inventoryClient, null, inventoryOptions, internalTokenProvider)
+    {
+    }
 
     public async Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
         MesMaterialRequirementSnapshotRequest request,
@@ -154,6 +170,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return MesMaterialRequirementSnapshotResult.NoRequirements($"product-engineering-http:{selectedVersion.ProductionVersionId}:{selectedVersion.MbomVersionId}");
         }
 
+        var conversions = await GetUomConversionsAsync(request, requiredLines, cancellationToken);
         var lines = new List<MesMaterialRequirementSnapshotLine>(requiredLines.Length);
         foreach (var line in requiredLines)
         {
@@ -161,6 +178,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 request,
                 line.MaterialId,
                 line.UomCode,
+                conversions,
                 cancellationToken);
             lines.Add(new MesMaterialRequirementSnapshotLine(
                 null,
@@ -180,19 +198,157 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         MesMaterialRequirementSnapshotRequest request,
         string materialId,
         string uomCode,
+        IReadOnlyCollection<MesUomConversionSnapshot> conversions,
         CancellationToken cancellationToken)
     {
-        var availability = await SendAsync<StockAvailabilityResponse>(
-            inventoryClient.HttpClient,
-            "Inventory",
-            "/api/inventory/v1/availability?" + Query(
+        var availableQuantity = 0m;
+        foreach (var candidate in GetInventoryUomCandidates(uomCode, conversions))
+        {
+            foreach (var siteCode in GetSiteCodes())
+            {
+                var availability = await SendAsync<StockAvailabilityResponse>(
+                    inventoryClient.HttpClient,
+                    "Inventory",
+                    "/api/inventory/v1/availability?" + Query(
+                        ("organizationId", request.OrganizationId),
+                        ("environmentId", request.EnvironmentId),
+                        ("skuCode", materialId),
+                        ("uomCode", candidate.InventoryUomCode),
+                        ("siteCode", siteCode)),
+                    cancellationToken);
+                availableQuantity += candidate.ToRequiredUom(Math.Max(0m, availability.AvailableQuantity));
+            }
+        }
+
+        return Math.Max(0m, availableQuantity);
+    }
+
+    private async Task<IReadOnlyCollection<MesUomConversionSnapshot>> GetUomConversionsAsync(
+        MesMaterialRequirementSnapshotRequest request,
+        IReadOnlyCollection<MaterialRequirementLineDraft> requiredLines,
+        CancellationToken cancellationToken)
+    {
+        if (masterDataClient is null)
+        {
+            return [];
+        }
+
+        var response = await SendAsync<MasterDataResourceListResponse>(
+            masterDataClient.HttpClient,
+            "MasterData",
+            "/api/business/v1/master-data/resources?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
-                ("skuCode", materialId),
-                ("uomCode", uomCode),
-                ("siteCode", inventoryOptions.DefaultSiteCode)),
+                ("resourceType", "uom-conversion"),
+                ("all", true)),
             cancellationToken);
-        return Math.Max(0m, availability.AvailableQuantity);
+        if (response.Truncated)
+        {
+            var limit = response.Limit ?? response.Resources.Count;
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: MasterData UOM conversion list was truncated at {limit} of {response.Total}; MES cannot reliably normalize material availability.");
+        }
+
+        var requiredUoms = requiredLines
+            .Select(x => NormalizeCode(x.UomCode))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var capturedDate = DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime);
+        return response.Resources
+            .Where(x => x.Active)
+            .Where(x => !string.IsNullOrWhiteSpace(x.FromUomCode) && !string.IsNullOrWhiteSpace(x.ToUomCode))
+            .Where(x => x.Factor is > 0m)
+            .Where(x => (x.EffectiveFrom ?? DateOnly.MinValue) <= capturedDate)
+            .Where(x => x.EffectiveTo is null || x.EffectiveTo.Value >= capturedDate)
+            .Where(x => requiredUoms.Contains(NormalizeCode(x.FromUomCode!)) || requiredUoms.Contains(NormalizeCode(x.ToUomCode!)))
+            .GroupBy(x => $"{NormalizeCode(x.FromUomCode!)}\u001f{NormalizeCode(x.ToUomCode!)}", StringComparer.OrdinalIgnoreCase)
+            .Select(x => x
+                .OrderByDescending(y => y.EffectiveFrom ?? DateOnly.MinValue)
+                .ThenBy(y => y.SnapshotVersion, StringComparer.Ordinal)
+                .ThenBy(y => y.Code, StringComparer.Ordinal)
+                .First())
+            .Select(x => new MesUomConversionSnapshot(
+                x.FromUomCode!,
+                x.ToUomCode!,
+                x.Factor!.Value,
+                x.Offset ?? 0m,
+                Math.Max(0, x.Precision ?? 0),
+                string.IsNullOrWhiteSpace(x.RoundingMode) ? "half-up" : x.RoundingMode))
+            .ToArray();
+    }
+
+    private IReadOnlyCollection<string> GetSiteCodes()
+    {
+        var configured = inventoryOptions.SiteCodes?
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (configured is { Length: > 0 })
+        {
+            return configured;
+        }
+
+        return [inventoryOptions.DefaultSiteCode];
+    }
+
+    private static IReadOnlyCollection<InventoryUomCandidate> GetInventoryUomCandidates(
+        string requiredUomCode,
+        IReadOnlyCollection<MesUomConversionSnapshot> conversions)
+    {
+        var required = NormalizeCode(requiredUomCode);
+        var candidates = new List<InventoryUomCandidate>
+        {
+            new(requiredUomCode, static quantity => quantity),
+        };
+
+        foreach (var conversion in conversions)
+        {
+            if (NormalizeCode(conversion.ToUomCode) == required)
+            {
+                candidates.Add(new InventoryUomCandidate(
+                    conversion.FromUomCode,
+                    quantity => ConvertForward(quantity, conversion)));
+            }
+
+            if (NormalizeCode(conversion.FromUomCode) == required)
+            {
+                candidates.Add(new InventoryUomCandidate(
+                    conversion.ToUomCode,
+                    quantity => ConvertInverse(quantity, conversion)));
+            }
+        }
+
+        return candidates
+            .GroupBy(x => NormalizeCode(x.InventoryUomCode), StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToArray();
+    }
+
+    private static decimal ConvertForward(decimal quantity, MesUomConversionSnapshot conversion)
+    {
+        return Math.Max(0m, Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode));
+    }
+
+    private static decimal ConvertInverse(decimal quantity, MesUomConversionSnapshot conversion)
+    {
+        return Math.Max(0m, (quantity - conversion.Offset) / conversion.Factor);
+    }
+
+    private static decimal Round(decimal value, int precision, string roundingMode)
+    {
+        var digits = Math.Clamp(precision, 0, 12);
+        return NormalizeCode(roundingMode) switch
+        {
+            "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
+            "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
+            "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
+            _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
+        };
+    }
+
+    private static decimal RoundToward(decimal value, int digits, bool ceiling)
+    {
+        var scale = (decimal)Math.Pow(10, digits);
+        return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
     }
 
     private async Task<T> SendAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)
@@ -275,8 +431,11 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
     {
         DateOnly date => date.ToString("O", CultureInfo.InvariantCulture),
         DateTimeOffset dateTime => dateTime.ToString("O", CultureInfo.InvariantCulture),
+        bool boolean => boolean.ToString(CultureInfo.InvariantCulture),
         _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
     };
+
+    private static string NormalizeCode(string value) => value.Trim().ToUpperInvariant();
 }
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
@@ -328,3 +487,54 @@ internal sealed record ManufacturingBomRecipeLineItem(string ParameterCode, stri
 internal sealed record StockAvailabilityResponse(decimal AvailableQuantity);
 
 internal sealed record MaterialRequirementLineDraft(string MaterialId, string UomCode, decimal RequiredQuantity);
+
+internal sealed record MasterDataResourceListResponse(
+    IReadOnlyCollection<MasterDataResourceListItem> Resources,
+    int Total,
+    bool Truncated = false,
+    int? Limit = null);
+
+internal sealed record MasterDataResourceListItem(
+    string ResourceType,
+    string Code,
+    string DisplayName,
+    bool Active,
+    string SnapshotVersion,
+    string? PartnerType = null,
+    IReadOnlyCollection<string>? PartnerRoles = null,
+    string? SiteCode = null,
+    string? PlantCode = null,
+    string? LineCode = null,
+    string? WorkshopCode = null,
+    int? CapacityMinutesPerDay = null,
+    string? WorkCenterCode = null,
+    string? Status = null,
+    string? Category = null,
+    string? MaterialType = null,
+    string? CodeSet = null,
+    string? BaseUomCode = null,
+    string? TaxId = null,
+    string? ParentDepartmentCode = null,
+    string? DepartmentCode = null,
+    string? ShiftCode = null,
+    string? UserId = null,
+    string? SkillCode = null,
+    string? SkillLevel = null,
+    DateOnly? EffectiveFrom = null,
+    DateOnly? EffectiveTo = null,
+    string? FromUomCode = null,
+    string? ToUomCode = null,
+    decimal? Factor = null,
+    decimal? Offset = null,
+    int? Precision = null,
+    string? RoundingMode = null);
+
+internal sealed record MesUomConversionSnapshot(
+    string FromUomCode,
+    string ToUomCode,
+    decimal Factor,
+    decimal Offset,
+    int Precision,
+    string RoundingMode);
+
+internal sealed record InventoryUomCandidate(string InventoryUomCode, Func<decimal, decimal> ToRequiredUom);
