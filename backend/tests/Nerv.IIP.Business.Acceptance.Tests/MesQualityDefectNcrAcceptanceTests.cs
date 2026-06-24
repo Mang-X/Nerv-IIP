@@ -75,6 +75,55 @@ public sealed class MesQualityDefectNcrAcceptanceTests
         Assert.Equal("scrap", updatedDefect.DispositionType);
     }
 
+    [Fact]
+    public async Task Quality_return_to_supplier_disposition_event_updates_mes_defect_return_status()
+    {
+        await using var mesDb = CreateMesContext();
+        var defect = DefectRecord.Create(
+            "org-001",
+            "env-dev",
+            "DEF-RETURN-ACCEPT-001",
+            "WO-ACCEPT-001",
+            "OP-10",
+            "SURFACE",
+            2m,
+            DateTimeOffset.Parse("2026-06-15T10:00:00Z"));
+        mesDb.DefectRecords.Add(defect);
+        await mesDb.SaveChangesAsync();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-RETURN-001",
+            "in-process",
+            defect.DefectNo,
+            "SKU-FG-1000",
+            2m,
+            "surface defect",
+            "LOT-001",
+            null,
+            []);
+        ncr.SubmitDisposition(
+            QualityNcrDispositionTypes.ReturnToSupplier,
+            "approval-chain-001",
+            [],
+            [MrbReviewInput.Approve("qa-lead-001", "supplier return accepted", DateTimeOffset.Parse("2026-06-15T10:30:00Z"))]);
+        var dispositionEvent = new NcrDispositionDecidedIntegrationEventConverter(
+                new FixedQualityIntegrationEventContextAccessor())
+            .Convert(new NonconformanceReportDispositionDecidedDomainEvent(ncr));
+        var mesHandler = new NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await mesHandler.HandleAsync(dispositionEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var updatedDefect = await mesDb.DefectRecords.SingleAsync();
+        Assert.Equal(QualityNcrDispositionTypes.ReturnToSupplier, dispositionEvent.Payload.DispositionType);
+        Assert.Equal(DefectRecord.ReturnAcceptedStatus, updatedDefect.Status);
+        Assert.Equal(QualityNcrDispositionTypes.ReturnToSupplier, updatedDefect.DispositionType);
+        Assert.Null(updatedDefect.DispositionReferenceId);
+    }
+
     private static MesDbContext CreateMesContext()
     {
         var options = new DbContextOptionsBuilder<MesDbContext>()
