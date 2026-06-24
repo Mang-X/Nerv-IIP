@@ -61,7 +61,7 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
             suggestion.Quantity,
             suggestion.RequiredDate,
             suggestion.ReleaseDate,
-            suggestion.PeggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(),
+            suggestion.PeggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
             suggestion.PeggingLinks.Select(x => x.ProductionVersionReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
             suggestion.AcceptedDownstreamService ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentType ?? string.Empty,

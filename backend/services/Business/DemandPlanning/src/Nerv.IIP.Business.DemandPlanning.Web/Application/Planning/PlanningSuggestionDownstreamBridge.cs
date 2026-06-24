@@ -57,7 +57,13 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         }
 
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var diagnostic = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new KnownException(
+                $"MES rejected planning suggestion downstream creation with HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {TrimDiagnostic(diagnostic)}");
+        }
+
         var accepted = await response.Content.ReadFromJsonAsync<MesAcceptedResponse>(cancellationToken);
         if (accepted is null || string.IsNullOrWhiteSpace(accepted.ReferenceId))
         {
@@ -72,6 +78,12 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
         return string.Equals(suggestion.SuggestionType, "planned-work-order", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamService, "BusinessMes", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(request.DownstreamDocumentType, "WorkOrder", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string TrimDiagnostic(string diagnostic)
+    {
+        diagnostic = string.IsNullOrWhiteSpace(diagnostic) ? "empty response body" : diagnostic.Trim();
+        return diagnostic.Length <= 500 ? diagnostic : diagnostic[..500];
     }
 }
 

@@ -171,6 +171,26 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Suggestion_acceptance_rejects_non_open_suggestion_before_downstream_creation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        suggestion.Reject("planner", "obsolete");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None));
+
+        Assert.Contains("Only open planning suggestions can be accepted", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, bridge.CreateCount);
+    }
+
+    [Fact]
     public async Task DemandPlanning_http_endpoints_reject_anonymous_callers_before_persistence()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -287,6 +307,23 @@ public sealed class DemandPlanningEndpointContractTests
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CountingPlanningSuggestionDownstreamBridge : IPlanningSuggestionDownstreamBridge
+    {
+        public int CreateCount { get; private set; }
+
+        public Task<PlanningSuggestionDownstreamReference> CreateDownstreamAsync(
+            PlanningSuggestion suggestion,
+            PlanningSuggestionDownstreamRequest request,
+            CancellationToken cancellationToken)
+        {
+            CreateCount++;
+            return Task.FromResult(new PlanningSuggestionDownstreamReference(
+                request.DownstreamService,
+                request.DownstreamDocumentType,
+                "WO-SHOULD-NOT-BE-CREATED"));
         }
     }
 

@@ -100,6 +100,7 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 suggestion.AcceptedDownstreamDocumentId);
         }
 
+        EnsureCanCreateDownstreamReference(suggestion);
         var bridge = downstreamBridge ?? new UnsupportedPlanningSuggestionDownstreamBridge();
         return await bridge.CreateDownstreamAsync(
             suggestion,
@@ -111,5 +112,13 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                     ? $"demand-planning:accept:{suggestion.OrganizationId}:{suggestion.EnvironmentId}:{suggestion.Id}"
                     : request.IdempotencyKey.Trim()),
             cancellationToken);
+    }
+
+    private static void EnsureCanCreateDownstreamReference(PlanningSuggestion suggestion)
+    {
+        if (suggestion.Status != PlanningSuggestionStatus.Open)
+        {
+            throw new KnownException("Only open planning suggestions can be accepted.");
+        }
     }
 }
