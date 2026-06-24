@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
@@ -39,8 +40,8 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
             dueUtc,
             null,
             DateTimeOffset.UtcNow,
-            "DemandPlanning",
-            "PlanningSuggestion",
+            DemandPlanningSourceReferences.DemandPlanning,
+            DemandPlanningSourceReferences.PlanningSuggestion,
             suggestion.Id.ToString(),
             demandReference,
             request.IdempotencyKey);
@@ -70,14 +71,17 @@ public sealed class HttpMesPlanningSuggestionDownstreamBridge(
             throw new KnownException("MES did not return a work order reference for the accepted planning suggestion.");
         }
 
-        return new PlanningSuggestionDownstreamReference("BusinessMes", "WorkOrder", accepted.ReferenceId);
+        return new PlanningSuggestionDownstreamReference(
+            DemandPlanningDownstreamReferences.BusinessMes,
+            DemandPlanningDownstreamReferences.WorkOrder,
+            accepted.ReferenceId);
     }
 
     private static bool IsMesWorkOrder(PlanningSuggestionDownstreamRequest request, PlanningSuggestion suggestion)
     {
-        return string.Equals(suggestion.SuggestionType, "planned-work-order", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(request.DownstreamService, "BusinessMes", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(request.DownstreamDocumentType, "WorkOrder", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedWorkOrder, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string TrimDiagnostic(string diagnostic)

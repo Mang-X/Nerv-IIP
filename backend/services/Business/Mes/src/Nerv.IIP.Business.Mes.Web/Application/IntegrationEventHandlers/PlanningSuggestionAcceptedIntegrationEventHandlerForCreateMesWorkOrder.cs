@@ -16,7 +16,7 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<PlanningSuggestionAcceptedIntegrationEvent>, ICapSubscribe
 {
-    public const string TopicName = "Nerv.IIP.Contracts.DemandPlanning.PlanningSuggestionAcceptedIntegrationEvent";
+    public const string TopicName = PlanningSuggestionAcceptedIntegrationEventTopic.TopicName;
     public const string ConsumerName = "business-mes.demand-planning-suggestion-accepted";
 
     private readonly IntegrationEventConsumerGuard<PlanningSuggestionAcceptedIntegrationEvent> consumerGuard = new(
@@ -55,9 +55,9 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
         var payload = integrationEvent.Payload;
-        if (!string.Equals(payload.SuggestionType, "planned-work-order", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(payload.DownstreamService, "BusinessMes", StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(payload.DownstreamDocumentType, "WorkOrder", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(payload.SuggestionType, DemandPlanningSuggestionTypes.PlannedWorkOrder, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(payload.DownstreamService, DemandPlanningDownstreamReferences.BusinessMes, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(payload.DownstreamDocumentType, DemandPlanningDownstreamReferences.WorkOrder, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -71,8 +71,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
                 x.SourcePlanReference != null &&
-                x.SourcePlanReference.SourceSystem == "DemandPlanning" &&
-                x.SourcePlanReference.SourceDocumentType == "PlanningSuggestion" &&
+                x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
+                x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
                 x.SourcePlanReference.SourceDocumentId == payload.SuggestionId,
             cancellationToken);
         if (existing)
@@ -94,8 +94,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                 payload.UomCode,
                 dueUtc,
                 null,
-                "DemandPlanning",
-                "PlanningSuggestion",
+                DemandPlanningSourceReferences.DemandPlanning,
+                DemandPlanningSourceReferences.PlanningSuggestion,
                 payload.SuggestionId,
                 payload.DemandSourceReference,
                 integrationEvent.IdempotencyKey),

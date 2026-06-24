@@ -20,6 +20,28 @@ public static class DemandPlanningIntegrationEventSources
     public const string BusinessDemandPlanning = "business-demand-planning";
 }
 
+public static class DemandPlanningSuggestionTypes
+{
+    public const string PlannedWorkOrder = "planned-work-order";
+}
+
+public static class DemandPlanningDownstreamReferences
+{
+    public const string BusinessMes = "BusinessMes";
+    public const string WorkOrder = "WorkOrder";
+}
+
+public static class DemandPlanningSourceReferences
+{
+    public const string DemandPlanning = "DemandPlanning";
+    public const string PlanningSuggestion = "PlanningSuggestion";
+}
+
+public static class PlanningSuggestionAcceptedIntegrationEventTopic
+{
+    public const string TopicName = "Nerv.IIP.Contracts.DemandPlanning.PlanningSuggestionAcceptedIntegrationEvent";
+}
+
 public sealed record DemandPlanningIntegrationEvent<TPayload>(
     string EventId,
     string EventType,
