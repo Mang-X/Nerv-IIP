@@ -363,6 +363,46 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Business_partner_primary_role_update_with_details_preserves_secondary_roles()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-DETAIL",
+            "supplier",
+            "Partner",
+            ["supplier", "carrier"],
+            "TAX-001");
+
+        partner.ChangePrimaryRole(
+            "Partner Renamed",
+            "customer",
+            "TAX-002",
+            taxRegionCode: "CN-BJ",
+            defaultCurrencyCode: "CNY",
+            paymentTermsCode: "NET30",
+            primaryAddress: "Beijing",
+            primaryContactName: "Wang Min",
+            primaryContactEmail: "wang.min@example.com",
+            primaryContactPhone: "+86-10-0000",
+            creditLimit: 1000m,
+            creditCurrencyCode: "CNY");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "carrier"], partner.PartnerRoles);
+        Assert.Equal("TAX-002", partner.TaxId);
+        Assert.Equal("CN-BJ", partner.TaxRegionCode);
+        Assert.Equal("CNY", partner.DefaultCurrencyCode);
+        Assert.Equal("NET30", partner.PaymentTermsCode);
+        Assert.Equal("Beijing", partner.PrimaryAddress);
+        Assert.Equal("Wang Min", partner.PrimaryContactName);
+        Assert.Equal("wang.min@example.com", partner.PrimaryContactEmail);
+        Assert.Equal("+86-10-0000", partner.PrimaryContactPhone);
+        Assert.Equal(1000m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
+    }
+
+    [Fact]
     public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
     {
         var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");

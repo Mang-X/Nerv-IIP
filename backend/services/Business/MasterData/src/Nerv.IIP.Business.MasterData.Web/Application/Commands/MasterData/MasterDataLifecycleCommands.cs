@@ -214,19 +214,50 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     throw new KnownException($"Business partner tax id '{taxId}' already exists.");
                 }
 
-                partner.Update(
-                    request.Name ?? partner.Name,
-                    request.PartnerRoles ?? [request.PartnerType ?? partner.PartnerType],
-                    taxId ?? partner.TaxId,
-                    request.TaxRegionCode ?? partner.TaxRegionCode,
-                    request.DefaultCurrencyCode ?? partner.DefaultCurrencyCode,
-                    request.PaymentTermsCode ?? partner.PaymentTermsCode,
-                    request.PrimaryAddress ?? partner.PrimaryAddress,
-                    request.PrimaryContactName ?? partner.PrimaryContactName,
-                    request.PrimaryContactEmail ?? partner.PrimaryContactEmail,
-                    request.PrimaryContactPhone ?? partner.PrimaryContactPhone,
-                    request.CreditLimit ?? partner.CreditLimit,
-                    request.CreditCurrencyCode ?? partner.CreditCurrencyCode);
+                var partnerName = request.Name ?? partner.Name;
+                var partnerTaxId = taxId ?? partner.TaxId;
+                var taxRegionCode = request.TaxRegionCode ?? partner.TaxRegionCode;
+                var defaultCurrencyCode = request.DefaultCurrencyCode ?? partner.DefaultCurrencyCode;
+                var paymentTermsCode = request.PaymentTermsCode ?? partner.PaymentTermsCode;
+                var primaryAddress = request.PrimaryAddress ?? partner.PrimaryAddress;
+                var primaryContactName = request.PrimaryContactName ?? partner.PrimaryContactName;
+                var primaryContactEmail = request.PrimaryContactEmail ?? partner.PrimaryContactEmail;
+                var primaryContactPhone = request.PrimaryContactPhone ?? partner.PrimaryContactPhone;
+                var creditLimit = request.CreditLimit ?? partner.CreditLimit;
+                var creditCurrencyCode = request.CreditCurrencyCode ?? partner.CreditCurrencyCode;
+                if (request.PartnerRoles is null && request.PartnerType is not null)
+                {
+                    partner.ChangePrimaryRole(
+                        partnerName,
+                        request.PartnerType,
+                        partnerTaxId,
+                        taxRegionCode,
+                        defaultCurrencyCode,
+                        paymentTermsCode,
+                        primaryAddress,
+                        primaryContactName,
+                        primaryContactEmail,
+                        primaryContactPhone,
+                        creditLimit,
+                        creditCurrencyCode);
+                }
+                else
+                {
+                    partner.Update(
+                        partnerName,
+                        request.PartnerRoles,
+                        partnerTaxId,
+                        taxRegionCode,
+                        defaultCurrencyCode,
+                        paymentTermsCode,
+                        primaryAddress,
+                        primaryContactName,
+                        primaryContactEmail,
+                        primaryContactPhone,
+                        creditLimit,
+                        creditCurrencyCode);
+                }
+
                 return Detail(partner);
             case "site":
                 var site = await FindSiteAsync(request, cancellationToken);

@@ -42,6 +42,7 @@
     <ProjectReference Include="..\..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Coding\Nerv.IIP.Coding\Nerv.IIP.Coding.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Coding\Nerv.IIP.Contracts.Coding.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.DemandPlanning\Nerv.IIP.Contracts.DemandPlanning.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.DemandPlanning.Domain\Nerv.IIP.Business.DemandPlanning.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.Business.DemandPlanning.Infrastructure\Nerv.IIP.Business.DemandPlanning.Infrastructure.csproj" />
