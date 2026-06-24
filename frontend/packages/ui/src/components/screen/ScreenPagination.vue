@@ -149,9 +149,9 @@ function go(p: number) {
   transform: scale(0.94);
 }
 .sb-pg-num.on {
-  background: linear-gradient(180deg, #5cc7ec, #2c97c9);
-  border-color: rgba(120, 200, 235, 0.5);
-  color: #06222e;
+  background: var(--sb-accent-fill);
+  border-color: var(--sb-accent-edge);
+  color: #04203a;
   font-weight: 600;
 }
 .sb-pg-num.gap {

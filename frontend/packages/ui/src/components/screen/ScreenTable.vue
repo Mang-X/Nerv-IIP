@@ -74,6 +74,9 @@ withDefaults(
 .sb-tbl-wrap {
   width: 100%;
   overflow-x: auto;
+  border: 1px solid var(--sb-line-2);
+  border-radius: var(--sb-radius);
+  box-shadow: inset 0 1px 0 var(--sb-highlight);
 }
 .sb-tbl {
   width: 100%;
@@ -84,17 +87,17 @@ withDefaults(
 .sb-tbl th {
   position: sticky;
   top: 0;
-  padding: 12px 14px;
+  padding: 13px 16px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--sb-text-2);
+  color: var(--sb-cyan);
   white-space: nowrap;
-  background: #0e1626;
+  background: linear-gradient(180deg, #14233a, #0e1626);
   border-bottom: 1px solid var(--sb-line-2);
 }
 .sb-tbl tbody td {
-  padding: 13px 14px;
+  padding: 13px 16px;
   color: var(--sb-text-2);
   border-bottom: 1px solid var(--sb-line);
   white-space: nowrap;

@@ -87,22 +87,24 @@ const cells = computed(() =>
 
 <style scoped>
 .sb-kpis {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  display: flex;
+  overflow-x: auto;
   border: 1px solid var(--sb-line);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
   padding: 15px 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 var(--sb-highlight);
   font-variant-numeric: tabular-nums;
 }
 .sb-kpi {
   display: flex;
+  flex: 1 0 auto;
+  min-width: 158px;
   align-items: center;
   gap: 13px;
   padding: 0 22px;
   position: relative;
+  white-space: nowrap;
 }
 .sb-kpi + .sb-kpi::before {
   content: '';

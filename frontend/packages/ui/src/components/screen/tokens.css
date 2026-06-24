@@ -18,6 +18,12 @@
   /* accent — a refined steel-cyan, used sparingly (live data + tiny edge glow) */
   --sb-cyan: #3aa0e8;
   --sb-cyan-dim: rgba(70, 150, 230, 0.45);
+  /* unified "active fill" — every selected control (button / segmented /
+     pagination / switch) references this, so the accent lives in one place. */
+  --sb-accent-from: #4aa6ee;
+  --sb-accent-to: #2a72cc;
+  --sb-accent-fill: linear-gradient(180deg, #4aa6ee, #2a72cc);
+  --sb-accent-edge: rgba(90, 165, 240, 0.5);
   --sb-indigo: #8b9be6;
   --sb-green: #45d089;
   --sb-amber: #f2c14e;
