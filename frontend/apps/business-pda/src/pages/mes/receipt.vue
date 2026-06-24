@@ -53,8 +53,13 @@ function receiptTitle(req: Receipt) {
 function receiptSubtitle(req: Receipt) {
   const parts = [receiptStatusLabel(req.receiptStatus)]
   if (req.quantity !== undefined) parts.push(`数量 ${req.quantity}`)
+  if (req.unitCost !== undefined && req.unitCost !== null) parts.push(`成本 ${formatReceiptNumber(req.unitCost)}`)
   if (req.requestNo) parts.push(`单号 ${req.requestNo}`)
   return parts.join(' · ')
+}
+
+function formatReceiptNumber(value: number) {
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
 }
 
 // --- 列表加载错误 ---
@@ -375,8 +380,9 @@ function onScanWorkOrder(value: string) {
               v-model.number="quantity"
               data-testid="receipt-quantity"
               type="number"
-              inputmode="numeric"
-              min="0"
+              inputmode="decimal"
+              min="0.000001"
+              step="0.000001"
               class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
               @input="syncEnterStep"
             />
@@ -389,7 +395,7 @@ function onScanWorkOrder(value: string) {
               data-testid="receipt-unit-cost"
               type="number"
               inputmode="decimal"
-              min="0"
+              min="0.000001"
               step="0.000001"
               class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
               @input="syncEnterStep"

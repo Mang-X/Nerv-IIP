@@ -129,6 +129,7 @@ const columns: DataTableColumn<ReceiptRow>[] = [
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
   { key: 'quantity', header: '入库数量', align: 'end', width: 'w-28' },
+  { key: 'unitCost', header: '单位成本', align: 'end', width: 'w-28' },
   { key: 'receiptStatus', header: '入库状态', width: 'w-24' },
   { key: 'requestedAtUtc', header: '登记时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
@@ -178,6 +179,11 @@ function toLocalDateTimeInput(date: Date) {
 }
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
+}
+function formatUnitCost(value?: number | null) {
+  return value === undefined || value === null
+    ? '—'
+    : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
 }
 function optionalText(value: string) {
   const trimmed = value.trim()
@@ -258,6 +264,7 @@ function isNonEmpty(value: string) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
+      <template #cell-unitCost="{ row }"><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template>
       <template #cell-receiptStatus="{ row }">
         <StatusBadge :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
       </template>
@@ -295,11 +302,11 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="receipt-quantity">入库数量</FieldLabel>
-              <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0" step="0.000001" required type="number" />
+              <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="receipt-unit-cost">单位成本</FieldLabel>
-              <Input id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0" step="0.000001" required type="number" />
+              <Input id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="receipt-uom">单位</FieldLabel>

@@ -29,6 +29,7 @@ const receipts = [
     workOrderId: 'WO-2026-0001',
     skuId: 'SKU-A',
     quantity: 100,
+    unitCost: 12.34,
     receiptStatus: 'Requested',
   },
   {
@@ -37,6 +38,7 @@ const receipts = [
     workOrderId: 'WO-2026-0002',
     skuId: 'SKU-B',
     quantity: 50,
+    unitCost: 23.45,
     receiptStatus: 'Received',
   },
 ]
@@ -89,6 +91,7 @@ describe('PDA MES finished-goods receipt page', () => {
     const wrapper = mount(ReceiptPage)
     expect(wrapper.text()).toContain('WO-2026-0001')
     expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).toContain('成本 12.34')
     // 可读中文状态（不外显原始状态码）
     expect(wrapper.text()).toContain('待入库')
     expect(wrapper.text()).toContain('已入库')
