@@ -93,9 +93,9 @@ withDefaults(
 /* primary — cyan gradient, white top highlight + a defined contact shadow.
    Not the banned outer glow — shadow is dark and ≤4px. */
 .sb-btn.primary {
-  background: linear-gradient(180deg, #5cc7ec, #2c97c9);
-  color: #06222e;
-  border-color: rgba(120, 200, 235, 0.4);
+  background: linear-gradient(180deg, #4aa6ee, #2a72cc);
+  color: #04203a;
+  border-color: rgba(90, 165, 240, 0.45);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
     0 1px 3px rgba(0, 0, 0, 0.5);

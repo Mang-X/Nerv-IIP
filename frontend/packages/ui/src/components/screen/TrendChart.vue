@@ -158,10 +158,6 @@ const uid = Math.random().toString(36).slice(2, 8)
             <stop class="sb-tc-g0" offset="0" />
             <stop class="sb-tc-g1" offset="1" />
           </linearGradient>
-          <filter :id="`sbTcGl-${uid}`" x="-3%" y="-40%" width="106%" height="180%">
-            <feGaussianBlur stdDeviation="2.4" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
         </defs>
 
         <g class="sb-tc-grid" stroke-dasharray="3 6">
@@ -170,7 +166,7 @@ const uid = Math.random().toString(36).slice(2, 8)
 
         <path class="sb-tc-area" :d="areaPath" :fill="`url(#sbTc-${uid})`" />
         <path class="sb-tc-plan" :d="planPath" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
-        <path class="sb-tc-act" :d="actualPath" fill="none" stroke-width="2.2" :filter="`url(#sbTcGl-${uid})`" />
+        <path class="sb-tc-act" :d="actualPath" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" />
 
         <!-- transparent capture layer so hover fires over empty plot area too -->
         <rect :x="left" :y="top" :width="right - left" :height="bottom - top" fill="transparent" />
@@ -185,7 +181,7 @@ const uid = Math.random().toString(36).slice(2, 8)
             stroke-width="1"
             stroke-dasharray="2 4"
           />
-          <circle class="sb-tc-dot" :cx="cross.cx" :cy="cross.cy" r="4" :filter="`url(#sbTcGl-${uid})`" />
+          <circle class="sb-tc-dot" :cx="cross.cx" :cy="cross.cy" r="3.5" />
           <g :transform="`translate(${cross.cardX},${cross.cardY})`">
             <rect class="sb-tc-card" :width="cross.cardW" :height="cross.cardH" rx="6" />
             <text class="sb-tc-c-t" x="14" y="23" font-size="12">{{ cross.label }}</text>
@@ -271,13 +267,15 @@ const uid = Math.random().toString(36).slice(2, 8)
 }
 .sb-tc-act {
   stroke: var(--sb-cyan);
+  filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
 }
 .sb-tc-rule {
   stroke: var(--sb-cyan);
   opacity: 0.55;
 }
 .sb-tc-dot {
-  fill: var(--sb-cyan);
+  fill: #fff;
+  filter: drop-shadow(0 0 4px var(--sb-cyan));
 }
 .sb-tc-card {
   /* glassy dark card — translucent so the plot shows faintly through, white edge */

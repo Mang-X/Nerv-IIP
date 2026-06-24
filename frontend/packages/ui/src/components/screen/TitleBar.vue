@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * Screen — section title bar. A centered title (optional sub-line) flanked by
- * fading hairlines that each terminate in a small accent diamond node. The
- * symmetric rules give a section heading weight without a panel; the diamonds
- * are the single cyan touch. Title is the only meaningful prop.
+ * Screen — section title bar. A centered white title (optional sub-line) with a
+ * short cyan underline accent, flanked by hairlines that gradate into a small
+ * cyan diamond node with a soft point of light. Gives a section heading weight
+ * without a panel. Built on the independent `--sb-*` tokens.
  */
 withDefaults(
   defineProps<{
@@ -22,6 +22,7 @@ withDefaults(
     <div class="sb-tb-mid">
       <h2 class="sb-tb-t">{{ title }}</h2>
       <p v-if="sub" class="sb-tb-sub">{{ sub }}</p>
+      <span class="sb-tb-underline" />
     </div>
     <span class="sb-tb-rule right"><i class="sb-tb-node" /></span>
   </div>
@@ -40,19 +41,19 @@ withDefaults(
   height: 1px;
 }
 .sb-tb-rule.left {
-  background: linear-gradient(90deg, transparent, var(--sb-line-2));
+  background: linear-gradient(90deg, transparent, var(--sb-line-2) 55%, var(--sb-cyan-dim));
 }
 .sb-tb-rule.right {
-  background: linear-gradient(90deg, var(--sb-line-2), transparent);
+  background: linear-gradient(90deg, var(--sb-cyan-dim), var(--sb-line-2) 45%, transparent);
 }
-/* accent diamond on the inner end of each rule */
+/* small diamond node at the inner end, with a soft point of light */
 .sb-tb-node {
   position: absolute;
   top: 50%;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   background: var(--sb-cyan);
-  box-shadow: 0 0 7px var(--sb-cyan-dim);
+  box-shadow: 0 0 6px var(--sb-cyan-dim);
   transform: translateY(-50%) rotate(45deg);
 }
 .sb-tb-rule.left .sb-tb-node {
@@ -62,19 +63,33 @@ withDefaults(
   left: 0;
 }
 .sb-tb-mid {
+  position: relative;
   flex: none;
   text-align: center;
+  padding-bottom: 9px;
 }
 .sb-tb-t {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   margin: 0;
+  color: #fff;
 }
 .sb-tb-sub {
   font-size: 12px;
   color: var(--sb-muted);
-  margin: 4px 0 0;
-  letter-spacing: 0.04em;
+  margin: 5px 0 0;
+  letter-spacing: 0.08em;
+}
+/* a short cyan underline under the title — the precise accent */
+.sb-tb-underline {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 42px;
+  height: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--sb-cyan), transparent);
 }
 </style>

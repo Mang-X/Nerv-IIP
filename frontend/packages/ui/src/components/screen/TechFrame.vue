@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * Screen — full-bleed tech frame. Wraps a board section in a restrained gradient
- * hairline (brighter down the two sides, like ScreenPanel) with a short corner
- * mark at each corner — a thin tick that follows the panel radius, no neon bloom.
- * The accent tints the corner marks; the edge itself stays quiet. Content goes in
- * the default slot — the frame draws over it. Built on the independent `--sb-*`.
+ * Screen — full-bleed tech frame. A thin white-ish hairline edge with a white top
+ * highlight; each corner carries a short accent stroke that FADES along both
+ * edges into the hairline (a gradient L, not an abrupt bracket) so the corner
+ * reads as part of the frame. The accent tints the corner strokes. Content goes
+ * in the default slot. Built on the independent `--sb-*` tokens.
  */
 withDefaults(
   defineProps<{
-    /** Corner-mark color. */
+    /** Corner-stroke color. */
     accent?: 'cyan' | 'green' | 'amber' | 'red'
   }>(),
   { accent: 'cyan' },
@@ -29,11 +29,10 @@ withDefaults(
 .sb-tf {
   position: relative;
   border-radius: var(--sb-radius);
-  /* white top highlight (glass) — no colored bloom */
   box-shadow: inset 0 1px 0 var(--sb-highlight);
   --sb-mark: var(--sb-cyan);
 }
-/* gradient hairline edge — brighter down the two sides, dim top/bottom */
+/* thin white hairline edge — structure, no color */
 .sb-tf::before {
   content: '';
   position: absolute;
@@ -42,10 +41,10 @@ withDefaults(
   padding: 1px;
   background: linear-gradient(
     90deg,
-    rgba(120, 180, 235, 0.3),
-    rgba(255, 255, 255, 0.05) 16%,
-    rgba(255, 255, 255, 0.05) 84%,
-    rgba(120, 180, 235, 0.3)
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.045) 20%,
+    rgba(255, 255, 255, 0.045) 80%,
+    rgba(255, 255, 255, 0.1)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -64,56 +63,44 @@ withDefaults(
 .sb-tf.red {
   --sb-mark: var(--sb-red);
 }
-/* corner marks — a short L tick that follows the panel radius (no abrupt angle),
-   hairline, only a faint presence — not a glowing neon bracket */
+/* corner accents — an L whose two arms fade along the edges into the hairline */
 .sb-tf-c {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 30px;
+  height: 30px;
   pointer-events: none;
   z-index: 1;
 }
-.sb-tf-c::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 0 solid var(--sb-mark);
-  opacity: 0.85;
-}
 .sb-tf-c.tl {
-  top: -1px;
-  left: -1px;
-}
-.sb-tf-c.tl::before {
-  border-top-width: 1.5px;
-  border-left-width: 1.5px;
+  top: 0;
+  left: 0;
+  background:
+    linear-gradient(90deg, var(--sb-mark), transparent) top left / 100% 1.5px no-repeat,
+    linear-gradient(180deg, var(--sb-mark), transparent) top left / 1.5px 100% no-repeat;
   border-top-left-radius: var(--sb-radius);
 }
 .sb-tf-c.tr {
-  top: -1px;
-  right: -1px;
-}
-.sb-tf-c.tr::before {
-  border-top-width: 1.5px;
-  border-right-width: 1.5px;
+  top: 0;
+  right: 0;
+  background:
+    linear-gradient(270deg, var(--sb-mark), transparent) top right / 100% 1.5px no-repeat,
+    linear-gradient(180deg, var(--sb-mark), transparent) top right / 1.5px 100% no-repeat;
   border-top-right-radius: var(--sb-radius);
 }
 .sb-tf-c.bl {
-  bottom: -1px;
-  left: -1px;
-}
-.sb-tf-c.bl::before {
-  border-bottom-width: 1.5px;
-  border-left-width: 1.5px;
+  bottom: 0;
+  left: 0;
+  background:
+    linear-gradient(90deg, var(--sb-mark), transparent) bottom left / 100% 1.5px no-repeat,
+    linear-gradient(0deg, var(--sb-mark), transparent) bottom left / 1.5px 100% no-repeat;
   border-bottom-left-radius: var(--sb-radius);
 }
 .sb-tf-c.br {
-  bottom: -1px;
-  right: -1px;
-}
-.sb-tf-c.br::before {
-  border-bottom-width: 1.5px;
-  border-right-width: 1.5px;
+  bottom: 0;
+  right: 0;
+  background:
+    linear-gradient(270deg, var(--sb-mark), transparent) bottom right / 100% 1.5px no-repeat,
+    linear-gradient(0deg, var(--sb-mark), transparent) bottom right / 1.5px 100% no-repeat;
   border-bottom-right-radius: var(--sb-radius);
 }
 </style>

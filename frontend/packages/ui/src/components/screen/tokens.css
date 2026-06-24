@@ -16,21 +16,22 @@
   --sb-divider: rgba(255, 255, 255, 0.055);
 
   /* accent — a refined steel-cyan, used sparingly (live data + tiny edge glow) */
-  --sb-cyan: #43b4e4;
-  --sb-cyan-dim: rgba(90, 175, 225, 0.42);
+  --sb-cyan: #3aa0e8;
+  --sb-cyan-dim: rgba(70, 150, 230, 0.45);
   --sb-indigo: #8b9be6;
   --sb-green: #45d089;
   --sb-amber: #f2c14e;
   --sb-red: #ef5a63;
 
-  /* text — WHITE values; greys lifted so labels/axes stay legible at a distance */
+  /* text — WHITE values; secondary text near-white, labels a soft blue-grey so
+     they read at a distance without the dull "muted grey" look. */
   --sb-text: #eef2f8;
-  --sb-text-2: #c8d2de;
-  --sb-muted: #939fb0;
-  --sb-faint: #667083;
+  --sb-text-2: #d4dde8;
+  --sb-muted: #aeb9c8;
+  --sb-faint: #828c9c;
 
   /* effects — restrained: a white highlight carries structure, glow is a whisper */
-  --sb-highlight: rgba(255, 255, 255, 0.14); /* top white edge highlight */
+  --sb-highlight: rgba(255, 255, 255, 0.22); /* top white edge highlight */
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
   --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */

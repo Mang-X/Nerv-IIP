@@ -65,13 +65,9 @@ const uid = `oeh-${Math.random().toString(36).slice(2, 8)}`
           <stop offset="0" stop-color="var(--sb-cyan)" stop-opacity=".25" />
           <stop offset="1" stop-color="var(--sb-cyan)" stop-opacity="0" />
         </linearGradient>
-        <filter :id="`${uid}-glow`" x="-5%" y="-40%" width="110%" height="180%">
-          <feGaussianBlur stdDeviation="2.2" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
       </defs>
       <path :d="geom.area" :fill="`url(#${uid}-fill)`" />
-      <path :d="geom.line" fill="none" stroke="var(--sb-cyan)" stroke-width="2" :filter="`url(#${uid}-glow)`" />
+      <path class="sb-oeh-line" :d="geom.line" fill="none" stroke="var(--sb-cyan)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
     </svg>
   </div>
 </template>
@@ -117,5 +113,8 @@ const uid = `oeh-${Math.random().toString(36).slice(2, 8)}`
   height: 92px;
   margin-top: 8px;
   overflow: visible;
+}
+.sb-oeh-line {
+  filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
 }
 </style>

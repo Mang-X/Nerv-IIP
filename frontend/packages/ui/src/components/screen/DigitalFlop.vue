@@ -90,32 +90,17 @@ const cells = computed(() =>
   gap: 4px;
   font-variant-numeric: tabular-nums;
 }
+/* modern flat figure — no skeuomorphic cell box, just a clean white glyph */
 .sb-df-cell {
   position: relative;
-  min-width: 30px;
-  padding: 6px 0 7px;
-  border-radius: 5px;
-  background: linear-gradient(180deg, #0c1626, #07101d);
-  border: 1px solid var(--sb-line);
+  min-width: 0;
   text-align: center;
-  font-size: 30px;
+  font-size: 40px;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: 0.01em;
   color: #fff;
   text-shadow: var(--sb-value-glow);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 -8px 14px -10px rgba(0, 0, 0, 0.8);
-}
-/* top glass highlight */
-.sb-df-cell::before {
-  content: '';
-  position: absolute;
-  inset: 1px 1px auto 1px;
-  height: 42%;
-  border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent);
-  pointer-events: none;
 }
 /* comma / dot / space — a thin transparent cell, no box */
 .sb-df-cell.sep {

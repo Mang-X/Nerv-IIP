@@ -42,29 +42,61 @@ withDefaults(
 
 <style scoped>
 .sb-in {
+  position: relative;
   display: inline-flex;
   align-items: center;
   width: 100%;
   height: 38px;
   padding: 0 12px;
   border-radius: var(--sb-radius);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--sb-line-2);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  background: rgba(255, 255, 255, 0.025);
+  isolation: isolate;
+  box-shadow:
+    inset 0 1px 0 var(--sb-highlight),
+    inset 0 1px 2px rgba(0, 0, 0, 0.4);
   font-variant-numeric: tabular-nums;
-  transition: border-color 0.18s var(--sb-ease), box-shadow 0.18s var(--sb-ease);
+  transition: box-shadow 0.18s var(--sb-ease);
+}
+/* gradient hairline — brighter down the two sides + white top highlight (like the panels) */
+.sb-in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 180, 235, 0.32),
+    rgba(255, 255, 255, 0.06) 18%,
+    rgba(255, 255, 255, 0.06) 82%,
+    rgba(120, 180, 235, 0.32)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+  transition: background 0.18s var(--sb-ease);
+}
+.sb-in > * {
+  position: relative;
+  z-index: 1;
 }
 .sb-in:focus-within {
-  border-color: var(--sb-cyan);
   box-shadow:
+    inset 0 1px 0 var(--sb-highlight),
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
     0 0 0 3px var(--sb-cyan-dim);
 }
-.sb-in.error {
-  border-color: var(--sb-red);
+.sb-in:focus-within::before {
+  background: linear-gradient(90deg, var(--sb-cyan), rgba(70, 150, 230, 0.55) 30%, rgba(70, 150, 230, 0.55) 70%, var(--sb-cyan));
+}
+.sb-in.error::before {
+  background: linear-gradient(90deg, var(--sb-red), rgba(239, 90, 99, 0.5) 30%, rgba(239, 90, 99, 0.5) 70%, var(--sb-red));
 }
 .sb-in.error:focus-within {
   box-shadow:
+    inset 0 1px 0 var(--sb-highlight),
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
     0 0 0 3px rgba(255, 23, 68, 0.4);
 }

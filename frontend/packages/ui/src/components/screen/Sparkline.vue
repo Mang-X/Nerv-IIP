@@ -2,10 +2,10 @@
 import { computed } from 'vue'
 
 /**
- * Screen — minimal sparkline. A glowing cyan polyline normalised to its own
- * min/max, with an optional area gradient beneath. Stretches to its container
- * (preserveAspectRatio none) so it drops into any cell. Built on the independent
- * `--sb-*` tokens.
+ * Screen — minimal sparkline. A crisp, hairline cyan polyline (non-scaling stroke
+ * so it stays 1.5px however the cell stretches) with a whisper of glow and a
+ * bright dot on the latest point — precise, not blurry. Optional area fill.
+ * Built on the independent `--sb-*` tokens.
  */
 const props = withDefaults(
   defineProps<{
@@ -35,6 +35,8 @@ const geom = computed(() => {
   return {
     line: `M${pts.join(' L')}`,
     area: `M${pts.join(' L')} L${W} ${H} L0 ${H} Z`,
+    lastX: (d.length - 1) * stepX,
+    lastY: y(d[d.length - 1]),
   }
 })
 
@@ -51,23 +53,20 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
   >
     <defs>
       <linearGradient :id="`${uid}-fill`" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="var(--sb-cyan)" stop-opacity=".22" />
+        <stop offset="0" stop-color="var(--sb-cyan)" stop-opacity=".16" />
         <stop offset="1" stop-color="var(--sb-cyan)" stop-opacity="0" />
       </linearGradient>
-      <filter :id="`${uid}-glow`" x="-5%" y="-50%" width="110%" height="200%">
-        <feGaussianBlur stdDeviation="1.8" result="b" />
-        <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-      </filter>
     </defs>
     <path v-if="area" :d="geom.area" :fill="`url(#${uid}-fill)`" />
     <path
+      class="sb-sl-line"
       :d="geom.line"
       fill="none"
       stroke="var(--sb-cyan)"
-      stroke-width="2"
+      stroke-width="1.5"
       stroke-linecap="round"
       stroke-linejoin="round"
-      :filter="`url(#${uid}-glow)`"
+      vector-effect="non-scaling-stroke"
     />
   </svg>
   <svg
@@ -77,7 +76,7 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
     preserveAspectRatio="none"
     aria-hidden="true"
   >
-    <line :x1="0" :y1="H / 2" :x2="W" :y2="H / 2" stroke="var(--sb-faint)" stroke-width="1" stroke-dasharray="3 4" />
+    <line :x1="0" :y1="H / 2" :x2="W" :y2="H / 2" stroke="var(--sb-faint)" stroke-width="1" stroke-dasharray="3 4" vector-effect="non-scaling-stroke" />
   </svg>
 </template>
 
@@ -87,5 +86,9 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
   width: 100%;
   height: 100%;
   overflow: visible;
+}
+/* crisp hairline with just a whisper of glow — no heavy blur */
+.sb-sl-line {
+  filter: drop-shadow(0 0 2.5px var(--sb-cyan-dim));
 }
 </style>
