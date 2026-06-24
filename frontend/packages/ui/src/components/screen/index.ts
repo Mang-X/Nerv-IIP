@@ -23,3 +23,22 @@ export { default as TaktGantt } from './TaktGantt.vue'
 export { default as StatusCard } from './StatusCard.vue'
 export { default as KpiBar } from './KpiBar.vue'
 export { default as AlarmTable } from './AlarmTable.vue'
+
+// Decoration / chrome
+export { default as ScreenHeader } from './ScreenHeader.vue'
+export { default as TechFrame } from './TechFrame.vue'
+export { default as BorderPanel } from './BorderPanel.vue'
+export { default as TitleBar } from './TitleBar.vue'
+export { default as GlowDivider } from './GlowDivider.vue'
+export { default as StatusLight } from './StatusLight.vue'
+export { default as StatusTag } from './StatusTag.vue'
+
+// Controls (big-screen)
+export { default as ScreenButton } from './ScreenButton.vue'
+export { default as ScreenTable } from './ScreenTable.vue'
+export { default as ScreenSelect } from './ScreenSelect.vue'
+export { default as ScreenSearch } from './ScreenSearch.vue'
+export { default as ScreenInput } from './ScreenInput.vue'
+export { default as ScreenTabs } from './ScreenTabs.vue'
+export { default as ScreenSegmented } from './ScreenSegmented.vue'
+export { default as ScreenSwitch } from './ScreenSwitch.vue'
