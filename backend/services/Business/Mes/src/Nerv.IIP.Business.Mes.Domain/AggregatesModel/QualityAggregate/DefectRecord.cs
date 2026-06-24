@@ -11,6 +11,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
     public const string ScrapAcceptedStatus = "ScrapAccepted";
     public const string ReturnAcceptedStatus = "ReturnAccepted";
     public const string DispositionAcceptedStatus = "DispositionAccepted";
+    // Keep these wire values in sync with Nerv.IIP.Contracts.Quality.QualityNcrDispositionTypes.
     private const string ReworkDispositionType = "rework";
     private const string ScrapDispositionType = "scrap";
     private const string ReturnToSupplierDispositionType = "return-to-supplier";
