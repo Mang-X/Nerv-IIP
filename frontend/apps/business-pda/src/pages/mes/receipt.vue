@@ -69,6 +69,7 @@ const ctx = reactive<ReceiptCtx>({
   workOrderId: undefined,
   skuId: undefined,
   quantityEntered: false,
+  unitCostEntered: false,
   created: false,
 })
 
@@ -80,12 +81,14 @@ const creating = ref(false)
 const selectedWorkOrder = ref<WorkOrder | null>(null)
 const skuId = ref('')
 const quantity = ref<number | null>(null)
+const unitCost = ref<number | null>(null)
 const uomCode = ref('')
 
-// SKU/数量录入是否就绪（用于驱动流程第二步 done）
+// SKU/数量/单位成本录入是否就绪（用于驱动流程第二步 done）
 function syncEnterStep() {
   ctx.skuId = skuId.value.trim() || undefined
   ctx.quantityEntered = quantity.value !== null && quantity.value > 0
+  ctx.unitCostEntered = unitCost.value !== null && unitCost.value > 0
 }
 
 const createValid = computed(() => {
@@ -93,6 +96,7 @@ const createValid = computed(() => {
   if (skuId.value.trim() === '') return false
   if (uomCode.value.trim() === '') return false
   if (quantity.value === null || !(quantity.value > 0)) return false
+  if (unitCost.value === null || !(unitCost.value > 0)) return false
   return true
 })
 
@@ -116,10 +120,12 @@ function resetForm() {
   selectedWorkOrder.value = null
   skuId.value = ''
   quantity.value = null
+  unitCost.value = null
   uomCode.value = ''
   ctx.workOrderId = undefined
   ctx.skuId = undefined
   ctx.quantityEntered = false
+  ctx.unitCostEntered = false
   ctx.created = false
   // 新一轮完工入库 → 作废上一个幂等键
   operationKey.value = ''
@@ -154,7 +160,8 @@ async function submitCreate() {
   const sku = skuId.value.trim()
   const uom = uomCode.value.trim()
   const qty = quantity.value
-  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0)) return
+  const cost = unitCost.value
+  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0) || cost === null || !(cost > 0)) return
   syncEnterStep()
   // 首次提交铸造稳定幂等键，重试复用同键。
   if (operationKey.value === '') {
@@ -167,6 +174,7 @@ async function submitCreate() {
       workOrderId,
       skuId: sku,
       quantity: qty,
+      unitCost: cost,
       uomCode: uom,
       idempotencyKey: operationKey.value,
     })
@@ -300,7 +308,7 @@ function onScanWorkOrder(value: string) {
       </div>
     </div>
 
-    <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位 → 创建）-->
+    <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位成本/单位 → 创建）-->
     <BottomSheet
       :open="createSheetOpen"
       title="新建完工入库"
@@ -333,7 +341,7 @@ function onScanWorkOrder(value: string) {
           </div>
         </div>
 
-        <!-- 步骤 2：录 SKU / 数量 / 单位 -->
+        <!-- 步骤 2：录 SKU / 数量 / 单位成本 / 单位 -->
         <div v-else class="space-y-4">
           <div class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
             <div class="min-w-0">
@@ -375,6 +383,20 @@ function onScanWorkOrder(value: string) {
           </label>
 
           <label class="block space-y-1">
+            <span class="text-sm font-medium text-foreground">单位成本</span>
+            <input
+              v-model.number="unitCost"
+              data-testid="receipt-unit-cost"
+              type="number"
+              inputmode="decimal"
+              min="0"
+              step="0.000001"
+              class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+              @input="syncEnterStep"
+            />
+          </label>
+
+          <label class="block space-y-1">
             <span class="text-sm font-medium text-foreground">计量单位</span>
             <input
               v-model="uomCode"
@@ -385,7 +407,7 @@ function onScanWorkOrder(value: string) {
           </label>
 
           <p v-if="!createValid" class="text-sm text-muted-foreground">
-            请填写入库物料与计量单位，且入库数量须大于 0。
+            请填写入库物料与计量单位，且入库数量、单位成本须大于 0。
           </p>
 
           <button

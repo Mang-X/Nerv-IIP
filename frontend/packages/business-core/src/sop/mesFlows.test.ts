@@ -37,7 +37,7 @@ describe('productionReportFlow', () => {
 })
 
 describe('finishedGoodsReceiptFlow', () => {
-  it('starts at selectWorkOrder and requires both sku and quantity before create', () => {
+  it('starts at selectWorkOrder and requires sku, quantity, and unit cost before create', () => {
     expect(finishedGoodsReceiptFlow.currentStep({}).id).toBe('selectWorkOrder')
     expect(finishedGoodsReceiptFlow.currentStep({ workOrderId: 'WO-1' }).id).toBe('enterSkuQuantity')
     // sku without quantity stays on enterSkuQuantity
@@ -50,6 +50,14 @@ describe('finishedGoodsReceiptFlow', () => {
         skuId: 'SKU-1',
         quantityEntered: true,
       }).id,
+    ).toBe('enterSkuQuantity')
+    expect(
+      finishedGoodsReceiptFlow.currentStep({
+        workOrderId: 'WO-1',
+        skuId: 'SKU-1',
+        quantityEntered: true,
+        unitCostEntered: true,
+      }).id,
     ).toBe('create')
   })
 
@@ -59,6 +67,7 @@ describe('finishedGoodsReceiptFlow', () => {
         workOrderId: 'WO-1',
         skuId: 'SKU-1',
         quantityEntered: true,
+        unitCostEntered: true,
       }),
     ).toBe(false)
     expect(
@@ -66,6 +75,7 @@ describe('finishedGoodsReceiptFlow', () => {
         workOrderId: 'WO-1',
         skuId: 'SKU-1',
         quantityEntered: true,
+        unitCostEntered: true,
         created: true,
       }),
     ).toBe(true)

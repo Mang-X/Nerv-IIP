@@ -87,6 +87,7 @@ const form = reactive({
   workOrderId: '',
   skuId: '',
   quantity: '1',
+  unitCost: '',
   uomCode: 'EA',
   requestedAtUtc: toLocalDateTimeInput(new Date()),
   idempotencyKey: '',
@@ -101,7 +102,8 @@ const canCreate = computed(
     isNonEmpty(form.environmentId) &&
     isNonEmpty(form.workOrderId) &&
     isNonEmpty(form.skuId) &&
-    toOptionalNumber(form.quantity) !== undefined &&
+    toPositiveNumber(form.quantity) !== undefined &&
+    toPositiveNumber(form.unitCost) !== undefined &&
     isNonEmpty(form.uomCode) &&
     isNonEmpty(form.requestedAtUtc),
 )
@@ -148,7 +150,8 @@ async function submitReceiptRequest() {
     environmentId: form.environmentId.trim(),
     workOrderId: form.workOrderId.trim(),
     skuId: form.skuId.trim(),
-    quantity: toOptionalNumber(form.quantity),
+    quantity: toPositiveNumber(form.quantity),
+    unitCost: toPositiveNumber(form.unitCost),
     uomCode: form.uomCode.trim(),
     requestedAtUtc: toIsoFromLocalInput(form.requestedAtUtc),
     idempotencyKey: optionalText(form.idempotencyKey) ?? `receipt-${form.workOrderId.trim()}`,
@@ -187,6 +190,10 @@ function firstQueryValue(value: unknown) {
 function toOptionalNumber(value: string) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+function toPositiveNumber(value: string) {
+  const parsed = toOptionalNumber(value)
+  return parsed !== undefined && parsed > 0 ? parsed : undefined
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
@@ -271,7 +278,7 @@ function isNonEmpty(value: string) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>登记完工入库</DialogTitle>
-          <DialogDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量和单位。</DialogDescription>
+          <DialogDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</DialogDescription>
         </DialogHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitReceiptRequest">
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
@@ -288,7 +295,11 @@ function isNonEmpty(value: string) {
             </Field>
             <Field>
               <FieldLabel for="receipt-quantity">入库数量</FieldLabel>
-              <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0" required type="number" />
+              <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0" step="0.000001" required type="number" />
+            </Field>
+            <Field>
+              <FieldLabel for="receipt-unit-cost">单位成本</FieldLabel>
+              <Input id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0" step="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="receipt-uom">单位</FieldLabel>

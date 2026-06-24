@@ -128,7 +128,7 @@ describe('PDA MES finished-goods receipt page', () => {
     wrapper.unmount()
   })
 
-  it('creates a receipt with the bound fields after picking a work order and entering sku/quantity/uom', async () => {
+  it('creates a receipt with the bound fields after picking a work order and entering sku/quantity/unit cost/uom', async () => {
     const wrapper = mount(ReceiptPage, { attachTo: document.body })
     await wrapper.get('[data-testid="new-receipt"]').trigger('click')
     await flushPromises()
@@ -145,6 +145,9 @@ describe('PDA MES finished-goods receipt page', () => {
     const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
     qtyInput.value = '20'
     qtyInput.dispatchEvent(new Event('input'))
+    const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+    costInput.value = '12.34'
+    costInput.dispatchEvent(new Event('input'))
     const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
     uomInput.value = 'PCS'
     uomInput.dispatchEvent(new Event('input'))
@@ -159,6 +162,7 @@ describe('PDA MES finished-goods receipt page', () => {
       workOrderId: 'WO-2026-0001',
       skuId: 'SKU-A',
       quantity: 20,
+      unitCost: 12.34,
       uomCode: 'PCS',
     })
     // idempotencyKey 现由页面提供（稳定逐操作键）；org/env/timestamp 仍由 composable 注入
@@ -187,6 +191,9 @@ describe('PDA MES finished-goods receipt page', () => {
       const qtyInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-quantity"]')!
       qtyInput.value = '20'
       qtyInput.dispatchEvent(new Event('input'))
+      const costInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-unit-cost"]')!
+      costInput.value = '12.34'
+      costInput.dispatchEvent(new Event('input'))
       const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
       uomInput.value = 'PCS'
       uomInput.dispatchEvent(new Event('input'))
