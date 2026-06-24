@@ -101,6 +101,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("MES finished-goods receipt request lifecycle status.");
 
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Finished goods unit cost carried to Inventory movement requests for moving-average valuation; legacy rows may be null.");
+
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(50)

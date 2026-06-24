@@ -120,14 +120,16 @@ public sealed class MesAggregateTests
             9m,
             "PCS",
             DateTimeOffset.Parse("2026-05-23T09:30:00Z"),
-            "LOT-FG-001",
-            "SN-FG-001");
+            producedLotNo: "LOT-FG-001",
+            serialNo: "SN-FG-001",
+            unitCost: 12.34m);
 
         Assert.Equal("WO-001", request.WorkOrderId);
         Assert.Equal("FGR-001", request.RequestNo);
         Assert.Equal("SKU-001", request.SkuId);
         Assert.Equal(9m, request.Quantity);
         Assert.Equal("PCS", request.UomCode);
+        Assert.Equal(12.34m, request.UnitCost);
         Assert.Equal("LOT-FG-001", request.ProducedLotNo);
         Assert.Equal("SN-FG-001", request.SerialNo);
         Assert.Equal(FinishedGoodsReceiptRequest.RequestedStatus, request.Status);
