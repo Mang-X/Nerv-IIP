@@ -246,6 +246,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(2, data.GetProperty("failureCount").GetInt32());
         Assert.Equal(24.5m, data.GetProperty("mtbfHours").GetDecimal());
         Assert.Equal(35m, data.GetProperty("mttrMinutes").GetDecimal());
+        Assert.Equal("oee", data.GetProperty("mtbfRuntimeSource").GetString());
+        Assert.True(data.GetProperty("mtbfRuntimeHasSamples").GetBoolean());
     }
 
     [Fact]
@@ -591,7 +593,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
             2,
             2,
             24.5m,
-            35m));
+            35m,
+            "oee",
+            true));
     }
 
     public Task<BusinessConsoleRecordMaintenanceInspectionResponse> RecordInspectionAsync(
