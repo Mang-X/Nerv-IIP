@@ -36,6 +36,7 @@ try
     var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
     var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
     var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
     builder.Services.AddHttpClient<IPlanningParameterSnapshotClient, HttpPlanningMasterDataPlanningParameterSnapshotClient>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
@@ -51,6 +52,10 @@ try
     builder.Services.AddHttpClient<IPlanningScheduledReceiptSnapshotClient, HttpPlanningErpScheduledReceiptSnapshotClient>(client =>
     {
         client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IPlanningSuggestionDownstreamBridge, HttpMesPlanningSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();

@@ -279,6 +279,7 @@ public sealed class DemandPlanningEndpointContractTests
         builder.UseSetting("ProductEngineering:BaseUrl", "http://product-engineering.local");
         builder.UseSetting("Inventory:BaseUrl", "http://inventory.local");
         builder.UseSetting("Erp:BaseUrl", "http://erp.local");
+        builder.UseSetting("Mes:BaseUrl", "http://mes.local");
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

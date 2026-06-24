@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.DemandPlanning.Domain.DomainEvents;
-using Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.DemandPlanning;
 using static Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventConverters.DemandPlanningIntegrationEventConverterHelpers;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEventConverters;
@@ -46,23 +46,39 @@ public sealed class PlannedWorkOrderSuggestedIntegrationEventConverter
 }
 
 public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
-    : IIntegrationEventConverter<PlanningSuggestionAcceptedDomainEvent, DemandPlanningIntegrationEvent<PlanningSuggestionAcceptedPayload>>
+    : IIntegrationEventConverter<PlanningSuggestionAcceptedDomainEvent, PlanningSuggestionAcceptedIntegrationEvent>
 {
-    public DemandPlanningIntegrationEvent<PlanningSuggestionAcceptedPayload> Convert(PlanningSuggestionAcceptedDomainEvent domainEvent)
+    public PlanningSuggestionAcceptedIntegrationEvent Convert(PlanningSuggestionAcceptedDomainEvent domainEvent)
     {
         var suggestion = domainEvent.PlanningSuggestion;
-        return Envelope(
+        var payload = new PlanningSuggestionAcceptedPayload(
+            PublicId(suggestion.Id),
+            PublicId(suggestion.MrpRunId),
+            suggestion.SuggestionType,
+            suggestion.SkuCode,
+            suggestion.UomCode,
+            suggestion.SiteCode,
+            suggestion.Quantity,
+            suggestion.RequiredDate,
+            suggestion.ReleaseDate,
+            suggestion.PeggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(),
+            suggestion.PeggingLinks.Select(x => x.ProductionVersionReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)),
+            suggestion.AcceptedDownstreamService ?? string.Empty,
+            suggestion.AcceptedDownstreamDocumentType ?? string.Empty,
+            suggestion.AcceptedDownstreamDocumentId);
+        return new PlanningSuggestionAcceptedIntegrationEvent(
+            EventIds.New(),
             DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
+            DemandPlanningIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            "system:demand-planning",
+            "system:demand-planning",
             suggestion.OrganizationId,
             suggestion.EnvironmentId,
+            "system:demand-planning",
             EventIds.Idempotency("planning-suggestion-accepted", suggestion.OrganizationId, suggestion.EnvironmentId, PublicId(suggestion.Id)),
-            new PlanningSuggestionAcceptedPayload(
-                PublicId(suggestion.Id),
-                PublicId(suggestion.MrpRunId),
-                suggestion.SuggestionType,
-                suggestion.AcceptedDownstreamService ?? string.Empty,
-                suggestion.AcceptedDownstreamDocumentType ?? string.Empty,
-                suggestion.AcceptedDownstreamDocumentId ?? string.Empty));
+            payload);
     }
 }
 
@@ -78,7 +94,7 @@ internal static class DemandPlanningIntegrationEventConverterHelpers
         return new DemandPlanningIntegrationEvent<TPayload>(
             EventIds.New(),
             eventType,
-            1,
+            DemandPlanningIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
             "system:demand-planning",

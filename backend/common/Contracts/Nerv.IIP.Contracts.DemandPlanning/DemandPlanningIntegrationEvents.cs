@@ -1,4 +1,6 @@
-namespace Nerv.IIP.Business.DemandPlanning.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
+
+namespace Nerv.IIP.Contracts.DemandPlanning;
 
 public static class DemandPlanningIntegrationEventTypes
 {
@@ -6,6 +8,11 @@ public static class DemandPlanningIntegrationEventTypes
     public const string PlannedPurchaseSuggested = "demandPlanning.PlannedPurchaseSuggested";
     public const string PlannedWorkOrderSuggested = "demandPlanning.PlannedWorkOrderSuggested";
     public const string PlanningSuggestionAccepted = "demandPlanning.PlanningSuggestionAccepted";
+}
+
+public static class DemandPlanningIntegrationEventVersions
+{
+    public const int V1 = 1;
 }
 
 public static class DemandPlanningIntegrationEventSources
@@ -25,7 +32,27 @@ public sealed record DemandPlanningIntegrationEvent<TPayload>(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    TPayload Payload);
+    TPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record PlanningSuggestionAcceptedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    PlanningSuggestionAcceptedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record MrpRunCompletedPayload(
     string MrpRunId,
@@ -62,6 +89,14 @@ public sealed record PlanningSuggestionAcceptedPayload(
     string SuggestionId,
     string MrpRunId,
     string SuggestionType,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    DateOnly ReleaseDate,
+    string? DemandSourceReference,
+    string? ProductionVersionReference,
     string DownstreamService,
     string DownstreamDocumentType,
-    string DownstreamDocumentId);
+    string? DownstreamDocumentId);
