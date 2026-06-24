@@ -205,6 +205,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationException("Closed operation task cannot be scheduled.");
         }
 
+        if (Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused)
+        {
+            throw new KnownException($"Operation task in {Status} cannot be rescheduled by released schedule assignment.");
+        }
+
         if (plannedEndUtc <= plannedStartUtc)
         {
             throw new ArgumentOutOfRangeException(nameof(plannedEndUtc), "Planned end must be after planned start.");
