@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
@@ -17,6 +18,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
+    IConfiguration configuration,
     TimeProvider timeProvider)
     : IIntegrationEventHandler<ApprovalStepOverdueIntegrationEvent>, ICapSubscribe
 {
@@ -54,6 +56,9 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
         var chainId = NotificationIntegrationEventRequired.Value(payload.ChainId, "Approval chain id is required.");
         var stepName = NotificationIntegrationEventRequired.Value(payload.StepName, "Approval step name is required.");
         var recipientRef = NotificationIntegrationEventRequired.Actor(payload.ApproverType, payload.ApproverRef);
+        var recipientRefs = NotificationIntegrationEventRequired.MergeRecipients(
+            recipientRef,
+            configuration.GetSection("Approval:OverdueEscalation:RecipientRefs").Get<string[]>() ?? []);
 
         if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
         {
@@ -79,7 +84,7 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
             Resource: new NotificationResourceRef("approval-chain", chainId, null),
             Title: "Approval step overdue",
             Summary: $"Approval step {stepName} is overdue for {payload.DocumentReference.DocumentType} {payload.DocumentReference.DocumentId}.",
-            SuggestedRecipientRefs: [recipientRef]);
+            SuggestedRecipientRefs: recipientRefs);
 
         await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
@@ -253,6 +258,16 @@ file static class NotificationIntegrationEventRequired
     public static string Actor(string actorType, string actorRef)
     {
         return $"{Value(actorType, "Actor type is required.")}:{Value(actorRef, "Actor ref is required.")}";
+    }
+
+    public static string[] MergeRecipients(string primaryRecipientRef, IReadOnlyCollection<string> escalationRecipientRefs)
+    {
+        return new[] { primaryRecipientRef }
+            .Concat(escalationRecipientRefs)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 }
 
