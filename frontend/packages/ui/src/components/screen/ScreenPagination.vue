@@ -149,11 +149,10 @@ function go(p: number) {
   transform: scale(0.94);
 }
 .sb-pg-num.on {
-  background: linear-gradient(180deg, #19ecff, #00b8d4);
-  border-color: rgba(0, 229, 255, 0.5);
-  color: #04141a;
+  background: linear-gradient(180deg, #5cc7ec, #2c97c9);
+  border-color: rgba(120, 200, 235, 0.5);
+  color: #06222e;
   font-weight: 600;
-  box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
 }
 .sb-pg-num.gap {
   border-color: transparent;

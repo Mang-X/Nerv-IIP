@@ -70,26 +70,30 @@ withDefaults(
 .sb-at-tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .sb-at-tbl th {
-  color: var(--sb-muted);
-  font-weight: 400;
+  color: var(--sb-text-2);
+  font-weight: 600;
+  font-size: 13px;
   text-align: left;
-  padding: 9px 8px;
-  border-bottom: 1px solid var(--sb-divider);
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--sb-line-2);
 }
 .sb-at-tbl td {
-  padding: 9px 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--sb-line);
   color: var(--sb-text-2);
+}
+.sb-at-tbl tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.018);
 }
 .sb-at-tbl tbody tr {
   transition: background 0.15s var(--sb-ease);
 }
-.sb-at-tbl tbody tr:hover {
-  background: rgba(0, 229, 255, 0.05);
+.sb-at-tbl tbody tr:hover td {
+  background: rgba(67, 180, 228, 0.08);
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-at-tbl tbody tr {
@@ -99,7 +103,7 @@ withDefaults(
 .sb-at-mono {
   font-family: ui-monospace, monospace;
   color: var(--sb-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .sb-at-ok {
   color: var(--sb-green);

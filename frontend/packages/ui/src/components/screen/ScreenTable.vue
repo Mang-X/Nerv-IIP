@@ -78,26 +78,30 @@ withDefaults(
 .sb-tbl {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .sb-tbl th {
   position: sticky;
   top: 0;
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 500;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--sb-muted);
+  color: var(--sb-text-2);
   white-space: nowrap;
-  background: linear-gradient(180deg, #101c30, #0c1322);
+  background: #0e1626;
   border-bottom: 1px solid var(--sb-line-2);
 }
 .sb-tbl tbody td {
-  padding: 11px 12px;
+  padding: 13px 14px;
   color: var(--sb-text-2);
   border-bottom: 1px solid var(--sb-line);
   white-space: nowrap;
+}
+/* zebra — every other row lifts a hair for legibility at a distance */
+.sb-tbl tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.018);
 }
 .sb-tbl tbody tr:last-child td {
   border-bottom: 0;
@@ -105,10 +109,8 @@ withDefaults(
 .sb-tbl tbody tr {
   transition: background 0.15s var(--sb-ease);
 }
-.sb-tbl tbody tr:hover {
-  background: rgba(0, 229, 255, 0.05);
-}
 .sb-tbl tbody tr:hover td {
+  background: rgba(67, 180, 228, 0.08);
   color: var(--sb-text);
 }
 

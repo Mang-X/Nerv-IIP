@@ -88,7 +88,6 @@ function move(dir: 1 | -1) {
 .sb-tb-item.on {
   color: var(--sb-cyan);
   font-weight: 600;
-  text-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
 }
 .sb-tb-item:focus-visible {
   outline: none;

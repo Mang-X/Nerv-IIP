@@ -73,11 +73,10 @@ function onKey(e: KeyboardEvent) {
   transition: transform 0.22s var(--sb-ease);
 }
 .sb-sw.on .sb-sw-track {
-  background: linear-gradient(180deg, #00c9e6, #009fbd);
+  background: linear-gradient(180deg, #3ba9d4, #2c8db5);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 12px rgba(0, 229, 255, 0.45),
-    inset 0 0 0 1px rgba(0, 229, 255, 0.55);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(120, 200, 235, 0.5);
 }
 .sb-sw.on .sb-sw-handle {
   transform: translateX(22px);

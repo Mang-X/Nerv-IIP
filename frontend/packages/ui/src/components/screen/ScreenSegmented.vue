@@ -93,10 +93,8 @@ function move(dir: 1 | -1) {
   bottom: 3px;
   left: 0;
   border-radius: calc(var(--sb-radius) - 2px);
-  background: linear-gradient(180deg, #19ecff, #00b8d4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 10px rgba(0, 229, 255, 0.3);
+  background: linear-gradient(180deg, #5cc7ec, #2c97c9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
   opacity: 0;
   pointer-events: none;
   transition: transform 0.28s var(--sb-ease-emphasized), width 0.28s var(--sb-ease-emphasized);

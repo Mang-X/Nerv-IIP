@@ -58,8 +58,7 @@ withDefaults(
   border-color: var(--sb-cyan);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 3px var(--sb-cyan-dim),
-    0 0 12px rgba(0, 229, 255, 0.3);
+    0 0 0 3px var(--sb-cyan-dim);
 }
 .sb-in.error {
   border-color: var(--sb-red);
@@ -67,8 +66,7 @@ withDefaults(
 .sb-in.error:focus-within {
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 3px rgba(255, 23, 68, 0.4),
-    0 0 12px rgba(255, 23, 68, 0.3);
+    0 0 0 3px rgba(255, 23, 68, 0.4);
 }
 .sb-in.disabled {
   opacity: 0.5;

@@ -61,8 +61,7 @@ function clear() {
   border-color: var(--sb-cyan);
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 0 0 3px var(--sb-cyan-dim),
-    0 0 12px rgba(0, 229, 255, 0.3);
+    0 0 0 3px var(--sb-cyan-dim);
 }
 .sb-se:focus-within .sb-se-icon {
   color: var(--sb-cyan);
