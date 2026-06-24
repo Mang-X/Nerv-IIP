@@ -62,6 +62,7 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                     payload.OwnerType,
                     payload.OwnerId,
                     payload.Quantity,
+                    payload.UnitCost,
                     ReservationId: ParseReservationId(payload.InventoryReservationId)),
                 cancellationToken);
         }

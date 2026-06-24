@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Domain.Tests;
 
@@ -119,14 +120,16 @@ public sealed class MesAggregateTests
             9m,
             "PCS",
             DateTimeOffset.Parse("2026-05-23T09:30:00Z"),
-            "LOT-FG-001",
-            "SN-FG-001");
+            producedLotNo: "LOT-FG-001",
+            serialNo: "SN-FG-001",
+            unitCost: 12.34m);
 
         Assert.Equal("WO-001", request.WorkOrderId);
         Assert.Equal("FGR-001", request.RequestNo);
         Assert.Equal("SKU-001", request.SkuId);
         Assert.Equal(9m, request.Quantity);
         Assert.Equal("PCS", request.UomCode);
+        Assert.Equal(12.34m, request.UnitCost);
         Assert.Equal("LOT-FG-001", request.ProducedLotNo);
         Assert.Equal("SN-FG-001", request.SerialNo);
         Assert.Equal(FinishedGoodsReceiptRequest.RequestedStatus, request.Status);
@@ -193,6 +196,36 @@ public sealed class MesAggregateTests
 
         Assert.Throws<InvalidOperationException>(() =>
             workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps));
+    }
+
+    [Theory]
+    [InlineData(OperationTaskLifecycleStatus.InProgress)]
+    [InlineData(OperationTaskLifecycleStatus.Paused)]
+    public void OperationTask_rejects_schedule_assignment_for_active_tasks_as_known_business_error(
+        OperationTaskLifecycleStatus status)
+    {
+        var task = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-APS-001",
+            "OP-10",
+            status,
+            10,
+            "WC-OLD",
+            [],
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+            TimeSpan.FromMinutes(30),
+            DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+            null);
+
+        var exception = Assert.Throws<KnownException>(() => task.ApplyScheduleAssignment(
+            "WC-OIL",
+            "DEV-OIL-01",
+            DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+            DateTimeOffset.Parse("2026-06-01T13:30:00Z"),
+            DateTimeOffset.Parse("2026-06-01T07:30:00Z")));
+
+        Assert.Contains(status.ToString(), exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
