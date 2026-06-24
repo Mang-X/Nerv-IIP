@@ -127,7 +127,7 @@ onBeforeUnmount(() => {
       <ul
         v-if="open"
         ref="panel"
-        class="sb-sel-panel"
+        class="sb-sel-panel sb-scroll"
         role="listbox"
         :style="{ left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px` }"
       >

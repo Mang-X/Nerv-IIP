@@ -57,7 +57,7 @@ const cells = computed(() =>
 </script>
 
 <template>
-  <div class="sb-kpis">
+  <div class="sb-kpis sb-scroll">
     <div v-for="(k, i) in cells" :key="i" class="sb-kpi">
       <svg v-if="k.ring != null" width="42" height="42" viewBox="0 0 42 42" class="sb-kpi-ring" role="img" :aria-label="`${k.label} ${k.value}`">
         <circle class="sb-kpi-track" cx="21" cy="21" :r="R" fill="none" stroke-width="4" />

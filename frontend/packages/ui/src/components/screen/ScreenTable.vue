@@ -40,7 +40,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="sb-tbl-wrap">
+  <div class="sb-tbl-wrap sb-scroll">
     <table class="sb-tbl">
       <thead>
         <tr>
