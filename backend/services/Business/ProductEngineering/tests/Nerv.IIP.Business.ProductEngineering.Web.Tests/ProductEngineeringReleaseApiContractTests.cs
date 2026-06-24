@@ -1479,19 +1479,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
     private static WebApplicationFactory<Program> CreateFactory()
     {
-        var settings = new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_product_engineering_policy;Username=nerv;Password=nerv",
-            ["InternalService:BearerToken"] = "test-internal-service-token",
-        };
-
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(settings));
-            });
+        return ProductEngineeringWebTestFactory.Create("product-engineering-release-http");
     }
 
     private static string NormalizeValidationPropertyName(string propertyName)
