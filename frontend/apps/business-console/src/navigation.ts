@@ -23,6 +23,7 @@ import {
   GitForkIcon,
   GitPullRequestIcon,
   GraduationCapIcon,
+  HandshakeIcon,
   HashIcon,
   LayersIcon,
   LayoutDashboardIcon,
@@ -40,6 +41,7 @@ import {
   TrendingUpIcon,
   UserCheckIcon,
   UsersRoundIcon,
+  WalletIcon,
   WarehouseIcon,
   WrenchIcon,
 } from 'lucide-vue-next'
@@ -129,7 +131,15 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
     },
   ],
   'planning': [{ items: [{ title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' } }] }],
-  'erp': [{ items: [{ title: '采购与供应', icon: ReceiptTextIcon, to: { path: '/erp' } }] }],
+  'erp': [
+    {
+      items: [
+        { title: '采购与供应', icon: ReceiptTextIcon, to: { path: '/erp' } },
+        { title: '销售管理', icon: HandshakeIcon, to: { path: '/erp/sales' } },
+        { title: '财务', icon: WalletIcon, to: { path: '/erp/finance' } },
+      ],
+    },
+  ],
   'mes': [
     {
       label: '计划与工单',
