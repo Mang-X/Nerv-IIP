@@ -278,6 +278,84 @@ public sealed class SchedulingPlanReleasedHandlerTests
     }
 
     [Fact]
+    public async Task SchedulePlanReleasedHandler_DoesNotPersistInboxWhenDeadLetterBatchWriteFails()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-scheduling-release-{Guid.CreateVersion7():N}", databaseRoot);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "FG-APS",
+                "PV-001",
+                1m,
+                10,
+                DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+                "PCS",
+                null));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-10",
+                OperationTaskLifecycleStatus.InProgress,
+                10,
+                "WC-OLD",
+                [],
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
+                TimeSpan.FromMinutes(30),
+                DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
+                null));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-20",
+                OperationTaskLifecycleStatus.Paused,
+                20,
+                "WC-PACK-OLD",
+                [],
+                DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
+                TimeSpan.FromMinutes(45),
+                DateTimeOffset.Parse("2026-06-01T14:05:00Z"),
+                null));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
+                dbContext,
+                new ThrowingAddRangeDeadLetterStore());
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(
+                CreateReleasedEvent(
+                    new SchedulePlanAffectedOperationPayload(
+                        "WO-APS-001",
+                        "OP-10",
+                        10,
+                        "DEV-OIL-01",
+                        "WC-OIL",
+                        DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        DateTimeOffset.Parse("2026-06-01T13:30:00Z")),
+                    new SchedulePlanAffectedOperationPayload(
+                        "WO-APS-001",
+                        "OP-20",
+                        20,
+                        "DEV-PACK-01",
+                        "WC-PACK",
+                        DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
+                        DateTimeOffset.Parse("2026-06-01T14:45:00Z"))),
+                CancellationToken.None));
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        Assert.Empty(assertionDbContext.ProcessedIntegrationEvents);
+    }
+
+    [Fact]
     public async Task SchedulePlanReleasedHandler_SkipsDuplicateReleaseEvent()
     {
         var databaseRoot = new InMemoryDatabaseRoot();
@@ -450,6 +528,15 @@ public sealed class SchedulingPlanReleasedHandlerTests
             return message;
         }
 
+        public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> AddRangeAsync(
+            IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+            CancellationToken cancellationToken)
+        {
+            this.messages.AddRange(messages);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return messages.ToArray();
+        }
+
         public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
             string? consumerName,
             IntegrationEventDeadLetterStatus? status,
@@ -461,6 +548,42 @@ public sealed class SchedulingPlanReleasedHandlerTests
                     .Where(message => consumerName is null || message.ConsumerName == consumerName)
                     .Where(message => status is null || message.Status == status)
                     .ToArray());
+        }
+
+        public Task MarkReplayedAsync(
+            Guid id,
+            DateTimeOffset replayedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingAddRangeDeadLetterStore : IIntegrationEventDeadLetterStore
+    {
+        public Task<IntegrationEventDeadLetterMessage> AddAsync(
+            IntegrationEventDeadLetterMessage message,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Single dead-letter writes should not be used for schedule release batches.");
+        }
+
+        public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> AddRangeAsync(
+            IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(2, messages.Count);
+            throw new InvalidOperationException("Simulated batch dead-letter persistence failure.");
+        }
+
+        public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+            string? consumerName,
+            IntegrationEventDeadLetterStatus? status,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>([]);
         }
 
         public Task MarkReplayedAsync(

@@ -207,7 +207,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         if (Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused)
         {
-            throw new InvalidOperationException($"Operation task in {Status} cannot be rescheduled by released schedule assignment.");
+            throw new KnownException($"Operation task in {Status} cannot be rescheduled by released schedule assignment.");
         }
 
         if (plannedEndUtc <= plannedStartUtc)

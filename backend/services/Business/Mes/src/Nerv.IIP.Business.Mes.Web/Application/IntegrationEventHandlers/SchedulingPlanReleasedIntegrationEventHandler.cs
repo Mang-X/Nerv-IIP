@@ -69,9 +69,9 @@ public sealed class SchedulePlanReleasedIntegrationEventHandlerForDispatch(
             }
         }
 
-        foreach (var deadLetter in deadLetters)
+        if (deadLetters.Count > 0)
         {
-            await deadLetterStore.AddAsync(deadLetter, cancellationToken);
+            await deadLetterStore.AddRangeAsync(deadLetters, cancellationToken);
         }
     }
 
