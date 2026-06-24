@@ -4,6 +4,7 @@ import Demo from './Demo.vue'
 import Layout from './Layout.vue'
 import MobileDoc from './MobileDoc.vue'
 import ScreenDemo from './ScreenDemo.vue'
+import ScreenGallery from './screen/ScreenGallery.vue'
 import './style.css'
 
 // Nerv-IIP docs theme — extends VitePress's default, re-skinned via style.css
@@ -17,5 +18,6 @@ export default {
     app.component('Demo', Demo)
     app.component('MobileDoc', MobileDoc)
     app.component('ScreenDemo', ScreenDemo)
+    app.component('ScreenGallery', ScreenGallery)
   },
 } satisfies Theme

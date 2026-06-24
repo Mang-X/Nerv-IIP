@@ -28,9 +28,9 @@ withDefaults(
   background: linear-gradient(
     90deg,
     transparent,
-    var(--sb-line-2) 30%,
-    var(--sb-cyan-dim) 50%,
-    var(--sb-line-2) 70%,
+    var(--sb-line-2) 25%,
+    var(--sb-cyan) 50%,
+    var(--sb-line-2) 75%,
     transparent
   );
 }

@@ -51,7 +51,7 @@ const rows = computed(() =>
       <span class="sb-cb-track" :class="r.tone">
         <span v-if="r.pct > 0" class="sb-cb-fill" :class="r.tone" :style="{ width: `${r.pct}%` }" />
       </span>
-      <span class="sb-cb-val" :class="r.tone">{{ r.value }}{{ suffix }}</span>
+      <span class="sb-cb-val">{{ r.value }}{{ suffix }}</span>
     </div>
   </div>
 </template>
@@ -95,6 +95,7 @@ const rows = computed(() =>
   font-size: 14px;
   font-weight: 600;
   text-align: right;
+  color: #fff;
 }
 
 /* tones — fill gradient + matching glow + value text */

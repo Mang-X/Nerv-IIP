@@ -41,10 +41,10 @@ withDefaults(
   padding: 1px;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.2),
-    rgba(255, 255, 255, 0.09) 20%,
-    rgba(255, 255, 255, 0.09) 80%,
-    rgba(255, 255, 255, 0.2)
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.12) 20%,
+    rgba(255, 255, 255, 0.12) 80%,
+    rgba(255, 255, 255, 0.3)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -66,10 +66,12 @@ withDefaults(
 /* corner accents — an L whose two arms fade along the edges into the hairline */
 .sb-tf-c {
   position: absolute;
-  width: 30px;
-  height: 30px;
+  width: 44px;
+  height: 44px;
   pointer-events: none;
   z-index: 1;
+  /* a small point of light at the corner so the mark reads on the dark board */
+  filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
 }
 .sb-tf-c.tl {
   top: 0;
