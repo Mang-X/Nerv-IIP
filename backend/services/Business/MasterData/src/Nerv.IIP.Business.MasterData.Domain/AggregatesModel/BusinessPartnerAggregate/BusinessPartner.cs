@@ -161,6 +161,35 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         Touch();
     }
 
+    public void ChangePrimaryRole(
+        string name,
+        string partnerType,
+        string? taxId,
+        string? taxRegionCode,
+        string? defaultCurrencyCode,
+        string? paymentTermsCode,
+        string? primaryAddress,
+        string? primaryContactName,
+        string? primaryContactEmail,
+        string? primaryContactPhone,
+        decimal? creditLimit = null,
+        string? creditCurrencyCode = null)
+    {
+        Update(
+            name,
+            ReplacePrimaryRole(partnerType),
+            taxId,
+            taxRegionCode,
+            defaultCurrencyCode,
+            paymentTermsCode,
+            primaryAddress,
+            primaryContactName,
+            primaryContactEmail,
+            primaryContactPhone,
+            creditLimit,
+            creditCurrencyCode);
+    }
+
     public void UpdateCreditLimit(decimal? creditLimit, string? creditCurrencyCode)
     {
         EnsureEnabled();

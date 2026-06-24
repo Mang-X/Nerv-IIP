@@ -470,18 +470,18 @@ public sealed class PlanningInputAdapterTests
                         "snapshotVersion": "v1",
                         "organizationId": "org-001",
                         "environmentId": "env-dev",
-                    "baseUomCode": "pcs",
-                    "procurementType": "make",
-                    "mrpType": "mrp",
-                    "lotSizingPolicy": "fixed-lot",
-                    "plannedDeliveryTimeDays": 4,
-                    "inHouseProductionTimeDays": 5,
-                    "goodsReceiptProcessingTimeDays": 1,
-                    "safetyStockQuantity": 4,
-                    "reorderPointQuantity": 6,
-                    "minimumLotSize": 10,
-                    "maximumLotSize": 50,
-                    "lotSizeMultiple": 5
+                        "baseUomCode": "pcs",
+                        "procurementType": "make",
+                        "mrpType": "mrp",
+                        "lotSizingPolicy": "fixed-lot",
+                        "plannedDeliveryTimeDays": 4,
+                        "inHouseProductionTimeDays": 5,
+                        "goodsReceiptProcessingTimeDays": 1,
+                        "safetyStockQuantity": 4,
+                        "reorderPointQuantity": 6,
+                        "minimumLotSize": 10,
+                        "maximumLotSize": 50,
+                        "lotSizeMultiple": 5
                       }
                     }
                     """);

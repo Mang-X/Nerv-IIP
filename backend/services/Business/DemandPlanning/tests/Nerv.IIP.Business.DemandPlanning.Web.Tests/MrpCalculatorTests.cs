@@ -318,7 +318,10 @@ public sealed class MrpCalculatorTests
                 new ProductionVersionSnapshot("SKU-MAKE", "PV-MAKE", "MBOM-MAKE", "ROUTING-MAKE"),
                 new ProductionVersionSnapshot("SKU-BUY", "PV-BUY", "MBOM-BUY", "ROUTING-BUY"),
             ],
-            bomComponents: [],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-BUY", "SKU-BUY-COMPONENT", "pcs", 2m),
+            ],
             planningParameters:
             [
                 new PlanningParameterSnapshot(
@@ -366,6 +369,13 @@ public sealed class MrpCalculatorTests
         Assert.Equal("planned-purchase", purchase.SuggestionType);
         Assert.Equal(10m, purchase.Quantity);
         Assert.Equal(new DateOnly(2026, 5, 31), purchase.ReleaseDate);
+        Assert.DoesNotContain(suggestions, x => x.SkuCode == "SKU-BUY-COMPONENT");
+        Assert.All(purchase.PeggingLinks, x =>
+        {
+            Assert.Null(x.ProductionVersionReference);
+            Assert.Null(x.ManufacturingBomReference);
+            Assert.Null(x.RoutingReference);
+        });
     }
 
     [Fact]

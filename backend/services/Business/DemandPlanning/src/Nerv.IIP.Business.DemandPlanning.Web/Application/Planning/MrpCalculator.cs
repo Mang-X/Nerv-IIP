@@ -185,6 +185,7 @@ public static class MrpCalculator
                 var releaseDate = group.Key.RequiredDate.AddDays(-ResolveLeadTimeDays(planningParameter, isMakeItem));
                 var suggestionType = isMakeItem ? "planned-work-order" : "planned-purchase";
                 var reasonCode = isMakeItem ? "net-requirement" : "component-net-requirement";
+                var peggingVersion = isMakeItem ? version : null;
                 var peggingLinks = demandPegging
                     .Select(x => new CalculatedPeggingLink(
                         "demand",
@@ -192,18 +193,18 @@ public static class MrpCalculator
                         x.ParentSkuCode,
                         x.ComponentSkuCode,
                         x.Quantity,
-                        version?.ProductionVersionReference,
-                        version?.ManufacturingBomReference,
-                        version?.RoutingReference))
+                        peggingVersion?.ProductionVersionReference,
+                        peggingVersion?.ManufacturingBomReference,
+                        peggingVersion?.RoutingReference))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
                         first.SkuCode,
                         null,
                         x.Quantity,
-                        version?.ProductionVersionReference,
-                        version?.ManufacturingBomReference,
-                        version?.RoutingReference)))
+                        peggingVersion?.ProductionVersionReference,
+                        peggingVersion?.ManufacturingBomReference,
+                        peggingVersion?.RoutingReference)))
                     .ToArray();
                 suggestions.AddRange(plannedQuantities.Select(quantity => new CalculatedPlanningSuggestion(
                     suggestionType,
@@ -415,12 +416,12 @@ public static class MrpCalculator
 
     private static bool IsMakeItem(string? procurementType, ProductionVersionSnapshot? version)
     {
-        if (IsProcurementType(procurementType, "buy", "purchase", "purchased", "external", "outsourced"))
+        if (MatchesAny(procurementType, "buy", "purchase", "purchased", "external", "outsourced"))
         {
             return false;
         }
 
-        if (IsProcurementType(procurementType, "make", "manufacture", "manufactured", "in-house", "inhouse", "produce"))
+        if (MatchesAny(procurementType, "make", "manufacture", "manufactured", "in-house", "inhouse", "produce"))
         {
             return true;
         }
@@ -448,10 +449,10 @@ public static class MrpCalculator
 
     private static bool IsLotForLot(string? lotSizingPolicy)
     {
-        return IsProcurementType(lotSizingPolicy, "lot-for-lot", "lotforlot", "lfl");
+        return MatchesAny(lotSizingPolicy, "lot-for-lot", "lotforlot", "lfl");
     }
 
-    private static bool IsProcurementType(string? value, params string[] candidates)
+    private static bool MatchesAny(string? value, params string[] candidates)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
