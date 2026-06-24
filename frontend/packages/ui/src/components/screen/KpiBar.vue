@@ -166,7 +166,7 @@ const cells = computed(() =>
   margin-top: 2px;
 }
 .sb-kpi-arc {
-  transition: stroke-dashoffset 0.6s var(--sb-ease);
+  transition: stroke-dashoffset 0.6s var(--sb-ease-emphasized);
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-kpi-arc {

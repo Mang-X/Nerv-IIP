@@ -32,5 +32,12 @@
   --sb-glow: 0 0 10px rgba(0, 229, 255, 0.4);
   --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 2px 12px -6px rgba(0, 0, 0, 0.6);
   --sb-radius: 7px;
-  --sb-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* motion — unified with the shared system (same decelerate, no-bounce feel).
+     --sb-ease mirrors --ease-out-quart for everyday transitions; --sb-ease-emphasized
+     mirrors --ease-out-expo for large moves, data growth, and enter/leave. Durations
+     stay inline (matching the PC layer's convention): press ~0.12s, controls
+     0.15–0.22s, slides 0.26–0.28s, data 0.6s. No bounce/elastic/spring — ever. */
+  --sb-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --sb-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 }

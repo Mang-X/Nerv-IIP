@@ -64,7 +64,7 @@ withDefaults(
   gap: 8px;
 }
 .sb-btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(0.5px) scale(0.992);
 }
 .sb-btn:focus-visible {
   outline: none;

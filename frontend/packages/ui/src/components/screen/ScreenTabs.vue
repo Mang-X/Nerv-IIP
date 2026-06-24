@@ -104,7 +104,7 @@ function move(dir: 1 | -1) {
   border-radius: 2px;
   background: var(--sb-cyan);
   box-shadow: 0 0 10px var(--sb-cyan-dim);
-  transition: transform 0.28s var(--sb-ease), width 0.28s var(--sb-ease);
+  transition: transform 0.28s var(--sb-ease-emphasized), width 0.28s var(--sb-ease-emphasized);
 }
 
 @media (prefers-reduced-motion: reduce) {

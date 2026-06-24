@@ -89,7 +89,7 @@ const rows = computed(() =>
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 999px;
-  transition: width 0.6s var(--sb-ease);
+  transition: width 0.6s var(--sb-ease-emphasized);
 }
 .sb-cb-val {
   font-size: 14px;

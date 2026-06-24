@@ -85,7 +85,7 @@ const uid = `rg-${Math.random().toString(36).slice(2, 8)}`
 .sb-rg-arc {
   stroke: var(--sb-cyan);
   filter: drop-shadow(0 0 4px var(--sb-cyan-dim));
-  transition: stroke-dasharray 0.6s var(--sb-ease);
+  transition: stroke-dasharray 0.6s var(--sb-ease-emphasized);
 }
 .sb-rg-c {
   position: absolute;

@@ -74,7 +74,12 @@ function move(dir: 1 | -1) {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 0.18s var(--sb-ease), background 0.18s var(--sb-ease);
+  transition: color 0.18s var(--sb-ease), background 0.18s var(--sb-ease),
+    transform 0.18s var(--sb-ease);
+}
+/* press — shrink a hair, no bounce (unified with the PC control press) */
+.sb-sg-opt:active {
+  transform: scale(0.96);
 }
 /* inset divider between segments (hidden next to the active one) */
 .sb-sg-opt + .sb-sg-opt::before {

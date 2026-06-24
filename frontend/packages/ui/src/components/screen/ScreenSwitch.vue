@@ -70,7 +70,7 @@ function onKey(e: KeyboardEvent) {
   border-radius: 50%;
   background: linear-gradient(180deg, #f4f8fb, #c6d2dc);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  transition: transform 0.22s var(--sb-ease), width 0.12s var(--sb-ease);
+  transition: transform 0.22s var(--sb-ease);
 }
 .sb-sw.on .sb-sw-track {
   background: linear-gradient(180deg, #00c9e6, #009fbd);
@@ -83,12 +83,12 @@ function onKey(e: KeyboardEvent) {
   transform: translateX(22px);
   background: linear-gradient(180deg, #ffffff, #d8eef4);
 }
-/* press — squash the handle a hair, no bounce */
+/* press — shrink the handle a hair, no bounce (unified with SwitchPro's scale 0.86) */
 .sb-sw:active:not(:disabled) .sb-sw-handle {
-  width: 21px;
+  transform: scale(0.86);
 }
 .sb-sw.on:active:not(:disabled) .sb-sw-handle {
-  transform: translateX(19px);
+  transform: translateX(22px) scale(0.86);
 }
 .sb-sw:focus-visible {
   outline: none;
@@ -110,9 +110,6 @@ function onKey(e: KeyboardEvent) {
   .sb-sw-track,
   .sb-sw-handle {
     transition: none;
-  }
-  .sb-sw:active:not(:disabled) .sb-sw-handle {
-    width: 18px;
   }
 }
 </style>
