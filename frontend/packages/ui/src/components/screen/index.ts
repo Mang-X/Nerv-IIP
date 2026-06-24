@@ -12,7 +12,6 @@ export { default as ScreenPanel } from './ScreenPanel.vue'
 // Indicators & charts
 export { default as OeeHero } from './OeeHero.vue'
 export { default as RingGauge } from './RingGauge.vue'
-export { default as WaterLevel } from './WaterLevel.vue'
 export { default as CapsuleBar } from './CapsuleBar.vue'
 export { default as DigitalFlop } from './DigitalFlop.vue'
 export { default as Sparkline } from './Sparkline.vue'

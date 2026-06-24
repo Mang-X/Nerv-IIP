@@ -260,7 +260,6 @@ export default defineConfig({
           items: [
             { text: 'OeeHero 核心指标', link: '/components/screen/oee-hero' },
             { text: 'RingGauge 环形仪表', link: '/components/screen/ring-gauge' },
-            { text: 'WaterLevel 水位球', link: '/components/screen/water-level' },
             { text: 'CapsuleBar 胶囊进度', link: '/components/screen/capsule-bar' },
             { text: 'DigitalFlop 数字翻牌', link: '/components/screen/digital-flop' },
             { text: 'Sparkline 迷你趋势', link: '/components/screen/sparkline' },

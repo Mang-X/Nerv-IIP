@@ -1,43 +1,43 @@
 /**
- * Screen surface tokens — independent from the shared PC/mobile token set. A
- * fixed dark "industrial-blue" control-room theme (no light mode), matching the
- * board reference. Prefixed `--sb-*` so they never clash with the shared `--*`
- * tokens; screen components reference only these.
+ * Screen surface tokens — independent from the shared PC/mobile set. A fixed,
+ * near-black deep-blue control-room theme. Restraint is the whole point: glow is
+ * tiny and lives only at edges and live-data points; structure reads from white
+ * hairline highlights and gradient borders, not from colored fills or big glows.
+ * Prefixed `--sb-*` so they never clash with the shared `--*` tokens.
  */
 :root {
-  /* surfaces */
-  --sb-bg: #080c16;
-  --sb-bg-accent: #16294e;
-  --sb-panel-a: #0f1a2e;
-  --sb-panel-b: #0b1320;
-  --sb-line: rgba(255, 255, 255, 0.07);
-  --sb-line-2: rgba(255, 255, 255, 0.12);
-  --sb-divider: #18233a;
+  /* surfaces — near-black blue; panels barely lift off the base */
+  --sb-bg: #060912;
+  --sb-bg-accent: #0a1322;
+  --sb-panel-a: #0c1019;
+  --sb-panel-b: #080b12;
+  --sb-line: rgba(255, 255, 255, 0.06);
+  --sb-line-2: rgba(255, 255, 255, 0.1);
+  --sb-divider: rgba(255, 255, 255, 0.055);
 
-  /* accent + semantics (cyan only on live data) */
-  --sb-cyan: #00e5ff;
-  --sb-cyan-dim: rgba(0, 229, 255, 0.5);
-  --sb-indigo: #a78bfa; /* plan / secondary series */
-  --sb-green: #00e676;
-  --sb-amber: #ffd600;
-  --sb-red: #ff1744;
+  /* accent — a refined steel-cyan, used sparingly (live data + tiny edge glow) */
+  --sb-cyan: #43b4e4;
+  --sb-cyan-dim: rgba(90, 175, 225, 0.42);
+  --sb-indigo: #8b9be6;
+  --sb-green: #45d089;
+  --sb-amber: #f2c14e;
+  --sb-red: #ef5a63;
 
-  /* text */
-  --sb-text: #ffffff;
-  --sb-text-2: #c8d2e0;
-  --sb-muted: #7a8699;
-  --sb-faint: #4f5a6e;
+  /* text — values are WHITE; accent is reserved for small live touches only */
+  --sb-text: #eef2f8;
+  --sb-text-2: #a8b3c2;
+  --sb-muted: #687486;
+  --sb-faint: #434d5e;
 
-  /* effects (restrained) */
-  --sb-glow: 0 0 10px rgba(0, 229, 255, 0.4);
-  --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 2px 12px -6px rgba(0, 0, 0, 0.6);
-  --sb-radius: 7px;
+  /* effects — restrained: a white highlight carries structure, glow is a whisper */
+  --sb-highlight: rgba(255, 255, 255, 0.14); /* top white edge highlight */
+  --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
+  --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
+  --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */
+  --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.5);
+  --sb-radius: 8px;
 
-  /* motion — unified with the shared system (same decelerate, no-bounce feel).
-     --sb-ease mirrors --ease-out-quart for everyday transitions; --sb-ease-emphasized
-     mirrors --ease-out-expo for large moves, data growth, and enter/leave. Durations
-     stay inline (matching the PC layer's convention): press ~0.12s, controls
-     0.15–0.22s, slides 0.26–0.28s, data 0.6s. No bounce/elastic/spring — ever. */
+  /* motion — unified with the shared system (decelerate, no bounce). */
   --sb-ease: cubic-bezier(0.25, 1, 0.5, 1);
   --sb-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
 }

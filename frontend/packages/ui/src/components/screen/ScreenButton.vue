@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * Screen — big-board button. Three weights on the dark surface: `primary` is a
- * cyan gradient with a soft outer glow and an inset top highlight; `secondary`
- * is an indigo hairline over a faint tint; `ghost` is a bare hairline. Focus
- * lands a high-contrast cyan ring, and a press scales the face a hair (no shift,
- * no bounce — restraint over flourish). Built on the independent `--sb-*` tokens.
+ * Screen — big-board button. The same premium craft as the PC `ButtonPro` — a
+ * layered surface with a white top highlight, a defined contact shadow (NOT an
+ * outer glow), and a sheen that wipes across on hover — re-skinned to the dark
+ * board palette. `primary` is a cyan gradient; `secondary` an indigo hairline;
+ * `ghost` a bare hairline. Press is a pure scale, no shift. Built on `--sb-*`.
  */
 withDefaults(
   defineProps<{
@@ -33,6 +33,7 @@ withDefaults(
     :aria-disabled="disabled || undefined"
   >
     <span class="sb-btn-label"><slot>确定</slot></span>
+    <span v-if="variant === 'primary'" class="sb-btn-sheen" aria-hidden="true" />
   </button>
 </template>
 
@@ -54,6 +55,7 @@ withDefaults(
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  overflow: hidden;
   transition:
     transform 0.12s var(--sb-ease),
     box-shadow 0.18s var(--sb-ease),
@@ -68,53 +70,76 @@ withDefaults(
 }
 .sb-btn-label {
   position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-/* press — pure scale, no vertical nudge (the board reads better without shift) */
+/* press — pure scale, no vertical nudge */
 .sb-btn:active:not(:disabled) {
   transform: scale(0.985);
 }
 .sb-btn:focus-visible {
   outline: none;
-  border-color: var(--sb-cyan);
   box-shadow:
     0 0 0 2px var(--sb-bg),
-    0 0 0 4px var(--sb-cyan-dim),
-    0 0 12px rgba(0, 229, 255, 0.4);
+    0 0 0 4px var(--sb-cyan-dim);
 }
 .sb-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* primary — cyan gradient, outer glow + inset top highlight */
+/* primary — cyan gradient, white top highlight + a defined contact shadow.
+   Not the banned outer glow — shadow is dark and ≤4px. */
 .sb-btn.primary {
-  background: linear-gradient(180deg, #19ecff, #00b8d4);
-  color: #04141a;
-  border-color: rgba(0, 229, 255, 0.5);
+  background: linear-gradient(180deg, #5cc7ec, #2c97c9);
+  color: #06222e;
+  border-color: rgba(120, 200, 235, 0.4);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    0 0 14px rgba(0, 229, 255, 0.35);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .sb-btn.primary:hover:not(:disabled) {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    0 0 20px rgba(0, 229, 255, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 2px 7px rgba(0, 0, 0, 0.55);
+}
+/* a faint sheen that wipes across the solid fill on hover (same as ButtonPro) */
+.sb-btn-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  background-position: 120% 0;
+  transition:
+    opacity 0.2s ease,
+    background-position 0.6s var(--sb-ease-emphasized);
+}
+.sb-btn.primary:hover:not(:disabled) .sb-btn-sheen {
+  opacity: 1;
+  background-position: -40% 0;
 }
 
 /* secondary — indigo hairline over a faint tint */
 .sb-btn.secondary {
-  background: rgba(167, 139, 250, 0.08);
-  border-color: rgba(167, 139, 250, 0.45);
+  background: rgba(139, 155, 230, 0.08);
+  border-color: rgba(139, 155, 230, 0.4);
   color: var(--sb-indigo);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .sb-btn.secondary:hover:not(:disabled) {
-  background: rgba(167, 139, 250, 0.14);
-  border-color: rgba(167, 139, 250, 0.7);
+  background: rgba(139, 155, 230, 0.14);
+  border-color: rgba(139, 155, 230, 0.65);
 }
 
 /* ghost — bare hairline */
@@ -125,7 +150,7 @@ withDefaults(
 }
 .sb-btn.ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.04);
-  border-color: var(--sb-cyan-dim);
+  border-color: var(--sb-line-2);
   color: var(--sb-text);
 }
 
@@ -135,6 +160,9 @@ withDefaults(
   }
   .sb-btn:active:not(:disabled) {
     transform: none;
+  }
+  .sb-btn-sheen {
+    display: none;
   }
 }
 </style>

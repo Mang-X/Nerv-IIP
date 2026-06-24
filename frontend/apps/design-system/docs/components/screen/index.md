@@ -36,7 +36,7 @@ import { OeeHero, ScreenPanel, RingGauge, StatusTag, StatusLight } from '@nerv-i
 | 分类 | 组件 |
 |---|---|
 | 容器 / 外壳 | `ScreenPanel` · `BorderPanel` · `TechFrame` · `TitleBar` · `ScreenHeader` · `GlowDivider` |
-| 指标 / 图表 | `OeeHero` · `RingGauge` · `WaterLevel` · `CapsuleBar` · `DigitalFlop` · `Sparkline` · `TrendChart` · `TaktGantt` |
+| 指标 / 图表 | `OeeHero` · `RingGauge` · `CapsuleBar` · `DigitalFlop` · `Sparkline` · `TrendChart` · `TaktGantt` |
 | 数据 / 状态 | `StatusCard` · `KpiBar` · `AlarmTable` · `StatusLight` · `StatusTag` |
 | 控件(大屏化) | `ScreenButton` · `ScreenInput` · `ScreenSelect` · `ScreenSearch` · `ScreenTable` · `ScreenTabs` · `ScreenSegmented` · `ScreenSwitch` |
 

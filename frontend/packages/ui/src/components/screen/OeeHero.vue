@@ -96,8 +96,9 @@ const uid = `oeh-${Math.random().toString(36).slice(2, 8)}`
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.01em;
-  color: var(--sb-cyan);
-  text-shadow: 0 0 24px rgba(0, 229, 255, 0.45);
+  /* white number with only a whisper of glow — accent stays off the big figure */
+  color: #fff;
+  text-shadow: var(--sb-value-glow);
 }
 .sb-oeh-val small {
   font-size: 25px;

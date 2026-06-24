@@ -3,14 +3,15 @@ import type { HTMLAttributes } from 'vue'
 import { cn } from '../../lib/utils'
 
 /**
- * Screen — base panel for the big-board surface: translucent gradient body,
- * hairline border, a faint top sheen + glassy diagonal highlight. Optional title
- * row and a colored top accent edge (status panels). Built on the independent
- * `--sb-*` tokens. The container every other screen module sits in.
+ * Screen — base panel. A near-black gradient body inside a gradient hairline that
+ * brightens subtly down the two sides (dim top/bottom), a white top highlight for
+ * glass, and a quiet depth shadow. No body glow — structure reads from the white
+ * highlight, not from color. Optional title row and a restrained status accent (a
+ * thin colored top line, no bloom). Built on the independent `--sb-*` tokens.
  */
 defineProps<{
   title?: string
-  /** Colored top accent edge — the board's status signature (cyan/green/amber/red). */
+  /** A thin colored top line for status panels (cyan/green/amber/red). */
   accent?: 'cyan' | 'green' | 'amber' | 'red'
   class?: HTMLAttributes['class']
 }>()
@@ -31,24 +32,40 @@ defineProps<{
 .sb-panel {
   position: relative;
   background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  border: 1px solid var(--sb-line);
   border-radius: var(--sb-radius);
   padding: 17px 20px;
-  box-shadow: var(--sb-sheen);
-  overflow: hidden;
   color: var(--sb-text);
+  isolation: isolate;
+  /* white top highlight (glass) + a quiet depth shadow — no colored bloom */
+  box-shadow:
+    inset 0 1px 0 var(--sb-highlight),
+    0 10px 30px -18px rgba(0, 0, 0, 0.9);
 }
-/* glassy diagonal highlight — material feel without backdrop-filter */
+/* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--sb-radius);
-  background: linear-gradient(140deg, rgba(125, 170, 255, 0.05), transparent 40%);
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(120, 180, 235, 0.28),
+    rgba(255, 255, 255, 0.05) 16%,
+    rgba(255, 255, 255, 0.05) 84%,
+    rgba(120, 180, 235, 0.28)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
   pointer-events: none;
+  z-index: 0;
 }
 .sb-panel > * {
   position: relative;
+  z-index: 1;
 }
 .sb-panel-h {
   display: flex;
@@ -57,7 +74,7 @@ defineProps<{
   margin-bottom: 12px;
 }
 .sb-panel-t {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--sb-text-2);
   display: inline-flex;
@@ -68,28 +85,26 @@ defineProps<{
   font-size: 13px;
   color: var(--sb-muted);
 }
+/* status accent — a thin top line that fades to its ends, no bloom */
 .sb-panel-accent {
   position: absolute;
   top: 0;
-  left: 14px;
-  right: 14px;
-  height: 2px;
-  border-radius: 2px;
+  left: 16px;
+  right: 16px;
+  height: 1px;
+  z-index: 2;
+  border-radius: 1px;
 }
 .sb-panel-accent.cyan {
   background: linear-gradient(90deg, transparent, var(--sb-cyan), transparent);
-  box-shadow: 0 0 10px var(--sb-cyan-dim);
 }
 .sb-panel-accent.green {
   background: linear-gradient(90deg, transparent, var(--sb-green), transparent);
-  box-shadow: 0 0 10px rgba(0, 230, 118, 0.45);
 }
 .sb-panel-accent.amber {
   background: linear-gradient(90deg, transparent, var(--sb-amber), transparent);
-  box-shadow: 0 0 10px rgba(255, 214, 0, 0.45);
 }
 .sb-panel-accent.red {
   background: linear-gradient(90deg, transparent, var(--sb-red), transparent);
-  box-shadow: 0 0 10px rgba(255, 23, 68, 0.45);
 }
 </style>
