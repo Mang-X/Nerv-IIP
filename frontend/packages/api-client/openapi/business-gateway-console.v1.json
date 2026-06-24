@@ -29829,6 +29829,12 @@
             "type": "number",
             "format": "decimal",
             "nullable": true
+          },
+          "mtbfRuntimeSource": {
+            "type": "string"
+          },
+          "mtbfRuntimeHasSamples": {
+            "type": "boolean"
           }
         }
       },

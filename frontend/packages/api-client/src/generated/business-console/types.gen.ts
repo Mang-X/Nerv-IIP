@@ -3283,6 +3283,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     repairCount?: number;
     mtbfHours?: number | null;
     mttrMinutes?: number | null;
+    mtbfRuntimeSource?: string;
+    mtbfRuntimeHasSamples?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceAssetReliabilityRequest = {
