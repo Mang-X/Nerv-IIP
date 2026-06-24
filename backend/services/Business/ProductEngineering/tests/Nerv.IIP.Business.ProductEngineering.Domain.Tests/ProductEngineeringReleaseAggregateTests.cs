@@ -165,6 +165,20 @@ public sealed class ProductEngineeringReleaseAggregateTests
     }
 
     [Fact]
+    public void EngineeringChange_rejects_conflicting_duplicate_successor()
+    {
+        var change = EngineeringChange.Open("org-001", "env-dev", "ECO-0003", "Supersede EBOM")
+            .Affect("engineering-bom", "EBOM-001:A", "EBOM-001:B");
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            change.Affect("engineering-bom", "EBOM-001:A", "EBOM-001:C"));
+
+        Assert.Contains("can only declare one successor", exception.Message, StringComparison.OrdinalIgnoreCase);
+        var affectedVersion = Assert.Single(change.AffectedVersions);
+        Assert.Equal("EBOM-001:B", affectedVersion.SupersededByVersionId);
+    }
+
+    [Fact]
     public void ProductionVersion_cannot_bind_unpublished_mbom_or_routing()
     {
         Assert.Throws<InvalidOperationException>(() => ProductionVersion.Create(

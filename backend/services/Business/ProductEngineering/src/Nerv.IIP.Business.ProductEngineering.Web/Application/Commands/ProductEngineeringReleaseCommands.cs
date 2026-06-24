@@ -527,6 +527,23 @@ internal static class ProductEngineeringReleaseValidation
             throw new KnownException(exception.Message, exception);
         }
     }
+
+    public static void AsKnownException(Action action)
+    {
+        try
+        {
+            // Keep the action limited to aggregate construction and invariant checks.
+            action();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
 }
 
 public sealed record ReleaseEngineeringChangeCommand(
@@ -575,12 +592,14 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
+        var normalizedAffectedVersions = NormalizeAffectedVersions(request.AffectedVersions);
+        EnsureAcyclicSupersedeTopology(normalizedAffectedVersions);
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "engineering-change",
             request.ChangeNumber,
             request.IdempotencyKey,
-            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}->{x.SupersededByVersionId}")),
+            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, normalizedAffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}->{x.SupersededByVersionId ?? string.Empty}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -597,7 +616,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         var affectedVersions = new List<Action<string>>();
         var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Reason)
             .Approve(request.ApprovalReferenceId);
-        foreach (var affectedVersion in request.AffectedVersions)
+        foreach (var affectedVersion in normalizedAffectedVersions)
         {
             affectedVersions.Add(await ResolveAffectedVersionAsync(request, affectedVersion, cancellationToken));
             change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId, affectedVersion.SupersededByVersionId);
@@ -642,6 +661,94 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
                 cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
             _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
         };
+    }
+
+    private static IReadOnlyList<AffectedVersionCommand> NormalizeAffectedVersions(IEnumerable<AffectedVersionCommand> affectedVersions)
+    {
+        return affectedVersions.Select(affectedVersion => new AffectedVersionCommand(
+            NormalizeRequired(affectedVersion.VersionKind, nameof(AffectedVersionCommand.VersionKind)).ToLowerInvariant(),
+            NormalizeRequired(affectedVersion.VersionId, nameof(AffectedVersionCommand.VersionId)),
+            NormalizeOptional(affectedVersion.SupersededByVersionId))).ToArray();
+    }
+
+    private static void EnsureAcyclicSupersedeTopology(IReadOnlyList<AffectedVersionCommand> affectedVersions)
+    {
+        var edgesByVersion = new Dictionary<string, AffectedVersionCommand>(StringComparer.Ordinal);
+        foreach (var affectedVersion in affectedVersions)
+        {
+            var key = AffectedVersionKey(affectedVersion.VersionKind, affectedVersion.VersionId);
+            if (affectedVersion.SupersededByVersionId is not null &&
+                string.Equals(affectedVersion.VersionId, affectedVersion.SupersededByVersionId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' cannot supersede itself.");
+            }
+
+            if (edgesByVersion.TryGetValue(key, out var existing))
+            {
+                if (!string.Equals(existing.SupersededByVersionId ?? string.Empty, affectedVersion.SupersededByVersionId ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' can only declare one successor in the same engineering change.");
+                }
+
+                throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' is declared more than once in the same engineering change.");
+            }
+
+            edgesByVersion.Add(key, affectedVersion);
+        }
+
+        foreach (var affectedVersion in edgesByVersion.Values)
+        {
+            if (affectedVersion.SupersededByVersionId is null)
+            {
+                continue;
+            }
+
+            var startKey = AffectedVersionKey(affectedVersion.VersionKind, affectedVersion.VersionId);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var current = affectedVersion;
+            while (current.SupersededByVersionId is not null)
+            {
+                var currentKey = AffectedVersionKey(current.VersionKind, current.VersionId);
+                if (!visited.Add(currentKey))
+                {
+                    throw SupersedeCycleException(affectedVersion, current);
+                }
+
+                var successorKey = AffectedVersionKey(current.VersionKind, current.SupersededByVersionId);
+                if (successorKey == startKey || visited.Contains(successorKey))
+                {
+                    throw SupersedeCycleException(affectedVersion, current);
+                }
+
+                if (!edgesByVersion.TryGetValue(successorKey, out current))
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private static KnownException SupersedeCycleException(AffectedVersionCommand start, AffectedVersionCommand current)
+    {
+        return new KnownException($"Affected {start.VersionKind} version '{start.VersionId}' forms a supersede cycle through '{current.SupersededByVersionId}'.");
+    }
+
+    private static string AffectedVersionKey(string versionKind, string versionId)
+    {
+        return $"{versionKind}\u001F{versionId.ToUpperInvariant()}";
+    }
+
+    private static string NormalizeRequired(string value, string fieldName)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new KnownException($"{fieldName} is required.")
+            : value.Trim();
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
     }
 
     private async Task<EngineeringBom?> GetSuccessorEngineeringBomAsync(
@@ -713,11 +820,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
 
         return bom is null
             ? throw new KnownException($"Engineering BOM version '{versionId}' was not found.")
-            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
-            {
-                bom.Archive(reason);
-                return true;
-            });
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() => bom.Archive(reason));
     }
 
     private static Action<string> ArchiveManufacturingBom(ManufacturingBom? bom, string versionId, ManufacturingBom? successor)
@@ -729,11 +832,7 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
 
         return bom is null
             ? throw new KnownException($"Manufacturing BOM version '{versionId}' was not found.")
-            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
-            {
-                bom.Archive(reason);
-                return true;
-            });
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() => bom.Archive(reason));
     }
 
     private static Action<string> ArchiveRouting(Routing? routing, string versionId, Routing? successor)
@@ -745,30 +844,19 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
 
         return routing is null
             ? throw new KnownException($"Routing version '{versionId}' was not found.")
-            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
-            {
-                routing.Archive(reason);
-                return true;
-            });
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() => routing.Archive(reason));
     }
 
     private static Action<string> ArchiveProductionVersion(ProductionVersion? version, string versionId, ProductionVersion? successor)
     {
         if (version is not null && successor is not null)
         {
-            if (successor.Status != ProductionVersionStatus.Active || successor.SkuCode != version.SkuCode)
-            {
-                throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
-            }
+            EnsureActiveSuccessor(successor, version, versionId);
         }
 
         return version is null
             ? throw new KnownException($"Production version '{versionId}' was not found.")
-            : reason => ProductEngineeringReleaseValidation.AsKnownException(() =>
-            {
-                version.Archive(reason);
-                return true;
-            });
+            : reason => ProductEngineeringReleaseValidation.AsKnownException(() => version.Archive(reason));
     }
 
     private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)
@@ -776,6 +864,14 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         if (status != EngineeringVersionStatus.Published || !sameBusinessCode)
         {
             throw new KnownException($"Successor {versionKind} version '{successorCode}' must be published for the same code before it can supersede '{versionId}'.");
+        }
+    }
+
+    private static void EnsureActiveSuccessor(ProductionVersion successor, ProductionVersion version, string versionId)
+    {
+        if (successor.Status != ProductionVersionStatus.Active || successor.SkuCode != version.SkuCode)
+        {
+            throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
         }
     }
 }

@@ -47,8 +47,14 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         versionKind = Required(versionKind);
         versionId = Required(versionId);
         supersededByVersionId = Optional(supersededByVersionId);
-        if (affectedVersions.Any(x => x.VersionKind == versionKind && x.VersionId == versionId))
+        var existing = affectedVersions.SingleOrDefault(x => x.VersionKind == versionKind && x.VersionId == versionId);
+        if (existing is not null)
         {
+            if (!string.Equals(existing.SupersededByVersionId ?? string.Empty, supersededByVersionId ?? string.Empty, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"Affected {versionKind} version '{versionId}' can only declare one successor in the same engineering change.");
+            }
+
             return this;
         }
 
