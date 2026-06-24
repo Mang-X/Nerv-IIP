@@ -60,7 +60,14 @@ public sealed record PlanningParameterSnapshot(
     decimal SafetyStockQuantity,
     decimal? LotSizeMin,
     decimal? LotSizeMax,
-    decimal? LotSizeMultiple);
+    decimal? LotSizeMultiple,
+    string? ProcurementType = null,
+    string? MrpType = null,
+    string? LotSizingPolicy = null,
+    decimal? ReorderPointQuantity = null,
+    int? PlannedDeliveryTimeDays = null,
+    int? InHouseProductionTimeDays = null,
+    int? GoodsReceiptProcessingTimeDays = null);
 
 public sealed record UomConversionSnapshot(
     string FromUomCode,
@@ -171,12 +178,14 @@ public static class MrpCalculator
                     netRequirement,
                     planningParameter?.LotSizeMin ?? version?.LotSizeMin,
                     planningParameter?.LotSizeMax ?? version?.LotSizeMax,
-                    planningParameter?.LotSizeMultiple ?? version?.LotSizeMultiple);
+                    planningParameter?.LotSizeMultiple ?? version?.LotSizeMultiple,
+                    planningParameter?.LotSizingPolicy);
                 var plannedQuantity = plannedQuantities.Sum();
-                var releaseDate = group.Key.RequiredDate.AddDays(-Math.Max(0, planningParameter?.LeadTimeDays ?? 0));
-                var isMakeItem = version is not null;
+                var isMakeItem = IsMakeItem(planningParameter?.ProcurementType, version);
+                var releaseDate = group.Key.RequiredDate.AddDays(-ResolveLeadTimeDays(planningParameter, isMakeItem));
                 var suggestionType = isMakeItem ? "planned-work-order" : "planned-purchase";
                 var reasonCode = isMakeItem ? "net-requirement" : "component-net-requirement";
+                var peggingVersion = isMakeItem ? version : null;
                 var peggingLinks = demandPegging
                     .Select(x => new CalculatedPeggingLink(
                         "demand",
@@ -184,18 +193,18 @@ public static class MrpCalculator
                         x.ParentSkuCode,
                         x.ComponentSkuCode,
                         x.Quantity,
-                        version?.ProductionVersionReference,
-                        version?.ManufacturingBomReference,
-                        version?.RoutingReference))
+                        peggingVersion?.ProductionVersionReference,
+                        peggingVersion?.ManufacturingBomReference,
+                        peggingVersion?.RoutingReference))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
                         first.SkuCode,
                         null,
                         x.Quantity,
-                        version?.ProductionVersionReference,
-                        version?.ManufacturingBomReference,
-                        version?.RoutingReference)))
+                        peggingVersion?.ProductionVersionReference,
+                        peggingVersion?.ManufacturingBomReference,
+                        peggingVersion?.RoutingReference)))
                     .ToArray();
                 suggestions.AddRange(plannedQuantities.Select(quantity => new CalculatedPlanningSuggestion(
                     suggestionType,
@@ -359,8 +368,18 @@ public static class MrpCalculator
         return new SupplyConsumption(Math.Max(0, remainingRequirement), usedReceipts);
     }
 
-    private static IReadOnlyCollection<decimal> ApplyLotSizing(decimal netRequirement, decimal? lotSizeMin, decimal? lotSizeMax, decimal? lotSizeMultiple)
+    private static IReadOnlyCollection<decimal> ApplyLotSizing(
+        decimal netRequirement,
+        decimal? lotSizeMin,
+        decimal? lotSizeMax,
+        decimal? lotSizeMultiple,
+        string? lotSizingPolicy)
     {
+        if (IsLotForLot(lotSizingPolicy))
+        {
+            return [netRequirement];
+        }
+
         var quantity = netRequirement;
         if (lotSizeMin is > 0 && quantity < lotSizeMin.Value)
         {
@@ -393,6 +412,55 @@ public static class MrpCalculator
         }
 
         return [quantity];
+    }
+
+    private static bool IsMakeItem(string? procurementType, ProductionVersionSnapshot? version)
+    {
+        if (MatchesAny(procurementType, "buy", "purchase", "purchased", "external", "outsourced"))
+        {
+            return false;
+        }
+
+        if (MatchesAny(procurementType, "make", "manufacture", "manufactured", "in-house", "inhouse", "produce"))
+        {
+            return true;
+        }
+
+        return version is not null;
+    }
+
+    private static int ResolveLeadTimeDays(PlanningParameterSnapshot? parameter, bool isMakeItem)
+    {
+        if (parameter is null)
+        {
+            return 0;
+        }
+
+        var sourceLeadTime = isMakeItem
+            ? parameter.InHouseProductionTimeDays
+            : parameter.PlannedDeliveryTimeDays;
+        if (sourceLeadTime is null)
+        {
+            return Math.Max(0, parameter.LeadTimeDays);
+        }
+
+        return Math.Max(0, parameter.GoodsReceiptProcessingTimeDays ?? 0) + Math.Max(0, sourceLeadTime.Value);
+    }
+
+    private static bool IsLotForLot(string? lotSizingPolicy)
+    {
+        return MatchesAny(lotSizingPolicy, "lot-for-lot", "lotforlot", "lfl");
+    }
+
+    private static bool MatchesAny(string? value, params string[] candidates)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        return candidates.Any(candidate => string.Equals(normalized, candidate, StringComparison.OrdinalIgnoreCase));
     }
 
     private static decimal ApportionByGrossRequirement(decimal totalQuantity, decimal sourceQuantity, decimal grossRequirement)
