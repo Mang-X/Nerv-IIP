@@ -57,7 +57,7 @@ const cells = computed(() =>
 </script>
 
 <template>
-  <div class="sb-kpis sb-scroll">
+  <div class="sb-kpis">
     <div v-for="(k, i) in cells" :key="i" class="sb-kpi">
       <svg v-if="k.ring != null" width="42" height="42" viewBox="0 0 42 42" class="sb-kpi-ring" role="img" :aria-label="`${k.label} ${k.value}`">
         <circle class="sb-kpi-track" cx="21" cy="21" :r="R" fill="none" stroke-width="4" />
@@ -88,13 +88,22 @@ const cells = computed(() =>
 <style scoped>
 .sb-kpis {
   display: flex;
+  align-items: center;
   overflow-x: auto;
+  overflow-y: hidden;
+  /* hide the scrollbar entirely so it never reserves height — content stays
+     vertically centered. The strip still scrolls by wheel / trackpad / touch
+     when it overflows a narrow board (it won't overflow at full board width). */
+  scrollbar-width: none;
   border: 1px solid var(--sb-line);
   border-radius: 8px;
   background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
   padding: 15px 0;
   box-shadow: inset 0 1px 0 var(--sb-highlight);
   font-variant-numeric: tabular-nums;
+}
+.sb-kpis::-webkit-scrollbar {
+  display: none;
 }
 .sb-kpi {
   display: flex;
