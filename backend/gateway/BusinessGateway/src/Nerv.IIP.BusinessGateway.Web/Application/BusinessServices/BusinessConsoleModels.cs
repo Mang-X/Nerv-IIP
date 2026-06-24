@@ -1460,7 +1460,8 @@ public sealed record BusinessConsoleAcceptPlanningSuggestionRequest(
     [property: QueryParam] string EnvironmentId,
     string DownstreamService,
     string DownstreamDocumentType,
-    string DownstreamDocumentId);
+    string? DownstreamDocumentId,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleSchedulingContextRequest(
     string OrganizationId,

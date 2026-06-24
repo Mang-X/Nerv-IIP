@@ -594,7 +594,14 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
                     Math.Max(0, detail.SafetyStockQuantity ?? 0m),
                     detail.MinimumLotSize,
                     detail.MaximumLotSize,
-                    detail.LotSizeMultiple);
+                    detail.LotSizeMultiple,
+                    NormalizeOptional(detail.ProcurementType),
+                    NormalizeOptional(detail.MrpType),
+                    NormalizeOptional(detail.LotSizingPolicy),
+                    detail.ReorderPointQuantity,
+                    detail.PlannedDeliveryTimeDays,
+                    detail.InHouseProductionTimeDays,
+                    detail.GoodsReceiptProcessingTimeDays);
             })
             .ToArray();
         var conversions = await GetRequiredUomConversionsAsync(
@@ -771,6 +778,11 @@ public sealed class HttpPlanningMasterDataPlanningParameterSnapshotClient(HttpCl
     }
 
     private static string NormalizeUom(string value) => value.Trim().ToUpperInvariant();
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
 }
 
 public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) : IPlanningInventorySnapshotClient

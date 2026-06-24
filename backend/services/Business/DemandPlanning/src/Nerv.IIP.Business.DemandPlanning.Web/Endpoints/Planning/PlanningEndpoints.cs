@@ -65,7 +65,8 @@ public sealed record AcceptPlanningSuggestionRequest(
     PlanningSuggestionId SuggestionId,
     string DownstreamService,
     string DownstreamDocumentType,
-    string DownstreamDocumentId);
+    string? DownstreamDocumentId,
+    string? IdempotencyKey = null);
 
 public sealed class CreateOrUpdateDemandSourceEndpoint(ISender sender)
     : DemandPlanningEndpoint<CreateOrUpdateDemandSourceRequest, ResponseData<CreateOrUpdateDemandSourceResponse>>
@@ -185,7 +186,8 @@ public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
             req.SuggestionId,
             req.DownstreamService,
             req.DownstreamDocumentType,
-            req.DownstreamDocumentId), ct);
+            req.DownstreamDocumentId,
+            req.IdempotencyKey), ct);
         await Send.OkAsync("accepted".AsResponseData(), cancellation: ct);
     }
 }
