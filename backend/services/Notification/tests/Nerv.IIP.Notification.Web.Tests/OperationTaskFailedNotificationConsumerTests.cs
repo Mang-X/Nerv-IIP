@@ -146,6 +146,51 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_approval_step_overdue_includes_configured_escalation_recipients()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Approval:OverdueEscalation:RecipientRefs:0"] = "role:business-approval-manager",
+        });
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "role:business-approval-manager");
+        Assert.Contains(intent.Tasks, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Tasks, x => x.RecipientRef == "role:business-approval-manager");
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_overdue_deduplicates_escalation_recipient_matching_approver()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Approval:OverdueEscalation:RecipientRefs:0"] = "user:u-engineering",
+            ["Approval:OverdueEscalation:RecipientRefs:1"] = "role:business-approval-manager",
+        });
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .SingleAsync();
+
+        Assert.Equal(2, intent.Messages.Count);
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "role:business-approval-manager");
+    }
+
+    [Fact]
     public async Task Handle_approval_step_resolved_creates_result_message_for_actor()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -614,17 +659,26 @@ public sealed class OperationTaskFailedNotificationConsumerTests
             DocumentLineId: null);
     }
 
-    private sealed class NotificationConsumerWebApplicationFactory : WebApplicationFactory<Program>
+    private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                var mergedSettings = new Dictionary<string, string?>
                 {
                     ["Persistence:Provider"] = "InMemory",
                     ["Persistence:InMemoryDatabaseName"] = Guid.NewGuid().ToString("N"),
-                });
+                };
+                if (settings is not null)
+                {
+                    foreach (var (key, value) in settings)
+                    {
+                        mergedSettings[key] = value;
+                    }
+                }
+
+                configuration.AddInMemoryCollection(mergedSettings);
             });
         }
     }

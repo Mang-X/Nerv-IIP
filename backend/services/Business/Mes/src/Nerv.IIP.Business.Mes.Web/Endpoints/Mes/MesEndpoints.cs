@@ -98,6 +98,7 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
+    decimal? UnitCost,
     string? IdempotencyKey = null,
     string? ProducedLotNo = null,
     string? SerialNo = null);
@@ -920,6 +921,7 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.Quantity,
             req.UomCode,
             req.RequestedAtUtc,
+            req.UnitCost,
             req.IdempotencyKey,
             req.ProducedLotNo,
             req.SerialNo), ct);

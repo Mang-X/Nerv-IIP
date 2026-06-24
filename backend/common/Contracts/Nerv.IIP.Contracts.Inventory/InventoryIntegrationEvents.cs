@@ -58,7 +58,8 @@ public sealed record InventoryMovementRequestedPayload(
     string? OwnerId,
     decimal Quantity,
     DateTimeOffset RequestedAtUtc,
-    string? InventoryReservationId = null);
+    string? InventoryReservationId = null,
+    decimal? UnitCost = null);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,

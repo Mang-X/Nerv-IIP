@@ -35,6 +35,7 @@ public sealed class EngineeringChangeEntityTypeConfiguration : IEntityTypeConfig
         builder.Property("engineering_change_id").HasColumnName("engineering_change_id").HasComment("Owning engineering change id.");
         builder.Property(x => x.VersionKind).HasColumnName("version_kind").IsRequired().HasMaxLength(100).HasComment("Affected version kind such as document, engineering-bom, manufacturing-bom, routing or production-version.");
         builder.Property(x => x.VersionId).HasColumnName("version_id").IsRequired().HasMaxLength(150).HasComment("Affected version id.");
+        builder.Property(x => x.SupersededByVersionId).HasColumnName("superseded_by_version_id").HasMaxLength(150).HasComment("Optional successor version id that supersedes this affected version.");
         builder.HasIndex("engineering_change_id", nameof(EngineeringChangeAffectedVersion.VersionKind), nameof(EngineeringChangeAffectedVersion.VersionId)).IsUnique();
     }
 }

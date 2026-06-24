@@ -145,6 +145,7 @@ var notification = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithEnvironment("Approval__OverdueEscalation__RecipientRefs__0", "role:business-approval-manager")
     .WithReference(notificationDatabase, "NotificationDb")
     .WaitFor(notificationDatabase);
 notification = WithRedisMessagingTransport(notification);
@@ -290,6 +291,10 @@ var businessApproval = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(buil
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Approval__OverdueCheck__Enabled", "true")
+    .WithEnvironment("Approval__OverdueCheck__Scopes__0__OrganizationId", "org-001")
+    .WithEnvironment("Approval__OverdueCheck__Scopes__0__EnvironmentId", "env-dev")
+    .WithEnvironment("Approval__OverdueCheck__Interval", "00:05:00")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessApprovalDatabase, "PostgreSQL")
     .WaitFor(businessApprovalDatabase);

@@ -216,19 +216,22 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         {
             var inboundUnitCost = movement.UnitCost ?? MovingAverageUnitCost;
             movement.ApplyValuation(inboundUnitCost);
-            InventoryValue += movement.MovementAmount ?? 0m;
-            MovingAverageUnitCost = nextOnHand == 0 ? 0m : InventoryValue / nextOnHand;
+            InventoryValue = RoundValuation(InventoryValue + (movement.MovementAmount ?? 0m));
+            MovingAverageUnitCost = nextOnHand == 0 ? 0m : RoundValuation(InventoryValue / nextOnHand);
             return;
         }
 
         movement.ApplyValuation(MovingAverageUnitCost);
-        InventoryValue += movement.MovementAmount ?? 0m;
+        InventoryValue = RoundValuation(InventoryValue + (movement.MovementAmount ?? 0m));
         if (nextOnHand == 0)
         {
             MovingAverageUnitCost = 0m;
             InventoryValue = 0m;
         }
     }
+
+    private static decimal RoundValuation(decimal value) =>
+        Math.Round(value, 6, MidpointRounding.ToEven);
 
     private void EnsureSameDimension(StockMovement movement)
     {

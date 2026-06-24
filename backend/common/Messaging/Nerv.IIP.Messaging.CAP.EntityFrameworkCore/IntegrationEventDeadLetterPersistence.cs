@@ -16,6 +16,21 @@ public sealed class PersistentIntegrationEventDeadLetterStore<TDbContext>(TDbCon
         return message;
     }
 
+    public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> AddRangeAsync(
+        IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        if (messages.Count == 0)
+        {
+            return [];
+        }
+
+        dbContext.Set<IntegrationEventDeadLetter>().AddRange(messages.Select(x => new IntegrationEventDeadLetter(x)));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return messages.ToArray();
+    }
+
     public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
         string? consumerName,
         IntegrationEventDeadLetterStatus? status,
