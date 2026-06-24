@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import ScreenPanel from './ScreenPanel.vue'
 
 /**
- * Screen — output trend. A glowing cyan actual line over a soft area fill, with a
- * dashed indigo plan series and a very faint dashed grid. Optional crosshair —
- * a dashed vertical rule, a glowing dot on the actual point, and a dark info card
- * reading off both series. All paths are computed from `actual` / `plan`; the
- * y-scale derives from the data (rounded up) so callers pass raw numbers.
+ * Screen — output trend. A glowing cyan actual line over a soft area fill, a
+ * dashed indigo plan series and a faint dashed grid. **Interactive**: hover the
+ * plot and a crosshair + info card snaps to the nearest data point, reading off
+ * both series; with no hover it rests on the optional `tooltip` pin. All paths
+ * are computed from `actual` / `plan`; the y-scale derives from the data (rounded
+ * up) so callers pass raw numbers.
  */
 const props = withDefaults(
   defineProps<{
@@ -19,8 +20,8 @@ const props = withDefaults(
     yLabels?: string[]
     /** X-axis labels under the plot. */
     xLabels?: string[]
-    /** Crosshair + info card. `x` is the data index to pin it to. */
-    tooltip?: { x: number; label: string; actual: string; plan: string }
+    /** Resting crosshair pin when not hovering. `x` is the data index. */
+    tooltip?: { x: number, label: string, actual: string, plan: string }
     title?: string
   }>(),
   {
@@ -29,7 +30,7 @@ const props = withDefaults(
     plan: () => [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380],
     yLabels: () => ['1,500', '1,200', '900', '600', '300', '0'],
     xLabels: () => ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'],
-    tooltip: () => ({ x: 6, label: '10:00', actual: '1,086', plan: '1,150' }),
+    tooltip: () => ({ x: 6, label: '12:00', actual: '1,086', plan: '1,150' }),
   },
 )
 
@@ -45,7 +46,6 @@ const bottom = VB_H - PAD_B
 const left = PAD_L
 const right = VB_W
 
-// Headroom-rounded max so the line never kisses the ceiling.
 const max = computed(() => {
   const peak = Math.max(1, ...props.actual, ...props.plan)
   const mag = 10 ** Math.floor(Math.log10(peak))
@@ -59,14 +59,16 @@ function xAt(i: number, len: number) {
 function yAt(v: number) {
   return bottom - (bottom - top) * (v / max.value)
 }
-
-function line(data: number[]) {
+function linePath(data: number[]) {
   if (!data.length) return ''
   return data.map((v, i) => `${i === 0 ? 'M' : 'L'}${xAt(i, data.length).toFixed(1)} ${yAt(v).toFixed(1)}`).join(' ')
 }
+function fmt(v: number) {
+  return v.toLocaleString('en-US')
+}
 
-const actualPath = computed(() => line(props.actual))
-const planPath = computed(() => line(props.plan))
+const actualPath = computed(() => linePath(props.actual))
+const planPath = computed(() => linePath(props.plan))
 const areaPath = computed(() =>
   props.actual.length
     ? `${actualPath.value} L${right} ${bottom} L${left} ${bottom} Z`
@@ -79,18 +81,50 @@ const gridYs = computed(() => {
   return Array.from({ length: n }, (_, i) => top + ((bottom - top) * i) / (n - 1))
 })
 
+// --- hover interaction ---------------------------------------------------
+const svgEl = ref<SVGSVGElement>()
+const hover = ref<number | null>(null)
+
+function onMove(e: MouseEvent) {
+  const svg = svgEl.value
+  const len = props.actual.length
+  if (!svg || len < 1) return
+  const r = svg.getBoundingClientRect()
+  const svgX = ((e.clientX - r.left) / r.width) * VB_W
+  const i = Math.round(((svgX - left) / (right - left)) * (len - 1))
+  hover.value = Math.max(0, Math.min(len - 1, i))
+}
+function onLeave() {
+  hover.value = null
+}
+
 const cross = computed(() => {
-  const t = props.tooltip
-  if (!t) return null
-  const i = Math.max(0, Math.min(props.actual.length - 1, t.x))
-  const cx = xAt(i, props.actual.length)
+  const len = props.actual.length
+  let i: number | null = null
+  let label = ''
+  let aVal = ''
+  let pVal = ''
+  if (hover.value != null) {
+    i = hover.value
+    const hr = Math.round((i / Math.max(1, len - 1)) * 24)
+    label = `${String(hr).padStart(2, '0')}:00`
+    aVal = fmt(props.actual[i] ?? 0)
+    pVal = fmt(props.plan[i] ?? 0)
+  } else if (props.tooltip) {
+    i = Math.max(0, Math.min(len - 1, props.tooltip.x))
+    label = props.tooltip.label
+    aVal = props.tooltip.actual
+    pVal = props.tooltip.plan
+  }
+  if (i == null) return null
+  const cx = xAt(i, len)
   const cy = yAt(props.actual[i] ?? 0)
   const cardW = 160
   const cardH = 66
   // Keep the card on-canvas: flip to the left of the rule near the right edge.
   const cardX = cx + 14 + cardW > right ? cx - 14 - cardW : cx + 14
   const cardY = Math.min(Math.max(top, cy - cardH / 2), bottom - cardH)
-  return { cx, cy, cardX, cardY, cardW, cardH, t }
+  return { cx, cy, cardX, cardY, cardW, cardH, label, aVal, pVal }
 })
 
 const uid = Math.random().toString(36).slice(2, 8)
@@ -111,7 +145,14 @@ const uid = Math.random().toString(36).slice(2, 8)
       <div class="sb-tc-y">
         <span v-for="(y, i) in yLabels" :key="i">{{ y }}</span>
       </div>
-      <svg class="sb-tc-svg" :viewBox="`0 0 ${VB_W} ${VB_H}`" preserveAspectRatio="none">
+      <svg
+        ref="svgEl"
+        class="sb-tc-svg"
+        :viewBox="`0 0 ${VB_W} ${VB_H}`"
+        preserveAspectRatio="none"
+        @mousemove="onMove"
+        @mouseleave="onLeave"
+      >
         <defs>
           <linearGradient :id="`sbTc-${uid}`" x1="0" y1="0" x2="0" y2="1">
             <stop class="sb-tc-g0" offset="0" />
@@ -131,7 +172,10 @@ const uid = Math.random().toString(36).slice(2, 8)
         <path class="sb-tc-plan" :d="planPath" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
         <path class="sb-tc-act" :d="actualPath" fill="none" stroke-width="2.2" :filter="`url(#sbTcGl-${uid})`" />
 
-        <template v-if="cross">
+        <!-- transparent capture layer so hover fires over empty plot area too -->
+        <rect :x="left" :y="top" :width="right - left" :height="bottom - top" fill="transparent" />
+
+        <g v-if="cross" pointer-events="none">
           <line
             class="sb-tc-rule"
             :x1="cross.cx"
@@ -144,11 +188,11 @@ const uid = Math.random().toString(36).slice(2, 8)
           <circle class="sb-tc-dot" :cx="cross.cx" :cy="cross.cy" r="4" :filter="`url(#sbTcGl-${uid})`" />
           <g :transform="`translate(${cross.cardX},${cross.cardY})`">
             <rect class="sb-tc-card" :width="cross.cardW" :height="cross.cardH" rx="6" />
-            <text class="sb-tc-c-t" x="14" y="23" font-size="12">{{ cross.t.label }}</text>
-            <text class="sb-tc-c-a" x="14" y="43" font-size="13">● 实际产量　{{ cross.t.actual }}</text>
-            <text class="sb-tc-c-p" x="14" y="59" font-size="13">┄ 计划产量　{{ cross.t.plan }}</text>
+            <text class="sb-tc-c-t" x="14" y="23" font-size="12">{{ cross.label }}</text>
+            <text class="sb-tc-c-a" x="14" y="43" font-size="13">● 实际产量　{{ cross.aVal }}</text>
+            <text class="sb-tc-c-p" x="14" y="59" font-size="13">┄ 计划产量　{{ cross.pVal }}</text>
           </g>
-        </template>
+        </g>
       </svg>
     </div>
 
@@ -207,6 +251,7 @@ const uid = Math.random().toString(36).slice(2, 8)
   width: 100%;
   height: 100%;
   overflow: visible;
+  cursor: crosshair;
 }
 /* SVG paint via CSS props so the --sb-* tokens resolve reliably */
 .sb-tc-g0 {
