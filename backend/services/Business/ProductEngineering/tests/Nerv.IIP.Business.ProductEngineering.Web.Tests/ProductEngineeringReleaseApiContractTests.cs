@@ -1058,6 +1058,218 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_change_records_supersede_successor_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-SUP", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        oldBom.Release(new DateOnly(2026, 1, 1));
+        var successorBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-SUP", "B", "ENG-3000")
+            .AddLine("ENG-3001", 2m, "EA");
+        successorBom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.AddRange(oldBom, successorBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-SUPERSEDE",
+                "Supersede EBOM A with EBOM B",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-SUP:A", "EBOM-SUP:B")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var affectedVersion = Assert.Single(dbContext.EngineeringChanges.Include(x => x.AffectedVersions).Single().AffectedVersions);
+        Assert.Equal("EBOM-SUP:A", affectedVersion.VersionId);
+        Assert.Equal("EBOM-SUP:B", affectedVersion.SupersededByVersionId);
+        Assert.Equal(EngineeringVersionStatus.Archived, oldBom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, successorBom.Status);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_rejects_self_supersede_version()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalVerifier = new RecordingApprovalVerifier();
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-SELF-SUPERSEDE",
+                "Reject self supersede",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-SELF:A", " EBOM-SELF:A ")]),
+            CancellationToken.None));
+
+        Assert.Contains("cannot supersede itself", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(approvalVerifier.Calls);
+        Assert.Empty(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_rejects_same_change_supersede_cycle()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalVerifier = new RecordingApprovalVerifier();
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-CYCLE",
+                "Reject supersede cycle",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [
+                    new AffectedVersionCommand("engineering-bom", "EBOM-CYCLE:A", "EBOM-CYCLE:B"),
+                    new AffectedVersionCommand("engineering-bom", "EBOM-CYCLE:B", "EBOM-CYCLE:A")
+                ]),
+            CancellationToken.None));
+
+        Assert.Contains("supersede cycle", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(approvalVerifier.Calls);
+        Assert.Empty(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_rejects_conflicting_duplicate_successor()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var approvalVerifier = new RecordingApprovalVerifier();
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-DUPLICATE-SUCCESSOR",
+                "Reject conflicting successors",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [
+                    new AffectedVersionCommand("engineering-bom", "EBOM-DUP:A", "EBOM-DUP:B"),
+                    new AffectedVersionCommand(" Engineering-Bom ", " ebom-dup:a ", "EBOM-DUP:C")
+                ]),
+            CancellationToken.None));
+
+        Assert.Contains("can only declare one successor", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(approvalVerifier.Calls);
+        Assert.Empty(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_normalizes_blank_successor_for_idempotency_fingerprint()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FP", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        oldBom.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.Add(oldBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+        var firstCommand = new ReleaseEngineeringChangeCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "Supersede with no successor",
+            Guid.NewGuid().ToString("D"),
+            new DateOnly(2026, 6, 1),
+            [new AffectedVersionCommand("engineering-bom", "EBOM-FP:A")],
+            "eco-fingerprint-successor-blank");
+
+        var first = await handler.Handle(firstCommand, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replay = await handler.Handle(firstCommand with
+        {
+            AffectedVersions = [new AffectedVersionCommand(" engineering-bom ", " EBOM-FP:A ", "   ")]
+        }, CancellationToken.None);
+
+        Assert.Equal(first.Id, replay.Id);
+        Assert.Single(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_wraps_archive_invalid_state_as_known_exception()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var draftBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DRAFT", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        dbContext.EngineeringBoms.Add(draftBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-DRAFT-ARCHIVE",
+                "Reject draft archive as business error",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-DRAFT:A")]),
+            CancellationToken.None));
+
+        Assert.Contains("Only released engineering BOM versions can be archived", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.EngineeringChanges);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_requires_matching_approved_business_approval_chain()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1267,19 +1479,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
     private static WebApplicationFactory<Program> CreateFactory()
     {
-        var settings = new Dictionary<string, string?>
-        {
-            ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_product_engineering_policy;Username=nerv;Password=nerv",
-            ["InternalService:BearerToken"] = "test-internal-service-token",
-        };
-
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.ConfigureAppConfiguration((_, configuration) =>
-                    configuration.AddInMemoryCollection(settings));
-            });
+        return ProductEngineeringWebTestFactory.Create("product-engineering-release-http");
     }
 
     private static string NormalizeValidationPropertyName(string propertyName)

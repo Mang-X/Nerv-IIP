@@ -1,10 +1,10 @@
 /*
- * Self-hosted UI fonts — bundled by Vite, zero runtime CDN / googleapis request.
- * Latin/digits → Inter (variable). Chinese → MiSans (Xiaomi, free commercial),
- * unicode-range subsetted so only the glyphs a page uses are fetched.
+ * UI fonts. Latin/digits → Inter (self-hosted, bundled by Vite, zero CDN request).
+ * Chinese → each platform's own system font (PingFang SC on macOS/iOS, Microsoft
+ * YaHei on Windows) — the big-vendor approach: native, highly legible, no font
+ * payload, no licensing. The Latin Inter still shapes numbers/codes (WO-/WC-).
  */
 @import '@fontsource-variable/inter';
-@import './misans.css';
 
 /*
  * Nerv-IIP Design System v2 — shared token source of truth (@nerv-iip/ui).
@@ -177,8 +177,9 @@
 
 @theme inline {
   --font-sans:
-    'Inter Variable', 'MiSans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    'Segoe UI', sans-serif;
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑',
+    'Helvetica Neue', Arial, sans-serif;
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);

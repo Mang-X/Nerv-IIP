@@ -1259,7 +1259,8 @@ public sealed record BusinessConsoleReleaseEngineeringChangeRequest(
 
 public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionKind,
-    string VersionId);
+    string VersionId,
+    string? SupersededByVersionId = null);
 
 public sealed record BusinessConsoleListEngineeringChangesRequest(
     string OrganizationId,
@@ -1284,7 +1285,8 @@ public sealed record BusinessConsoleEngineeringChangeItem(
 
 public sealed record BusinessConsoleEngineeringChangeAffectedVersionItem(
     string VersionKind,
-    string VersionId);
+    string VersionId,
+    string? SupersededByVersionId);
 
 public sealed record BusinessConsoleListProductionVersionsRequest(
     string OrganizationId,
@@ -2743,6 +2745,7 @@ public sealed record BusinessConsoleMesReceiptRequestRow(
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
+    decimal? UnitCost,
     string ReceiptStatus,
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
@@ -2760,6 +2763,7 @@ public sealed record BusinessConsoleMesCreateReceiptRequest(
     decimal Quantity,
     string UomCode,
     DateTimeOffset RequestedAtUtc,
+    decimal? UnitCost,
     string IdempotencyKey,
     string? ProducedLotNo = null,
     string? SerialNo = null);

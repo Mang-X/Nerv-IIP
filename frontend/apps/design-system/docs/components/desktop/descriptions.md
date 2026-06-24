@@ -1,5 +1,7 @@
 ---
 title: Descriptions 描述列表
+pageClass: ds-wide
+aside: false
 ---
 
 <script setup>
@@ -32,7 +34,7 @@ const clampItems = [
 
 ## 网格
 
-<Demo>
+<Demo block>
   <DescriptionsPro :items="items" :columns="3">
     <template #code="{ item }">
       <span class="font-mono text-xs">{{ item.value }}</span>
@@ -56,7 +58,7 @@ const clampItems = [
 
 ## 带边框
 
-<Demo>
+<Demo block>
   <DescriptionsPro :items="items" :columns="3" bordered>
     <template #code="{ item }">
       <span class="font-mono text-xs">{{ item.value }}</span>
@@ -75,7 +77,7 @@ const clampItems = [
 
 `ellipsis` + `label-width`：标题单行截断，悬停弹 Tooltip 看全文。
 
-<Demo>
+<Demo block>
   <DescriptionsPro :items="clampItems" :columns="2" bordered ellipsis label-width="6rem" />
 </Demo>
 

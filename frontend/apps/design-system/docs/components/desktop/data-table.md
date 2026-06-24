@@ -1,5 +1,7 @@
 ---
 title: DataTable 数据表格
+pageClass: ds-wide
+aside: false
 ---
 
 <script setup>
@@ -15,11 +17,11 @@ import { PlusIcon, ListFilterIcon } from 'lucide-vue-next'
 import { ref } from 'vue'
 
 const columns = [
-  { key: 'code', header: '工单号', sortable: true, filter: 'text', cellClass: 'font-mono text-xs', hideable: false },
+  { key: 'code', header: '工单号', width: '160px', sortable: true, filter: 'text', cellClass: 'font-mono text-xs', hideable: false },
   { key: 'product', header: '产品', sortable: true, filter: 'text', cellClass: 'font-medium' },
-  { key: 'center', header: '工作中心', filter: 'enum', cellClass: 'font-mono text-xs text-muted-foreground' },
-  { key: 'owner', header: '负责人', filter: 'enum' },
-  { key: 'qty', header: '数量', align: 'end', sortable: true, cellClass: 'tabular-nums' },
+  { key: 'center', header: '工作中心', width: '140px', filter: 'enum', cellClass: 'font-mono text-xs text-muted-foreground' },
+  { key: 'owner', header: '负责人', width: '110px', filter: 'enum' },
+  { key: 'qty', header: '数量', width: '110px', align: 'end', sortable: true, cellClass: 'tabular-nums' },
   {
     key: 'status',
     header: '状态',
@@ -76,7 +78,7 @@ const pageSize = ref(10)
 
 ## 完整表格
 
-<Demo>
+<Demo block>
   <DataTablePro
     :columns="columns"
     :rows="rows"
@@ -133,7 +135,7 @@ const pageSize = ref(10)
 
 ## 操作栏 Toolbar
 
-<Demo>
+<Demo block>
   <DataTableToolbarPro
     v-model:search="tbSearch"
     v-model:tab="tbTab"
@@ -180,7 +182,7 @@ const pageSize = ref(10)
 
 ## 分页 Pagination
 
-<Demo>
+<Demo block>
   <DataTablePaginationPro
     :page="page"
     :page-size="pageSize"

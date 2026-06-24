@@ -566,7 +566,7 @@ public sealed class GetEngineeringItemQueryHandler(ApplicationDbContext dbContex
     }
 }
 
-public sealed record EngineeringChangeAffectedVersionItem(string VersionKind, string VersionId);
+public sealed record EngineeringChangeAffectedVersionItem(string VersionKind, string VersionId, string? SupersededByVersionId);
 
 public sealed record EngineeringChangeItem(
     string ChangeNumber,
@@ -619,7 +619,7 @@ public sealed class ListEngineeringChangesQueryHandler(ApplicationDbContext dbCo
                 x.AffectedVersions
                     .OrderBy(version => version.VersionKind)
                     .ThenBy(version => version.VersionId)
-                    .Select(version => new EngineeringChangeAffectedVersionItem(version.VersionKind, version.VersionId))
+                    .Select(version => new EngineeringChangeAffectedVersionItem(version.VersionKind, version.VersionId, version.SupersededByVersionId))
                     .ToArray()))
             .ToArrayAsync(cancellationToken);
 
@@ -651,7 +651,7 @@ public sealed class GetEngineeringChangeQueryHandler(ApplicationDbContext dbCont
                 x.AffectedVersions
                     .OrderBy(version => version.VersionKind)
                     .ThenBy(version => version.VersionId)
-                    .Select(version => new EngineeringChangeAffectedVersionItem(version.VersionKind, version.VersionId))
+                    .Select(version => new EngineeringChangeAffectedVersionItem(version.VersionKind, version.VersionId, version.SupersededByVersionId))
                     .ToArray()))
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");

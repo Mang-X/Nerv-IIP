@@ -572,6 +572,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
                   'ds-dt-th h-10 text-xs font-medium text-muted-foreground',
                   alignClass[col.align ?? 'start'],
                   widthClass(col.width),
+                  !col.width && 'ds-dt-fill',
                   col.headerClass,
                 )
               "
@@ -707,6 +708,16 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 .ds-dt-table {
   border-collapse: separate;
   border-spacing: 0;
+}
+
+/* Columns without an explicit `width` share the leftover space so the table
+   fills its container instead of leaving dead space on the right (product-first
+   default — shadcn's nowrap cells otherwise lock every column to content width).
+   `nowrap` keeps each at least content-wide; equal `width:100%` distributes the
+   rest evenly. Give a column an explicit `width` to opt it out (e.g. number /
+   status columns that should stay compact). */
+.ds-dt-fill {
+  width: 100%;
 }
 
 /* Header: a slightly recessed second surface, sticky when asked. */

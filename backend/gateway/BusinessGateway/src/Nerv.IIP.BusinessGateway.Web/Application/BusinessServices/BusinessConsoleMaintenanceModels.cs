@@ -152,4 +152,6 @@ public sealed record BusinessConsoleAssetReliabilityResponse(
     int FailureCount,
     int RepairCount,
     decimal? MtbfHours,
-    decimal? MttrMinutes);
+    decimal? MttrMinutes,
+    string MtbfRuntimeSource,
+    bool MtbfRuntimeHasSamples);

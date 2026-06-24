@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -20,6 +21,50 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 public sealed class MesInventoryLineSideTransferAcceptanceTests
 {
+    [Fact]
+    public async Task Mes_finished_goods_receipt_unit_cost_flows_to_inventory_moving_average_valuation()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483");
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
+
+        var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(mesDb).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-483",
+                "SKU-FG-483",
+                8m,
+                "PCS",
+                requestedAtUtc,
+                UnitCost: 12.34m,
+                IdempotencyKey: "receipt-483",
+                ProducedLotNo: "LOT-FG-483"),
+            CancellationToken.None);
+        var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+            .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
+
+        await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
+
+        Assert.Empty(inventoryPublisher.Published);
+        Assert.Equal(12.34m, receiptEvent.Payload.UnitCost);
+        var movement = Assert.Single(inventoryDb.StockMovements);
+        var ledger = Assert.Single(inventoryDb.StockLedgers);
+        Assert.Equal("FGR", receiptRequest.RequestNo[..3]);
+        Assert.Equal("SKU-FG-483", movement.SkuCode);
+        Assert.Equal(8m, movement.Quantity);
+        Assert.Equal(12.34m, movement.UnitCost);
+        Assert.Equal(98.72m, movement.MovementAmount);
+        Assert.Equal(8m, ledger.OnHandQuantity);
+        Assert.Equal(12.34m, ledger.MovingAverageUnitCost);
+        Assert.Equal(98.72m, ledger.InventoryValue);
+    }
+
     [Fact]
     public async Task Mes_issue_receipt_and_consumption_posts_continuous_inventory_line_side_account()
     {
@@ -152,10 +197,10 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             publisher);
     }
 
-    private static void SeedMesWorkOrder(MesDbContext mesDb)
+    private static void SeedMesWorkOrder(MesDbContext mesDb, string workOrderId = "WO-446", string skuId = "SKU-FG")
     {
         var now = DateTimeOffset.Parse("2026-06-18T07:00:00Z");
-        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-446", "SKU-FG", "PV-001", 10m, 10, now.AddHours(8));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", workOrderId, skuId, "PV-001", 10m, 10, now.AddHours(8));
         workOrder.MarkReleased();
         workOrder.Start(now);
         mesDb.WorkOrders.Add(workOrder);

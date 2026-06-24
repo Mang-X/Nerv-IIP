@@ -152,13 +152,6 @@ public sealed class ProductionVersion : Entity<ProductionVersionId>, IAggregateR
                (LotSizeMax is null || lotSize <= LotSizeMax.Value);
     }
 
-    public bool EffectiveWindowOverlaps(DateOnly validFrom, DateOnly? validTo)
-    {
-        var thisEnd = ValidTo ?? DateOnly.MaxValue;
-        var otherEnd = validTo ?? DateOnly.MaxValue;
-        return ValidFrom <= otherEnd && validFrom <= thisEnd;
-    }
-
     private void Touch()
     {
         UpdatedAtUtc = DateTime.UtcNow;

@@ -9,13 +9,21 @@
 // dropdowns) escape the preview box: the box drops `overflow:hidden`, top-aligns
 // its control, and reserves empty space underneath so the floating panel doesn't
 // cover the next section.
-defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boolean }>()
+defineProps<{
+  title?: string
+  center?: boolean
+  mobile?: boolean
+  popout?: boolean
+  /** Full-width column layout so wide components (DataTable, Descriptions) fill
+   *  the preview instead of shrinking to content inside the default flex row. */
+  block?: boolean
+}>()
 </script>
 
 <template>
   <ClientOnly>
     <div class="ds-demo" :class="{ 'ds-demo-popout-box': popout }">
-      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout }">
+      <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout, 'ds-demo-block': block }">
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
       </div>
@@ -61,6 +69,14 @@ defineProps<{ title?: string; center?: boolean; mobile?: boolean; popout?: boole
   align-items: center;
   gap: 0.75rem;
   padding: 1.75rem 1.5rem;
+}
+/* `block` — full-width column for wide components (DataTable, Descriptions) so
+   they fill the preview instead of shrinking to content in the flex row. */
+.ds-demo-block {
+  display: block;
+}
+.ds-demo-block > * + * {
+  margin-top: 0.875rem;
 }
 .ds-demo-center {
   justify-content: center;
