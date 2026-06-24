@@ -35,12 +35,15 @@
 
 - press ≈ `0.12s`;控件过渡 `0.15–0.22s`;滑动 / 展开 `0.26–0.28s`;数据增长 `0.6s`。
 
-**press 反馈** —— 与 pro 控件同源，收缩、绝不膨胀或回弹:
+**press 反馈** —— 收缩、绝不膨胀、绝不位移、绝不回弹:
 
-- 按钮 `:active` → `translateY(0.5px) scale(0.992)`（同 `ButtonPro`）
+- 按钮 `:active` → `scale(0.985)`（纯缩放;大屏上**不做**垂直位移,`translateY` 在暗底看着像跳动）
 - 开关手柄 `:active` → `scale(0.86)`（同 `SwitchPro`，**收缩**而非膨胀）
-- 分段 / 小控件 `:active` → `scale(0.96)`
 - 勾选类如有 → `scale(0.88)`（同 `CheckboxPro` / `RadioGroupProItem`）
+
+**滑动指示** —— 分段（`ScreenSegmented`）与标签（`ScreenTabs`）用滑动 thumb / 下划线（`--sb-ease-emphasized`），与 PC 的滑动语言一致;thumb 从激活项**实测宽度**定位,**不做**硬背景切换。
+
+**浮层** —— 下拉 / 弹层（`ScreenSelect` 等）必须 `Teleport` 到 `<body>` 并 `position:fixed` 锚定触发器,否则会被 `ScreenPanel` 的 `overflow:hidden` 裁掉。
 
 **循环类** —— 状态灯呼吸、流光分割、水位波浪用 `ease-in-out` 或 SVG SMIL;`prefers-reduced-motion` 一律停。
 

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Check, ChevronDown } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 /**
- * Screen — big-board select. A dark trigger that drops a glowing panel of
- * options; the chosen row reads cyan with a check, and the open panel lifts on a
- * cyan-tinted shadow. Keyboard-driven (↑ / ↓ / Enter / Esc) and wired with
- * listbox semantics. Closes on outside click. Built on the independent `--sb-*`
- * tokens via `v-model`.
+ * Screen — big-board select. A dark trigger that drops a glowing panel of options
+ * **teleported to <body>** so it's never clipped by a panel's `overflow:hidden`;
+ * the panel is fixed-positioned under the trigger and re-anchors on scroll/resize.
+ * The chosen row reads cyan with a check. Keyboard-driven (↑/↓/Enter/Esc), listbox
+ * semantics, closes on outside click. Built on the independent `--sb-*` tokens.
  */
 type Value = string | number
 
@@ -33,16 +33,23 @@ const props = withDefaults(
 
 const open = ref(false)
 const root = ref<HTMLElement>()
+const trigger = ref<HTMLElement>()
+const panel = ref<HTMLElement>()
 const active = ref(-1)
+const pos = ref({ left: 0, top: 0, width: 0 })
 
 const selected = computed(() => props.options.find(o => o.value === model.value))
 
+/** Anchor the teleported panel just under the trigger, in viewport coords. */
+function place() {
+  const el = trigger.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  pos.value = { left: r.left, top: r.bottom + 6, width: r.width }
+}
 function toggle() {
   if (props.disabled) return
   open.value = !open.value
-  if (open.value) {
-    active.value = props.options.findIndex(o => o.value === model.value)
-  }
 }
 function pick(v: Value) {
   model.value = v
@@ -71,17 +78,36 @@ function onKey(e: KeyboardEvent) {
     if (active.value >= 0) pick(props.options[active.value].value)
   }
 }
-function onDocClick(e: MouseEvent) {
-  if (root.value && !root.value.contains(e.target as Node)) open.value = false
+function onDocPointer(e: MouseEvent) {
+  const t = e.target as Node
+  if (root.value?.contains(t) || panel.value?.contains(t)) return
+  open.value = false
 }
 
-onMounted(() => document.addEventListener('click', onDocClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
+watch(open, (v) => {
+  if (v) {
+    place()
+    active.value = props.options.findIndex(o => o.value === model.value)
+    document.addEventListener('pointerdown', onDocPointer, true)
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+  } else {
+    document.removeEventListener('pointerdown', onDocPointer, true)
+    window.removeEventListener('scroll', place, true)
+    window.removeEventListener('resize', place)
+  }
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointer, true)
+  window.removeEventListener('scroll', place, true)
+  window.removeEventListener('resize', place)
+})
 </script>
 
 <template>
   <div ref="root" class="sb-sel" :class="{ disabled, open }">
     <button
+      ref="trigger"
       type="button"
       class="sb-sel-trigger"
       role="combobox"
@@ -97,21 +123,29 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
       <ChevronDown class="sb-sel-caret" :size="16" aria-hidden="true" />
     </button>
 
-    <ul v-if="open" class="sb-sel-panel" role="listbox">
-      <li
-        v-for="(o, i) in options"
-        :key="String(o.value)"
-        class="sb-sel-opt"
-        role="option"
-        :class="{ on: o.value === model, active: i === active }"
-        :aria-selected="o.value === model"
-        @click="pick(o.value)"
-        @mousemove="active = i"
+    <Teleport to="body">
+      <ul
+        v-if="open"
+        ref="panel"
+        class="sb-sel-panel"
+        role="listbox"
+        :style="{ left: `${pos.left}px`, top: `${pos.top}px`, width: `${pos.width}px` }"
       >
-        <span>{{ o.label }}</span>
-        <Check v-if="o.value === model" class="sb-sel-check" :size="15" />
-      </li>
-    </ul>
+        <li
+          v-for="(o, i) in options"
+          :key="String(o.value)"
+          class="sb-sel-opt"
+          role="option"
+          :class="{ on: o.value === model, active: i === active }"
+          :aria-selected="o.value === model"
+          @click="pick(o.value)"
+          @mousemove="active = i"
+        >
+          <span>{{ o.label }}</span>
+          <Check v-if="o.value === model" class="sb-sel-check" :size="15" />
+        </li>
+      </ul>
+    </Teleport>
   </div>
 </template>
 
@@ -173,12 +207,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   color: var(--sb-cyan);
 }
 
+/* teleported to <body> — fixed so no ancestor overflow can clip it */
 .sb-sel-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 1000;
   margin: 0;
   padding: 5px;
   list-style: none;

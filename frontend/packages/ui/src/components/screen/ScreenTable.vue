@@ -84,19 +84,23 @@ withDefaults(
 .sb-tbl th {
   position: sticky;
   top: 0;
-  padding: 11px 10px;
+  padding: 10px 12px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--sb-cyan);
-  text-shadow: 0 0 10px rgba(0, 229, 255, 0.35);
+  letter-spacing: 0.02em;
+  color: var(--sb-muted);
   white-space: nowrap;
-  background: linear-gradient(180deg, rgba(0, 229, 255, 0.1), rgba(0, 229, 255, 0.02));
-  border-bottom: 1px solid rgba(0, 229, 255, 0.3);
+  background: linear-gradient(180deg, #101c30, #0c1322);
+  border-bottom: 1px solid var(--sb-line-2);
 }
 .sb-tbl tbody td {
-  padding: 11px 10px;
+  padding: 11px 12px;
   color: var(--sb-text-2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--sb-line);
   white-space: nowrap;
+}
+.sb-tbl tbody tr:last-child td {
+  border-bottom: 0;
 }
 .sb-tbl tbody tr {
   transition: background 0.15s var(--sb-ease);

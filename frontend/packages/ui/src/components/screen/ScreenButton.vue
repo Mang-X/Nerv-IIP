@@ -63,8 +63,9 @@ withDefaults(
   align-items: center;
   gap: 8px;
 }
+/* press — pure scale, no vertical nudge (the board reads better without shift) */
 .sb-btn:active:not(:disabled) {
-  transform: translateY(0.5px) scale(0.992);
+  transform: scale(0.985);
 }
 .sb-btn:focus-visible {
   outline: none;
