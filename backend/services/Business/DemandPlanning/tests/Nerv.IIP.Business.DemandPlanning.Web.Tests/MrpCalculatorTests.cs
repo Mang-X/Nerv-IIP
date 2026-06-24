@@ -182,6 +182,60 @@ public sealed class MrpCalculatorTests
         Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Invalid_uom_conversion_factor_fails_instead_of_zeroing_requirement(int conversionFactor)
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("box", "pcs", conversionFactor, 0m, 0, "half-up"),
+            ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
+
+        Assert.Contains("Invalid global UOM conversion", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("box", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Negative_uom_conversion_result_fails_instead_of_swallowing_requirement()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-BOX", "SKU-FG-1000", "box", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 0m, null, null, null),
+            ],
+            uomConversions:
+            [
+                new UomConversionSnapshot("box", "pcs", 1m, -2m, 0, "half-up"),
+            ]);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => MrpCalculator.Calculate(input));
+
+        Assert.Contains("negative quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SKU-FG-1000", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("box", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pcs", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Multi_level_bom_creates_make_suggestion_for_subassembly_then_purchase_for_raw_material()
     {
