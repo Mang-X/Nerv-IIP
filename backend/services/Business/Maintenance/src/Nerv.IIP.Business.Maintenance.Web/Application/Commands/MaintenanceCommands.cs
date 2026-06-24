@@ -371,7 +371,7 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
             .Where(x => x.Result == normalizedResult)
             .Where(x => x.InspectedAtUtc == inspectedAtUtc)
             .ToListAsync(cancellationToken);
-        var inspection = await SelectInspectionForReplayAsync(matchingInspections, cancellationToken);
+        var inspection = await SelectInspectionForReplayAsync(request.OrganizationId, request.EnvironmentId, matchingInspections, cancellationToken);
         if (inspection is null)
         {
             inspection = MaintenanceInspection.Record(request.OrganizationId, request.EnvironmentId, request.PlanId, request.WorkOrderId, request.Inspector, normalizedResult, inspectedAtUtc);
@@ -386,7 +386,11 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
         return inspection.Id;
     }
 
-    private async Task<MaintenanceInspection?> SelectInspectionForReplayAsync(IReadOnlyCollection<MaintenanceInspection> inspections, CancellationToken cancellationToken)
+    private async Task<MaintenanceInspection?> SelectInspectionForReplayAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<MaintenanceInspection> inspections,
+        CancellationToken cancellationToken)
     {
         if (inspections.Count <= 1)
         {
@@ -395,6 +399,8 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
 
         var sourceReferenceIds = inspections.Select(x => x.Id.ToString()).ToArray();
         var existingSourceReferenceId = await dbContext.MaintenanceWorkOrders
+            .Where(x => x.OrganizationId == organizationId)
+            .Where(x => x.EnvironmentId == environmentId)
             .Where(x => x.SourceType == MaintenanceWorkOrderSourceTypes.Inspection)
             .Where(x => x.SourceReferenceId != null && sourceReferenceIds.Contains(x.SourceReferenceId))
             .Select(x => x.SourceReferenceId)
