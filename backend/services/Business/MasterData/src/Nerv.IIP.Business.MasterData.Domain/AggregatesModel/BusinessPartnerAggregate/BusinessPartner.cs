@@ -145,7 +145,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     {
         EnsureEnabled();
         Name = Required(name);
-        PartnerRoles = NormalizeRoles(partnerRoles?.FirstOrDefault() ?? PartnerType, partnerRoles);
+        PartnerRoles = partnerRoles is null
+            ? PartnerRoles
+            : NormalizeRoles(partnerRoles.FirstOrDefault() ?? PartnerType, partnerRoles);
         PartnerType = PartnerRoles[0];
         TaxId = Optional(taxId);
         TaxRegionCode = Optional(taxRegionCode);
@@ -157,6 +159,35 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
         PrimaryContactPhone = Optional(primaryContactPhone);
         (CreditLimit, CreditCurrencyCode) = NormalizeCreditLimit(creditLimit, creditCurrencyCode);
         Touch();
+    }
+
+    public void ChangePrimaryRole(
+        string name,
+        string partnerType,
+        string? taxId,
+        string? taxRegionCode,
+        string? defaultCurrencyCode,
+        string? paymentTermsCode,
+        string? primaryAddress,
+        string? primaryContactName,
+        string? primaryContactEmail,
+        string? primaryContactPhone,
+        decimal? creditLimit = null,
+        string? creditCurrencyCode = null)
+    {
+        Update(
+            name,
+            ReplacePrimaryRole(partnerType),
+            taxId,
+            taxRegionCode,
+            defaultCurrencyCode,
+            paymentTermsCode,
+            primaryAddress,
+            primaryContactName,
+            primaryContactEmail,
+            primaryContactPhone,
+            creditLimit,
+            creditCurrencyCode);
     }
 
     public void UpdateCreditLimit(decimal? creditLimit, string? creditCurrencyCode)

@@ -304,6 +304,81 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Procurement_type_drives_make_buy_suggestion_type_lead_time_and_lot_policy()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-MAKE", "SKU-MAKE", "pcs", "SITE-01", 7m, new DateOnly(2026, 6, 10)),
+                new DemandSnapshot("DEMAND-BUY", "SKU-BUY", "pcs", "SITE-01", 7m, new DateOnly(2026, 6, 10)),
+            ],
+            availability: [],
+            productionVersions:
+            [
+                new ProductionVersionSnapshot("SKU-MAKE", "PV-MAKE", "MBOM-MAKE", "ROUTING-MAKE"),
+                new ProductionVersionSnapshot("SKU-BUY", "PV-BUY", "MBOM-BUY", "ROUTING-BUY"),
+            ],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-BUY", "SKU-BUY-COMPONENT", "pcs", 2m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot(
+                    "SKU-MAKE",
+                    "pcs",
+                    "SITE-01",
+                    0,
+                    0m,
+                    null,
+                    null,
+                    5m,
+                    ProcurementType: "make",
+                    MrpType: "mrp",
+                    LotSizingPolicy: "fixed-lot",
+                    ReorderPointQuantity: null,
+                    PlannedDeliveryTimeDays: 9,
+                    InHouseProductionTimeDays: 3,
+                    GoodsReceiptProcessingTimeDays: 1),
+                new PlanningParameterSnapshot(
+                    "SKU-BUY",
+                    "pcs",
+                    "SITE-01",
+                    0,
+                    0m,
+                    null,
+                    null,
+                    5m,
+                    ProcurementType: "buy",
+                    MrpType: "mrp",
+                    LotSizingPolicy: "fixed-lot",
+                    ReorderPointQuantity: null,
+                    PlannedDeliveryTimeDays: 9,
+                    InHouseProductionTimeDays: 3,
+                    GoodsReceiptProcessingTimeDays: 1),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SkuCode == "SKU-MAKE");
+        Assert.Equal("planned-work-order", workOrder.SuggestionType);
+        Assert.Equal(10m, workOrder.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 6), workOrder.ReleaseDate);
+
+        var purchase = Assert.Single(suggestions, x => x.SkuCode == "SKU-BUY");
+        Assert.Equal("planned-purchase", purchase.SuggestionType);
+        Assert.Equal(10m, purchase.Quantity);
+        Assert.Equal(new DateOnly(2026, 5, 31), purchase.ReleaseDate);
+        Assert.DoesNotContain(suggestions, x => x.SkuCode == "SKU-BUY-COMPONENT");
+        Assert.All(purchase.PeggingLinks, x =>
+        {
+            Assert.Null(x.ProductionVersionReference);
+            Assert.Null(x.ManufacturingBomReference);
+            Assert.Null(x.RoutingReference);
+        });
+    }
+
+    [Fact]
     public void Daily_bucket_aggregation_applies_lot_size_min_and_max()
     {
         var input = NewInput(
