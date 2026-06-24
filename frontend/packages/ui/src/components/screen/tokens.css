@@ -1,0 +1,36 @@
+/**
+ * Screen surface tokens — independent from the shared PC/mobile token set. A
+ * fixed dark "industrial-blue" control-room theme (no light mode), matching the
+ * board reference. Prefixed `--sb-*` so they never clash with the shared `--*`
+ * tokens; screen components reference only these.
+ */
+:root {
+  /* surfaces */
+  --sb-bg: #080c16;
+  --sb-bg-accent: #16294e;
+  --sb-panel-a: #0f1a2e;
+  --sb-panel-b: #0b1320;
+  --sb-line: rgba(255, 255, 255, 0.07);
+  --sb-line-2: rgba(255, 255, 255, 0.12);
+  --sb-divider: #18233a;
+
+  /* accent + semantics (cyan only on live data) */
+  --sb-cyan: #00e5ff;
+  --sb-cyan-dim: rgba(0, 229, 255, 0.5);
+  --sb-indigo: #a78bfa; /* plan / secondary series */
+  --sb-green: #00e676;
+  --sb-amber: #ffd600;
+  --sb-red: #ff1744;
+
+  /* text */
+  --sb-text: #ffffff;
+  --sb-text-2: #c8d2e0;
+  --sb-muted: #7a8699;
+  --sb-faint: #4f5a6e;
+
+  /* effects (restrained) */
+  --sb-glow: 0 0 10px rgba(0, 229, 255, 0.4);
+  --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 2px 12px -6px rgba(0, 0, 0, 0.6);
+  --sb-radius: 7px;
+  --sb-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
