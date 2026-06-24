@@ -80,7 +80,7 @@ public sealed class NotificationSchemaConventionTests
             fixture.DbContext,
             typeof(ProcessedIntegrationEvent),
             "ConsumerName",
-            "EventId");
+            "IdempotencyKey");
     }
 
     [Fact]

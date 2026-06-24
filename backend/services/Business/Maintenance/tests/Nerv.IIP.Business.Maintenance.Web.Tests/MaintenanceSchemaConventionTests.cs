@@ -61,15 +61,15 @@ public sealed class MaintenanceSchemaConventionTests
 
         var hasUniqueIndex = entity.GetIndexes().Any(index =>
             index.IsUnique &&
-            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_idempotency_key" &&
             index.Properties.Select(property => property.Name).SequenceEqual([
                 nameof(ProcessedIntegrationEvent.ConsumerName),
-                nameof(ProcessedIntegrationEvent.EventId),
+                nameof(ProcessedIntegrationEvent.IdempotencyKey),
             ]));
 
         return hasUniqueIndex
             ? []
-            : [$"{MaintenanceFacts.ServiceName}: processed integration event inbox requires a unique consumer/event id index."];
+            : [$"{MaintenanceFacts.ServiceName}: processed integration event inbox requires a unique consumer/idempotency key index."];
     }
 
     [Fact]

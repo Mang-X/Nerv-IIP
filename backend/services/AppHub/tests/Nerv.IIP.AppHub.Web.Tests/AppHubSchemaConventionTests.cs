@@ -59,15 +59,15 @@ public sealed class AppHubSchemaConventionTests
 
         var hasUniqueIndex = entity.GetIndexes().Any(index =>
             index.IsUnique &&
-            index.GetDatabaseName() == "ux_processed_integration_events_consumer_event_id" &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_idempotency_key" &&
             index.Properties.Select(property => property.Name).SequenceEqual([
                 nameof(ProcessedIntegrationEvent.ConsumerName),
-                nameof(ProcessedIntegrationEvent.EventId),
+                nameof(ProcessedIntegrationEvent.IdempotencyKey),
             ]));
 
         return hasUniqueIndex
             ? []
-            : ["AppHub: processed integration event inbox requires a unique consumer/event id index."];
+            : ["AppHub: processed integration event inbox requires a unique consumer/idempotency key index."];
     }
 
     private static SchemaFixture CreateFixture()

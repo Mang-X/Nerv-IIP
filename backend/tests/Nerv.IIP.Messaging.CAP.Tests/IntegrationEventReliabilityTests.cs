@@ -141,6 +141,77 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Processed_integration_event_inbox_uses_idempotency_key_not_random_event_id()
+    {
+        var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()
+            .UseInMemoryDatabase($"processed-inbox-{Guid.CreateVersion7():N}")
+            .Options;
+        await using var dbContext = new TestProcessedEventDbContext(options);
+        var first = CreateValidEvent("event-random-001");
+        var replay = first with { EventId = "event-random-002" };
+
+        var firstRecorded = await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            first,
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+        var replayRecorded = await ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            replay,
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+
+        Assert.True(firstRecorded);
+        Assert.False(replayRecorded);
+        var processed = Assert.Single(dbContext.ProcessedIntegrationEvents.Local);
+        Assert.Equal("event-random-001", processed.EventId);
+        Assert.Equal("sample:event-random-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Processed_integration_event_inbox_classifies_sqlite_unique_conflict_as_already_processed()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using (var setup = new TestProcessedEventDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+        }
+
+        await using var firstContext = new TestProcessedEventDbContext(options);
+        await using var secondContext = new TestProcessedEventDbContext(options);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            firstContext,
+            firstContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-conflict-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            secondContext,
+            secondContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-conflict-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+
+        await firstContext.SaveChangesAsync();
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => secondContext.SaveChangesAsync());
+
+        Assert.True(ProcessedIntegrationEventInbox.IsUniqueConflict(
+            exception,
+            secondContext,
+            ProcessedIntegrationEventInbox.UniqueIndexName));
+    }
+
     private static string[] IndexProperties(IIndex index)
     {
         return index.Properties.Select(property => property.Name).ToArray();
@@ -188,6 +259,62 @@ public sealed class IntegrationEventReliabilityTests
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.ConfigureIntegrationEventDeadLetters();
+        }
+    }
+
+    private sealed class TestProcessedEventDbContext(DbContextOptions<TestProcessedEventDbContext> options)
+        : DbContext(options)
+    {
+        public DbSet<SampleProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<SampleProcessedIntegrationEvent>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<SampleProcessedIntegrationEvent>(builder =>
+            {
+                builder.ToTable("processed_integration_events");
+                builder.HasKey(x => x.Id);
+                builder.Property(x => x.ConsumerName).IsRequired().HasMaxLength(256);
+                builder.Property(x => x.EventId).IsRequired().HasMaxLength(256);
+                builder.Property(x => x.EventType).IsRequired().HasMaxLength(256);
+                builder.Property(x => x.SourceService).IsRequired().HasMaxLength(128);
+                builder.Property(x => x.IdempotencyKey).IsRequired().HasMaxLength(512);
+                builder.HasIndex(x => new { x.ConsumerName, x.IdempotencyKey })
+                    .IsUnique()
+                    .HasDatabaseName(ProcessedIntegrationEventInbox.UniqueIndexName);
+            });
+        }
+    }
+
+    private sealed class SampleProcessedIntegrationEvent
+    {
+        private SampleProcessedIntegrationEvent()
+        {
+        }
+
+        private SampleProcessedIntegrationEvent(ProcessedIntegrationEventInboxRecord record)
+        {
+            Id = Guid.CreateVersion7();
+            ConsumerName = record.ConsumerName;
+            EventId = record.EventId;
+            EventType = record.EventType;
+            EventVersion = record.EventVersion;
+            SourceService = record.SourceService;
+            IdempotencyKey = record.IdempotencyKey;
+            ProcessedAtUtc = record.ProcessedAtUtc;
+        }
+
+        public Guid Id { get; private set; }
+        public string ConsumerName { get; private set; } = string.Empty;
+        public string EventId { get; private set; } = string.Empty;
+        public string EventType { get; private set; } = string.Empty;
+        public int EventVersion { get; private set; }
+        public string SourceService { get; private set; } = string.Empty;
+        public string IdempotencyKey { get; private set; } = string.Empty;
+        public DateTimeOffset ProcessedAtUtc { get; private set; }
+
+        public static SampleProcessedIntegrationEvent FromInboxRecord(ProcessedIntegrationEventInboxRecord record)
+        {
+            return new SampleProcessedIntegrationEvent(record);
         }
     }
 }
