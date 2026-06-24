@@ -3,7 +3,8 @@ title: ScreenTable 数据表格
 ---
 
 <script setup>
-import { ScreenTable, StatusTag } from '@nerv-iip/ui'
+import { ScreenButton, ScreenPagination, ScreenPanel, ScreenSearch, ScreenSelect, ScreenTable, StatusTag } from '@nerv-iip/ui'
+import { ref } from 'vue'
 
 const columns = [
   { key: 'wo', label: '工单号' },
@@ -19,6 +20,24 @@ const rows = [
   { wo: 'WO-2406-0297', product: '外壳面板', plan: '1,080', actual: '1,024', status: 'run' },
 ]
 const tones = { run: '运行中', idle: '待机', alarm: '报警' }
+
+// 完整数据表格示例:筛选 + 操作 + 分页
+const keyword = ref('')
+const lineFilter = ref('all')
+const page = ref(1)
+const lineOptions = [
+  { label: '全部产线', value: 'all' },
+  { label: '焊接线 A', value: 'a' },
+  { label: '装配线 B', value: 'b' },
+  { label: 'CNC 线 C', value: 'c' },
+]
+const fullColumns = [
+  { key: 'wo', label: '工单号' },
+  { key: 'product', label: '产品' },
+  { key: 'actual', label: '实际', align: 'right' },
+  { key: 'status', label: '状态', align: 'center' },
+  { key: 'action', label: '操作', align: 'center' },
+]
 </script>
 
 # ScreenTable 数据表格
@@ -61,6 +80,31 @@ const rows = [
   </ScreenTable>
 </template>
 ```
+
+## 完整数据表格（筛选 · 操作 · 分页）
+
+配合 `ScreenSearch` / `ScreenSelect` 组成筛选栏,`#cell-action` 插槽放 `ScreenButton size="sm"` 行内操作,底部接 `ScreenPagination`。下拉浮层 `Teleport` 到 `<body>`,不会被面板 `overflow` 裁切。
+
+<ScreenDemo wide>
+  <ScreenPanel>
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:200px"><ScreenSearch v-model="keyword" placeholder="搜索工单号或产品" /></div>
+      <div style="width:160px"><ScreenSelect v-model="lineFilter" :options="lineOptions" /></div>
+      <ScreenButton variant="secondary">导出</ScreenButton>
+    </div>
+    <ScreenTable :columns="fullColumns" :rows="rows" row-key="wo">
+      <template #cell-status="{ value }">
+        <StatusTag :tone="value">{{ tones[value] }}</StatusTag>
+      </template>
+      <template #cell-action>
+        <ScreenButton variant="ghost" size="sm">详情</ScreenButton>
+      </template>
+    </ScreenTable>
+    <div style="margin-top:14px">
+      <ScreenPagination v-model:page="page" :total="248" :page-size="4" />
+    </div>
+  </ScreenPanel>
+</ScreenDemo>
 
 ## 属性
 

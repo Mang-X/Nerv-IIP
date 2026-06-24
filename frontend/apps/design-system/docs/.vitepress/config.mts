@@ -289,6 +289,7 @@ export default defineConfig({
             { text: 'ScreenTabs 标签页', link: '/components/screen/screen-tabs' },
             { text: 'ScreenSegmented 分段控制', link: '/components/screen/screen-segmented' },
             { text: 'ScreenSwitch 开关', link: '/components/screen/screen-switch' },
+            { text: 'ScreenPagination 分页', link: '/components/screen/screen-pagination' },
           ],
         },
       ],

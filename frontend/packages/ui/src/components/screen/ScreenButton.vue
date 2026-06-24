@@ -3,18 +3,21 @@
  * Screen — big-board button. Three weights on the dark surface: `primary` is a
  * cyan gradient with a soft outer glow and an inset top highlight; `secondary`
  * is an indigo hairline over a faint tint; `ghost` is a bare hairline. Focus
- * lands a high-contrast cyan ring, and a press nudges the face down a hair (no
- * bounce — restraint over flourish). Built on the independent `--sb-*` tokens.
+ * lands a high-contrast cyan ring, and a press scales the face a hair (no shift,
+ * no bounce — restraint over flourish). Built on the independent `--sb-*` tokens.
  */
 withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'ghost'
+    /** `sm` is the compact height for table action cells / dense toolbars. */
+    size?: 'default' | 'sm'
     disabled?: boolean
     /** Forwarded to the native button so it can submit / reset a form. */
     type?: 'button' | 'submit' | 'reset'
   }>(),
   {
     variant: 'primary',
+    size: 'default',
     disabled: false,
     type: 'button',
   },
@@ -24,7 +27,7 @@ withDefaults(
 <template>
   <button
     class="sb-btn"
-    :class="variant"
+    :class="[variant, size]"
     :type="type"
     :disabled="disabled"
     :aria-disabled="disabled || undefined"
@@ -56,6 +59,12 @@ withDefaults(
     box-shadow 0.18s var(--sb-ease),
     border-color 0.18s var(--sb-ease),
     background 0.18s var(--sb-ease);
+}
+.sb-btn.sm {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  gap: 6px;
 }
 .sb-btn-label {
   position: relative;
