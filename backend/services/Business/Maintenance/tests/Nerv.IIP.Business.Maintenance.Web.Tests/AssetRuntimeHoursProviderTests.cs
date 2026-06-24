@@ -48,6 +48,79 @@ public sealed class AssetRuntimeHoursProviderTests
     }
 
     [Fact]
+    public async Task Runtime_source_fields_make_oee_and_fallback_denominator_difference_explicit()
+    {
+        var oeeProvider = CreateProvider(
+            new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)),
+            """
+            {
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "deviceAssetId": "DEV-CNC-01",
+                "windowStartUtc": "2026-06-08T00:00:00Z",
+                "windowEndUtc": "2026-06-08T04:00:00Z",
+                "stateSampleCount": 2,
+                "availabilityRate": 0.25,
+                "performanceRate": 1,
+                "qualityRate": 1,
+                "oeeRate": 0.25,
+                "performanceRateEstimated": true,
+                "qualityRateEstimated": true
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """);
+        var fallbackProvider = CreateProvider(
+            new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)),
+            """
+            {
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "deviceAssetId": "DEV-CNC-01",
+                "windowStartUtc": "2026-06-08T00:00:00Z",
+                "windowEndUtc": "2026-06-08T04:00:00Z",
+                "stateSampleCount": 0,
+                "availabilityRate": 0,
+                "performanceRate": 0,
+                "qualityRate": 0,
+                "oeeRate": 0,
+                "performanceRateEstimated": true,
+                "qualityRateEstimated": true
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """);
+
+        var oeeResult = await oeeProvider.CalculateAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-06-08T04:00:00Z"),
+            CancellationToken.None);
+        var fallbackResult = await fallbackProvider.CalculateAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-06-08T04:00:00Z"),
+            CancellationToken.None);
+
+        Assert.Equal(1m, oeeResult.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Oee, oeeResult.RuntimeSource);
+        Assert.True(oeeResult.HasRuntimeSamples);
+        Assert.Equal(3m, fallbackResult.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, fallbackResult.RuntimeSource);
+        Assert.False(fallbackResult.HasRuntimeSamples);
+    }
+
+    [Fact]
     public async Task Http_runtime_provider_queries_fallback_when_oee_has_no_samples()
     {
         var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(3m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));

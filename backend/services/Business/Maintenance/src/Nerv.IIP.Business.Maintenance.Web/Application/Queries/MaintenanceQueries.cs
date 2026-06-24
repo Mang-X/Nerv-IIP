@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using MediatR;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -175,11 +176,6 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
     private readonly ApplicationDbContext dbContext;
     private readonly IAssetRuntimeHoursProvider runtimeHoursProvider;
 
-    public QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext)
-        : this(dbContext, new MaintenanceUnavailableWindowRuntimeHoursProvider(dbContext))
-    {
-    }
-
     public QueryAssetReliabilityQueryHandler(ApplicationDbContext dbContext, IAssetRuntimeHoursProvider runtimeHoursProvider)
     {
         this.dbContext = dbContext;
@@ -262,7 +258,7 @@ public interface IAssetRuntimeHoursFallbackProvider
         CancellationToken cancellationToken);
 }
 
-public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(ApplicationDbContext dbContext) : IAssetRuntimeHoursProvider, IAssetRuntimeHoursFallbackProvider
+public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(ISender sender) : IAssetRuntimeHoursProvider, IAssetRuntimeHoursFallbackProvider
 {
     public async Task<AssetRuntimeHoursResult> CalculateAsync(
         string organizationId,
@@ -289,15 +285,14 @@ public sealed class MaintenanceUnavailableWindowRuntimeHoursProvider(Application
             return new AssetRuntimeHoursResult(0m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false);
         }
 
-        var availability = await MaintenanceAvailabilityWindowCalculator.CalculateAsync(
-            dbContext,
-            new EquipmentRuntimeAvailabilityRequest(
+        var availability = await sender.Send(
+            new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
                 organizationId,
                 environmentId,
                 windowStartUtc,
                 windowEndUtc,
                 [deviceAssetId],
-                null),
+                null)),
             cancellationToken);
 
         var unavailableHours = CalculateUnavailableHours(availability.Items, deviceAssetId, windowStartUtc, windowEndUtc);

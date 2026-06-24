@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -529,7 +530,10 @@ public sealed class MaintenanceEndpointContractTests
         dbContext.Entry(open).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(10);
         await dbContext.SaveChangesAsync();
 
-        var response = await new QueryAssetReliabilityQueryHandler(dbContext).Handle(
+        var response = await new QueryAssetReliabilityQueryHandler(
+                dbContext,
+                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(24m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)))
+            .Handle(
             new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
             CancellationToken.None);
 
@@ -577,7 +581,10 @@ public sealed class MaintenanceEndpointContractTests
         var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
         var windowEnd = windowStart.AddHours(24);
 
-        var response = await new QueryAssetReliabilityQueryHandler(dbContext).Handle(
+        var response = await new QueryAssetReliabilityQueryHandler(
+                dbContext,
+                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(24m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)))
+            .Handle(
             new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
             CancellationToken.None);
 
@@ -589,6 +596,47 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("MttrMinutes").ValueKind);
         Assert.Equal(AssetRuntimeSources.Fallback, document.RootElement.GetProperty("MtbfRuntimeSource").GetString());
         Assert.False(document.RootElement.GetProperty("MtbfRuntimeHasSamples").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Maintenance_fallback_runtime_provider_uses_mediator_pipeline()
+    {
+        await using var dbContext = CreateDbContext();
+        var windowStart = new DateTimeOffset(2026, 6, 8, 0, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddHours(4);
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "PM-RUNTIME",
+            "P7D",
+            new DateOnly(2026, 6, 1),
+            "maintenance",
+            windowStart.AddHours(1),
+            windowStart.AddHours(2)));
+        await dbContext.SaveChangesAsync();
+        var probe = new QueryPipelineProbe();
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton(probe);
+        services.AddTransient(typeof(IPipelineBehavior<,>), typeof(QueryPipelineProbeBehavior<,>));
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var runtimeProvider = new MaintenanceUnavailableWindowRuntimeHoursProvider(scope.ServiceProvider.GetRequiredService<ISender>());
+
+        var result = await runtimeProvider.CalculateFallbackAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            windowStart,
+            windowEnd,
+            CancellationToken.None);
+
+        Assert.Equal(1, probe.MaintenanceAvailabilityQueryCalls);
+        Assert.Equal(3m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, result.RuntimeSource);
+        Assert.False(result.HasRuntimeSamples);
     }
 
     [Fact]
@@ -678,6 +726,36 @@ public sealed class MaintenanceEndpointContractTests
             _ = windowEndUtc;
             _ = cancellationToken;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class QueryPipelineProbe
+    {
+        public int MaintenanceAvailabilityQueryCalls { get; private set; }
+
+        public void Record(TRequestMarker marker)
+        {
+            _ = marker;
+            MaintenanceAvailabilityQueryCalls++;
+        }
+    }
+
+    private enum TRequestMarker
+    {
+        MaintenanceAvailability,
+    }
+
+    private sealed class QueryPipelineProbeBehavior<TRequest, TResponse>(QueryPipelineProbe probe) : IPipelineBehavior<TRequest, TResponse>
+        where TRequest : notnull
+    {
+        public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+        {
+            if (request is QueryMaintenanceAvailabilityWindowsQuery)
+            {
+                probe.Record(TRequestMarker.MaintenanceAvailability);
+            }
+
+            return await next(cancellationToken);
         }
     }
 
