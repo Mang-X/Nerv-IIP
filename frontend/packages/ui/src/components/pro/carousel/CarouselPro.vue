@@ -105,8 +105,15 @@ function startAutoplay() {
   stopAutoplay()
   if (!props.autoplay || count.value <= 1) return
   timer = window.setInterval(() => {
-    if (!props.loop && active.value >= count.value - 1) goTo(0)
-    else goTo(active.value + 1)
+    if (active.value >= count.value - 1) {
+      // loop wraps to the first slide; non-loop stops at the last slide — matches
+      // the arrows (disabled at the end) and the `loop` contract, so there's no
+      // "manual stops but autoplay loops" mismatch.
+      if (props.loop) goTo(0)
+      else stopAutoplay()
+    } else {
+      goTo(active.value + 1)
+    }
   }, props.autoplay)
 }
 function stopAutoplay() {
@@ -117,6 +124,8 @@ function stopAutoplay() {
 let ro: ResizeObserver | undefined
 onMounted(() => {
   sync()
+  // a mount-time index beyond the slide count clamps to the last slide
+  if (active.value > count.value - 1) active.value = Math.max(0, count.value - 1)
   startAutoplay()
   if (typeof ResizeObserver !== 'undefined' && viewportEl.value) {
     ro = new ResizeObserver(() => {
@@ -130,7 +139,26 @@ onBeforeUnmount(() => {
   stopAutoplay()
   ro?.disconnect()
 })
-watch(() => props.items, () => requestAnimationFrame(sync), { deep: true })
+// External `index` updates (v-model:index reset, URL sync, an outside indicator)
+// must move the track too — re-derive the offset, and clamp an index left out of
+// range (e.g. after `items` shrinks) instead of scrolling into empty space.
+watch(active, (v) => {
+  const max = Math.max(0, count.value - 1)
+  if (v < 0 || v > max) {
+    active.value = Math.min(Math.max(v, 0), max)
+    return
+  }
+  offset.value = -v * width.value
+})
+// Runtime `items` change (async load, [] → many): re-measure, clamp the current
+// page to the new count, then (re)start autoplay — a carousel mounted empty would
+// otherwise never begin playing once its data arrives (count was ≤ 1 at start).
+watch(() => props.items, () => requestAnimationFrame(() => {
+  sync()
+  const max = Math.max(0, count.value - 1)
+  if (active.value > max) active.value = max
+  startAutoplay()
+}), { deep: true })
 watch(() => props.autoplay, startAutoplay)
 </script>
 
