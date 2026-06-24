@@ -262,6 +262,14 @@ watch(() => props.autoplay, startAutoplay)
 .ds-carousel-arrow:focus-visible {
   opacity: 1;
 }
+/* Explicit high-contrast focus ring — the arrows clear the UA outline, so
+   keyboard users need a visible treatment to tell which arrow holds focus over a
+   busy slide. */
+.ds-carousel-arrow:focus-visible {
+  box-shadow:
+    0 1px 4px color-mix(in oklch, black 30%, transparent),
+    0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+}
 .ds-carousel-arrow:hover:not(:disabled) {
   background: var(--background);
 }
