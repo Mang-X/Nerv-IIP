@@ -1670,7 +1670,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcceptPlanningSuggestionRequest = {
     downstreamService: string;
     downstreamDocumentType: string;
-    downstreamDocumentId: string;
+    downstreamDocumentId?: string | null;
+    idempotencyKey?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {

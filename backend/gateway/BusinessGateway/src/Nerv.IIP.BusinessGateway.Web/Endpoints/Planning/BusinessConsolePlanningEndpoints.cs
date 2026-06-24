@@ -211,6 +211,7 @@ public sealed class BusinessConsoleAcceptPlanningSuggestionRequestValidator
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DownstreamService).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DownstreamDocumentType).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.DownstreamDocumentId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DownstreamDocumentId).MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }

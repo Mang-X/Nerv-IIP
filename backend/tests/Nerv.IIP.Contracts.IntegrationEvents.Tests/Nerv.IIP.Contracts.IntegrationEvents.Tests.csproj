@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.BarcodeLabel\Nerv.IIP.Contracts.BarcodeLabel.csproj" />
+    <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.DemandPlanning\Nerv.IIP.Contracts.DemandPlanning.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.IndustrialTelemetry\Nerv.IIP.Contracts.IndustrialTelemetry.csproj" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Maintenance\Nerv.IIP.Contracts.Maintenance.csproj" />
