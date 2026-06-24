@@ -41,10 +41,10 @@ withDefaults(
   padding: 1px;
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.1),
-    rgba(255, 255, 255, 0.045) 20%,
-    rgba(255, 255, 255, 0.045) 80%,
-    rgba(255, 255, 255, 0.1)
+    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.09) 20%,
+    rgba(255, 255, 255, 0.09) 80%,
+    rgba(255, 255, 255, 0.2)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;

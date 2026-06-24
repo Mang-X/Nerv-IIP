@@ -46,10 +46,10 @@ defineProps<{
   padding: 1px;
   background: linear-gradient(
     90deg,
-    rgba(120, 180, 235, 0.28),
-    rgba(255, 255, 255, 0.05) 16%,
-    rgba(255, 255, 255, 0.05) 84%,
-    rgba(120, 180, 235, 0.28)
+    rgba(140, 195, 245, 0.5),
+    rgba(255, 255, 255, 0.1) 14%,
+    rgba(255, 255, 255, 0.1) 86%,
+    rgba(140, 195, 245, 0.5)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;

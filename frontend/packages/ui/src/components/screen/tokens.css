@@ -31,7 +31,7 @@
   --sb-faint: #828c9c;
 
   /* effects — restrained: a white highlight carries structure, glow is a whisper */
-  --sb-highlight: rgba(255, 255, 255, 0.22); /* top white edge highlight */
+  --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
   --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */

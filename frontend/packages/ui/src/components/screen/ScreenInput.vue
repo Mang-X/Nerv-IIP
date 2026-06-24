@@ -66,10 +66,10 @@ withDefaults(
   padding: 1px;
   background: linear-gradient(
     90deg,
-    rgba(120, 180, 235, 0.32),
-    rgba(255, 255, 255, 0.06) 18%,
-    rgba(255, 255, 255, 0.06) 82%,
-    rgba(120, 180, 235, 0.32)
+    rgba(140, 195, 245, 0.5),
+    rgba(255, 255, 255, 0.1) 18%,
+    rgba(255, 255, 255, 0.1) 82%,
+    rgba(140, 195, 245, 0.5)
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
