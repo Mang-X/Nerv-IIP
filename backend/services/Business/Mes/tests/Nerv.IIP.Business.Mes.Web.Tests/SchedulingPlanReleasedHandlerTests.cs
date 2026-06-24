@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -215,9 +216,8 @@ public sealed class SchedulingPlanReleasedHandlerTests
     [Fact]
     public async Task SchedulePlanReleasedHandler_DoesNotPersistInboxWhenRejectedOperationPrecedesInvalidOperation()
     {
-        var databaseRoot = new InMemoryDatabaseRoot();
-        var options = CreateDbContextOptions($"mes-scheduling-release-{Guid.CreateVersion7():N}", databaseRoot);
-        await using (var dbContext = CreateDbContext(options))
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using (var dbContext = await CreateInitializedSqliteDbContextAsync(connection))
         {
             dbContext.WorkOrders.Add(WorkOrder.Create(
                 "org-001",
@@ -246,8 +246,9 @@ public sealed class SchedulingPlanReleasedHandlerTests
             await dbContext.SaveChangesAsync();
         }
 
-        await using (var dbContext = CreateDbContext(options))
+        await using (var dbContext = CreateSqliteDbContext(connection))
         {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
             var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 dbContext,
                 new SaveChangesDeadLetterStore(dbContext));
@@ -271,18 +272,18 @@ public sealed class SchedulingPlanReleasedHandlerTests
                         DateTimeOffset.Parse("2026-06-01T14:45:00Z"),
                         DateTimeOffset.Parse("2026-06-01T14:00:00Z"))),
                 CancellationToken.None));
+            await transaction.RollbackAsync();
         }
 
-        await using var assertionDbContext = CreateDbContext(options);
+        await using var assertionDbContext = CreateSqliteDbContext(connection);
         Assert.Empty(assertionDbContext.ProcessedIntegrationEvents);
     }
 
     [Fact]
     public async Task SchedulePlanReleasedHandler_DoesNotPersistInboxWhenDeadLetterBatchWriteFails()
     {
-        var databaseRoot = new InMemoryDatabaseRoot();
-        var options = CreateDbContextOptions($"mes-scheduling-release-{Guid.CreateVersion7():N}", databaseRoot);
-        await using (var dbContext = CreateDbContext(options))
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using (var dbContext = await CreateInitializedSqliteDbContextAsync(connection))
         {
             dbContext.WorkOrders.Add(WorkOrder.Create(
                 "org-001",
@@ -324,11 +325,12 @@ public sealed class SchedulingPlanReleasedHandlerTests
             await dbContext.SaveChangesAsync();
         }
 
-        await using (var dbContext = CreateDbContext(options))
+        await using (var dbContext = CreateSqliteDbContext(connection))
         {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
             var handler = new SchedulePlanReleasedIntegrationEventHandlerForDispatch(
                 dbContext,
-                new ThrowingAddRangeDeadLetterStore());
+                new SaveThenThrowDeadLetterStore(dbContext));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(
                 CreateReleasedEvent(
@@ -349,9 +351,10 @@ public sealed class SchedulingPlanReleasedHandlerTests
                         DateTimeOffset.Parse("2026-06-01T14:00:00Z"),
                         DateTimeOffset.Parse("2026-06-01T14:45:00Z"))),
                 CancellationToken.None));
+            await transaction.RollbackAsync();
         }
 
-        await using var assertionDbContext = CreateDbContext(options);
+        await using var assertionDbContext = CreateSqliteDbContext(connection);
         Assert.Empty(assertionDbContext.ProcessedIntegrationEvents);
     }
 
@@ -472,6 +475,28 @@ public sealed class SchedulingPlanReleasedHandlerTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
+    private static async Task<SqliteConnection> CreateOpenSqliteConnectionAsync()
+    {
+        var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    private static async Task<ApplicationDbContext> CreateInitializedSqliteDbContextAsync(SqliteConnection connection)
+    {
+        var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        return dbContext;
+    }
+
+    private static ApplicationDbContext CreateSqliteDbContext(SqliteConnection connection)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        return CreateDbContext(options);
+    }
+
     private static DbContextOptions<ApplicationDbContext> CreateDbContextOptions(
         string databaseName,
         InMemoryDatabaseRoot databaseRoot)
@@ -560,7 +585,7 @@ public sealed class SchedulingPlanReleasedHandlerTests
         }
     }
 
-    private sealed class ThrowingAddRangeDeadLetterStore : IIntegrationEventDeadLetterStore
+    private sealed class SaveThenThrowDeadLetterStore(ApplicationDbContext dbContext) : IIntegrationEventDeadLetterStore
     {
         public Task<IntegrationEventDeadLetterMessage> AddAsync(
             IntegrationEventDeadLetterMessage message,
@@ -574,6 +599,14 @@ public sealed class SchedulingPlanReleasedHandlerTests
             CancellationToken cancellationToken)
         {
             Assert.Equal(2, messages.Count);
+            return SaveThenThrowAsync(messages, cancellationToken);
+        }
+
+        private async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> SaveThenThrowAsync(
+            IReadOnlyCollection<IntegrationEventDeadLetterMessage> messages,
+            CancellationToken cancellationToken)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
             throw new InvalidOperationException("Simulated batch dead-letter persistence failure.");
         }
 
