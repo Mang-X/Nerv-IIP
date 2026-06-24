@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.ServiceAuth;
 
@@ -85,6 +87,7 @@ public sealed class MesMaterialRequirementInventoryOptions
 {
     public string DefaultSiteCode { get; init; } = "production";
     public IReadOnlyCollection<string>? SiteCodes { get; init; }
+    public TimeSpan UomConversionCacheTtl { get; init; } = TimeSpan.FromMinutes(5);
 }
 
 public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
@@ -92,7 +95,9 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
     MesInventoryHttpClient inventoryClient,
     MesMasterDataHttpClient? masterDataClient = null,
     MesMaterialRequirementInventoryOptions? inventoryOptions = null,
-    IInternalServiceTokenProvider? internalTokenProvider = null)
+    IInternalServiceTokenProvider? internalTokenProvider = null,
+    ILogger<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>? logger = null,
+    IMemoryCache? uomConversionCache = null)
     : IMesMaterialRequirementSnapshotProvider
 {
     private const string ActiveProductionVersionStatus = "active";
@@ -104,7 +109,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         MesInventoryHttpClient inventoryClient,
         MesMaterialRequirementInventoryOptions? inventoryOptions = null,
         IInternalServiceTokenProvider? internalTokenProvider = null)
-        : this(productEngineeringClient, inventoryClient, null, inventoryOptions, internalTokenProvider)
+        : this(productEngineeringClient, inventoryClient, null, inventoryOptions, internalTokenProvider, null, null)
     {
     }
 
@@ -202,9 +207,12 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         CancellationToken cancellationToken)
     {
         var availableQuantity = 0m;
-        foreach (var candidate in GetInventoryUomCandidates(uomCode, conversions))
+        var candidates = GetInventoryUomCandidates(uomCode, conversions);
+        var siteCodes = GetSiteCodes();
+        // Availability currently uses Inventory's exact GET contract; batch API work is intentionally left out of this #460 fix.
+        foreach (var candidate in candidates)
         {
-            foreach (var siteCode in GetSiteCodes())
+            foreach (var siteCode in siteCodes)
             {
                 var availability = await SendAsync<StockAvailabilityResponse>(
                     inventoryClient.HttpClient,
@@ -220,6 +228,16 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             }
         }
 
+        if (availableQuantity <= 0m)
+        {
+            logger?.LogWarning(
+                "MES material availability returned zero availability for material {MaterialId} required UOM {UomCode}; queried sites {SiteCodes} and inventory UOM candidates {InventoryUomCodes}.",
+                materialId,
+                uomCode,
+                string.Join(',', siteCodes),
+                string.Join(',', candidates.Select(x => x.InventoryUomCode)));
+        }
+
         return Math.Max(0m, availableQuantity);
     }
 
@@ -231,6 +249,18 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         if (masterDataClient is null)
         {
             return [];
+        }
+
+        var requiredUoms = requiredLines
+            .Select(x => NormalizeCode(x.UomCode))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var capturedDate = DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime);
+        var cacheKey = $"mes-material-uom-conversions:{request.OrganizationId}:{request.EnvironmentId}:{capturedDate:O}";
+        if (uomConversionCache is not null &&
+            uomConversionCache.TryGetValue(cacheKey, out IReadOnlyCollection<MesUomConversionSnapshot>? cachedConversions) &&
+            cachedConversions is not null)
+        {
+            return FilterRequiredConversions(cachedConversions, requiredUoms);
         }
 
         var response = await SendAsync<MasterDataResourceListResponse>(
@@ -248,17 +278,12 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: MasterData UOM conversion list was truncated at {limit} of {response.Total}; MES cannot reliably normalize material availability.");
         }
 
-        var requiredUoms = requiredLines
-            .Select(x => NormalizeCode(x.UomCode))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var capturedDate = DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime);
-        return response.Resources
+        var allConversions = response.Resources
             .Where(x => x.Active)
             .Where(x => !string.IsNullOrWhiteSpace(x.FromUomCode) && !string.IsNullOrWhiteSpace(x.ToUomCode))
             .Where(x => x.Factor is > 0m)
             .Where(x => (x.EffectiveFrom ?? DateOnly.MinValue) <= capturedDate)
             .Where(x => x.EffectiveTo is null || x.EffectiveTo.Value >= capturedDate)
-            .Where(x => requiredUoms.Contains(NormalizeCode(x.FromUomCode!)) || requiredUoms.Contains(NormalizeCode(x.ToUomCode!)))
             .GroupBy(x => $"{NormalizeCode(x.FromUomCode!)}\u001f{NormalizeCode(x.ToUomCode!)}", StringComparer.OrdinalIgnoreCase)
             .Select(x => x
                 .OrderByDescending(y => y.EffectiveFrom ?? DateOnly.MinValue)
@@ -272,6 +297,22 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
                 x.Offset ?? 0m,
                 Math.Max(0, x.Precision ?? 0),
                 string.IsNullOrWhiteSpace(x.RoundingMode) ? "half-up" : x.RoundingMode))
+            .ToArray();
+
+        uomConversionCache?.Set(
+            cacheKey,
+            allConversions,
+            new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = inventoryOptions.UomConversionCacheTtl });
+
+        return FilterRequiredConversions(allConversions, requiredUoms);
+    }
+
+    private static IReadOnlyCollection<MesUomConversionSnapshot> FilterRequiredConversions(
+        IReadOnlyCollection<MesUomConversionSnapshot> conversions,
+        HashSet<string> requiredUoms)
+    {
+        return conversions
+            .Where(x => requiredUoms.Contains(NormalizeCode(x.FromUomCode)) || requiredUoms.Contains(NormalizeCode(x.ToUomCode)))
             .ToArray();
     }
 
@@ -325,30 +366,24 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
 
     private static decimal ConvertForward(decimal quantity, MesUomConversionSnapshot conversion)
     {
-        return Math.Max(0m, Round(quantity * conversion.Factor + conversion.Offset, conversion.Precision, conversion.RoundingMode));
+        return FloorAvailability(quantity * conversion.Factor + conversion.Offset, conversion.Precision);
     }
 
     private static decimal ConvertInverse(decimal quantity, MesUomConversionSnapshot conversion)
     {
-        return Math.Max(0m, (quantity - conversion.Offset) / conversion.Factor);
+        return FloorAvailability((quantity - conversion.Offset) / conversion.Factor, conversion.Precision);
     }
 
-    private static decimal Round(decimal value, int precision, string roundingMode)
+    private static decimal FloorAvailability(decimal value, int precision)
     {
-        var digits = Math.Clamp(precision, 0, 12);
-        return NormalizeCode(roundingMode) switch
+        if (value <= 0m)
         {
-            "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value, digits, MidpointRounding.ToEven),
-            "CEILING" or "UP" => RoundToward(value, digits, ceiling: true),
-            "FLOOR" or "DOWN" => RoundToward(value, digits, ceiling: false),
-            _ => Math.Round(value, digits, MidpointRounding.AwayFromZero),
-        };
-    }
+            return 0m;
+        }
 
-    private static decimal RoundToward(decimal value, int digits, bool ceiling)
-    {
+        var digits = Math.Clamp(precision, 0, 12);
         var scale = (decimal)Math.Pow(10, digits);
-        return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
+        return Math.Floor(value * scale) / scale;
     }
 
     private async Task<T> SendAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)

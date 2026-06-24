@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 
@@ -8,6 +9,83 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesMaterialRequirementSnapshotProviderTests
 {
+    [Fact]
+    public async Task Http_provider_floors_converted_availability_for_material_readiness()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-BOXED", "ea");
+        var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
+        {
+            resources = new[]
+            {
+                new
+                {
+                    resourceType = "uom-conversion",
+                    code = "box->ea",
+                    displayName = "box to ea",
+                    active = true,
+                    snapshotVersion = "2026-06-01T00:00:00Z",
+                    effectiveFrom = "2026-01-01",
+                    effectiveTo = (string?)null,
+                    fromUomCode = "box",
+                    toUomCode = "ea",
+                    factor = 2.5m,
+                    offset = 0m,
+                    precision = 0,
+                    roundingMode = "ceiling",
+                },
+            },
+            total = 1,
+            truncated = false,
+            limit = (int?)null,
+        }));
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+        {
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            if (pathAndQuery.Contains("uomCode=box", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(Availability("MAT-BOXED", "box", "production", 1m));
+            }
+
+            return JsonEnvelope(Availability("MAT-BOXED", "ea", "production", 0m));
+        });
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMasterDataHttpClient(new HttpClient(masterDataHandler) { BaseAddress = new Uri("http://master-data") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var result = await provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
+
+        var line = Assert.Single(result.Lines);
+        Assert.Equal("ea", line.UomCode);
+        Assert.Equal(2m, line.AvailableQuantity);
+    }
+
+    [Fact]
+    public async Task Http_provider_logs_warning_when_all_inventory_candidates_return_zero()
+    {
+        var productEngineeringHandler = SingleMaterialProductEngineeringHandler("MAT-MISSING", "kg");
+        var masterDataHandler = new StubHttpMessageHandler(_ => JsonEnvelope(new
+        {
+            resources = Array.Empty<object>(),
+            total = 0,
+            truncated = false,
+            limit = (int?)null,
+        }));
+        var inventoryHandler = new StubHttpMessageHandler(_ => JsonEnvelope(Availability("MAT-MISSING", "kg", "production", 0m)));
+        var logger = new RecordingLogger<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMasterDataHttpClient(new HttpClient(masterDataHandler) { BaseAddress = new Uri("http://master-data") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" },
+            logger: logger);
+
+        await provider.GetSnapshotAsync(NewSnapshotRequest(), CancellationToken.None);
+
+        Assert.Contains(logger.Messages, x => x.LogLevel == LogLevel.Warning && x.Message.Contains("returned zero availability", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task Http_provider_aggregates_inventory_sites_and_converts_available_quantities_to_bom_uom()
     {
@@ -407,11 +485,111 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         };
     }
 
+    private static MesMaterialRequirementSnapshotRequest NewSnapshotRequest()
+    {
+        return new MesMaterialRequirementSnapshotRequest(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "FG-FSA",
+            "PV-001",
+            10m,
+            DateTimeOffset.Parse("2026-06-19T08:00:00Z"));
+    }
+
+    private static StubHttpMessageHandler SingleMaterialProductEngineeringHandler(string materialId, string uomCode)
+    {
+        return new StubHttpMessageHandler(request =>
+        {
+            Assert.NotNull(request.RequestUri);
+            var pathAndQuery = request.RequestUri!.PathAndQuery;
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(new
+                {
+                    items = new[]
+                    {
+                        new
+                        {
+                            productionVersionId = "PV-001",
+                            organizationId = "org-001",
+                            environmentId = "env-dev",
+                            skuCode = "FG-FSA",
+                            mbomVersionId = "MBOM-1000:A",
+                            routingVersionId = "ROUTE-1000:A",
+                            validFrom = "2026-06-01",
+                            validTo = (string?)null,
+                            lotSizeMin = (decimal?)null,
+                            lotSizeMax = (decimal?)null,
+                            priority = 10,
+                            isDefault = true,
+                            status = "active",
+                        },
+                    },
+                    total = 1,
+                });
+            }
+
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/manufacturing-boms/MBOM-1000/A?", StringComparison.Ordinal))
+            {
+                return JsonEnvelope(new
+                {
+                    bomCode = "MBOM-1000",
+                    revision = "A",
+                    skuCode = "FG-FSA",
+                    engineeringBomVersionId = "EBOM-1000:A",
+                    status = "Published",
+                    effectiveDate = "2026-06-01",
+                    materialLines = new object[]
+                    {
+                        new
+                        {
+                            skuCode = materialId,
+                            quantity = 1m,
+                            unitOfMeasureCode = uomCode,
+                            scrapRate = 0m,
+                            isPhantom = false,
+                            alternateGroup = (string?)null,
+                            alternatePriority = (int?)null,
+                            substituteSkuCodes = (string?)null,
+                            referenceDesignators = (string?)null,
+                            yieldRate = 1m,
+                            backflush = false,
+                        },
+                    },
+                    recipeLines = Array.Empty<object>(),
+                });
+            }
+
+            throw new InvalidOperationException($"Unexpected ProductEngineering request: {pathAndQuery}");
+        });
+    }
+
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handle) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(handle(request));
+        }
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel LogLevel, string Message)> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add((logLevel, formatter(state, exception)));
         }
     }
 }

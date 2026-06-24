@@ -30,6 +30,7 @@ builder.Services
         };
     });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddMemoryCache();
 var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
