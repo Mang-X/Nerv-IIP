@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -29,8 +30,12 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
 
     public PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
-        : this(dbContext, new ConvertPlanToWorkOrderCommandHandler(dbContext), deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        IMesMaterialRequirementSnapshotProvider? materialSnapshotProvider = null)
+        : this(
+            dbContext,
+            new ConvertPlanToWorkOrderCommandHandler(dbContext, new RuleScheduler(), null, materialSnapshotProvider),
+            deadLetterStore)
     {
     }
 

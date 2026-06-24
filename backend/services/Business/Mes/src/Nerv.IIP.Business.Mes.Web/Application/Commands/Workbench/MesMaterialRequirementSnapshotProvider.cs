@@ -122,18 +122,18 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return MesMaterialRequirementSnapshotResult.Missing("product-engineering:missing-production-version");
         }
 
-        var productionVersions = await SendAsync<ListProductionVersionsResponse>(
+        var selectedVersion = await SendAsync<ResolveProductionVersionResponse>(
             productEngineeringClient.HttpClient,
             "ProductEngineering",
-            "/api/business/v1/engineering/production-versions?" + Query(
+            "/api/business/v1/engineering/production-versions/resolve?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuId),
-                ("status", ActiveProductionVersionStatus)),
+                ("effectiveDate", DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime)),
+                ("lotSize", request.WorkOrderQuantity)),
             cancellationToken);
-        var selectedVersion = productionVersions.Items
-            .FirstOrDefault(x => string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase));
-        if (selectedVersion is null)
+        if (!string.Equals(selectedVersion.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(selectedVersion.Status, ActiveProductionVersionStatus, StringComparison.OrdinalIgnoreCase))
         {
             return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
         }
@@ -475,21 +475,15 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 
-internal sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items);
-
-internal sealed record ProductionVersionListItem(
+internal sealed record ResolveProductionVersionResponse(
     string ProductionVersionId,
     string OrganizationId,
     string EnvironmentId,
     string SkuCode,
     string MbomVersionId,
     string RoutingVersionId,
-    DateOnly ValidFrom,
-    DateOnly? ValidTo,
-    decimal? LotSizeMin,
-    decimal? LotSizeMax,
-    int Priority,
-    bool IsDefault,
+    DateOnly EffectiveDate,
+    decimal LotSize,
     string Status);
 
 internal sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items);

@@ -28,6 +28,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<DefectRecord> DefectRecords => Set<DefectRecord>();
 
+    public DbSet<QualityHoldContext> QualityHoldContexts => Set<QualityHoldContext>();
+
     public DbSet<MaterialRequirement> MaterialRequirements => Set<MaterialRequirement>();
 
     public DbSet<MaterialIssueRequest> MaterialIssueRequests => Set<MaterialIssueRequest>();

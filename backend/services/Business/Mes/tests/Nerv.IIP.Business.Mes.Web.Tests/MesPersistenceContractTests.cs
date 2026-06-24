@@ -20,6 +20,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -504,6 +505,64 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Convert_plan_to_work_order_captures_material_requirements_from_real_production_snapshot()
+    {
+        var services = CreateServices(nameof(Convert_plan_to_work_order_captures_material_requirements_from_real_production_snapshot));
+        var now = DateTimeOffset.Parse("2026-06-24T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
+            MesMaterialRequirementSnapshotResult.Captured(
+                "product-engineering-http:PV-FSA-1:MBOM-FSA-1",
+                [
+                    new MesMaterialRequirementSnapshotLine(
+                        null,
+                        "MAT-OIL",
+                        null,
+                        5m,
+                        "L",
+                        4m,
+                        0m,
+                        "MBOM-FSA-1:MAT-OIL"),
+                ]));
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, new RuleScheduler(), null, snapshotProvider);
+
+        var response = await handler.Handle(
+            new ConvertPlanToWorkOrderCommand(
+                "org-001",
+                "env-dev",
+                "PLAN-FSA-001",
+                null,
+                now,
+                "FG-FSA",
+                "PV-FSA-1",
+                10m,
+                "PCS",
+                now.AddDays(2),
+                "WC-FILL",
+                "DemandPlanning",
+                "PlanningSuggestion",
+                "SUG-FSA-001",
+                "DEMAND-FSA-001",
+                "convert-plan-material-capture"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Single(snapshotProvider.Requests);
+        Assert.Equal(response.ReferenceId, snapshotProvider.Requests[0].WorkOrderId);
+        Assert.Equal("FG-FSA", snapshotProvider.Requests[0].SkuId);
+        Assert.Equal("PV-FSA-1", snapshotProvider.Requests[0].ProductionVersionId);
+        var requirement = Assert.Single(await dbContext.MaterialRequirements
+            .Where(x => x.WorkOrderId == response.ReferenceId)
+            .ToArrayAsync());
+        Assert.Equal("MAT-OIL", requirement.MaterialId);
+        Assert.Equal(5m, requirement.RequiredQuantity);
+        Assert.Equal(4m, requirement.AvailableQuantity);
+        Assert.Equal("product-engineering-http:PV-FSA-1:MBOM-FSA-1", requirement.SourceSystem);
+    }
+
+    [Fact]
     public async Task Release_and_start_are_blocked_when_material_requirement_snapshot_is_missing()
     {
         var services = CreateServices(nameof(Release_and_start_are_blocked_when_material_requirement_snapshot_is_missing));
@@ -538,6 +597,90 @@ public sealed class MesPersistenceContractTests
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-MISSING-MAT-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
         Assert.Contains("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", startException.Message);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_hold_blocks_release_and_start_until_cleared()
+    {
+        var services = CreateServices(nameof(Quality_inspection_result_hold_blocks_release_and_start_until_cleared));
+        var now = DateTimeOffset.Parse("2026-06-24T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-QH-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-QH-001",
+            "OP-QH-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QH-001",
+            "OP-QH-10",
+            "MAT-OIL",
+            null,
+            requiredQuantity: 5m,
+            availableQuantity: 5m,
+            stagedQuantity: 0m,
+            sourceSystem: "Inventory",
+            sourceSnapshotId: "inv-ready-qh",
+            capturedAtUtc: now));
+        await dbContext.SaveChangesAsync();
+
+        var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-rejected-001",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-001",
+            "WO-QH-001",
+            now.AddMinutes(1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var releaseHold = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QH-001", now.AddMinutes(5)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, releaseHold.Message);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-passed-001",
+            QualityIntegrationEventTypes.InspectionPassed,
+            "QI-QH-002",
+            "WO-QH-001",
+            now.AddMinutes(6)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
+            new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QH-001", now.AddMinutes(10)),
+            CancellationToken.None);
+        Assert.Equal("Accepted", release.Status);
+
+        await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
+            "evt-qh-rejected-002",
+            QualityIntegrationEventTypes.InspectionRejected,
+            "QI-QH-003",
+            "WO-QH-001",
+            now.AddMinutes(11)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var startHold = await Assert.ThrowsAsync<KnownException>(() =>
+            new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
+                new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-QH-10", "start", now.AddMinutes(12)),
+                CancellationToken.None));
+        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, startHold.Message);
     }
 
     [Fact]
@@ -1711,6 +1854,44 @@ public sealed class MesPersistenceContractTests
             Requests.Add(request);
             return Task.FromResult(result);
         }
+    }
+
+    private static InspectionResultIntegrationEvent CreateInspectionResultEvent(
+        string eventId,
+        string eventType,
+        string inspectionRecordId,
+        string workOrderId,
+        DateTimeOffset occurredAtUtc)
+    {
+        var result = eventType == QualityIntegrationEventTypes.InspectionPassed
+            ? "passed"
+            : eventType == QualityIntegrationEventTypes.InspectionConditionalReleased
+                ? "conditional-release"
+                : "rejected";
+        return new InspectionResultIntegrationEvent(
+            eventId,
+            eventType,
+            QualityIntegrationEventVersions.V1,
+            occurredAtUtc,
+            QualityIntegrationEventSources.BusinessQuality,
+            $"corr-{eventId}",
+            $"cause-{eventId}",
+            "org-001",
+            "env-dev",
+            "quality",
+            $"quality:inspection-result:org-001:env-dev:{inspectionRecordId}:{eventType}",
+            new InspectionResultPayload(
+                inspectionRecordId,
+                "PLAN-QH-001",
+                "in-process",
+                QualityIntegrationEventSources.BusinessMes,
+                workOrderId,
+                "FG-FSA",
+                10m,
+                result,
+                eventType == QualityIntegrationEventTypes.InspectionRejected ? "critical-defect" : null,
+                [],
+                occurredAtUtc));
     }
 
     private static AssetUnavailableIntegrationEvent CreateUnavailableEvent(

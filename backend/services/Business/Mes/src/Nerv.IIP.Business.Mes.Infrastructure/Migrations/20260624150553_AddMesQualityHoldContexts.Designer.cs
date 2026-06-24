@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624150553_AddMesQualityHoldContexts")]
+    partial class AddMesQualityHoldContexts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1306,11 +1309,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasComment("BusinessMES integration event consumer name.");
 
+                    b.Property<string>("DedupeKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("BusinessMES dedupe key associated with the processed event.");
+
                     b.Property<string>("EventId")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+                        .HasComment("Source integration event identifier unique within a consumer.");
 
                     b.Property<string>("EventType")
                         .IsRequired()
@@ -1321,12 +1330,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.Property<int>("EventVersion")
                         .HasColumnType("integer")
                         .HasComment("Integration event contract version.");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasComment("Deterministic BusinessMES idempotency key unique within a consumer.");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1340,9 +1343,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ConsumerName", "IdempotencyKey")
+                    b.HasIndex("ConsumerName", "EventId")
                         .IsUnique()
-                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
+                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
 
                     b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
                         .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");

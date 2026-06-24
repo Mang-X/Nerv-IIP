@@ -93,30 +93,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
+                Assert.Contains("effectiveDate=2026-06-19", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("lotSize=10", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 
@@ -240,31 +231,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
-                Assert.Contains("status=active", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("effectiveDate=2026-06-19", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("lotSize=10", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 
@@ -503,30 +484,19 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 
