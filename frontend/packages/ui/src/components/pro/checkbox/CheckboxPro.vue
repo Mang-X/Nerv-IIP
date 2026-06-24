@@ -37,7 +37,13 @@ const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
   transition:
     background-color 0.15s var(--ease-out-quart, ease-out),
     border-color 0.15s var(--ease-out-quart, ease-out),
-    box-shadow 0.15s var(--ease-out-quart, ease-out);
+    box-shadow 0.15s var(--ease-out-quart, ease-out),
+    transform 0.18s var(--ease-out-quart, ease-out);
+}
+/* Press: the box depresses while held, then decelerates back — unified with
+   Switch/Radio. No bounce (per our motion philosophy). */
+.ds-check:active:not([data-disabled]) {
+  transform: scale(0.88);
 }
 .ds-check-ind {
   animation: ds-check-in 0.18s var(--ease-out-quart, ease-out);
