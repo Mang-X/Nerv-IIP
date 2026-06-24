@@ -145,7 +145,9 @@ public class BusinessPartner : Entity<BusinessPartnerId>, IAggregateRoot
     {
         EnsureEnabled();
         Name = Required(name);
-        PartnerRoles = NormalizeRoles(partnerRoles?.FirstOrDefault() ?? PartnerType, partnerRoles);
+        PartnerRoles = partnerRoles is null
+            ? PartnerRoles
+            : NormalizeRoles(partnerRoles.FirstOrDefault() ?? PartnerType, partnerRoles);
         PartnerType = PartnerRoles[0];
         TaxId = Optional(taxId);
         TaxRegionCode = Optional(taxRegionCode);

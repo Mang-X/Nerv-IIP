@@ -655,6 +655,40 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Business_partner_partial_update_partner_type_preserves_secondary_roles()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand(
+                "org-001",
+                "env-dev",
+                "BP-MULTI",
+                "supplier",
+                "Multi-role Partner",
+                ["supplier", "carrier"],
+                "TAX-MULTI"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+        var updated = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "business-partner",
+                "BP-MULTI",
+                PartnerType: "customer"),
+            CancellationToken.None);
+
+        Assert.Equal("customer", updated.PartnerType);
+        Assert.Equal(["customer", "carrier"], updated.PartnerRoles);
+    }
+
+    [Fact]
     public async Task Business_partner_tax_id_uniqueness_ignores_disabled_partners()
     {
         await using var provider = CreateInMemoryProvider();

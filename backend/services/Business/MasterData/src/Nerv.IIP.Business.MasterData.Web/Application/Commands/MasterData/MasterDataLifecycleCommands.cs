@@ -216,7 +216,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
 
                 partner.Update(
                     request.Name ?? partner.Name,
-                    request.PartnerRoles ?? [request.PartnerType ?? partner.PartnerType],
+                    request.PartnerRoles ?? (request.PartnerType is null ? null : [request.PartnerType, .. partner.PartnerRoles.Skip(1)]),
                     taxId ?? partner.TaxId,
                     request.TaxRegionCode ?? partner.TaxRegionCode,
                     request.DefaultCurrencyCode ?? partner.DefaultCurrencyCode,

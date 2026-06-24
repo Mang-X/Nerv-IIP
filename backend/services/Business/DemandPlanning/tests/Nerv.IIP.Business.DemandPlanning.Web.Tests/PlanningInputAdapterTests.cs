@@ -470,14 +470,18 @@ public sealed class PlanningInputAdapterTests
                         "snapshotVersion": "v1",
                         "organizationId": "org-001",
                         "environmentId": "env-dev",
-                        "baseUomCode": "pcs",
-                        "plannedDeliveryTimeDays": 4,
-                        "inHouseProductionTimeDays": 5,
-                        "goodsReceiptProcessingTimeDays": 1,
-                        "safetyStockQuantity": 4,
-                        "minimumLotSize": 10,
-                        "maximumLotSize": 50,
-                        "lotSizeMultiple": 5
+                    "baseUomCode": "pcs",
+                    "procurementType": "make",
+                    "mrpType": "mrp",
+                    "lotSizingPolicy": "fixed-lot",
+                    "plannedDeliveryTimeDays": 4,
+                    "inHouseProductionTimeDays": 5,
+                    "goodsReceiptProcessingTimeDays": 1,
+                    "safetyStockQuantity": 4,
+                    "reorderPointQuantity": 6,
+                    "minimumLotSize": 10,
+                    "maximumLotSize": 50,
+                    "lotSizeMultiple": 5
                       }
                     }
                     """);
@@ -522,9 +526,13 @@ public sealed class PlanningInputAdapterTests
                     "organizationId": "org-001",
                     "environmentId": "env-dev",
                     "baseUomCode": "pcs",
+                    "procurementType": "buy",
+                    "mrpType": "mrp",
+                    "lotSizingPolicy": "fixed-lot",
                     "plannedDeliveryTimeDays": 3,
                     "goodsReceiptProcessingTimeDays": 0,
                     "safetyStockQuantity": 2,
+                    "reorderPointQuantity": 8,
                     "lotSizeMultiple": 10
                   }
                 }
@@ -550,7 +558,17 @@ public sealed class PlanningInputAdapterTests
         Assert.Equal(3, handler.Requests.Count);
         Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "sku-fg-1000" && x.SiteCode == "SITE-01" && x.LeadTimeDays == 6);
         Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-FG-1000" && x.SiteCode == "SITE-02" && x.LotSizeMultiple == 5m);
-        Assert.Contains(snapshot.PlanningParameters, x => x.SkuCode == "SKU-RM-1000" && x.LeadTimeDays == 3 && x.SafetyStockQuantity == 2m);
+        Assert.Contains(snapshot.PlanningParameters, x =>
+            x.SkuCode == "SKU-RM-1000"
+            && x.LeadTimeDays == 3
+            && x.SafetyStockQuantity == 2m
+            && x.ProcurementType == "buy"
+            && x.MrpType == "mrp"
+            && x.LotSizingPolicy == "fixed-lot"
+            && x.ReorderPointQuantity == 8m
+            && x.PlannedDeliveryTimeDays == 3
+            && x.InHouseProductionTimeDays is null
+            && x.GoodsReceiptProcessingTimeDays == 0);
         Assert.DoesNotContain(snapshot.PlanningParameters, x => x.SkuCode == "SKU-BLOCKED");
     }
 
