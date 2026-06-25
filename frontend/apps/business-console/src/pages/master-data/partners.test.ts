@@ -201,6 +201,23 @@ describe('master-data partners page', () => {
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 
+  it('客户建档可填写信用额度并提交给 createPartner', async () => {
+    stub.createPartner.mockClear()
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    expect(wrapper.text()).toContain('信用额度')
+    await wrapper.find('#partner-credit-limit').setValue('500000')
+    await wrapper.find('#partner-credit-currency').setValue('CNY')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const body = stub.createPartner.mock.calls[0]![0] as { creditLimit?: number, creditCurrencyCode?: string }
+    expect(body.creditLimit).toBe(500000)
+    expect(body.creditCurrencyCode).toBe('CNY')
+  })
+
   it('提交失败：弹错误 toast（人话）且不重置表单', async () => {
     stub.createPartner.mockClear()
     stub.toastSuccess.mockClear()

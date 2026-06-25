@@ -46,6 +46,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}", "put", "updateBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/skills/{skillCode}/archive", "post", "archiveBusinessConsoleSkill");
         AssertOperationId(paths, "/api/business-console/v1/master-data/business-partners", "post", "createBusinessConsoleBusinessPartner");
+        AssertBusinessPartnerCreditFields(document);
         AssertOperationId(paths, "/api/business-console/v1/master-data/units-of-measure", "post", "createBusinessConsoleUnitOfMeasure");
         AssertOperationId(paths, "/api/business-console/v1/master-data/uom-conversions", "post", "createBusinessConsoleUomConversion");
         AssertOperationId(paths, "/api/business-console/v1/master-data/workshops", "get", "listBusinessConsoleWorkshops");
@@ -636,6 +637,17 @@ public sealed class BusinessGatewayOpenApiTests
 
         Assert.Equal("string", schema.GetProperty("type").GetString());
         Assert.Equal(values, actualValues);
+    }
+
+    private static void AssertBusinessPartnerCreditFields(JsonDocument document)
+    {
+        var properties = FindSchemaBySuffix(document, "BusinessConsoleCreateBusinessPartnerRequest")
+            .GetProperty("properties");
+
+        Assert.True(properties.TryGetProperty("creditLimit", out var creditLimit), "Business partner create request must expose creditLimit.");
+        Assert.Equal("number", creditLimit.GetProperty("type").GetString());
+        Assert.True(properties.TryGetProperty("creditCurrencyCode", out var creditCurrencyCode), "Business partner create request must expose creditCurrencyCode.");
+        Assert.Equal("string", creditCurrencyCode.GetProperty("type").GetString());
     }
 
     private static void AssertMesListDisplayContract(JsonDocument document)

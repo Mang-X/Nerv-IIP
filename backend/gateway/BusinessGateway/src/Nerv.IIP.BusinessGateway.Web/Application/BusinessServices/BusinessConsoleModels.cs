@@ -36,7 +36,9 @@ public sealed record BusinessConsoleResourceItem(
     decimal? Factor = null,
     decimal? Offset = null,
     int? Precision = null,
-    string? RoundingMode = null);
+    string? RoundingMode = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -231,6 +233,8 @@ public sealed record BusinessConsoleCreateBusinessPartnerRequest(
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? TaxId = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
@@ -539,7 +543,9 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     IReadOnlyCollection<BusinessConsoleWorkCalendarException>? Exceptions = null,
     decimal? Factor = null,
     decimal? Offset = null,
-    DateOnly? EffectiveFrom = null);
+    DateOnly? EffectiveFrom = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string OrganizationId,
@@ -617,7 +623,9 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     DateOnly? EffectiveTo = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? SkillLevel = null);
+    string? SkillLevel = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,

@@ -2067,6 +2067,40 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Create_business_partner_forwards_customer_credit_limit_to_master_data()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/master-data/business-partners", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            code = "CUST-HENGJING",
+            partnerType = "customer",
+            name = "Hengjing Precision Manufacturing",
+            partnerRoles = new[] { "customer" },
+            taxId = "91310000MA1K99999X",
+            creditLimit = 500000m,
+            creditCurrencyCode = "CNY",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", masterData.LastInternalToken);
+        var request = Assert.IsType<BusinessConsoleCreateBusinessPartnerRequest>(masterData.LastCreateBusinessPartnerRequest);
+        Assert.Equal(500000m, request.CreditLimit);
+        Assert.Equal("CNY", request.CreditCurrencyCode);
+    }
+
+    [Fact]
     public async Task Count_adjustment_rejects_zero_counted_quantity()
     {
         var inventory = new RecordingInventoryClient();
@@ -3848,6 +3882,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleArchiveSkillRequest? LastArchiveSkillRequest { get; private set; }
 
+    public BusinessConsoleCreateBusinessPartnerRequest? LastCreateBusinessPartnerRequest { get; private set; }
+
     public int CreateResourceCallCount { get; private set; }
 
     public string? LastCreateResourcePath { get; private set; }
@@ -4053,8 +4089,11 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     public Task<BusinessConsoleResourceItem> CreateBusinessPartnerAsync(
         string internalBearerToken,
         BusinessConsoleCreateBusinessPartnerRequest request,
-        CancellationToken cancellationToken) =>
-        CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/partners", "business-partner", request.Code, request.Name);
+        CancellationToken cancellationToken)
+    {
+        LastCreateBusinessPartnerRequest = request;
+        return CreateResourceAsync(internalBearerToken, "/api/business/v1/master-data/partners", "business-partner", request.Code, request.Name);
+    }
 
     public Task<BusinessConsoleResourceItem> CreateUnitOfMeasureAsync(
         string internalBearerToken,
