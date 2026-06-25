@@ -16,6 +16,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarProBrand,
   cn,
 } from '@nerv-iip/ui'
 import { ClockIcon, LogOutIcon, SearchIcon, StarIcon } from 'lucide-vue-next'
@@ -71,12 +72,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <AppShellInset>
     <template #sidebar-header>
-      <RouterLink :to="{ path: '/' }" class="flex items-center gap-2 px-1 py-1.5">
-        <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-extrabold text-sidebar-primary-foreground">
-          N
-        </div>
-        <span class="truncate text-sm font-semibold">{{ title }}</span>
-      </RouterLink>
+      <SidebarProBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
     </template>
 
     <template #sidebar>

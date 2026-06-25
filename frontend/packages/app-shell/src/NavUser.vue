@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronsUpDown, LogOut } from 'lucide-vue-next'
+import { LogOut } from 'lucide-vue-next'
 import { computed } from 'vue'
 import {
   Avatar,
@@ -14,6 +14,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarProUser,
   useSidebar,
 } from '@nerv-iip/ui'
 
@@ -43,16 +44,7 @@ const initials = computed(() => props.user.name.slice(0, 2).toUpperCase())
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
-            <Avatar class="size-8 rounded-lg">
-              <AvatarFallback class="rounded-lg">
-                {{ initials }}
-              </AvatarFallback>
-            </Avatar>
-            <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-medium">{{ user.name }}</span>
-              <span v-if="user.email" class="truncate text-xs">{{ user.email }}</span>
-            </div>
-            <ChevronsUpDown class="ml-auto size-4" />
+            <SidebarProUser :name="user.name" :role="user.email" :initials="initials" />
           </SidebarMenuButton>
         </DropdownMenuProTrigger>
         <DropdownMenuProContent

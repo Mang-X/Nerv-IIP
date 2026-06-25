@@ -1,32 +1,38 @@
 <script setup lang="ts">
+import type { PrimitiveProps } from 'reka-ui'
 import { ChevronsUpDownIcon } from 'lucide-vue-next'
+import { Primitive } from 'reka-ui'
 import { computed } from 'vue'
 
 /**
  * Pro — sidebar workspace brand lockup (sits in `SidebarHeader`). A gradient
- * logo tile + workspace name + sub line, with text/caret hidden when the
- * sidebar collapses to the icon rail. Renders a button by default; pass
- * `as-child` semantics by wrapping your own element via the default slot is not
- * needed — use the `to`-less button or compose inside a `SidebarMenuButton`.
+ * logo tile + workspace name + sub line, with text/caret hidden when the sidebar
+ * collapses to the icon rail. Polymorphic via `as` — a `<button>` by default
+ * (workspace switcher, with `caret`), or pass `:as="RouterLink" :to=...` to make
+ * it a home link (set `:caret="false"`).
  */
 const props = withDefaults(
-  defineProps<{
-    name: string
-    sub?: string
-    /** Logo glyph; defaults to the name's first character. */
-    logo?: string
-    /** Trailing up/down caret (workspace-switcher affordance). */
-    caret?: boolean
-  }>(),
-  { caret: true },
+  defineProps<
+    PrimitiveProps & {
+      name: string
+      sub?: string
+      /** Logo glyph; defaults to the name's first character. */
+      logo?: string
+      /** Trailing up/down caret (workspace-switcher affordance). */
+      caret?: boolean
+    }
+  >(),
+  { as: 'button', caret: true },
 )
 
 const glyph = computed(() => props.logo ?? props.name.slice(0, 1).toUpperCase())
 </script>
 
 <template>
-  <button
-    type="button"
+  <Primitive
+    :as="as"
+    :as-child="asChild"
+    :type="as === 'button' ? 'button' : undefined"
     data-slot="sidebar-pro-brand"
     class="sb-pro-brand group-data-[collapsible=icon]:justify-center"
   >
@@ -41,7 +47,7 @@ const glyph = computed(() => props.logo ?? props.name.slice(0, 1).toUpperCase())
       :size="16"
       aria-hidden="true"
     />
-  </button>
+  </Primitive>
 </template>
 
 <style scoped>
@@ -53,6 +59,8 @@ const glyph = computed(() => props.logo ?? props.name.slice(0, 1).toUpperCase())
   border-radius: 0.625rem;
   padding: 0.375rem;
   text-align: left;
+  color: inherit;
+  text-decoration: none;
   transition: background-color 0.15s var(--ease-out-quart, ease);
 }
 .sb-pro-brand:hover {
