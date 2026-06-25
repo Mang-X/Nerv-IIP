@@ -4,6 +4,9 @@ import type {
   CommandItem,
   DataTableProColumn,
   DescriptionItem,
+  FilterField,
+  KanbanColumn,
+  RecordCardStatus,
   TimelineItem,
 } from '@nerv-iip/ui'
 import {
@@ -28,10 +31,15 @@ import {
   DialogProTitle,
   DialogProTrigger,
   DonutChartPro,
+  FilterBarPro,
+  FormSectionPro,
   InputPro,
+  KanbanPro,
   Label,
+  MetricComparisonPro,
   RadioGroupPro,
   RadioGroupProItem,
+  RecordCardPro,
   SwitchPro,
   LineChartPro,
   Loader,
@@ -538,6 +546,111 @@ const woTimeline: TimelineItem[] = [
     description: '孔径 Φ12.02 接近上公差，已通知工艺复核。',
     tone: 'warning',
     icon: TriangleAlertIcon,
+  },
+]
+
+// ---- 业务组件 演示（列表筛选 / 表单分区 / 计划对比 / 单据大卡 / 看板）----
+const filterKeyword = ref('')
+const filterValues = ref<Record<string, any>>({ status: 'in-progress' })
+const filterFields: FilterField[] = [
+  {
+    key: 'status',
+    label: '状态',
+    type: 'select',
+    options: [
+      { label: '进行中', value: 'in-progress' },
+      { label: '已完工', value: 'done' },
+      { label: '已取消', value: 'cancelled' },
+    ],
+  },
+  {
+    key: 'line',
+    label: '产线',
+    type: 'select',
+    options: [
+      { label: 'A 线 · 精密加工', value: 'line-a' },
+      { label: 'B 线 · 锻压', value: 'line-b' },
+    ],
+  },
+  { key: 'due', label: '交期', type: 'date' },
+  { key: 'schedule', label: '排产区间', type: 'daterange' },
+]
+
+type KanbanWo = {
+  no: string
+  title: string
+  wc: string
+  qty: number
+  due: string
+  status: RecordCardStatus
+  progress: number
+}
+const kanbanColumns: KanbanColumn<KanbanWo>[] = [
+  {
+    key: 'todo',
+    title: '待开工',
+    tone: 'warning',
+    items: [
+      {
+        no: 'WO-240625-018',
+        title: 'G200 主壳体 粗铣',
+        wc: 'WC-CNC-07',
+        qty: 320,
+        due: '06-27',
+        status: { label: '待开工', tone: 'warning' },
+        progress: 0,
+      },
+      {
+        no: 'WO-240625-021',
+        title: 'G200 端盖 钻孔',
+        wc: 'WC-DRL-03',
+        qty: 600,
+        due: '06-28',
+        status: { label: '待开工', tone: 'warning' },
+        progress: 0,
+      },
+    ],
+  },
+  {
+    key: 'doing',
+    title: '执行中',
+    tone: 'brand',
+    items: [
+      {
+        no: 'WO-240625-011',
+        title: 'G200 控制器总成 焊接',
+        wc: 'WC-WELD-01',
+        qty: 480,
+        due: '06-25',
+        status: { label: '执行中', tone: 'info' },
+        progress: 62,
+      },
+    ],
+  },
+  {
+    key: 'done',
+    title: '已完成',
+    tone: 'success',
+    items: [
+      {
+        no: 'WO-240624-007',
+        title: 'G200 散热基板 精磨',
+        wc: 'WC-GRD-02',
+        qty: 500,
+        due: '06-24',
+        status: { label: '已完工', tone: 'success' },
+        progress: 100,
+      },
+      {
+        no: 'WO-240624-009',
+        title: 'G200 接线端子 压接',
+        wc: 'WC-CRP-05',
+        qty: 1200,
+        due: '06-24',
+        status: { label: '已完工', tone: 'success' },
+        progress: 100,
+      },
+    ],
   },
 ]
 
@@ -1372,6 +1485,152 @@ const progress = computed(
                 <ButtonPro variant="brand" size="sm">下发排产</ButtonPro>
               </PopconfirmPro>
               <span class="text-xs text-muted-foreground">行内危险操作 / 主操作二次确认</span>
+            </CardPro>
+          </div>
+        </section>
+
+        <!-- ============ 业务组件 ============ -->
+        <section id="business" v-reveal class="scroll-mt-20">
+          <div class="ds-eyebrow">
+            <h2 class="text-xl font-semibold tracking-tight">业务组件</h2>
+            <p class="mt-1.5 text-sm text-muted-foreground">
+              列表筛选、表单分区、计划对比、单据大卡、看板 —— 工单 / 排产 / ERP 业务页的高频复合件。
+            </p>
+          </div>
+
+          <div class="mt-6 flex flex-col gap-4">
+            <!-- 1 · FilterBarPro -->
+            <CardPro class="p-6">
+              <h3 class="text-sm font-semibold">列表筛选 · FilterBarPro</h3>
+              <p class="mt-0.5 mb-4 text-xs text-muted-foreground">
+                关键字 + 数据驱动筛选项（下拉 / 日期 / 区间）· 激活项生成可移除胶囊，有筛选才出重置。
+              </p>
+              <FilterBarPro
+                v-model="filterValues"
+                v-model:keyword="filterKeyword"
+                :fields="filterFields"
+                search-placeholder="搜索工单号 / 产品"
+              />
+            </CardPro>
+
+            <!-- 2 · FormSectionPro -->
+            <CardPro class="p-6">
+              <h3 class="text-sm font-semibold">表单分区 · FormSectionPro</h3>
+              <p class="mt-0.5 mb-4 text-xs text-muted-foreground">
+                带标题的字段分组 · 响应式网格（窄屏自动单列）· <code class="font-mono">#actions</code> 放区块级操作。
+              </p>
+              <FormSectionPro title="工单基本信息" :columns="2">
+                <template #actions>
+                  <ButtonPro variant="ghost" size="sm">添加行</ButtonPro>
+                </template>
+                <div class="flex flex-col gap-1.5">
+                  <Label for="ds-biz-wo">工单号</Label>
+                  <InputPro id="ds-biz-wo" model-value="WO-2026-0613" />
+                </div>
+                <div class="flex flex-col gap-1.5">
+                  <Label for="ds-biz-prd">产品编号</Label>
+                  <InputPro id="ds-biz-prd" model-value="PRD-A-0042" />
+                </div>
+              </FormSectionPro>
+            </CardPro>
+
+            <!-- 3 · MetricComparisonPro -->
+            <CardPro class="p-6">
+              <h3 class="text-sm font-semibold">计划 vs 实际 · MetricComparisonPro</h3>
+              <p class="mt-0.5 mb-4 text-xs text-muted-foreground">
+                自动算差值 / 达成率，色调随 <code class="font-mono">betterWhen</code> 方向判优劣。
+              </p>
+              <div class="grid gap-4 sm:grid-cols-3">
+                <MetricComparisonPro
+                  label="G200 当日产量"
+                  :baseline="{ label: '计划', value: 500 }"
+                  :actual="{ label: '实际', value: 480 }"
+                  unit="件"
+                />
+                <MetricComparisonPro
+                  label="焊接工序 良率"
+                  :baseline="{ label: '目标', value: 98.5 }"
+                  :actual="{ label: '实际', value: 99.2 }"
+                  unit="%"
+                />
+                <MetricComparisonPro
+                  label="单件节拍"
+                  :baseline="{ label: '标准', value: 42 }"
+                  :actual="{ label: '实际', value: 45 }"
+                  unit="s"
+                  better-when="lower"
+                />
+              </div>
+            </CardPro>
+
+            <!-- 4 · RecordCardPro -->
+            <CardPro class="p-6">
+              <h3 class="text-sm font-semibold">单据大卡 · RecordCardPro</h3>
+              <p class="mt-0.5 mb-4 text-xs text-muted-foreground">
+                业务单据模板（工单 / 销售单 / 任务）· 编号 + 状态徽标 + 元信息网格 + 进度 + 操作区。
+              </p>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <RecordCardPro
+                  record-no="WO-240625-011"
+                  title="G200 控制器总成 焊接工序"
+                  :status="{ label: '执行中', tone: 'info' }"
+                  :meta="[
+                    { label: '产品', value: 'G200' },
+                    { label: '工作中心', value: 'WC-WELD-01' },
+                    { label: '数量', value: 480 },
+                    { label: '交期', value: '06-25' },
+                  ]"
+                  :progress="62"
+                  interactive
+                >
+                  <template #actions>
+                    <ButtonPro variant="outline" size="sm">查看</ButtonPro>
+                    <ButtonPro variant="brand" size="sm">报工</ButtonPro>
+                  </template>
+                </RecordCardPro>
+                <RecordCardPro
+                  record-no="WO-240624-007"
+                  title="G200 散热基板 精磨工序"
+                  :status="{ label: '已完工', tone: 'success' }"
+                  :meta="[
+                    { label: '产品', value: 'G200' },
+                    { label: '工作中心', value: 'WC-GRD-02' },
+                    { label: '数量', value: 500 },
+                    { label: '交期', value: '06-24' },
+                  ]"
+                  :progress="100"
+                  interactive
+                >
+                  <template #actions>
+                    <ButtonPro variant="outline" size="sm">查看</ButtonPro>
+                    <ButtonPro variant="brand" size="sm">报工</ButtonPro>
+                  </template>
+                </RecordCardPro>
+              </div>
+            </CardPro>
+
+            <!-- 5 · KanbanPro -->
+            <CardPro class="p-6">
+              <h3 class="text-sm font-semibold">看板 · KanbanPro</h3>
+              <p class="mt-0.5 mb-4 text-xs text-muted-foreground">
+                横向滚动的状态列 · 列头带计数徽标 · <code class="font-mono">#item</code> 插槽内复用 RecordCardPro。
+              </p>
+              <KanbanPro :columns="kanbanColumns" :item-key="(i) => i.no">
+                <template #item="{ item }">
+                  <RecordCardPro
+                    :record-no="item.no"
+                    :title="item.title"
+                    :status="item.status"
+                    :meta="[
+                      { label: '工作中心', value: item.wc },
+                      { label: '数量', value: item.qty },
+                      { label: '交期', value: item.due },
+                    ]"
+                    :progress="item.progress"
+                    interactive
+                  />
+                </template>
+              </KanbanPro>
             </CardPro>
           </div>
         </section>
