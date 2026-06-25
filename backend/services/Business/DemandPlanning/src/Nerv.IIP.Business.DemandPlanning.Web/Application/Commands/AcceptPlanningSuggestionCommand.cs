@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 
@@ -32,7 +33,7 @@ public sealed record PlanningSuggestionDownstreamRequest(
 public sealed record PlanningSuggestionDownstreamReference(
     string DownstreamService,
     string DownstreamDocumentType,
-    string DownstreamDocumentId);
+    string? DownstreamDocumentId);
 
 public interface IPlanningSuggestionDownstreamBridge
 {
@@ -83,6 +84,29 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         AcceptPlanningSuggestionCommand request,
         CancellationToken cancellationToken)
     {
+        if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
+            IsSameDownstreamTarget(suggestion, request))
+        {
+            return new PlanningSuggestionDownstreamReference(
+                suggestion.AcceptedDownstreamService ?? request.DownstreamService,
+                suggestion.AcceptedDownstreamDocumentType ?? request.DownstreamDocumentType,
+                suggestion.AcceptedDownstreamDocumentId);
+        }
+
+        if (suggestion.Status == PlanningSuggestionStatus.Accepted)
+        {
+            throw new KnownException("Planning suggestion has already been accepted with a different downstream reference.");
+        }
+
+        EnsureCanCreateDownstreamReference(suggestion);
+        if (IsErpPurchaseRequisitionAcceptance(suggestion, request))
+        {
+            return new PlanningSuggestionDownstreamReference(
+                DemandPlanningDownstreamReferences.BusinessErp,
+                DemandPlanningDownstreamReferences.PurchaseRequisition,
+                null);
+        }
+
         if (!string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
         {
             return new PlanningSuggestionDownstreamReference(
@@ -91,16 +115,6 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 request.DownstreamDocumentId.Trim());
         }
 
-        if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
-            !string.IsNullOrWhiteSpace(suggestion.AcceptedDownstreamDocumentId))
-        {
-            return new PlanningSuggestionDownstreamReference(
-                suggestion.AcceptedDownstreamService ?? request.DownstreamService,
-                suggestion.AcceptedDownstreamDocumentType ?? request.DownstreamDocumentType,
-                suggestion.AcceptedDownstreamDocumentId);
-        }
-
-        EnsureCanCreateDownstreamReference(suggestion);
         var bridge = downstreamBridge ?? new UnsupportedPlanningSuggestionDownstreamBridge();
         return await bridge.CreateDownstreamAsync(
             suggestion,
@@ -112,6 +126,34 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                     ? $"demand-planning:accept:{suggestion.OrganizationId}:{suggestion.EnvironmentId}:{suggestion.Id}"
                     : request.IdempotencyKey.Trim()),
             cancellationToken);
+    }
+
+    private static bool IsSameDownstreamTarget(PlanningSuggestion suggestion, AcceptPlanningSuggestionCommand request)
+    {
+        return string.Equals(suggestion.AcceptedDownstreamService, request.DownstreamService, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(suggestion.AcceptedDownstreamDocumentType, request.DownstreamDocumentType, StringComparison.OrdinalIgnoreCase)
+            && (IsErpPurchaseRequisitionTarget(request)
+                || string.IsNullOrWhiteSpace(request.DownstreamDocumentId)
+                || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
+    }
+
+    private static bool IsErpPurchaseRequisitionAcceptance(
+        PlanningSuggestion suggestion,
+        AcceptPlanningSuggestionCommand request)
+    {
+        return string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
+            && IsErpPurchaseRequisitionTarget(request);
+    }
+
+    private static bool IsErpPurchaseRequisitionTarget(AcceptPlanningSuggestionCommand request)
+    {
+        return string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessErp, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.PurchaseRequisition, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static void EnsureCanCreateDownstreamReference(PlanningSuggestion suggestion)
