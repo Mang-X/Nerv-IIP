@@ -5,7 +5,8 @@ title: AppShellInset 应用外壳
 <script setup>
 import {
   AppShellInset,
-  SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
+  SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
+  SidebarProBrand, SidebarProDot, SidebarProUser,
   Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator,
 } from '@nerv-iip/ui'
 import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon } from 'lucide-vue-next'
@@ -21,10 +22,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 <div class="ds-shell-demo w-full">
   <AppShellInset collapsible="icon">
     <template #sidebar-header>
-      <div class="flex items-center gap-2 px-1 py-1 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center">
-        <div class="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand text-sm font-bold text-brand-foreground">N</div>
-        <span class="truncate text-sm font-semibold group-data-[collapsible=icon]:hidden">Nerv-IIP</span>
-      </div>
+      <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
     </template>
     <template #sidebar>
       <SidebarGroup>
@@ -38,10 +36,19 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
       <SidebarGroup>
         <SidebarGroupLabel>资源</SidebarGroupLabel>
         <SidebarMenu>
-          <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><SidebarProDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
+    </template>
+    <template #sidebar-footer>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg">
+            <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
     </template>
     <template #header>
       <Breadcrumb>
@@ -80,7 +87,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 
 ```vue
 <AppShellInset collapsible="icon">
-  <template #sidebar-header><Logo /></template>
+  <template #sidebar-header><SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" /></template>
   <template #sidebar>
     <SidebarGroup>
       <SidebarGroupLabel>生产</SidebarGroupLabel>
