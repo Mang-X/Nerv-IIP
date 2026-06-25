@@ -84,14 +84,6 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         AcceptPlanningSuggestionCommand request,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
-        {
-            return new PlanningSuggestionDownstreamReference(
-                request.DownstreamService,
-                request.DownstreamDocumentType,
-                request.DownstreamDocumentId.Trim());
-        }
-
         if (suggestion.Status == PlanningSuggestionStatus.Accepted &&
             IsSameDownstreamTarget(suggestion, request))
         {
@@ -101,6 +93,11 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 suggestion.AcceptedDownstreamDocumentId);
         }
 
+        if (suggestion.Status == PlanningSuggestionStatus.Accepted)
+        {
+            throw new KnownException("Planning suggestion has already been accepted with a different downstream reference.");
+        }
+
         EnsureCanCreateDownstreamReference(suggestion);
         if (IsErpPurchaseRequisitionAcceptance(suggestion, request))
         {
@@ -108,6 +105,14 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
                 DemandPlanningDownstreamReferences.BusinessErp,
                 DemandPlanningDownstreamReferences.PurchaseRequisition,
                 null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.DownstreamDocumentId))
+        {
+            return new PlanningSuggestionDownstreamReference(
+                request.DownstreamService,
+                request.DownstreamDocumentType,
+                request.DownstreamDocumentId.Trim());
         }
 
         var bridge = downstreamBridge ?? new UnsupportedPlanningSuggestionDownstreamBridge();
@@ -127,7 +132,8 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
     {
         return string.Equals(suggestion.AcceptedDownstreamService, request.DownstreamService, StringComparison.OrdinalIgnoreCase)
             && string.Equals(suggestion.AcceptedDownstreamDocumentType, request.DownstreamDocumentType, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal);
+            && (IsErpPurchaseRequisitionTarget(request)
+                || string.Equals(suggestion.AcceptedDownstreamDocumentId, NormalizeOptional(request.DownstreamDocumentId), StringComparison.Ordinal));
     }
 
     private static bool IsErpPurchaseRequisitionAcceptance(
@@ -135,9 +141,13 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
         AcceptPlanningSuggestionCommand request)
     {
         return string.Equals(suggestion.SuggestionType, DemandPlanningSuggestionTypes.PlannedPurchase, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessErp, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.PurchaseRequisition, StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(request.DownstreamDocumentId);
+            && IsErpPurchaseRequisitionTarget(request);
+    }
+
+    private static bool IsErpPurchaseRequisitionTarget(AcceptPlanningSuggestionCommand request)
+    {
+        return string.Equals(request.DownstreamService, DemandPlanningDownstreamReferences.BusinessErp, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(request.DownstreamDocumentType, DemandPlanningDownstreamReferences.PurchaseRequisition, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NormalizeOptional(string? value)

@@ -35,7 +35,7 @@ public sealed class PlanningSuggestionToErpPurchaseRequisitionIntegrationTests
         await using var erpDbContext = CreateErpDbContext();
         var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition(
             erpDbContext,
-            new CommandSender(erpDbContext),
+            new CreatePurchaseRequisitionFromSuggestionCommandHandler(erpDbContext),
             new InMemoryIntegrationEventDeadLetterStore());
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -60,54 +60,6 @@ public sealed class PlanningSuggestionToErpPurchaseRequisitionIntegrationTests
             .UseInMemoryDatabase($"acceptance-dp-erp-pr-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
-    }
-
-    private sealed class CommandSender(ApplicationDbContext dbContext) : ISender
-    {
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
-        {
-            return request switch
-            {
-                CreatePurchaseRequisitionFromSuggestionCommand command when typeof(TResponse) == typeof(Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate.PurchaseRequisitionId) =>
-                    Cast<TResponse>(new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext).Handle(command, cancellationToken)),
-                _ => throw new NotSupportedException($"CommandSender cannot handle request type {request.GetType().Name}."),
-            };
-        }
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest
-        {
-            _ = request;
-            _ = cancellationToken;
-            throw new NotSupportedException("CommandSender only supports request/response commands.");
-        }
-
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
-        {
-            _ = request;
-            _ = cancellationToken;
-            throw new NotSupportedException("CommandSender only supports typed request/response commands.");
-        }
-
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
-        {
-            _ = request;
-            _ = cancellationToken;
-            throw new NotSupportedException("CommandSender cannot stream.");
-        }
-
-        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
-        {
-            _ = request;
-            _ = cancellationToken;
-            throw new NotSupportedException("CommandSender cannot stream.");
-        }
-
-        private static async Task<TResponse> Cast<TResponse>(Task<Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate.PurchaseRequisitionId> task)
-        {
-            var result = await task;
-            return (TResponse)(object)result;
-        }
     }
 
     private sealed class NoopMediator : IMediator

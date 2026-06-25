@@ -1,6 +1,6 @@
 using DotNetCore.CAP;
-using MediatR;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -12,7 +12,7 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer(PlanningSuggestionAcceptedIntegrationEventTopic.TopicName, ConsumerName)]
 public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition(
     ApplicationDbContext dbContext,
-    ISender sender,
+    CreatePurchaseRequisitionFromSuggestionCommandHandler createHandler,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<PlanningSuggestionAcceptedIntegrationEvent>, ICapSubscribe
 {
@@ -27,6 +27,17 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePu
         new IntegrationEventEnvelopeValidator(),
         deadLetterStore,
         ConsumerOptions);
+
+    public PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        ErpCodingService? codingService = null)
+        : this(
+            dbContext,
+            new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext, codingService),
+            deadLetterStore)
+    {
+    }
 
     public Task HandleAsync(PlanningSuggestionAcceptedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
@@ -81,7 +92,7 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePu
             return;
         }
 
-        await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
+        await createHandler.Handle(new CreatePurchaseRequisitionFromSuggestionCommand(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
             null,
