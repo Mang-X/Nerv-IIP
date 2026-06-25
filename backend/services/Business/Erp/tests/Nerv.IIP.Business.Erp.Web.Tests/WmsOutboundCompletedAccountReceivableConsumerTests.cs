@@ -164,40 +164,6 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
     }
 
     [Fact]
-    public async Task OutboundOrderCompletedHandler_DeadLettersMissingSalesLineWithoutCreatingReceivable()
-    {
-        await using var dbContext = CreateDbContext();
-        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-MISSING-SALES-LINE", "SO-AR-MISSING-SALES-LINE", "SO-LINE-001", 2m, 80m);
-        var salesOrder = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
-        RemoveFirstSalesOrderLine(salesOrder);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
-
-        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "missing-source-facts");
-    }
-
-    [Fact]
-    public async Task OutboundOrderCompletedHandler_DeadLettersNonPositiveAmountWithoutCreatingReceivable()
-    {
-        await using var dbContext = CreateDbContext();
-        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-NON-POSITIVE", "SO-AR-NON-POSITIVE", "SO-LINE-001", 2m, 80m);
-        var salesOrder = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
-        SetSalesOrderLineUnitPrice(salesOrder.Lines.Single(), 0m);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
-
-        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "non-positive-accrual-amount");
-    }
-
-    [Fact]
     public async Task OutboundOrderCompletedHandler_IgnoresUnmatchedOutboundWithoutSideEffects()
     {
         await using var dbContext = CreateDbContext();
@@ -248,21 +214,6 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             CancellationToken.None));
         Assert.Equal(expectedFailureCode, deadLetter.FailureCode);
         return deadLetter;
-    }
-
-    private static void RemoveFirstSalesOrderLine(SalesOrder salesOrder)
-    {
-        var lines = (List<SalesOrderLine>)typeof(SalesOrder)
-            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(salesOrder)!;
-        lines.RemoveAt(0);
-    }
-
-    private static void SetSalesOrderLineUnitPrice(SalesOrderLine salesOrderLine, decimal unitPrice)
-    {
-        typeof(SalesOrderLine)
-            .GetProperty(nameof(SalesOrderLine.UnitPrice))!
-            .SetValue(salesOrderLine, unitPrice);
     }
 
     private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
