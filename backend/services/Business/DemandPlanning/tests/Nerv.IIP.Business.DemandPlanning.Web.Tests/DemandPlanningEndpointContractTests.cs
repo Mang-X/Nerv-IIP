@@ -171,6 +171,28 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Purchase_suggestion_acceptance_allows_erp_purchase_requisition_without_caller_known_document_id()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
+
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
+        Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
+        Assert.Equal("PurchaseRequisition", suggestion.AcceptedDownstreamDocumentType);
+        Assert.Null(suggestion.AcceptedDownstreamDocumentId);
+        Assert.Equal(0, bridge.CreateCount);
+    }
+
+    [Fact]
     public async Task Suggestion_acceptance_rejects_non_open_suggestion_before_downstream_creation()
     {
         await using var provider = CreateInMemoryProvider();

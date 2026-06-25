@@ -109,7 +109,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             routingReference));
     }
 
-    public void Accept(string downstreamService, string downstreamDocumentType, string downstreamDocumentId)
+    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
     {
         if (Status == PlanningSuggestionStatus.Accepted)
         {
@@ -130,7 +130,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
 
         AcceptedDownstreamService = DemandPlanningText.Required(downstreamService);
         AcceptedDownstreamDocumentType = DemandPlanningText.Required(downstreamDocumentType);
-        AcceptedDownstreamDocumentId = DemandPlanningText.Required(downstreamDocumentId);
+        AcceptedDownstreamDocumentId = DemandPlanningText.Optional(downstreamDocumentId);
         AcceptedAtUtc = DateTimeOffset.UtcNow;
         Status = PlanningSuggestionStatus.Accepted;
         this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this));

@@ -22,11 +22,14 @@ public static class DemandPlanningIntegrationEventSources
 
 public static class DemandPlanningSuggestionTypes
 {
+    public const string PlannedPurchase = "planned-purchase";
     public const string PlannedWorkOrder = "planned-work-order";
 }
 
 public static class DemandPlanningDownstreamReferences
 {
+    public const string BusinessErp = "BusinessErp";
+    public const string PurchaseRequisition = "PurchaseRequisition";
     public const string BusinessMes = "BusinessMes";
     public const string WorkOrder = "WorkOrder";
 }
