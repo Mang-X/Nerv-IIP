@@ -20,7 +20,7 @@ interface CapsuleItem {
  */
 const props = withDefaults(
   defineProps<{
-    items: CapsuleItem[]
+    items?: CapsuleItem[]
     /** Append to each value, e.g. %. */
     suffix?: string
   }>(),

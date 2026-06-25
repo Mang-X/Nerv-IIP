@@ -10,7 +10,7 @@ import { computed } from 'vue'
 const props = withDefaults(
   defineProps<{
     /** Series to plot (need at least two points). */
-    data: number[]
+    data?: number[]
     /** Fill the area under the line with a fading gradient. */
     area?: boolean
   }>(),
