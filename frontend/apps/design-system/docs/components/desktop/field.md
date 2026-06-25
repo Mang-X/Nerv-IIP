@@ -26,7 +26,7 @@ const planQty = ref('')
 `FieldProGroup` 内放置多个 `FieldPro`。每个字段由 `FieldProLabel`（通过 `for` 关联控件）、控件本体与 `FieldProDescription` / `FieldProError` 组成。
 
 <Demo>
-  <div style="max-width: 360px">
+  <div style="width: 360px; max-width: 100%">
     <FieldProGroup>
       <FieldPro>
         <FieldProLabel for="field-order-no">工单号</FieldProLabel>
