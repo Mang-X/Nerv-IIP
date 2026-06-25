@@ -707,6 +707,45 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public void Inventory_posting_rejection_does_not_convert_untyped_invalid_operation_even_when_message_mentions_reserved_stock()
+    {
+        var exception = new InvalidOperationException("reserved cache state was not initialized.");
+
+        var thrown = Assert.Throws<InvalidOperationException>(() => InventoryPostingRejectedException.FromDomain(exception));
+
+        Assert.Same(exception, thrown);
+    }
+
+    [Fact]
+    public async Task Post_movement_command_maps_reserved_stock_guard_without_message_substring()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            new PostStockMovementCommandHandler(dbContext).Handle(
+                NewPostMovementCommand("idem-out-reserved-001", -3m) with
+                {
+                    MovementType = "outbound",
+                    SourceDocumentId = "OUT-RESERVED-001",
+                },
+                CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.ReservationAllocationRejected, exception.FailureCode);
+        Assert.DoesNotContain("reserved", exception.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
+    }
+
+    [Fact]
     public async Task Stock_ledger_concurrent_updates_are_rejected()
     {
         await using var provider = CreateInMemoryProvider();
@@ -843,7 +882,7 @@ public sealed class InventoryEndpointContractTests
                 new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-reserved-001"),
                 CancellationToken.None));
 
-        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
         Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
         Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "count-adjustment"));

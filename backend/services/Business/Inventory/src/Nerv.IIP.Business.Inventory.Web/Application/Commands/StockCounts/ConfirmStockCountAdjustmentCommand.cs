@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
@@ -72,7 +73,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
         {
             throw new KnownException(exception.Message);
         }
-        catch (InvalidOperationException exception) when (IsReservedStockGuard(exception))
+        catch (InventoryDomainException exception) when (IsReservedStockGuard(exception))
         {
             throw new KnownException(exception.Message);
         }
@@ -83,8 +84,8 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
         return new ConfirmStockCountAdjustmentResult(movement.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity);
     }
 
-    private static bool IsReservedStockGuard(InvalidOperationException exception)
+    private static bool IsReservedStockGuard(InventoryDomainException exception)
     {
-        return exception.Message.Contains("reserved", StringComparison.OrdinalIgnoreCase);
+        return exception.Reason == InventoryDomainFailureReason.ReservedStockProtection;
     }
 }

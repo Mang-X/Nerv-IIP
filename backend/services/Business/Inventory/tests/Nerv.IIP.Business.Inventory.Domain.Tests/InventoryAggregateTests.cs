@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -111,7 +112,9 @@ public sealed class InventoryAggregateTests
             "idem-reserve-001",
             3m);
 
-        Assert.Throws<InvalidOperationException>(() => ledger.Reserve(reservation));
+        var exception = Assert.Throws<InventoryDomainException>(() => ledger.Reserve(reservation));
+
+        Assert.Equal(InventoryDomainFailureReason.ReservationAllocationRejected, exception.Reason);
     }
 
     [Fact]
@@ -151,10 +154,10 @@ public sealed class InventoryAggregateTests
             8m);
         ledger.Reserve(reservation);
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<InventoryDomainException>(() =>
             ledger.ApplyMovement(NewMovement("outbound", -3m, "idem-out-001")));
 
-        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(InventoryDomainFailureReason.ReservedStockProtection, exception.Reason);
         Assert.Equal(10m, ledger.OnHandQuantity);
         Assert.Equal(8m, ledger.ReservedQuantity);
         Assert.Equal(2m, ledger.AvailableQuantity);
@@ -226,7 +229,9 @@ public sealed class InventoryAggregateTests
 
         var conflicting = NewMovement("inbound", 6m, "idem-001");
 
-        Assert.Throws<InvalidOperationException>(() => ledger.ApplyMovement(conflicting));
+        var exception = Assert.Throws<InventoryDomainException>(() => ledger.ApplyMovement(conflicting));
+
+        Assert.Equal(InventoryDomainFailureReason.IdempotencyConflict, exception.Reason);
     }
 
     [Fact]
@@ -236,7 +241,9 @@ public sealed class InventoryAggregateTests
 
         var outbound = NewMovement("outbound", -1m, "idem-out-001");
 
-        Assert.Throws<InvalidOperationException>(() => ledger.ApplyMovement(outbound));
+        var exception = Assert.Throws<InventoryDomainException>(() => ledger.ApplyMovement(outbound));
+
+        Assert.Equal(InventoryDomainFailureReason.NegativeOnHand, exception.Reason);
     }
 
     [Fact]
@@ -268,7 +275,9 @@ public sealed class InventoryAggregateTests
             "owner-001",
             1m);
 
-        Assert.Throws<InvalidOperationException>(() => ledger.ApplyMovement(movement));
+        var exception = Assert.Throws<InventoryDomainException>(() => ledger.ApplyMovement(movement));
+
+        Assert.Equal(InventoryDomainFailureReason.DimensionMismatch, exception.Reason);
     }
 
     [Fact]
@@ -324,10 +333,10 @@ public sealed class InventoryAggregateTests
         ledger.Reserve(reservation);
         var task = NewCountTask(ledger);
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<InventoryDomainException>(() =>
             task.ConfirmAdjustment(ledger, countedQuantity: 7m, "idem-count-001"));
 
-        Assert.Contains("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(InventoryDomainFailureReason.ReservedStockProtection, exception.Reason);
         Assert.Equal(10m, ledger.OnHandQuantity);
         Assert.Equal(8m, ledger.ReservedQuantity);
         Assert.Equal(2m, ledger.AvailableQuantity);
@@ -341,9 +350,10 @@ public sealed class InventoryAggregateTests
         ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
         ledger.FreezeForCount("COUNT-001");
 
-        var exception = Assert.Throws<InvalidOperationException>(() =>
+        var exception = Assert.Throws<InventoryDomainException>(() =>
             ledger.ApplyMovement(NewMovement("outbound", -1m, "idem-out-001")));
 
+        Assert.Equal(InventoryDomainFailureReason.LedgerFrozen, exception.Reason);
         Assert.Contains("frozen", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
