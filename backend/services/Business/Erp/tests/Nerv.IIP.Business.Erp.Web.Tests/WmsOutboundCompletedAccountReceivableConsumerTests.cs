@@ -112,6 +112,92 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
     }
 
     [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersUnexpectedSourceServiceWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+        var integrationEvent = BuildWmsCompletedEvent("DO-AR-UNEXPECTED-SOURCE", "SO-AR-UNEXPECTED-SOURCE", "SO-LINE-001") with
+        {
+            SourceService = "business-inventory",
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var deadLetter = await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "unexpected-source-service");
+        Assert.Equal("business-inventory", deadLetter.SourceService);
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersMissingPublicReferenceWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+        var baseEvent = BuildWmsCompletedEvent("DO-AR-MISSING-PUBLIC-REFERENCE", "SO-AR-MISSING-PUBLIC-REFERENCE", "SO-LINE-001");
+        var integrationEvent = baseEvent with
+        {
+            Payload = baseEvent.Payload with { PublicReference = string.Empty },
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "missing-payload-field");
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersMissingSalesOrderWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-MISSING-SALES", "SO-AR-MISSING-SALES", "SO-LINE-001", 2m, 80m);
+        dbContext.SalesOrders.Remove(await dbContext.SalesOrders.SingleAsync(CancellationToken.None));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "missing-source-facts");
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersMissingSalesLineWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-MISSING-SALES-LINE", "SO-AR-MISSING-SALES-LINE", "SO-LINE-001", 2m, 80m);
+        var salesOrder = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        RemoveFirstSalesOrderLine(salesOrder);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "missing-source-facts");
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersNonPositiveAmountWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-NON-POSITIVE", "SO-AR-NON-POSITIVE", "SO-LINE-001", 2m, 80m);
+        var salesOrder = await dbContext.SalesOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        SetSalesOrderLineUnitPrice(salesOrder.Lines.Single(), 0m);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await AssertDeadLetteredWithoutReceivableAsync(dbContext, deadLetters, "non-positive-accrual-amount");
+    }
+
+    [Fact]
     public async Task OutboundOrderCompletedHandler_IgnoresUnmatchedOutboundWithoutSideEffects()
     {
         await using var dbContext = CreateDbContext();
@@ -146,6 +232,37 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             deadLetterStore,
             new ErpCodingService(),
             logger ?? new TestLogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>());
+    }
+
+    private static async Task<IntegrationEventDeadLetterMessage> AssertDeadLetteredWithoutReceivableAsync(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetters,
+        string expectedFailureCode)
+    {
+        Assert.Empty(dbContext.AccountReceivables);
+        Assert.Empty(dbContext.JournalVouchers);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(expectedFailureCode, deadLetter.FailureCode);
+        return deadLetter;
+    }
+
+    private static void RemoveFirstSalesOrderLine(SalesOrder salesOrder)
+    {
+        var lines = (List<SalesOrderLine>)typeof(SalesOrder)
+            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(salesOrder)!;
+        lines.RemoveAt(0);
+    }
+
+    private static void SetSalesOrderLineUnitPrice(SalesOrderLine salesOrderLine, decimal unitPrice)
+    {
+        typeof(SalesOrderLine)
+            .GetProperty(nameof(SalesOrderLine.UnitPrice))!
+            .SetValue(salesOrderLine, unitPrice);
     }
 
     private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
