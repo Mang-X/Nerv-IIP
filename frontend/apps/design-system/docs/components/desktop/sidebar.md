@@ -112,23 +112,37 @@ const todo = ref('待派工单')
 </Demo>
 
 ```vue
-<script setup>
-const nav = ref('总览')
-</script>
-
-<SidebarMenu>
-  <SidebarMenuItem>
-    <SidebarMenuButton :is-active="nav === '总览'" tooltip="总览" @click="nav = '总览'">
-      <LayoutDashboardIcon /><span>总览</span>
-    </SidebarMenuButton>
-  </SidebarMenuItem>
-  <SidebarMenuItem>
-    <SidebarMenuButton :is-active="nav === '工单'" tooltip="工单" @click="nav = '工单'">
-      <BoxesIcon /><span>工单</span>
-    </SidebarMenuButton>
-    <SidebarMenuBadge>24</SidebarMenuBadge>
-  </SidebarMenuItem>
-</SidebarMenu>
+<Sidebar collapsible="icon">
+  <SidebarHeader>
+    <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
+  </SidebarHeader>
+  <SidebarContent>
+    <SidebarGroup>
+      <SidebarGroupLabel>生产</SidebarGroupLabel>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton :is-active="nav === '总览'" tooltip="总览" @click="nav = '总览'">
+            <LayoutDashboardIcon /><span>总览</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton tooltip="设备">
+            <WrenchIcon /><span>设备</span><SidebarProDot tone="ok" />
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
+  </SidebarContent>
+  <SidebarFooter>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton size="lg">
+          <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  </SidebarFooter>
+</Sidebar>
 ```
 
 ## 子菜单 · 徽标 · 操作
@@ -204,22 +218,15 @@ const nav = ref('总览')
     <FactoryIcon /><span>冲压车间</span>
     <ChevronRightIcon class="ml-auto transition-transform" :class="open && 'rotate-90'" />
   </SidebarMenuButton>
-  <!-- 高度过渡：grid-template-rows 0fr → 1fr -->
-  <div class="sub" :class="open && 'is-open'">
-    <div style="overflow:hidden">
-      <SidebarMenuSub>
-        <SidebarMenuSubItem>
-          <SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      </SidebarMenuSub>
-    </div>
-  </div>
+  <!-- SidebarProSub 内置 grid-rows 0fr→1fr 高度动画 + 缩进导引线，无需手写 CSS -->
+  <SidebarProSub :open="open">
+    <SidebarMenuSub>
+      <SidebarMenuSubItem>
+        <SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton>
+      </SidebarMenuSubItem>
+    </SidebarMenuSub>
+  </SidebarProSub>
 </SidebarMenuItem>
-```
-
-```css
-.sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .26s cubic-bezier(.25,1,.5,1); }
-.sub.is-open { grid-template-rows: 1fr; }
 ```
 
 ## 搜索头
