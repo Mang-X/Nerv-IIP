@@ -212,6 +212,28 @@ public sealed class DemandPlanningEndpointContractTests
     }
 
     [Fact]
+    public async Task Work_order_suggestion_acceptance_is_idempotent_when_replay_omits_downstream_document_id()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-work-order", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
+
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
+        Assert.Equal("BusinessMes", suggestion.AcceptedDownstreamService);
+        Assert.Equal("WorkOrder", suggestion.AcceptedDownstreamDocumentType);
+        Assert.Equal("WO-SHOULD-NOT-BE-CREATED", suggestion.AcceptedDownstreamDocumentId);
+        Assert.Equal(1, bridge.CreateCount);
+    }
+
+    [Fact]
     public async Task Suggestion_acceptance_rejects_non_open_suggestion_before_downstream_creation()
     {
         await using var provider = CreateInMemoryProvider();
