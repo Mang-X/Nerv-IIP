@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
 import { SearchIcon } from 'lucide-vue-next'
-import { Input } from '../../ui/input'
 import { cn } from '../../../lib/utils'
+import { InputPro } from '../../pro/input'
 
 withDefaults(
   defineProps<{
@@ -25,20 +25,17 @@ defineEmits<{ 'update:search': [value: string] }>()
 
 <template>
   <div :class="cn('flex flex-col gap-3 sm:flex-row sm:items-center', $props.class)">
-    <div v-if="showSearch" class="relative w-full sm:max-w-xs">
-      <SearchIcon
-        class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        aria-hidden="true"
-      />
-      <Input
-        :model-value="search"
-        type="search"
-        class="h-9 pl-8"
-        :placeholder="searchPlaceholder"
-        :aria-label="searchLabel"
-        @update:model-value="$emit('update:search', String($event))"
-      />
-    </div>
+    <InputPro
+      v-if="showSearch"
+      :model-value="search"
+      type="search"
+      class="w-full sm:max-w-xs"
+      :placeholder="searchPlaceholder"
+      :aria-label="searchLabel"
+      @update:model-value="$emit('update:search', String($event))"
+    >
+      <template #leading><SearchIcon aria-hidden="true" /></template>
+    </InputPro>
 
     <div v-if="$slots.filters" class="flex flex-wrap items-center gap-2">
       <slot name="filters" />

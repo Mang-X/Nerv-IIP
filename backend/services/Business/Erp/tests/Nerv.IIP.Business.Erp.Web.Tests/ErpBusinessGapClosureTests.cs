@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
+using Nerv.IIP.Messaging.CAP;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
 
@@ -116,7 +117,7 @@ public sealed class ErpBusinessGapClosureTests
                 [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -172,7 +173,7 @@ public sealed class ErpBusinessGapClosureTests
                 [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -259,7 +260,7 @@ public sealed class ErpBusinessGapClosureTests
                 [new PurchaseReceiptCommandLine("LINE-001", 1m, "accepted")]),
             CancellationToken.None));
 
-        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest.ChainId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -292,7 +293,7 @@ public sealed class ErpBusinessGapClosureTests
                 [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext).HandleAsync(
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
             ApprovedPurchaseOrderEvent("PO-001", approvalClient.LastRequest!.ChainId),
             CancellationToken.None);
         await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(

@@ -16,6 +16,8 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure;
 
@@ -38,6 +40,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<CostCandidate> CostCandidates => Set<CostCandidate>();
     public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
     public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
+    public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -46,6 +49,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(ErpFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
 
@@ -55,10 +59,28 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.ConfigureConventions(configurationBuilder);
     }
 
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            this,
+            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+            cancellationToken);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+            this,
+            () => base.SaveChanges(acceptAllChangesOnSuccess));
+    }
+
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PublishedMessage>().ToTable("cap_published_messages").HasKey(x => x.Id);
         modelBuilder.Entity<ReceivedMessage>().ToTable("cap_received_messages").HasKey(x => x.Id);
         modelBuilder.Entity<CapLock>().ToTable("cap_locks").HasKey(x => x.Key);
     }
+
 }

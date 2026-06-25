@@ -139,6 +139,12 @@
       "skillPath": "skills/test-driven-development/SKILL.md",
       "computedHash": "126f1ebf6ccd414f42544f6e83d8cc5adb089e1108eaffb7c400701e37eecd9f"
     },
+    "transitions-dev": {
+      "source": "Jakubantalik/transitions.dev",
+      "sourceType": "github",
+      "skillPath": "skills/transitions-dev/SKILL.md",
+      "computedHash": "3bd13fe8d8eb5f7ac11dadd9c343d7e1726e2e4e8fc5d81638876a6b1c97262a"
+    },
     "tsdown": {
       "source": "antfu/skills",
       "sourceType": "github",

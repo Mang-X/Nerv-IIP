@@ -62,6 +62,7 @@ try
     }
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
