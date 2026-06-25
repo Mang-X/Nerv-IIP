@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
@@ -506,9 +507,11 @@ internal static class ErpTestProvider
     public static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
+        var databaseName = $"erp-sales-finance-contract-{Guid.NewGuid():N}";
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<Infrastructure.ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"erp-sales-finance-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<ErpCodingService>();
         return services.BuildServiceProvider();
     }
 }

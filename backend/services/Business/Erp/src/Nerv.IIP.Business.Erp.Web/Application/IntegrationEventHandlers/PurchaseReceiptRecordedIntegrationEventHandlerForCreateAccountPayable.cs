@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -15,10 +16,13 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 [IntegrationEventConsumer("Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
 public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ErpCodingService codingService)
     : IIntegrationEventHandler<PurchaseReceiptRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-receipt-ap-accrual";
+    // PurchaseOrder has no currency snapshot yet; keep the existing ERP finance default until that source fact exists.
+    private const string DefaultReceiptAccrualCurrencyCode = "CNY";
 
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName,
@@ -93,11 +97,17 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
             return;
         }
 
-        if (!TryCalculateReceiptAmount(receipt, order, out var amount, out var failureMessage))
+        var decision = TryCalculateReceiptAmount(receipt, order, out var amount, out var failureCode, out var failureMessage);
+        if (decision == ReceiptAccrualDecision.Deferred)
+        {
+            return;
+        }
+
+        if (decision == ReceiptAccrualDecision.Failed)
         {
             await DeadLetterAsync(
                 integrationEvent,
-                "unsupported-quality-status",
+                failureCode,
                 failureMessage,
                 cancellationToken);
             return;
@@ -117,7 +127,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
             return;
         }
 
-        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+        await new CreateAccountPayableCommandHandler(dbContext, codingService).Handle(
             new CreateAccountPayableCommand(
                 receipt.OrganizationId,
                 receipt.EnvironmentId,
@@ -125,7 +135,7 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
                 receipt.PurchaseReceiptNo,
                 receipt.SupplierCode,
                 amount,
-                "CNY",
+                DefaultReceiptAccrualCurrencyCode,
                 DateOnly.FromDateTime(receipt.RecordedAtUtc),
                 null,
                 "RECEIPT-ACCRUAL",
@@ -133,27 +143,36 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
             cancellationToken);
     }
 
-    private static bool TryCalculateReceiptAmount(
+    private static ReceiptAccrualDecision TryCalculateReceiptAmount(
         PurchaseReceipt receipt,
         PurchaseOrder order,
         out decimal amount,
+        out string failureCode,
         out string failureMessage)
     {
         amount = 0m;
+        failureCode = string.Empty;
         failureMessage = string.Empty;
         var orderLines = order.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
         foreach (var receiptLine in receipt.Lines)
         {
+            if (IsDeferredQuality(receiptLine.QualityStatus))
+            {
+                return ReceiptAccrualDecision.Deferred;
+            }
+
             if (!IsPayableQuality(receiptLine.QualityStatus))
             {
+                failureCode = "unsupported-quality-status";
                 failureMessage = $"Purchase receipt '{receipt.PurchaseReceiptNo}' line '{receiptLine.PurchaseOrderLineNo}' has unsupported quality status '{receiptLine.QualityStatus}'.";
-                return false;
+                return ReceiptAccrualDecision.Failed;
             }
 
             if (!orderLines.TryGetValue(receiptLine.PurchaseOrderLineNo, out var orderLine))
             {
+                failureCode = "missing-source-facts";
                 failureMessage = $"Purchase order line '{receiptLine.PurchaseOrderLineNo}' was not found for receipt '{receipt.PurchaseReceiptNo}'.";
-                return false;
+                return ReceiptAccrualDecision.Failed;
             }
 
             amount += receiptLine.ReceivedQuantity * orderLine.UnitPrice;
@@ -161,17 +180,24 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
 
         if (amount <= 0m)
         {
+            failureCode = "non-positive-accrual-amount";
             failureMessage = $"Purchase receipt '{receipt.PurchaseReceiptNo}' does not have a positive AP accrual amount.";
-            return false;
+            return ReceiptAccrualDecision.Failed;
         }
 
-        return true;
+        return ReceiptAccrualDecision.Accrue;
     }
 
     private static bool IsPayableQuality(string qualityStatus)
     {
         var normalized = qualityStatus.Trim().ToLowerInvariant();
         return normalized is "accepted" or "unrestricted";
+    }
+
+    private static bool IsDeferredQuality(string qualityStatus)
+    {
+        var normalized = qualityStatus.Trim().ToLowerInvariant();
+        return normalized is "inspection" or "quality";
     }
 
     private Task DeadLetterAsync(
@@ -187,5 +213,12 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
                 failureCode,
                 failureMessage),
             cancellationToken);
+    }
+
+    private enum ReceiptAccrualDecision
+    {
+        Accrue,
+        Deferred,
+        Failed,
     }
 }
