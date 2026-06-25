@@ -61,6 +61,23 @@ public sealed record PurchaseReceiptRecordedPayload(
     string SiteCode,
     string QualityStatus);
 
+public sealed record PurchaseReceiptRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    PurchaseReceiptRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record DeliveryOrderReleasedPayload(string DeliveryOrderId, string DeliveryOrderNo, string SalesOrderNo, string CustomerCode);
 public sealed record AccountPayableCreatedPayload(string AccountPayableId, string PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode);
 public sealed record AccountReceivableCreatedPayload(string AccountReceivableId, string ReceivableNo, string SourceDocumentNo, string CustomerCode, decimal Amount, string CurrencyCode);
