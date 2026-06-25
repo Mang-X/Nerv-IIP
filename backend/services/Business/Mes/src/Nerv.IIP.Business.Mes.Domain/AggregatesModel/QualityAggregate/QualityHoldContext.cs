@@ -88,6 +88,11 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         string? dispositionReason,
         DateTimeOffset recordedAtUtc)
     {
+        if (recordedAtUtc < RecordedAtUtc)
+        {
+            return;
+        }
+
         InspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
         InspectionPlanId = string.IsNullOrWhiteSpace(inspectionPlanId) ? null : inspectionPlanId.Trim();
         Result = DomainGuard.Required(result, nameof(result));

@@ -406,6 +406,37 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
     }
 
     [Fact]
+    public async Task Http_provider_treats_unresolved_production_version_as_missing_snapshot()
+    {
+        var productEngineeringHandler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.NotFound)
+            {
+                Content = JsonContent.Create(new { message = "No active production version matched." }),
+            });
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+            throw new InvalidOperationException($"Inventory should not be called when ProductEngineering has no matching production version: {request.RequestUri}"));
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var result = await provider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-FSA",
+                "PV-MISSING",
+                10m,
+                DateTimeOffset.Parse("2026-06-19T08:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(MesMaterialRequirementSnapshotStatus.Missing, result.Status);
+        Assert.Equal("product-engineering:production-version:PV-MISSING", result.SourceSystem);
+        Assert.Empty(result.Lines);
+    }
+
+    [Fact]
     public async Task Http_provider_wraps_http_timeouts_as_known_material_readiness_errors()
     {
         var productEngineeringHandler = new StubHttpMessageHandler(_ =>

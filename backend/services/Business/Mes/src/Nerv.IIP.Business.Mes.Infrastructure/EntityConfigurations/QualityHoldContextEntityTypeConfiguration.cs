@@ -35,7 +35,5 @@ public sealed class QualityHoldContextEntityTypeConfiguration : IEntityTypeConfi
             .HasDatabaseName("ux_quality_hold_contexts_scope_source");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.Active })
             .HasDatabaseName("ix_quality_hold_contexts_scope_work_order_active");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OperationTaskId, x.Active })
-            .HasDatabaseName("ix_quality_hold_contexts_scope_operation_active");
     }
 }

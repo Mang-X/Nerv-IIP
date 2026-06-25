@@ -403,6 +403,38 @@ public sealed class MesAggregateTests
         Assert.Null(defect.DispositionReferenceId);
     }
 
+    [Fact]
+    public void QualityHoldContext_ignores_stale_inspection_results()
+    {
+        var rejectedAt = DateTimeOffset.Parse("2026-06-19T09:00:00Z");
+        var context = QualityHoldContext.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "business-mes",
+            "WO-QUALITY",
+            "QIR-REJECTED",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "surface defect",
+            rejectedAt);
+
+        context.ApplyInspectionResult(
+            "QIR-PASSED",
+            "QIP-001",
+            "passed",
+            "quality.InspectionPassed",
+            null,
+            rejectedAt.AddMinutes(-5));
+
+        Assert.True(context.Active);
+        Assert.Equal("QIR-REJECTED", context.InspectionRecordId);
+        Assert.Equal("rejected", context.Result);
+        Assert.Equal(rejectedAt, context.RecordedAtUtc);
+    }
+
     [Theory]
     [InlineData("completed")]
     [InlineData("cancelled")]

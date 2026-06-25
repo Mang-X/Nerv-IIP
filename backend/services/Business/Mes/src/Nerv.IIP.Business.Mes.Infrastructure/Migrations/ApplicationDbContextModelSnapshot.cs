@@ -902,9 +902,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId", "Active")
-                        .HasDatabaseName("ix_quality_hold_contexts_scope_operation_active");
-
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId")
                         .IsUnique()
                         .HasDatabaseName("ux_quality_hold_contexts_scope_source");

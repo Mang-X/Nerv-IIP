@@ -45,12 +45,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 comment: "MES quality hold contexts projected from Quality inspection result facts for work order release and start gates.");
 
             migrationBuilder.CreateIndex(
-                name: "ix_quality_hold_contexts_scope_operation_active",
-                schema: "mes",
-                table: "quality_hold_contexts",
-                columns: new[] { "organization_id", "environment_id", "operation_task_id", "active" });
-
-            migrationBuilder.CreateIndex(
                 name: "ix_quality_hold_contexts_scope_work_order_active",
                 schema: "mes",
                 table: "quality_hold_contexts",
