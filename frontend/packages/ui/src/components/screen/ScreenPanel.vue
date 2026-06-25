@@ -51,8 +51,8 @@ defineProps<{
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(circle 30px at top left, rgba(135, 208, 255, 0.6), transparent),
-    radial-gradient(circle 22px at bottom left, rgba(135, 208, 255, 0.26), transparent);
+    radial-gradient(circle 36px at top left, rgba(0, 0, 0, 0.22), rgba(135, 208, 255, 0.13) 66%, transparent),
+    radial-gradient(circle 26px at bottom left, rgba(0, 0, 0, 0.12), rgba(135, 208, 255, 0.07) 66%, transparent);
 }
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
