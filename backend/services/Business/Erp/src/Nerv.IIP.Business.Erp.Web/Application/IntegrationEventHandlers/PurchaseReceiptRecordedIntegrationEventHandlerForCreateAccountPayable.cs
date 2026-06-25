@@ -98,11 +98,6 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
         }
 
         var decision = TryCalculateReceiptAmount(receipt, order, out var amount, out var failureCode, out var failureMessage);
-        if (decision == ReceiptAccrualDecision.Deferred)
-        {
-            return;
-        }
-
         if (decision == ReceiptAccrualDecision.Failed)
         {
             await DeadLetterAsync(
@@ -156,11 +151,6 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
         var orderLines = order.Lines.ToDictionary(x => x.LineNo, StringComparer.Ordinal);
         foreach (var receiptLine in receipt.Lines)
         {
-            if (IsDeferredQuality(receiptLine.QualityStatus))
-            {
-                return ReceiptAccrualDecision.Deferred;
-            }
-
             if (!IsPayableQuality(receiptLine.QualityStatus))
             {
                 failureCode = "unsupported-quality-status";
@@ -191,13 +181,8 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
     private static bool IsPayableQuality(string qualityStatus)
     {
         var normalized = qualityStatus.Trim().ToLowerInvariant();
-        return normalized is "accepted" or "unrestricted";
-    }
-
-    private static bool IsDeferredQuality(string qualityStatus)
-    {
-        var normalized = qualityStatus.Trim().ToLowerInvariant();
-        return normalized is "inspection" or "quality";
+        // ERP has no Quality-pass retrigger consumer; AP accrual follows the receipt event for normal received states.
+        return normalized is "accepted" or "unrestricted" or "inspection" or "quality";
     }
 
     private Task DeadLetterAsync(
@@ -218,7 +203,6 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
     private enum ReceiptAccrualDecision
     {
         Accrue,
-        Deferred,
         Failed,
     }
 }

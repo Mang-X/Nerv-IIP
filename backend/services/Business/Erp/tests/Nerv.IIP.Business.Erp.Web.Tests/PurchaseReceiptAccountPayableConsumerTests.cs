@@ -99,7 +99,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
     }
 
     [Fact]
-    public async Task PurchaseReceiptRecordedHandler_SkipsInspectionQualityWithoutDeadLetter()
+    public async Task PurchaseReceiptRecordedHandler_CreatesPayableForInspectionReceiptBecauseNoQualityPassRetriggerExists()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -116,9 +116,14 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await handler.HandleAsync(await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-INSPECTION"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Empty(dbContext.AccountPayables);
-        Assert.Empty(dbContext.JournalVouchers);
-        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var payable = await new GetAccountPayableBySourceDocumentQueryHandler(dbContext).Handle(
+            new GetAccountPayableBySourceDocumentQuery("org-001", "env-dev", "RCV-AP-INSPECTION"),
+            CancellationToken.None);
+        Assert.Equal("RCV-AP-INSPECTION", payable.SourceDocumentNo);
+        Assert.Equal(25m, payable.Amount);
+        Assert.Single(dbContext.AccountPayables);
+        Assert.Single(dbContext.JournalVouchers);
+        Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(await deadLetters.ListAsync(
             PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
