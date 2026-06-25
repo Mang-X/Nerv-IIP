@@ -9,7 +9,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -18,11 +18,11 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -250,15 +250,20 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`维护工单操作 ${workOrderNo(row)}`">
-          <DropdownMenuItem @click="openComplete(row)">
+          <DropdownMenuProItem @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="workOrdersTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="workOrdersTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>
@@ -267,31 +272,31 @@ function formatError(error: unknown) {
           <DialogProDescription>对设备开具维护工单，可关联触发的设备报警。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="mwo-device">设备</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="mwo-device">设备</FieldProLabel>
               <InputPro id="mwo-device" v-model="createForm.deviceAssetId" autocomplete="off" placeholder="如 DEV-SMT-01" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-priority">优先级</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-priority">优先级</FieldProLabel>
               <SelectPro v-model="createForm.priority">
                 <SelectProTrigger id="mwo-priority" aria-label="优先级"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-opened-by">开单人</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-opened-by">开单人</FieldProLabel>
               <InputPro id="mwo-opened-by" v-model="createForm.openedBy" autocomplete="off" placeholder="如 巡检员-张工" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-alarm">关联报警</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-alarm">关联报警</FieldProLabel>
               <InputPro id="mwo-alarm" v-model="createForm.sourceAlarmId" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
+          <FieldProError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>
@@ -315,40 +320,40 @@ function formatError(error: unknown) {
           </DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="mwo-result">维护结果</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="mwo-result">维护结果</FieldProLabel>
               <SelectPro v-model="completeForm.result">
                 <SelectProTrigger id="mwo-result" aria-label="维护结果"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-reason">停机原因</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-reason">停机原因</FieldProLabel>
               <SelectPro v-model="completeForm.downtimeReasonCode">
                 <SelectProTrigger id="mwo-reason" aria-label="停机原因"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-minutes">停机时长（分钟）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-minutes">停机时长（分钟）</FieldProLabel>
               <InputPro id="mwo-minutes" v-model="completeForm.downtimeMinutes" type="number" min="0" step="1" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-spare-sku">更换备件物料</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-spare-sku">更换备件物料</FieldProLabel>
               <InputPro id="mwo-spare-sku" v-model="completeForm.sparePartSku" autocomplete="off" placeholder="如 主控芯片MCU" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-spare-qty">备件数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-spare-qty">备件数量</FieldProLabel>
               <InputPro id="mwo-spare-qty" v-model="completeForm.sparePartQuantity" type="number" min="1" step="1" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
+          <FieldProError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

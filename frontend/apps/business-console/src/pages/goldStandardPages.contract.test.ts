@@ -59,7 +59,7 @@ const GOLD_STANDARD_PAGES = [
 // decision-driving metrics only — never mechanical pagination/tree metadata). Many
 // maintenance pages legitimately have none. See master-data-templates.md §0/§2 and
 // business-console AGENTS.md §1.5-B.
-const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro', 'DataTablePagination']
+const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro', 'DataTablePagination(Pro)?']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',
