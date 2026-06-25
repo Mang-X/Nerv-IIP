@@ -53,16 +53,17 @@ defineProps<{
   /* a highlight that traces the rounded corner itself — the top + left border
      light up and the border-radius bends them into an arc; mask keeps it to the
      top-left (bright) and bottom-left (faint) corners only. */
-  border: 1.6px solid transparent;
-  border-top-color: rgba(150, 214, 255, 0.85);
-  border-left-color: rgba(150, 214, 255, 0.85);
-  border-bottom-color: rgba(150, 214, 255, 0.35);
+  border: 2px solid transparent;
+  border-top-color: rgba(216, 238, 255, 0.95);
+  border-left-color: rgba(216, 238, 255, 0.95);
+  border-bottom-color: rgba(170, 212, 255, 0.4);
+  filter: drop-shadow(0 0 3px rgba(135, 208, 255, 0.7));
   -webkit-mask:
-    linear-gradient(135deg, #000, transparent 18%),
-    linear-gradient(45deg, #000, transparent 13%);
+    linear-gradient(135deg, #000, transparent 30%),
+    linear-gradient(45deg, #000, transparent 18%);
   mask:
-    linear-gradient(135deg, #000, transparent 18%),
-    linear-gradient(45deg, #000, transparent 13%);
+    linear-gradient(135deg, #000, transparent 30%),
+    linear-gradient(45deg, #000, transparent 18%);
 }
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
