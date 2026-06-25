@@ -227,14 +227,19 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("Inventory__DefaultSiteCode", "production")
+    .WithEnvironment("Inventory__SiteCodes__0", "warehouse")
+    .WithEnvironment("Inventory__SiteCodes__1", "production")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
     .WaitFor(businessMesDatabase)
+    .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
 businessMes = WithRedisMessagingTransport(businessMes);
@@ -362,10 +367,13 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessErpDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
     .WithReference(iam)
     .WaitFor(businessErpDatabase)
+    .WaitFor(businessMasterData)
     .WaitFor(iam);
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)

@@ -624,6 +624,7 @@ describe('business MES composables', () => {
       workOrderId: 'wo-1',
       skuId: 'sku-1',
       quantity: 10,
+      unitCost: 12.34,
       uomCode: 'EA',
       requestedAtUtc: '2026-05-26T00:00:00.000Z',
       idempotencyKey: 'receipt-1',

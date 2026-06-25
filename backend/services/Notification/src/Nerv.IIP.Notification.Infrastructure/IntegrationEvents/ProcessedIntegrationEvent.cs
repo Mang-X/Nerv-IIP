@@ -17,7 +17,7 @@ public sealed class ProcessedIntegrationEvent : Entity<ProcessedIntegrationEvent
         string eventType,
         int eventVersion,
         string sourceService,
-        string dedupeKey,
+        string idempotencyKey,
         DateTimeOffset processedAtUtc)
     {
         ConsumerName = consumerName;
@@ -25,7 +25,7 @@ public sealed class ProcessedIntegrationEvent : Entity<ProcessedIntegrationEvent
         EventType = eventType;
         EventVersion = eventVersion;
         SourceService = sourceService;
-        DedupeKey = dedupeKey;
+        IdempotencyKey = idempotencyKey;
         ProcessedAtUtc = processedAtUtc;
     }
 
@@ -34,6 +34,6 @@ public sealed class ProcessedIntegrationEvent : Entity<ProcessedIntegrationEvent
     public string EventType { get; private set; } = string.Empty;
     public int EventVersion { get; private set; }
     public string SourceService { get; private set; } = string.Empty;
-    public string DedupeKey { get; private set; } = string.Empty;
+    public string IdempotencyKey { get; private set; } = string.Empty;
     public DateTimeOffset ProcessedAtUtc { get; private set; }
 }

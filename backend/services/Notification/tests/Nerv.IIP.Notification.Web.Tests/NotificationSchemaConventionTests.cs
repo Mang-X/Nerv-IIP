@@ -80,7 +80,7 @@ public sealed class NotificationSchemaConventionTests
             fixture.DbContext,
             typeof(ProcessedIntegrationEvent),
             "ConsumerName",
-            "EventId");
+            "IdempotencyKey");
     }
 
     [Fact]
@@ -151,6 +151,18 @@ public sealed class NotificationSchemaConventionTests
 
         AssertForeignKeyOperation(migrationBuilder, "notification_tasks", "notification_messages", "MessageId");
         AssertForeignKeyOperation(migrationBuilder, "delivery_attempts", "notification_messages", "NotificationMessageId");
+    }
+
+    [Fact]
+    public void Processed_integration_event_idempotency_migration_deduplicates_before_unique_index()
+    {
+        var migration = new UseIdempotencyKeyForProcessedIntegrationEvents();
+        var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+        typeof(UseIdempotencyKeyForProcessedIntegrationEvents)
+            .GetMethod("Up", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(migration, [migrationBuilder]);
+
+        AssertInboxDeduplicationBeforeUniqueIndex(migrationBuilder, "notification");
     }
 
     [Fact]
@@ -240,6 +252,40 @@ public sealed class NotificationSchemaConventionTests
             Assert.NotNull(operation.IsDescending);
             Assert.Equal([false, false, true], operation.IsDescending);
         }
+    }
+
+    private static void AssertInboxDeduplicationBeforeUniqueIndex(MigrationBuilder migrationBuilder, string schema)
+    {
+        var operations = migrationBuilder.Operations;
+        var dedupeSqlIndex = OperationIndex(operations, operation =>
+            operation is SqlOperation sqlOperation &&
+            sqlOperation.Sql.Contains($"{schema}.processed_integration_events", StringComparison.Ordinal) &&
+            sqlOperation.Sql.Contains("row_number() OVER", StringComparison.Ordinal) &&
+            sqlOperation.Sql.Contains("PARTITION BY \"ConsumerName\", \"IdempotencyKey\"", StringComparison.Ordinal));
+        var createUniqueIndexIndex = OperationIndex(operations, operation =>
+            operation is CreateIndexOperation createIndexOperation &&
+            createIndexOperation.Schema == schema &&
+            createIndexOperation.Table == "processed_integration_events" &&
+            createIndexOperation.Name == "ux_processed_integration_events_consumer_idempotency_key" &&
+            createIndexOperation.IsUnique &&
+            createIndexOperation.Columns.SequenceEqual(["ConsumerName", "IdempotencyKey"]));
+
+        Assert.True(dedupeSqlIndex >= 0, $"{schema}: migration must remove historical duplicate processed inbox rows.");
+        Assert.True(createUniqueIndexIndex >= 0, $"{schema}: migration must create the consumer/idempotency unique index.");
+        Assert.True(dedupeSqlIndex < createUniqueIndexIndex, $"{schema}: migration must deduplicate before creating the unique index.");
+    }
+
+    private static int OperationIndex(IReadOnlyList<MigrationOperation> operations, Func<MigrationOperation, bool> predicate)
+    {
+        for (var index = 0; index < operations.Count; index++)
+        {
+            if (predicate(operations[index]))
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private static void AssertCreateTable(MigrationBuilder migrationBuilder, string tableName)

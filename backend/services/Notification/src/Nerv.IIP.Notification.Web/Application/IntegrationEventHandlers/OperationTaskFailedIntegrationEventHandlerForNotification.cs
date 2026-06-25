@@ -57,21 +57,15 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
         var instanceKey = Required(payload.InstanceKey, "Operation instance key is required.");
         var operationCode = Required(payload.OperationCode, "Operation code is required.");
 
-        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == ConsumerName && x.EventId == eventId,
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            DateTimeOffset.UtcNow,
             cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            ConsumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            DateTimeOffset.UtcNow));
 
         var summary = payload.FailureCode is null
             ? $"Operation {operationCode} failed for {instanceKey}."

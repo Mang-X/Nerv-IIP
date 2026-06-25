@@ -15,6 +15,11 @@ const routerState = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
+const mesSpies = vi.hoisted(() => ({
+  createReceiptRequest: vi.fn(async () => undefined),
+  refreshReceiptRequests: vi.fn(async () => undefined),
+}))
+
 vi.mock('vue-router', () => ({
   RouterLink: {
     props: ['to'],
@@ -36,7 +41,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     nextStep: '请按质量或设备处理要求跟进。',
   }),
   useMesFinishedGoodsReceipts: () => ({
-    createReceiptRequest: vi.fn(),
+    createReceiptRequest: mesSpies.createReceiptRequest,
     createReceiptRequestError: ref(undefined),
     createReceiptRequestPending: ref(false),
     filters: {
@@ -49,7 +54,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     receiptRequestsError: ref(undefined),
     receiptRequestsPending: ref(false),
     receiptRequestsTotal: ref(0),
-    refreshReceiptRequests: vi.fn(),
+    refreshReceiptRequests: mesSpies.refreshReceiptRequests,
   }),
   useMesOperationTasks: () => ({
     filters: {
@@ -248,7 +253,9 @@ const uiStubs = {
     template: '<label><slot /></label>',
   },
   Input: {
-    template: '<input v-bind="$attrs" />',
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
   Select: {
     template: '<div><slot /></div>',
@@ -314,6 +321,8 @@ describe('MES workflow copy', () => {
   beforeEach(() => {
     routeState.query = {}
     routerState.push.mockReset()
+    mesSpies.createReceiptRequest.mockClear()
+    mesSpies.refreshReceiptRequests.mockClear()
   })
 
   it('keeps work-order reporting business-facing and row-context driven', () => {
@@ -371,5 +380,27 @@ describe('MES workflow copy', () => {
     expect(wrapper.find('#receipt-work-order').attributes('readonly')).toBeDefined()
     expect(wrapper.find('#receipt-sku').attributes('readonly')).toBeDefined()
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('submits finished-goods receipt context with unit cost', async () => {
+    routeState.query = {
+      quantity: '10',
+      skuId: 'FG-001',
+      workOrderId: 'WO-001',
+    }
+    const wrapper = mountMesPage(ReceiptsPage)
+
+    await wrapper.find('#receipt-unit-cost').setValue('12.34')
+    await wrapper.find('form').trigger('submit')
+
+    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(expect.objectContaining({
+      environmentId: 'dev',
+      organizationId: 'org',
+      quantity: 10,
+      skuId: 'FG-001',
+      unitCost: 12.34,
+      uomCode: 'EA',
+      workOrderId: 'WO-001',
+    }))
   })
 })

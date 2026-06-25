@@ -215,6 +215,7 @@ Source:
 11. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260609061105_AddMesConsumerInboxIdempotency.cs`
 12. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260612073555_AddCodingTables.cs`
 13. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260615092140_AddMesBusinessLoopFacts.cs`
+14. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260624151023_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -235,7 +236,7 @@ Source:
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于消费幂等、分组扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | 主键用于 CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
-| `processed_integration_events` | system | MES 业务 inbox，记录设备可用性事件消费者已经执行业务副作用的事件。 | `consumer_name + event_id` 是唯一消费边界；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
+| `processed_integration_events` | system | MES 业务 inbox，记录设备可用性事件消费者已经执行业务副作用的事件。 | `consumer_name + idempotency_key` 是唯一消费边界；`event_id` 仅用于追溯原始发布事件；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投、re-release 和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
 | `integration_event_dead_letters` | system | MES 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 BusinessMES 已应用迁移。 | `MigrationId + ProductVersion` 由 EF Core 维护。 | EF Core 用于判定待应用迁移。 | 必须位于 `mes` schema；业务代码不直接读写。 |
 
@@ -442,6 +443,7 @@ Source:
 8. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Coding/CodeEntityTypeConfigurations.cs`
 9. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260615020603_AddMaintenanceCodingTables.cs`
 10. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260621114259_AddMaintenanceInspectionWorkOrderSource.cs`
+11. `backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Infrastructure/Migrations/20260624150948_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -452,7 +454,7 @@ Source:
 | `code_idempotency_keys` | business | Maintenance 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `maintenance_inspections` | business | 点检记录，可关联维护计划或维修工单。 | `id` 为 Guid v7 强类型 ID；`maintenance_plan_id`、`maintenance_work_order_id` 是业务引用；`inspector`、`result` 和 `inspected_at_utc` 保存执行事实。 | 计划/工单引用支持追溯点检记录。 | 点检写入后不可覆盖历史，只通过新记录表达新检查。 |
 | `downtime_reasons` | business | 维护域拥有的停机原因代码表。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + reason_code` 是业务唯一键。 | 原因码唯一索引防重复。 | 作为归因基础数据保留；删除/失效策略后续补齐。 |
-| `processed_integration_events` | system | Maintenance 业务 inbox，记录报警自动开单消费者已经执行业务副作用的事件。 | `consumer_name + event_id` 是唯一消费边界；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
+| `processed_integration_events` | system | Maintenance 业务 inbox，记录报警自动开单消费者已经执行业务副作用的事件。 | `consumer_name + idempotency_key` 是唯一消费边界；`event_id` 仅用于追溯原始发布事件；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 RabbitMQ/CAP 重投、re-release 和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实。 |
 | `integration_event_dead_letters` | system | Maintenance 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid v7；`consumer_name`、`event_id`、`event_type`、`event_version`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | 由 Maintenance 消费 guard 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -501,6 +503,7 @@ Source:
 4. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260517074353_SchemaGovernanceMetadata.cs`
 5. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260526022515_AddAppHubIntegrationEventDeadLetters.cs`
 6. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260609060902_AddAppHubConsumerInboxIdempotency.cs`
+7. `backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure/Migrations/20260624150915_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -515,7 +518,7 @@ Source:
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于消费幂等和重试。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`；用于 CAP 内部协调。 |
-| `processed_integration_events` | system | AppHub 业务 inbox，记录 Ops operation task 完成/失败刷新消费者已经处理的事件。 | `consumer_name + event_id` 唯一；`source_service + event_type + processed_at_utc` 支持消费诊断。 |
+| `processed_integration_events` | system | AppHub 业务 inbox，记录 Ops operation task 完成/失败刷新消费者已经处理的事件。 | `consumer_name + idempotency_key` 唯一；`event_id` 仅用于追溯原始发布事件；`source_service + event_type + processed_at_utc` 支持消费诊断。 |
 | `integration_event_dead_letters` | system | AppHub 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实；`consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 AppHub 已应用迁移。 | 必须位于 `apphub` schema；业务代码不直接读写。 |
 
@@ -640,6 +643,7 @@ Source:
 3. `backend/services/Notification/src/Nerv.IIP.Notification.Infrastructure/Migrations/20260521080709_InitialNotificationSchema.cs`
 4. `backend/services/Notification/src/Nerv.IIP.Notification.Infrastructure/Migrations/20260521091128_AddNotificationCapStorage.cs`
 5. `backend/services/Notification/src/Nerv.IIP.Notification.Infrastructure/Migrations/20260526022335_AddNotificationIntegrationEventDeadLetters.cs`
+6. `backend/services/Notification/src/Nerv.IIP.Notification.Infrastructure/Migrations/20260624151042_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -647,7 +651,7 @@ Source:
 | `notification_messages` | business | 面向收件人的站内通知消息。 | `NotificationIntentId` 指向 `notification_intents`；`RecipientRef + Status + CreatedAtUtc` 支持收件箱扫描。 |
 | `notification_tasks` | business | 可操作通知任务，用于待办、失败处理或后续审批联动。 | `NotificationIntentId` 指向意图；`MessageId` 指向对应消息；`RecipientRef + Status + CreatedAtUtc` 支持任务列表。 |
 | `delivery_attempts` | business | 通知投递尝试记录，为后续外部 channel provider、失败重试和投递诊断预留。 | `NotificationMessageId` 指向消息；`Channel + Status + AttemptedAtUtc` 支持渠道维度排查。 |
-| `processed_integration_events` | system | Notification 业务 inbox，记录已处理的集成事件，避免重复业务副作用。 | `ConsumerName + EventId` 唯一；`SourceService + EventType + ProcessedAtUtc` 支持消费诊断。 |
+| `processed_integration_events` | system | Notification 业务 inbox，记录已处理的集成事件，避免重复业务副作用。 | `ConsumerName + IdempotencyKey` 唯一；`EventId` 仅用于追溯原始发布事件；`SourceService + EventType + ProcessedAtUtc` 支持消费诊断。 |
 | `integration_event_dead_letters` | system | Notification 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实；`consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于 broker 级消费幂等。 |
