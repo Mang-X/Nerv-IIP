@@ -33,6 +33,26 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     }
 
     [Fact]
+    public async Task Alarm_consumer_skips_released_event_with_same_idempotency_key()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var sender = new CommandOnlySender(dbContext);
+        var handler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var alarm = CreateAlarmRaisedEvent();
+        var releasedAlarm = alarm with { EventId = "evt-alarm-001-released" };
+
+        await handler.HandleAsync(alarm, CancellationToken.None);
+        await handler.HandleAsync(releasedAlarm, CancellationToken.None);
+
+        Assert.Single(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
+        Assert.Equal(1, sender.CreateWorkOrderCommandCount);
+        var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(alarm.EventId, processed.EventId);
+        Assert.Equal(alarm.IdempotencyKey, processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Alarm_consumer_dead_letters_unsupported_event_version_without_creating_work_order()
     {
         await using var dbContext = CreateDbContext();

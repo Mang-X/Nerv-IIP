@@ -202,21 +202,15 @@ internal static class OpsNotificationConsumer
         var dedupeKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
         operationTaskId = Required(operationTaskId, "Operation task id is required.");
 
-        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == consumerName && x.EventId == eventId,
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            consumerName,
+            integrationEvent,
+            DateTimeOffset.UtcNow,
             cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            consumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            DateTimeOffset.UtcNow));
 
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,

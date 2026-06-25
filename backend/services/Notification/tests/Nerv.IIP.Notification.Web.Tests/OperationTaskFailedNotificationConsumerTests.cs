@@ -47,7 +47,7 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(message.Id, task.MessageId);
         Assert.Equal("notification.operation-task-failed", processed.ConsumerName);
         Assert.Equal("event-001", processed.EventId);
-        Assert.Equal("operation-task-failed:task-001", processed.DedupeKey);
+        Assert.Equal("operation-task-failed:task-001", processed.IdempotencyKey);
     }
 
     [Fact]
@@ -306,7 +306,9 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(1, await dbContext.NotificationIntents.CountAsync());
         Assert.Equal(1, await dbContext.NotificationMessages.CountAsync());
         Assert.Equal(1, await dbContext.NotificationTasks.CountAsync());
-        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal("event-retry-first", processed.EventId);
+        Assert.Equal("operation-task-failed:retry", processed.IdempotencyKey);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using DotNetCore.CAP;
-using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -7,7 +6,6 @@ using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
-using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 
@@ -62,47 +60,25 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
 
 internal static class MaintenanceProcessedIntegrationEventInbox
 {
-    public static async Task<bool> TryRecordAsync(
+    public static Task<bool> TryRecordAsync(
         ApplicationDbContext dbContext,
         string consumerName,
         IIntegrationEventEnvelope integrationEvent,
         CancellationToken cancellationToken)
     {
-        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var dedupeKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-
-        if (dbContext.ProcessedIntegrationEvents.Local.Any(x => x.ConsumerName == consumerName && x.EventId == eventId))
-        {
-            return false;
-        }
-
-        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == consumerName && x.EventId == eventId,
-            cancellationToken))
-        {
-            return false;
-        }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+        return ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
             consumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            DateTimeOffset.UtcNow));
-        return true;
-    }
-
-    private static string Required(string? value, string message)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new KnownException(message);
-        }
-
-        return value;
+            integrationEvent,
+            record => new ProcessedIntegrationEvent(
+                record.ConsumerName,
+                record.EventId,
+                record.EventType,
+                record.EventVersion,
+                record.SourceService,
+                record.IdempotencyKey,
+                record.ProcessedAtUtc),
+            cancellationToken);
     }
 }

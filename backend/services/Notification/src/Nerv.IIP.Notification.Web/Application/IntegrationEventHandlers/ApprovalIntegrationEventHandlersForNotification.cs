@@ -60,19 +60,15 @@ public sealed class ApprovalStepOverdueIntegrationEventHandlerForNotification(
             recipientRef,
             configuration.GetSection("Approval:OverdueEscalation:RecipientRefs").Get<string[]>() ?? []);
 
-        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            timeProvider.GetUtcNow(),
+            cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            ConsumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            timeProvider.GetUtcNow()));
 
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,
@@ -132,19 +128,15 @@ public sealed class ApprovalStepResolvedIntegrationEventHandlerForNotification(
         var chainId = NotificationIntegrationEventRequired.Value(payload.ChainId, "Approval chain id is required.");
         var recipientRef = NotificationIntegrationEventRequired.Actor(payload.ActorType, payload.ActorRef);
 
-        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            timeProvider.GetUtcNow(),
+            cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            ConsumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            timeProvider.GetUtcNow()));
 
         var request = new SubmitNotificationIntentRequest(
             SourceService: sourceService,
@@ -212,19 +204,15 @@ public sealed class ApprovalActionRecordedIntegrationEventHandlerForNotification
             throw new KnownException("Approval action recipient is required.");
         }
 
-        if (await ApprovalNotificationConsumerState.AlreadyProcessedAsync(dbContext, ConsumerName, eventId, cancellationToken))
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            timeProvider.GetUtcNow(),
+            cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            ConsumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            timeProvider.GetUtcNow()));
 
         var isTask = action is not "withdraw";
         var request = new SubmitNotificationIntentRequest(
@@ -268,19 +256,5 @@ file static class NotificationIntegrationEventRequired
             .Select(x => x.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-    }
-}
-
-file static class ApprovalNotificationConsumerState
-{
-    public static async Task<bool> AlreadyProcessedAsync(
-        ApplicationDbContext dbContext,
-        string consumerName,
-        string eventId,
-        CancellationToken cancellationToken)
-    {
-        return await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == consumerName && x.EventId == eventId,
-            cancellationToken);
     }
 }
