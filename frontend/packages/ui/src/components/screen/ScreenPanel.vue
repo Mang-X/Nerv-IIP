@@ -4,22 +4,22 @@ import { cn } from '../../lib/utils'
 
 /**
  * Screen — base panel. A near-black gradient body inside a gradient hairline that
- * brightens subtly down the two sides (dim top/bottom), a white top highlight for
- * glass, and a quiet depth shadow. No body glow — structure reads from the white
- * highlight, not from color. Optional title row and a restrained status accent (a
- * thin colored top line, no bloom). Built on the independent `--sb-*` tokens.
+ * brightens down the two sides (dim top/bottom), a white top highlight for glass,
+ * and a quiet depth shadow. An optional `accent` recolors the whole edge plus a
+ * thin top line for status / categorized panels: cyan / green / amber / red /
+ * indigo. Built on the independent `--sb-*` tokens.
  */
 defineProps<{
   title?: string
-  /** A thin colored top line for status panels (cyan/green/amber/red). */
-  accent?: 'cyan' | 'green' | 'amber' | 'red'
+  /** Recolors the edge + top line for status / categorized panels. */
+  accent?: 'cyan' | 'green' | 'amber' | 'red' | 'indigo'
   class?: HTMLAttributes['class']
 }>()
 </script>
 
 <template>
-  <section :class="cn('sb-panel', $props.class)">
-    <span v-if="accent" class="sb-panel-accent" :class="accent" />
+  <section :class="cn('sb-panel', accent, $props.class)">
+    <span v-if="accent" class="sb-panel-accent" />
     <div v-if="title || $slots.extra" class="sb-panel-h">
       <span class="sb-panel-t">{{ title }}<slot name="title-extra" /></span>
       <div v-if="$slots.extra" class="sb-panel-extra"><slot name="extra" /></div>
@@ -41,31 +41,6 @@ defineProps<{
     inset 0 1px 0 var(--sb-highlight),
     0 10px 30px -18px rgba(0, 0, 0, 0.9);
 }
-/* corner points of light — a soft radial pooled in the two LEFT corners only
-   (not along the edges); top-left brighter, bottom-left fainter. */
-.sb-panel::after {
-  content: '';
-  position: absolute;
-  /* inset from the panel edge so the arc sits INSIDE the corner with a gap to
-     the border, not riding on it */
-  inset: 6px;
-  border-radius: calc(var(--sb-radius) - 3px);
-  pointer-events: none;
-  z-index: 0;
-  /* top + left lit, bent into an arc by the radius; mask keeps it to the
-     top-left (bright) and bottom-left (faint) corners only. */
-  border: 2px solid transparent;
-  border-top-color: rgba(216, 238, 255, 0.95);
-  border-left-color: rgba(216, 238, 255, 0.95);
-  border-bottom-color: rgba(170, 212, 255, 0.4);
-  filter: drop-shadow(0 0 3px rgba(135, 208, 255, 0.7));
-  -webkit-mask:
-    linear-gradient(135deg, #000, transparent 30%),
-    linear-gradient(45deg, #000, transparent 18%);
-  mask:
-    linear-gradient(135deg, #000, transparent 30%),
-    linear-gradient(45deg, #000, transparent 18%);
-}
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
   content: '';
@@ -81,6 +56,35 @@ defineProps<{
   mask-composite: exclude;
   pointer-events: none;
   z-index: 0;
+}
+/* color variants — recolor the edge to the accent (sides bright, ends dim) */
+.sb-panel.cyan {
+  --pa: 74, 166, 238;
+}
+.sb-panel.green {
+  --pa: 69, 208, 137;
+}
+.sb-panel.amber {
+  --pa: 242, 193, 78;
+}
+.sb-panel.red {
+  --pa: 239, 90, 99;
+}
+.sb-panel.indigo {
+  --pa: 139, 155, 230;
+}
+.sb-panel.cyan::before,
+.sb-panel.green::before,
+.sb-panel.amber::before,
+.sb-panel.red::before,
+.sb-panel.indigo::before {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--pa), 0.85),
+    rgba(var(--pa), 0.14) 16%,
+    rgba(var(--pa), 0.14) 84%,
+    rgba(var(--pa), 0.55)
+  );
 }
 .sb-panel > * {
   position: relative;
@@ -104,7 +108,7 @@ defineProps<{
   font-size: 13px;
   color: var(--sb-muted);
 }
-/* status accent — a thin top line that fades to its ends, no bloom */
+/* status accent — a thin top line in the accent color, fading to its ends */
 .sb-panel-accent {
   position: absolute;
   top: 0;
@@ -113,17 +117,6 @@ defineProps<{
   height: 1px;
   z-index: 2;
   border-radius: 1px;
-}
-.sb-panel-accent.cyan {
-  background: linear-gradient(90deg, transparent, var(--sb-cyan), transparent);
-}
-.sb-panel-accent.green {
-  background: linear-gradient(90deg, transparent, var(--sb-green), transparent);
-}
-.sb-panel-accent.amber {
-  background: linear-gradient(90deg, transparent, var(--sb-amber), transparent);
-}
-.sb-panel-accent.red {
-  background: linear-gradient(90deg, transparent, var(--sb-red), transparent);
+  background: linear-gradient(90deg, transparent, rgb(var(--pa)), transparent);
 }
 </style>

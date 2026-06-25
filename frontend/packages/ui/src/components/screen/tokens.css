@@ -15,9 +15,9 @@
   --sb-line-2: rgba(255, 255, 255, 0.1);
   --sb-divider: rgba(255, 255, 255, 0.055);
 
-  /* accent — a refined steel-cyan, used sparingly (live data + tiny edge glow) */
-  --sb-cyan: #3aa0e8;
-  --sb-cyan-dim: rgba(70, 150, 230, 0.45);
+  /* accent — ONE blue: the data accent (cyan) matches the action accent below */
+  --sb-cyan: #4aa6ee;
+  --sb-cyan-dim: rgba(74, 166, 238, 0.45);
   /* unified "active fill" — every selected control (button / segmented /
      pagination / switch) references this, so the accent lives in one place. */
   --sb-accent-from: #4aa6ee;

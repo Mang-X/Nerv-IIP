@@ -59,6 +59,16 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
       <div class="g-cell g-span2"><span class="g-t">GlowDivider</span><div class="g-pad2"><GlowDivider /></div></div>
     </div>
 
+    <h3 class="g-cat">ScreenPanel 颜色变体</h3>
+    <div class="g-grid">
+      <div class="g-cell"><span class="g-t">默认</span><ScreenPanel title="默认面板"><div class="g-fill">蓝色边框</div></ScreenPanel></div>
+      <div class="g-cell"><span class="g-t">accent=cyan</span><ScreenPanel accent="cyan" title="数据面板"><div class="g-fill">青色变体</div></ScreenPanel></div>
+      <div class="g-cell"><span class="g-t">accent=green</span><ScreenPanel accent="green" title="正常状态"><div class="g-fill">绿色变体</div></ScreenPanel></div>
+      <div class="g-cell"><span class="g-t">accent=amber</span><ScreenPanel accent="amber" title="预警状态"><div class="g-fill">琥珀变体</div></ScreenPanel></div>
+      <div class="g-cell"><span class="g-t">accent=red</span><ScreenPanel accent="red" title="报警状态"><div class="g-fill">红色变体</div></ScreenPanel></div>
+      <div class="g-cell"><span class="g-t">accent=indigo</span><ScreenPanel accent="indigo" title="次要信息"><div class="g-fill">靛蓝变体</div></ScreenPanel></div>
+    </div>
+
     <h3 class="g-cat">指标 · 图表</h3>
     <div class="g-grid">
       <div class="g-cell"><span class="g-t">OeeHero</span><ScreenPanel><OeeHero label="设备综合效率 OEE" :value="92.4" unit="%" delta="较昨日 +2.7%" /></ScreenPanel></div>
