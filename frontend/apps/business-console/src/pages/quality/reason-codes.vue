@@ -8,16 +8,16 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -26,10 +26,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -250,9 +250,9 @@ async function confirmArchive() {
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !codeValid">
-                  <FieldLabel for="reason-code">原因编码 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !codeValid">
+                  <FieldProLabel for="reason-code">原因编码 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro
                     v-if="!editingCode"
                     id="reason-code"
@@ -260,34 +260,34 @@ async function confirmArchive() {
                     placeholder="例如：DEF-SCRATCH"
                   />
                   <InputPro v-else :model-value="editingCode" readonly disabled />
-                  <FieldDescription>{{ editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="reason-name">原因 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>{{ editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="reason-name">原因 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="reason-name" v-model="form.reasonName" placeholder="例如：尺寸超差" />
-                </Field>
-                <Field :data-invalid="showErrors && !groupValid">
-                  <FieldLabel for="reason-group">原因组 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !groupValid">
+                  <FieldProLabel for="reason-group">原因组 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="reason-group" v-model="form.groupName" placeholder="例如：外观缺陷" />
-                </Field>
-                <Field :data-invalid="showErrors && !severityValid">
-                  <FieldLabel for="reason-severity">严重度 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !severityValid">
+                  <FieldProLabel for="reason-severity">严重度 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="form.severity">
                     <SelectProTrigger id="reason-severity"><SelectProValue placeholder="选择严重度" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in severityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>处置</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field>
-                  <FieldLabel for="reason-disposition">默认处置</FieldLabel>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro>
+                  <FieldProLabel for="reason-disposition">默认处置</FieldProLabel>
                   <InputPro id="reason-disposition" v-model="form.defaultDisposition" placeholder="例如：返工 / 报废 / 让步接收" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -341,24 +341,29 @@ async function confirmArchive() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="reasonsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="reasonsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>停用质量原因</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>停用质量原因</AlertDialogProTitle>
+          <AlertDialogProDescription>
             停用后原因「{{ archiveTarget?.reasonName }}」将不可在新的检验 / 不合格品记录中引用，历史记录不受影响。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

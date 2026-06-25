@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {
   ButtonPro,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+  DropdownMenuPro,
+  DropdownMenuProContent,
+  DropdownMenuProTrigger,
 } from '@nerv-iip/ui'
 import { MoreHorizontalIcon } from 'lucide-vue-next'
 
@@ -22,8 +22,8 @@ withDefaults(
 </script>
 
 <template>
-  <DropdownMenu>
-    <DropdownMenuTrigger as-child>
+  <DropdownMenuPro>
+    <DropdownMenuProTrigger as-child>
       <ButtonPro
         class="h-8 w-8 rounded-md p-0"
         :disabled="disabled"
@@ -35,9 +35,9 @@ withDefaults(
       >
         <MoreHorizontalIcon class="h-4 w-4" />
       </ButtonPro>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :class="[widthClass, 'max-w-72']">
+    </DropdownMenuProTrigger>
+    <DropdownMenuProContent align="end" :class="[widthClass, 'max-w-72']">
       <slot />
-    </DropdownMenuContent>
-  </DropdownMenu>
+    </DropdownMenuProContent>
+  </DropdownMenuPro>
 </template>

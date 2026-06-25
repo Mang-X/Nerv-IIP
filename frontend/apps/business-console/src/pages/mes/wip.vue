@@ -8,7 +8,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   PageHeader,
   SelectPro,
@@ -139,7 +139,12 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="wipTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

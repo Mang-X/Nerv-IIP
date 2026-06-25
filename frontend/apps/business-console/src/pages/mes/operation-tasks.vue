@@ -10,10 +10,10 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuProItem,
+  DropdownMenuProSeparator,
   PageHeader,
   RowActions,
   SelectPro,
@@ -267,36 +267,37 @@ function formatError(error: unknown) {
             报工
           </ButtonPro>
           <RowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
-            <DropdownMenuItem
+            <DropdownMenuProItem
               v-if="!showReportButton(row)"
               :disabled="!canOpenReport(row)"
               @click="openRoute('/mes/work-orders', row)"
             >
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
-            </DropdownMenuItem>
-            <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+            </DropdownMenuProItem>
+            <DropdownMenuProItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
               <EyeIcon aria-hidden="true" />
               查看工单
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem @click="openRoute('/quality/inspections', row)">
+            </DropdownMenuProItem>
+            <DropdownMenuProSeparator />
+            <DropdownMenuProItem @click="openRoute('/quality/inspections', row)">
               <ShieldCheckIcon aria-hidden="true" />
               呼叫质检
-            </DropdownMenuItem>
-            <DropdownMenuItem @click="openRoute('/mes/downtime', row)">
+            </DropdownMenuProItem>
+            <DropdownMenuProItem @click="openRoute('/mes/downtime', row)">
               <WrenchIcon aria-hidden="true" />
               记录异常
-            </DropdownMenuItem>
+            </DropdownMenuProItem>
           </RowActions>
         </div>
       </template>
     </DataTablePro>
 
-    <DataTablePagination
+    <DataTablePaginationPro
       v-model:page="page"
-      v-model:page-size="pageSize"
+      :page-size="pageSize"
       :total-items="operationTasksTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
     />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />

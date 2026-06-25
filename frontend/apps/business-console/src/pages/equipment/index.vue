@@ -11,7 +11,7 @@ import {
   BadgePro,
   ButtonPro,
   DataTablePro,
-  DropdownMenuItem,
+  DropdownMenuProItem,
   InputPro,
   PageHeader,
   RowActions,
@@ -119,13 +119,13 @@ function formatError(error: unknown) {
         <template #cell-activeBlockCount="{ row }"><span class="tabular-nums">{{ row.activeBlockCount ?? 0 }}</span></template>
         <template #cell-actions="{ row }">
           <RowActions :label="`设备操作 ${row.deviceAssetId ?? ''}`">
-            <DropdownMenuItem as-child>
+            <DropdownMenuProItem as-child>
               <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />查看详情</RouterLink>
-            </DropdownMenuItem>
-            <DropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
+            </DropdownMenuProItem>
+            <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
               <WrenchIcon aria-hidden="true" />
               记录停机
-            </DropdownMenuItem>
+            </DropdownMenuProItem>
           </RowActions>
         </template>
       </DataTablePro>

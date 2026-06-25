@@ -6,7 +6,7 @@ import {
   BadgePro,
   ButtonPro,
   DataTablePro,
-  DropdownMenuItem,
+  DropdownMenuProItem,
   PageHeader,
   RowActions,
   SectionCard,
@@ -98,13 +98,13 @@ function formatError(error: unknown) {
       <template #cell-raisedAtUtc="{ row }">{{ formatDateTime(row.raisedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <RowActions :label="`报警操作 ${row.alarmEventId ?? ''}`">
-          <DropdownMenuItem as-child>
+          <DropdownMenuProItem as-child>
             <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />设备详情</RouterLink>
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
             <WrenchIcon aria-hidden="true" />
             记录停机
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>

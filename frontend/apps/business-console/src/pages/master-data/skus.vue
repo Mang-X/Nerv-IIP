@@ -14,7 +14,7 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -22,10 +22,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -425,56 +425,56 @@ function isNonEmpty(value: string) {
               <p v-if="createShowErrors && !canCreateSku" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FormSectionTitle>基础信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel>物料编号</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro>
+                  <FieldProLabel>物料编号</FieldProLabel>
                   <div
                     class="rounded-md border bg-muted/40 px-3 py-2 text-sm"
                     :class="editingCode ? 'font-medium text-foreground' : 'text-muted-foreground'"
                   >
                     {{ editingCode || '保存后由系统分配' }}
                   </div>
-                  <FieldDescription>{{ editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。' }}</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>{{ editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。' }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <FieldProLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(productCategoryOptions, createForm.category)">
-                  <FieldLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(productCategoryOptions, createForm.category)">
+                  <FieldProLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.category">
                     <SelectProTrigger id="sku-category"><SelectProValue placeholder="请选择分类" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in productCategoryOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(materialTypeOptions, createForm.materialType)">
-                  <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(materialTypeOptions, createForm.materialType)">
+                  <FieldProLabel>物料类型 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.materialType">
                     <SelectProTrigger aria-label="物料类型"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in materialTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>单位与追踪</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
-                  <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
+                  <FieldProLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.baseUomCode">
                     <SelectProTrigger id="sku-uom"><SelectProValue placeholder="请选择单位" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in baseUomOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>库存与核算的最小计量单位，取自「计量单位」维护页。</FieldDescription>
-                </Field>
-                <Field class="self-start">
-                  <FieldLabel>质检要求</FieldLabel>
+                  <FieldProDescription>库存与核算的最小计量单位，取自「计量单位」维护页。</FieldProDescription>
+                </FieldPro>
+                <FieldPro class="self-start">
+                  <FieldProLabel>质检要求</FieldProLabel>
                   <label
                     for="sku-quality"
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
@@ -482,58 +482,58 @@ function isNonEmpty(value: string) {
                     <span>投产前需质检</span>
                     <CheckboxPro id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </label>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(batchPolicyOptions, createForm.batchTrackingPolicy)">
-                  <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(batchPolicyOptions, createForm.batchTrackingPolicy)">
+                  <FieldProLabel>批次追踪 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.batchTrackingPolicy">
                     <SelectProTrigger aria-label="批次追踪"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in batchPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(serialPolicyOptions, createForm.serialTrackingPolicy)">
-                  <FieldLabel>序列号追踪 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(serialPolicyOptions, createForm.serialTrackingPolicy)">
+                  <FieldProLabel>序列号追踪 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.serialTrackingPolicy">
                     <SelectProTrigger aria-label="序列号追踪"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in serialPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>存储与条码</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
-                  <FieldLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
+                  <FieldProLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.shelfLifePolicyCode">
                     <SelectProTrigger id="sku-shelf"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in shelfLifePolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(storageConditionOptions, createForm.storageConditionCode)">
-                  <FieldLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(storageConditionOptions, createForm.storageConditionCode)">
+                  <FieldProLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.storageConditionCode">
                     <SelectProTrigger id="sku-storage"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in storageConditionOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(barcodeRuleOptions, createForm.defaultBarcodeRuleCode)">
-                  <FieldLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(barcodeRuleOptions, createForm.defaultBarcodeRuleCode)">
+                  <FieldProLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.defaultBarcodeRuleCode">
                     <SelectProTrigger id="sku-barcode"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="option in barcodeRuleOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field class="sm:col-span-2">
-                  <FieldLabel>质量/合规标签</FieldLabel>
+                </FieldPro>
+                <FieldPro class="sm:col-span-2">
+                  <FieldProLabel>质量/合规标签</FieldProLabel>
                   <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-3">
                     <label v-for="option in complianceTagOptions" :key="option.value" class="flex items-center gap-2 text-sm">
                       <CheckboxPro
@@ -543,9 +543,9 @@ function isNonEmpty(value: string) {
                       {{ option.label }}
                     </label>
                   </div>
-                  <FieldDescription>来自数据字典 · 合规标签，可多选、可留空。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>来自数据字典 · 合规标签，可多选、可留空。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
                 <ButtonPro type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading || dictionaryPending || !canCreateSku">
@@ -595,6 +595,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalItems" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="totalItems" @update:page-size="(v) => (pageSize = String(v))" />
   </BusinessLayout>
 </template>

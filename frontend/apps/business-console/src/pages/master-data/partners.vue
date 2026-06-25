@@ -8,7 +8,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -17,10 +17,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -279,35 +279,35 @@ function isNonEmpty(value: string) {
             <form class="grid gap-4" @submit.prevent="submitPartner">
               <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field v-if="editingCode">
-                  <FieldLabel for="partner-code">编码</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel for="partner-code">编码</FieldProLabel>
                   <InputPro id="partner-code" :model-value="createForm.code" disabled />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <FieldProLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
-                  <FieldLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription v-if="!editingCode">编码由系统自动生成。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
+                  <FieldProLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.partnerType">
                     <SelectProTrigger id="partner-type"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>该伙伴的主要业务角色。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="partner-tax">统一社会信用代码</FieldLabel>
+                  <FieldProDescription>该伙伴的主要业务角色。</FieldProDescription>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel for="partner-tax">统一社会信用代码</FieldProLabel>
                   <InputPro id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
-                  <FieldDescription>用于开票与对账，可后续补录。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>用于开票与对账，可后续补录。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
-              <Field>
-                <FieldLabel>附加角色</FieldLabel>
+              <FieldPro>
+                <FieldProLabel>附加角色</FieldProLabel>
                 <div class="flex flex-wrap gap-4">
                   <label
                     v-for="o in extraRoleOptions"
@@ -318,8 +318,8 @@ function isNonEmpty(value: string) {
                     {{ o.label }}
                   </label>
                 </div>
-                <FieldDescription>除主角色外，该伙伴还承担的角色，可不选。</FieldDescription>
-              </Field>
+                <FieldProDescription>除主角色外，该伙伴还承担的角色，可不选。</FieldProDescription>
+              </FieldPro>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
@@ -376,6 +376,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="partnersTotal" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="partnersTotal" @update:page-size="(v) => (pageSize = String(v))" />
   </BusinessLayout>
 </template>

@@ -9,7 +9,7 @@ import { useEngineeringDocuments } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -18,19 +18,19 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   Toolbar,
 } from '@nerv-iip/ui'
@@ -221,46 +221,46 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>文档标识</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-3">
-                <Field :data-invalid="showErrors && !documentNumberValid">
-                  <FieldLabel for="doc-number">文档号 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
+                <FieldPro :data-invalid="showErrors && !documentNumberValid">
+                  <FieldProLabel for="doc-number">文档号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-number" v-model="form.documentNumber" placeholder="如 DOC-0001" />
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="doc-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="doc-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-rev" v-model="form.revision" placeholder="如 A、B" />
-                </Field>
-                <Field :data-invalid="showErrors && !documentTypeValid">
-                  <FieldLabel for="doc-type">文档类型 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !documentTypeValid">
+                  <FieldProLabel for="doc-type">文档类型 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-type" v-model="form.documentType" placeholder="如 图纸、规格书" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>文件引用</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
-                  <FieldLabel for="doc-file-id">文件引用 ID <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
+                  <FieldProLabel for="doc-file-id">文件引用 ID <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-file-id" v-model="form.fileId" placeholder="填写文件存储引用 ID" />
-                  <FieldDescription>
+                  <FieldProDescription>
                     文件上传待接入，先填已存在的文件引用 ID（不在此页直接上传文件）。
-                  </FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !fileNameValid">
-                  <FieldLabel for="doc-file-name">文件名 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !fileNameValid">
+                  <FieldProLabel for="doc-file-name">文件名 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-file-name" v-model="form.fileName" placeholder="如 drawing.pdf" />
-                </Field>
-                <Field :data-invalid="showErrors && !contentTypeValid">
-                  <FieldLabel for="doc-content-type">内容类型 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !contentTypeValid">
+                  <FieldProLabel for="doc-content-type">内容类型 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="doc-content-type" v-model="form.contentType" placeholder="如 application/pdf" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
-              <Field>
-                <FieldLabel for="doc-item-code">关联物料编码</FieldLabel>
+              <FieldPro>
+                <FieldProLabel for="doc-item-code">关联物料编码</FieldProLabel>
                 <InputPro id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
-                <FieldDescription>如该文档对应某工程物料，填其编码以便追溯。</FieldDescription>
-              </Field>
+                <FieldProDescription>如该文档对应某工程物料，填其编码以便追溯。</FieldProDescription>
+              </FieldPro>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -306,16 +306,21 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="documentsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="documentsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>工程文档 · 明细</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-md">
+        <SheetProHeader>
+          <SheetProTitle>工程文档 · 明细</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.documentNumber} · 修订 ${viewTarget.revision}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
             <Spinner aria-hidden="true" />
@@ -355,7 +360,7 @@ function formatError(error: unknown) {
             </p>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

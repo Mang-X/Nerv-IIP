@@ -9,7 +9,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -18,10 +18,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -196,7 +196,12 @@ function formatError(error: unknown) {
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     />
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="plansTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="plansTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>
@@ -205,35 +210,35 @@ function formatError(error: unknown) {
           <DialogProDescription>为设备登记周期保养，系统据此推算到期并批量生成维护工单。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="plan-device">设备</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="plan-device">设备</FieldProLabel>
               <InputPro id="plan-device" v-model="createForm.deviceAssetId" autocomplete="off" placeholder="如 DEV-SMT-01" />
-            </Field>
-            <Field>
-              <FieldLabel for="plan-code">计划编号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="plan-code">计划编号</FieldProLabel>
               <InputPro id="plan-code" v-model="createForm.planCode" autocomplete="off" placeholder="可选，如 PM-SMT-01-M" />
-            </Field>
-            <Field>
-              <FieldLabel for="plan-interval">保养周期</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="plan-interval">保养周期</FieldProLabel>
               <SelectPro v-model="createForm.interval">
                 <SelectProTrigger id="plan-interval" aria-label="保养周期"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in intervalOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="plan-starts">起始日期</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="plan-starts">起始日期</FieldProLabel>
               <InputPro id="plan-starts" v-model="createForm.startsOn" type="date" />
-            </Field>
-            <Field class="sm:col-span-2">
-              <FieldLabel for="plan-owner">负责班组</FieldLabel>
+            </FieldPro>
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="plan-owner">负责班组</FieldProLabel>
               <InputPro id="plan-owner" v-model="createForm.owner" autocomplete="off" placeholder="如 设备保全班" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
+          <FieldProError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>
@@ -255,18 +260,18 @@ function formatError(error: unknown) {
           <DialogProDescription>按业务日期扫描全部保养计划，对到期者批量开具维护工单。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitGenerate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="gen-date">业务日期</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="gen-date">业务日期</FieldProLabel>
               <InputPro id="gen-date" v-model="generateForm.businessDate" type="date" />
-            </Field>
-            <Field>
-              <FieldLabel for="gen-by">发起人</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="gen-by">发起人</FieldProLabel>
               <InputPro id="gen-by" v-model="generateForm.requestedBy" autocomplete="off" placeholder="如 设备调度" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="generateErrorMessage" :errors="[generateErrorMessage]" />
+          <FieldProError v-if="generateErrorMessage" :errors="[generateErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

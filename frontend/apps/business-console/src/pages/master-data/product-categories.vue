@@ -8,16 +8,16 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -26,10 +26,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -242,35 +242,35 @@ async function confirmArchive() {
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="cat-name">分类名 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="cat-name">分类名 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
-                </Field>
-                <Field v-if="editingCode">
-                  <FieldLabel>编码</FieldLabel>
+                </FieldPro>
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel>编码</FieldProLabel>
                   <InputPro :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成，不可更改。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="cat-parent">上级分类</FieldLabel>
+                  <FieldProDescription>编码由系统自动生成，不可更改。</FieldProDescription>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel for="cat-parent">上级分类</FieldProLabel>
                   <SelectPro v-model="form.parentCode">
                     <SelectProTrigger id="cat-parent"><SelectProValue placeholder="顶级分类（可空）" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>选择上级以形成分类树；留空为顶级分类。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>选择上级以形成分类树；留空为顶级分类。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>其它</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field>
-                  <FieldLabel for="cat-desc">说明</FieldLabel>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro>
+                  <FieldProLabel for="cat-desc">说明</FieldProLabel>
                   <InputPro id="cat-desc" v-model="form.description" placeholder="可选，分类用途或范围" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -315,24 +315,24 @@ async function confirmArchive() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="categoriesTotal" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="categoriesTotal" @update:page-size="(v) => (pageSize = String(v))" />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>停用产品分类</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>停用产品分类</AlertDialogProTitle>
+          <AlertDialogProDescription>
             停用后分类「{{ archiveTarget?.categoryName }}」将不可在新的选型中使用，已有引用不受影响。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

@@ -3,16 +3,16 @@ import {
   Alert,
   AlertDescription,
   ButtonPro,
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  CardPro,
+  CardProContent,
+  CardProDescription,
+  CardProFooter,
+  CardProHeader,
+  CardProTitle,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   Spinner,
 } from '@nerv-iip/ui'
@@ -50,21 +50,21 @@ function submit() {
 </script>
 
 <template>
-  <Card class="border-none shadow-none">
+  <CardPro class="border-none shadow-none">
     <form class="flex flex-col gap-4" @submit.prevent="submit">
-      <CardHeader class="text-center">
-        <CardTitle class="text-xl">{{ t('login.title') }}</CardTitle>
-        <CardDescription>{{ t('login.description') }}</CardDescription>
-      </CardHeader>
+      <CardProHeader class="text-center">
+        <CardProTitle class="text-xl">{{ t('login.title') }}</CardProTitle>
+        <CardProDescription>{{ t('login.description') }}</CardProDescription>
+      </CardProHeader>
 
-      <CardContent class="flex flex-col gap-4">
+      <CardProContent class="flex flex-col gap-4">
         <Alert v-if="error" role="alert" variant="destructive">
           <AlertDescription>{{ error }}</AlertDescription>
         </Alert>
 
-        <FieldGroup>
-          <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldLabel for="login-name">{{ t('login.loginName') }}</FieldLabel>
+        <FieldProGroup>
+          <FieldPro :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
+            <FieldProLabel for="login-name">{{ t('login.loginName') }}</FieldProLabel>
             <InputPro
               id="login-name"
               v-model="form.loginName"
@@ -75,11 +75,11 @@ function submit() {
               required
               type="text"
             />
-            <FieldDescription>{{ t('login.loginNameHint') }}</FieldDescription>
-          </Field>
+            <FieldProDescription>{{ t('login.loginNameHint') }}</FieldProDescription>
+          </FieldPro>
 
-          <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
-            <FieldLabel for="password">{{ t('login.password') }}</FieldLabel>
+          <FieldPro :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
+            <FieldProLabel for="password">{{ t('login.password') }}</FieldProLabel>
             <InputPro
               id="password"
               v-model="form.password"
@@ -90,17 +90,17 @@ function submit() {
               required
               type="password"
             />
-          </Field>
-        </FieldGroup>
-      </CardContent>
+          </FieldPro>
+        </FieldProGroup>
+      </CardProContent>
 
-      <CardFooter>
+      <CardProFooter>
         <ButtonPro class="w-full" :disabled="pending" type="submit">
           <Spinner v-if="pending" data-icon="inline-start" />
           <LogInIcon v-else data-icon="inline-start" />
           {{ pending ? t('login.pending') : t('login.title') }}
         </ButtonPro>
-      </CardFooter>
+      </CardProFooter>
     </form>
-  </Card>
+  </CardPro>
 </template>

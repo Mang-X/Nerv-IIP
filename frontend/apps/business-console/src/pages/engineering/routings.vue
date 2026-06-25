@@ -12,7 +12,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DatePickerPro,
   DialogPro,
   DialogProContent,
@@ -21,10 +21,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -34,11 +34,11 @@ import {
   SelectProItem,
   SelectProTrigger,
   SelectProValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -380,26 +380,26 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-3">
-                <Field :data-invalid="showErrors && !skuValid">
-                  <FieldLabel for="rt-sku">产出物料 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
+                <FieldPro :data-invalid="showErrors && !skuValid">
+                  <FieldProLabel for="rt-sku">产出物料 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="form.skuCode">
                     <SelectProTrigger id="rt-sku"><SelectProValue placeholder="选择产出物料" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>来自基础数据物料。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="rt-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>来自基础数据物料。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="rt-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="rt-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </Field>
-                <Field :data-invalid="showErrors && !effectiveValid">
-                  <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !effectiveValid">
+                  <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
                   <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>工序（按顺序）</FormSectionTitle>
@@ -417,33 +417,33 @@ function formatError(error: unknown) {
                   :key="index"
                   class="grid grid-cols-[4.5rem_1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !sequencesValid">
-                    <FieldLabel :for="`rt-seq-${index}`">序号 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !sequencesValid">
+                    <FieldProLabel :for="`rt-seq-${index}`">序号 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`rt-seq-${index}`" v-model.number="op.sequence" type="number" min="1" step="1" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !op.workCenterCode.trim()">
-                    <FieldLabel :for="`rt-wc-${index}`">工作中心 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !op.workCenterCode.trim()">
+                    <FieldProLabel :for="`rt-wc-${index}`">工作中心 <span class="text-destructive">*</span></FieldProLabel>
                     <SelectPro v-model="op.workCenterCode">
                       <SelectProTrigger :id="`rt-wc-${index}`"><SelectProValue placeholder="选择工作中心" /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
-                  <Field :data-invalid="showErrors && !op.operationCode.trim()">
-                    <FieldLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !op.operationCode.trim()">
+                    <FieldProLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldProLabel>
                     <SelectPro v-model="op.operationCode" @update:model-value="applyOperationDefaults(op)">
                       <SelectProTrigger :id="`rt-name-${index}`"><SelectProValue placeholder="选择标准工序" /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in operationOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
-                  <Field :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
-                    <FieldLabel :for="`rt-min-${index}`">工时(分)</FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
+                    <FieldProLabel :for="`rt-min-${index}`">工时(分)</FieldProLabel>
                     <InputPro :id="`rt-min-${index}`" v-model="op.standardMinutes" type="number" min="0" step="any" />
-                    <FieldDescription>选工序后自动带出，可改。</FieldDescription>
-                  </Field>
+                    <FieldProDescription>选工序后自动带出，可改。</FieldProDescription>
+                  </FieldPro>
                   <div class="flex gap-1">
                     <ButtonPro type="button" variant="ghost" size="icon" aria-label="上移工序" :disabled="index === 0" @click="moveUp(index)">
                       <ArrowUpIcon aria-hidden="true" />
@@ -515,16 +515,21 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="routingsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="routingsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>工艺路线 · 工序</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-lg">
+        <SheetProHeader>
+          <SheetProTitle>工艺路线 · 工序</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.routingCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.skuCode)}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
@@ -568,7 +573,7 @@ function formatError(error: unknown) {
             该版本没有工序行。
           </p>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

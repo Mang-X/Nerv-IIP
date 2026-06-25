@@ -113,15 +113,17 @@ const formSelectStubs = {
   SelectProContent: { template: '<slot />' },
   SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+// AlertDialogPro 全家为真 .vue 包装（__name 即 Pro 名），故 global.stubs 键用 Pro 名；
+// content 用轻量 stub 避免真实 Teleport 在 jsdom 卸载抛错。
 const alertDialogStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogContent: { template: '<div data-testid="confirm"><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>' },
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div data-testid="confirm"><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 
 const allStubs = { ...layoutStub, ...dialogStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }

@@ -6,7 +6,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   InputPro,
   PageHeader,
@@ -107,6 +107,11 @@ function formatError(error: unknown) {
       <template #cell-effectiveToUtc="{ row }">{{ formatDateTime(row.effectiveToUtc) }}</template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="capacityImpactsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="capacityImpactsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
   </BusinessLayout>
 </template>

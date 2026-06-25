@@ -10,7 +10,7 @@ import { useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DatePickerPro,
   DialogPro,
@@ -20,10 +20,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -33,11 +33,11 @@ import {
   SelectProItem,
   SelectProTrigger,
   SelectProValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -322,26 +322,26 @@ function uomLabel(code?: string | null) {
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-3">
-                <Field :data-invalid="showErrors && !parentValid">
-                  <FieldLabel for="ebom-parent">父项物料 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
+                <FieldPro :data-invalid="showErrors && !parentValid">
+                  <FieldProLabel for="ebom-parent">父项物料 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="form.parentItemCode">
                     <SelectProTrigger id="ebom-parent"><SelectProValue placeholder="选择父项" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>来自基础数据物料。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="ebom-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>来自基础数据物料。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="ebom-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </Field>
-                <Field :data-invalid="showErrors && !effectiveValid">
-                  <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !effectiveValid">
+                  <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
                   <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>组件行</FormSectionTitle>
@@ -356,28 +356,28 @@ function uomLabel(code?: string | null) {
                   :key="index"
                   class="grid grid-cols-[1fr_6rem_8rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !line.componentCode.trim()">
-                    <FieldLabel :for="`ebom-comp-${index}`">组件物料 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !line.componentCode.trim()">
+                    <FieldProLabel :for="`ebom-comp-${index}`">组件物料 <span class="text-destructive">*</span></FieldProLabel>
                     <SelectPro v-model="line.componentCode" @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))">
                       <SelectProTrigger :id="`ebom-comp-${index}`"><SelectProValue placeholder="选择组件" /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
-                  <Field :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
-                    <FieldLabel :for="`ebom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
+                    <FieldProLabel :for="`ebom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`ebom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
-                    <FieldLabel :for="`ebom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
+                    <FieldProLabel :for="`ebom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldProLabel>
                     <SelectPro v-model="line.unitOfMeasureCode">
                       <SelectProTrigger :id="`ebom-uom-${index}`"><SelectProValue placeholder="单位" /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
+                  </FieldPro>
                   <ButtonPro
                     type="button"
                     variant="ghost"
@@ -448,16 +448,21 @@ function uomLabel(code?: string | null) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ebomsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="ebomsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>设计 BOM · 组件行</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-lg">
+        <SheetProHeader>
+          <SheetProTitle>设计 BOM · 组件行</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.parentItemCode)}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
@@ -504,7 +509,7 @@ function uomLabel(code?: string | null) {
             该版本没有组件行。
           </p>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

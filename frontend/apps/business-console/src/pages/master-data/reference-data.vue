@@ -7,7 +7,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -15,10 +15,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -271,8 +271,8 @@ function isNonEmpty(value: string) {
             <form class="grid gap-4" @submit.prevent="submitCode">
               <p v-if="createShowErrors && !canSubmitCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
-                <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
+              <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
+                <FieldProLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldProLabel>
                 <SelectPro v-model="createForm.codeSet" :disabled="!!editingCode">
                   <SelectProTrigger id="ref-code-set"><SelectProValue /></SelectProTrigger>
                   <SelectProContent>
@@ -286,19 +286,19 @@ function isNonEmpty(value: string) {
                     </SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-                <FieldDescription>该条目归属的字典分组。</FieldDescription>
-              </Field>
+                <FieldProDescription>该条目归属的字典分组。</FieldProDescription>
+              </FieldPro>
 
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
-                  <FieldLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
+                  <FieldProLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <FieldProLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="ref-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
@@ -354,7 +354,7 @@ function isNonEmpty(value: string) {
           </template>
         </DataTablePro>
 
-        <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="codesTotal" />
+        <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="codesTotal" @update:page-size="(v) => (pageSize = String(v))" />
       </div>
     </div>
   </BusinessLayout>

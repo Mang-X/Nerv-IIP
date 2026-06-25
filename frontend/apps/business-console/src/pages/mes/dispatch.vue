@@ -8,7 +8,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -16,9 +16,9 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -183,15 +183,20 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`派工操作 ${row.operationTaskId ?? ''}`">
-          <DropdownMenuItem :disabled="!canDispatch(row)" @click="openAssign(row)">
+          <DropdownMenuProItem :disabled="!canDispatch(row)" @click="openAssign(row)">
             <UserCheckIcon aria-hidden="true" />
             {{ canDispatch(row) ? '派工（指派操作员）' : '有阻塞，先处理' }}
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="dispatchTasksTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="dispatchTasksTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="assignOpen">
       <DialogProContent>
@@ -202,15 +207,15 @@ function formatError(error: unknown) {
           </DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="confirmAssign">
-          <Field>
-            <FieldLabel for="assign-operator">操作员 <span class="text-destructive">*</span></FieldLabel>
+          <FieldPro>
+            <FieldProLabel for="assign-operator">操作员 <span class="text-destructive">*</span></FieldProLabel>
             <SelectPro v-model="assignedUserId">
               <SelectProTrigger id="assign-operator"><SelectProValue placeholder="选择操作员" /></SelectProTrigger>
               <SelectProContent>
                 <SelectProItem v-for="o in workerOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
               </SelectProContent>
             </SelectPro>
-          </Field>
+          </FieldPro>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="assignOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">

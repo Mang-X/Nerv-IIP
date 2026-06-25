@@ -8,18 +8,18 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -27,10 +27,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   Spinner,
@@ -233,45 +233,45 @@ async function confirmArchive() {
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="skill-name">技能名 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="skill-name">技能名 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="skill-name" v-model="form.skillName" placeholder="例如：CNC 编程" />
-                </Field>
-                <Field v-if="editingCode">
-                  <FieldLabel>编码</FieldLabel>
+                </FieldPro>
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel>编码</FieldProLabel>
                   <InputPro :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !groupValid">
-                  <FieldLabel for="skill-group">技能组 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>编码由系统自动生成。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !groupValid">
+                  <FieldProLabel for="skill-group">技能组 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>证书</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field class="self-start">
-                  <FieldLabel>需要证书</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro class="self-start">
+                  <FieldProLabel>需要证书</FieldProLabel>
                   <label for="skill-cert" class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm">
                     <span>该技能需持证上岗</span>
                     <CheckboxPro id="skill-cert" v-model:checked="form.requiresCertification" />
                   </label>
-                </Field>
-                <Field :data-invalid="showErrors && !validityValid">
-                  <FieldLabel for="skill-validity">证书有效期（月）</FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !validityValid">
+                  <FieldProLabel for="skill-validity">证书有效期（月）</FieldProLabel>
                   <InputPro id="skill-validity" v-model="form.validityMonths" type="number" min="0" placeholder="0" />
-                  <FieldDescription>需证书时填写；到期需复评。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>需证书时填写；到期需复评。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>其它</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field>
-                  <FieldLabel for="skill-desc">说明</FieldLabel>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro>
+                  <FieldProLabel for="skill-desc">说明</FieldProLabel>
                   <InputPro id="skill-desc" v-model="form.description" placeholder="可选，技能用途或评定标准" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -324,24 +324,24 @@ async function confirmArchive() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="skillsTotal" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="skillsTotal" @update:page-size="(v) => (pageSize = String(v))" />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>停用技能</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>停用技能</AlertDialogProTitle>
+          <AlertDialogProDescription>
             停用后技能「{{ archiveTarget?.skillName }}」将不可在人员技能登记中选用，已登记记录不受影响。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

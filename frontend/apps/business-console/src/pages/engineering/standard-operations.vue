@@ -9,17 +9,17 @@ import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterD
 import { useStandardOperations } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
   CheckboxPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -28,10 +28,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -294,9 +294,9 @@ async function confirmArchive() {
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !codeValid">
-                  <FieldLabel for="op-code">工序编码 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !codeValid">
+                  <FieldProLabel for="op-code">工序编码 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro
                     v-if="!editingCode"
                     id="op-code"
@@ -304,44 +304,44 @@ async function confirmArchive() {
                     placeholder="例如：OP-CNC-ROUGH"
                   />
                   <InputPro v-else :model-value="editingCode" readonly disabled />
-                  <FieldDescription>{{ editingCode ? '编码是工序身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="op-name">工序名 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>{{ editingCode ? '编码是工序身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="op-name">工序名 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="op-name" v-model="form.operationName" placeholder="例如：CNC 粗加工" />
-                </Field>
-                <Field :data-invalid="showErrors && !workCenterValid">
-                  <FieldLabel for="op-wc">默认工作中心 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !workCenterValid">
+                  <FieldProLabel for="op-wc">默认工作中心 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="form.defaultWorkCenterCode" :disabled="workCentersPending">
                     <SelectProTrigger id="op-wc"><SelectProValue placeholder="选择默认工作中心" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>来自基础数据工作中心；工艺路线选此工序时自动带出。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !controlKeyValid">
-                  <FieldLabel for="op-control">控制键 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>来自基础数据工作中心；工艺路线选此工序时自动带出。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !controlKeyValid">
+                  <FieldProLabel for="op-control">控制键 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="op-control" v-model="form.controlKey" placeholder="例如：INHOUSE / INHOUSE-QC" />
-                  <FieldDescription>决定报工/质检/外协等执行行为的控制键。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>决定报工/质检/外协等执行行为的控制键。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>标准工时</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !setupValid">
-                  <FieldLabel for="op-setup">准备工时（分）</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !setupValid">
+                  <FieldProLabel for="op-setup">准备工时（分）</FieldProLabel>
                   <InputPro id="op-setup" v-model="form.standardSetupMinutes" type="number" min="0" placeholder="0" />
-                </Field>
-                <Field :data-invalid="showErrors && !runValid">
-                  <FieldLabel for="op-run">加工工时（分）</FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !runValid">
+                  <FieldProLabel for="op-run">加工工时（分）</FieldProLabel>
                   <InputPro id="op-run" v-model="form.standardRunMinutes" type="number" min="0" placeholder="0" />
-                  <FieldDescription>单件加工标准时间；与准备工时一并带入工艺路线。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>单件加工标准时间；与准备工时一并带入工艺路线。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>控制标志</FormSectionTitle>
-              <FieldGroup class="grid gap-2">
+              <FieldProGroup class="grid gap-2">
                 <label for="op-report" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>需要报工</span>
                   <CheckboxPro id="op-report" v-model:checked="form.requiresReporting" />
@@ -354,15 +354,15 @@ async function confirmArchive() {
                   <span>外协工序</span>
                   <CheckboxPro id="op-outsource" v-model:checked="form.isOutsourced" />
                 </label>
-              </FieldGroup>
+              </FieldProGroup>
 
               <FormSectionTitle>其它</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field>
-                  <FieldLabel for="op-desc">说明</FieldLabel>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro>
+                  <FieldProLabel for="op-desc">说明</FieldProLabel>
                   <InputPro id="op-desc" v-model="form.description" placeholder="可选，工序用途或注意事项" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -423,24 +423,29 @@ async function confirmArchive() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="standardOperationsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="standardOperationsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>停用标准工序</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>停用标准工序</AlertDialogProTitle>
+          <AlertDialogProDescription>
             停用后工序「{{ archiveTarget?.operationName }}」将不可在新的工艺路线中选用，已发布路线不受影响。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

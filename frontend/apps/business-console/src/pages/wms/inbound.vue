@@ -5,15 +5,15 @@ import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -22,10 +22,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -281,22 +281,27 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inboundOrdersTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="inboundOrdersTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <AlertDialog v-model:open="completeOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>完成入库</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="completeOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>完成入库</AlertDialogProTitle>
+          <AlertDialogProDescription>
             确认完成入库单 {{ pendingOrder?.inboundOrderNo ?? '' }}？完成后将按已收货明细过账入库。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel :disabled="completeInboundPending">取消</AlertDialogCancel>
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel :disabled="completeInboundPending">取消</AlertDialogProCancel>
           <ButtonPro type="button" :disabled="completeInboundPending" @click="confirmComplete">完成入库</ButtonPro>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
@@ -305,24 +310,24 @@ function formatError(error: unknown) {
           <DialogProDescription>登记收货入库单的来源与明细，提交后进入入库待处理。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="wms-in-no">入库单号</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="wms-in-no">入库单号</FieldProLabel>
               <InputPro id="wms-in-no" v-model="createForm.inboundOrderNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-site">工厂</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-site">工厂</FieldProLabel>
               <InputPro id="wms-in-site" v-model="createForm.siteCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-srctype">来源类型</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-srctype">来源类型</FieldProLabel>
               <InputPro id="wms-in-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 采购收货" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-srcid">来源单据</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-srcid">来源单据</FieldProLabel>
               <InputPro id="wms-in-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
@@ -356,7 +361,7 @@ function formatError(error: unknown) {
             </div>
           </div>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

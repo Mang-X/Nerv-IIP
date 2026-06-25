@@ -12,9 +12,9 @@ import {
   DialogProDescription,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -210,9 +210,9 @@ function isNonEmpty(value: string) {
           <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
           <p v-if="successMessage" class="text-sm text-success" role="status">{{ successMessage }}</p>
 
-          <FieldGroup class="grid gap-3 md:grid-cols-3">
-            <Field>
-              <FieldLabel>移动类型</FieldLabel>
+          <FieldProGroup class="grid gap-3 md:grid-cols-3">
+            <FieldPro>
+              <FieldProLabel>移动类型</FieldProLabel>
               <SelectPro v-model="form.movementType">
                 <SelectProTrigger aria-label="移动类型"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
@@ -222,52 +222,52 @@ function isNonEmpty(value: string) {
                   <SelectProItem value="adjustment">调整</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="movement-source-document">来源单据</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-source-document">来源单据</FieldProLabel>
               <InputPro id="movement-source-document" v-model="form.sourceDocumentId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-source-line">来源行</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-source-line">来源行</FieldProLabel>
               <InputPro id="movement-source-line" v-model="form.sourceDocumentLineId" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-sku">SKU</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-sku">SKU</FieldProLabel>
               <InputPro id="movement-sku" v-model="form.skuCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-uom">单位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-uom">单位</FieldProLabel>
               <InputPro id="movement-uom" v-model="form.uomCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-site">工厂</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-site">工厂</FieldProLabel>
               <InputPro id="movement-site" v-model="form.siteCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-location">库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-location">库位</FieldProLabel>
               <InputPro id="movement-location" v-model="form.locationCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-quantity">数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-quantity">数量</FieldProLabel>
               <InputPro id="movement-quantity" v-model="form.quantity" inputmode="decimal" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-quality">质量状态</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-quality">质量状态</FieldProLabel>
               <InputPro id="movement-quality" v-model="form.qualityStatus" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-owner-id">货主</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-owner-id">货主</FieldProLabel>
               <InputPro id="movement-owner-id" v-model="form.ownerId" placeholder="可选货主名称或编码" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-lot">批次</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-lot">批次</FieldProLabel>
               <InputPro id="movement-lot" v-model="form.lotNo" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-serial">序列号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-serial">序列号</FieldProLabel>
               <InputPro id="movement-serial" v-model="form.serialNo" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="flex justify-end">
             <ButtonPro type="submit" :disabled="postMovementPending || !canSubmit">

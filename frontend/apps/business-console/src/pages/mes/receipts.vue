@@ -9,7 +9,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -17,10 +17,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -273,15 +273,20 @@ function isNonEmpty(value: string) {
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <RowActions :label="`入库登记操作 ${row.requestNo ?? row.workOrderId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
+          <DropdownMenuProItem :disabled="!row.workOrderId" @click="openWorkOrder(row.workOrderId)">
             <EyeIcon aria-hidden="true" />
             查看工单
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="receiptRequestsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="receiptRequestsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="receiptSheetOpen">
       <DialogProContent>
@@ -293,32 +298,32 @@ function isNonEmpty(value: string) {
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
           <p v-if="successMessage" class="text-sm text-success" role="status">{{ successMessage }}</p>
 
-          <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="receipt-work-order">工单号</FieldLabel>
+          <FieldProGroup class="grid gap-3">
+            <FieldPro>
+              <FieldProLabel for="receipt-work-order">工单号</FieldProLabel>
               <InputPro id="receipt-work-order" v-model="form.workOrderId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-sku">成品</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="receipt-sku">成品</FieldProLabel>
               <InputPro id="receipt-sku" v-model="form.skuId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-quantity">入库数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="receipt-quantity">入库数量</FieldProLabel>
               <InputPro id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-unit-cost">单位成本</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="receipt-unit-cost">单位成本</FieldProLabel>
               <InputPro id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-uom">单位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="receipt-uom">单位</FieldProLabel>
               <InputPro id="receipt-uom" v-model="form.uomCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="receipt-requested-at">登记时间</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="receipt-requested-at">登记时间</FieldProLabel>
               <InputPro id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="receiptSheetOpen = false">取消</ButtonPro>

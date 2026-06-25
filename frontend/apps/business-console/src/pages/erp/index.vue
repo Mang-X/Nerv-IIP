@@ -5,7 +5,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   InputPro,
   PageHeader,
@@ -162,6 +162,11 @@ function rowKey(row: ProcurementRow) {
       <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount) }}</span></template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="purchaseOrdersTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="purchaseOrdersTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
   </BusinessLayout>
 </template>

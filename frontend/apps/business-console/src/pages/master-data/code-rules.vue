@@ -12,7 +12,7 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DatePickerPro,
   DialogPro,
   DialogProContent,
@@ -21,10 +21,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -528,7 +528,7 @@ async function submitForm() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="rules.length" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="rules.length" @update:page-size="(v) => (pageSize = String(v))" />
 
     <!-- 查看 Sheet 抽屉 -->
     <DialogPro v-model:open="viewOpen">
@@ -660,38 +660,38 @@ async function submitForm() {
           </p>
 
           <FormSectionTitle>版本信息</FormSectionTitle>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="showErrors && !displayNameValid">
-              <FieldLabel for="cr-name">名称 <span class="text-destructive">*</span></FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro :data-invalid="showErrors && !displayNameValid">
+              <FieldProLabel for="cr-name">名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="cr-name" v-model="form.displayName" placeholder="规则名称" />
-            </Field>
-            <Field>
-              <FieldLabel for="cr-applies">适用对象</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cr-applies">适用对象</FieldProLabel>
               <InputPro id="cr-applies" v-model="form.appliesTo" placeholder="如 物料 / 工单" />
-            </Field>
-            <Field>
-              <FieldLabel for="cr-scope">范围</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cr-scope">范围</FieldProLabel>
               <SelectPro v-model="form.scope">
                 <SelectProTrigger id="cr-scope"><SelectProValue placeholder="选择范围" /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in SCOPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel>生效时间</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel>生效时间</FieldProLabel>
               <DatePickerPro v-model="form.effectiveFromUtc" placeholder="留空即时生效" class="w-full" />
-              <FieldDescription>留空即时生效。</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel for="cr-reason">变更原因</FieldLabel>
+              <FieldProDescription>留空即时生效。</FieldProDescription>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cr-reason">变更原因</FieldProLabel>
               <InputPro id="cr-reason" v-model="form.changeReason" placeholder="可选，本次变更说明" />
-            </Field>
-            <Field :data-invalid="showErrors && !createdByValid">
-              <FieldLabel for="cr-by">创建人 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="showErrors && !createdByValid">
+              <FieldProLabel for="cr-by">创建人 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="cr-by" v-model="form.createdBy" placeholder="你的账号/姓名" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="flex items-center justify-between">
             <FormSectionTitle>段定义</FormSectionTitle>
@@ -712,89 +712,89 @@ async function submitForm() {
               class="grid gap-2 rounded-md border p-3"
             >
               <div class="grid grid-cols-[8rem_1fr_auto] items-end gap-2">
-                <Field :data-invalid="showErrors && segment.type === ''">
-                  <FieldLabel :for="`cr-type-${index}`">类型 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro :data-invalid="showErrors && segment.type === ''">
+                  <FieldProLabel :for="`cr-type-${index}`">类型 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="segment.type">
                     <SelectProTrigger :id="`cr-type-${index}`"><SelectProValue placeholder="选择类型" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in SEGMENT_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
+                </FieldPro>
 
                 <!-- 常量 -->
-                <Field v-if="segment.type === 'constant'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldLabel :for="`cr-value-${index}`">常量值 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro v-if="segment.type === 'constant'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldProLabel :for="`cr-value-${index}`">常量值 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro :id="`cr-value-${index}`" v-model="segment.value" placeholder="如 SKU" />
-                </Field>
+                </FieldPro>
 
                 <!-- 日期 -->
-                <Field v-else-if="segment.type === 'date'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldLabel :for="`cr-format-${index}`">日期格式 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro v-else-if="segment.type === 'date'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldProLabel :for="`cr-format-${index}`">日期格式 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="segment.format">
                     <SelectProTrigger :id="`cr-format-${index}`"><SelectProValue placeholder="选择日期格式" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="f in DATE_FORMAT_OPTIONS" :key="f" :value="f">{{ f }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
+                </FieldPro>
 
                 <!-- 流水号 -->
                 <div v-else-if="segment.type === 'sequence'" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldLabel :for="`cr-width-${index}`">宽度 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldProLabel :for="`cr-width-${index}`">宽度 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`cr-width-${index}`" v-model="segment.width" type="number" min="1" placeholder="4" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldLabel :for="`cr-start-${index}`">起始 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldProLabel :for="`cr-start-${index}`">起始 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`cr-start-${index}`" v-model="segment.start" type="number" min="1" placeholder="1" />
-                  </Field>
-                  <Field>
-                    <FieldLabel :for="`cr-pad-${index}`">补位字符</FieldLabel>
+                  </FieldPro>
+                  <FieldPro>
+                    <FieldProLabel :for="`cr-pad-${index}`">补位字符</FieldProLabel>
                     <InputPro :id="`cr-pad-${index}`" v-model="segment.padChar" placeholder="0" />
-                  </Field>
-                  <Field>
-                    <FieldLabel :for="`cr-reset-${index}`">重置</FieldLabel>
+                  </FieldPro>
+                  <FieldPro>
+                    <FieldProLabel :for="`cr-reset-${index}`">重置</FieldProLabel>
                     <SelectPro v-model="segment.reset">
                       <SelectProTrigger :id="`cr-reset-${index}`"><SelectProValue /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in RESET_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
+                  </FieldPro>
                 </div>
 
                 <!-- 字段 -->
                 <div v-else-if="segment.type === 'field'" class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldLabel :for="`cr-source-${index}`">源 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldProLabel :for="`cr-source-${index}`">源 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`cr-source-${index}`" v-model="segment.source" placeholder="如 categoryCode" />
-                  </Field>
-                  <Field>
-                    <FieldLabel :for="`cr-transform-${index}`">变换</FieldLabel>
+                  </FieldPro>
+                  <FieldPro>
+                    <FieldProLabel :for="`cr-transform-${index}`">变换</FieldProLabel>
                     <SelectPro v-model="segment.transform">
                       <SelectProTrigger :id="`cr-transform-${index}`"><SelectProValue /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in TRANSFORM_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
-                  <Field :data-invalid="showErrors && !!segmentErrors[index]">
-                    <FieldLabel :for="`cr-maxlen-${index}`">上限 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !!segmentErrors[index]">
+                    <FieldProLabel :for="`cr-maxlen-${index}`">上限 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`cr-maxlen-${index}`" v-model="segment.maxLength" type="number" min="1" placeholder="如 8" />
-                  </Field>
+                  </FieldPro>
                 </div>
 
                 <!-- 校验位 -->
-                <Field v-else-if="segment.type === 'checksum'" :data-invalid="showErrors && !!segmentErrors[index]">
-                  <FieldLabel :for="`cr-algo-${index}`">算法 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro v-else-if="segment.type === 'checksum'" :data-invalid="showErrors && !!segmentErrors[index]">
+                  <FieldProLabel :for="`cr-algo-${index}`">算法 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="segment.algorithm">
                     <SelectProTrigger :id="`cr-algo-${index}`"><SelectProValue placeholder="选择校验算法" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="a in CHECKSUM_ALGORITHM_OPTIONS" :key="a" :value="a">{{ a }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
+                </FieldPro>
 
                 <div v-else />
 

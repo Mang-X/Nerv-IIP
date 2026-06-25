@@ -53,11 +53,11 @@ const dialogStubs = {
   DialogProDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  Sheet: { template: '<div><slot /></div>' },
-  SheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
-  SheetHeader: { template: '<div><slot /></div>' },
-  SheetTitle: { template: '<h2><slot /></h2>' },
-  SheetDescription: { template: '<p><slot /></p>' },
+  // SheetPro 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  SheetProContent: { template: '<div data-testid="sheet"><slot /></div>' },
+  SheetProHeader: { template: '<div><slot /></div>' },
+  SheetProTitle: { template: '<h2><slot /></h2>' },
+  SheetProDescription: { template: '<p><slot /></p>' },
 }
 const datePickerStub = {
   DatePickerPro: {

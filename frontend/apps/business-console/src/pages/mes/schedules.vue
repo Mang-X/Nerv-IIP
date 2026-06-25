@@ -8,7 +8,7 @@ import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -16,9 +16,9 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   PageHeader,
   SectionCard,
   SectionCards,
@@ -148,7 +148,12 @@ function isNonEmpty(value: string) {
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="assignments.length" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="assignments.length"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>
@@ -167,9 +172,9 @@ function isNonEmpty(value: string) {
           <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
           <p v-if="runSuccess" class="text-sm text-success" role="status">{{ runSuccess }}</p>
 
-          <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="schedule-trigger">触发来源</FieldLabel>
+          <FieldProGroup class="grid gap-3">
+            <FieldPro>
+              <FieldProLabel for="schedule-trigger">触发来源</FieldProLabel>
               <SelectPro v-model="runForm.trigger">
                 <SelectProTrigger id="schedule-trigger" aria-label="排程触发来源"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
@@ -179,8 +184,8 @@ function isNonEmpty(value: string) {
                   <SelectProItem value="AssetRestored">设备恢复</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="scheduleSheetOpen = false">取消</ButtonPro>

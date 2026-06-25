@@ -11,7 +11,7 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -19,10 +19,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -245,40 +245,40 @@ async function submitDevice() {
             </DialogProHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field v-if="editingCode">
-                  <FieldLabel for="dev-code">设备编码</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel for="dev-code">设备编码</FieldProLabel>
                   <InputPro id="dev-code" :model-value="createForm.code" disabled />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
-                  <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
+                  <FieldProLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="dev-model" v-model="createForm.model" autocomplete="off" required />
-                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
-                  <FieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription v-if="!editingCode">编码由系统自动生成。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
+                  <FieldProLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
-                  <FieldLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
+                  <FieldProLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
-                  <FieldLabel for="dev-class">设备类别 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
+                  <FieldProLabel for="dev-class">设备类别 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
-                  <FieldDescription>填写「数据字典」中维护的设备类别编码。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
-                  <FieldLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldProDescription>填写「数据字典」中维护的设备类别编码。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
+                  <FieldProLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.criticality">
                     <SelectProTrigger id="dev-criticality"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
-                  <FieldLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
+                  <FieldProLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.lineCode">
                     <SelectProTrigger id="dev-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
                     <SelectProContent>
@@ -287,9 +287,9 @@ async function submitDevice() {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
-                  <FieldLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
+                  <FieldProLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="createForm.workCenterCode">
                     <SelectProTrigger id="dev-wc"><SelectProValue placeholder="请选择工作中心" /></SelectProTrigger>
                     <SelectProContent>
@@ -298,12 +298,12 @@ async function submitDevice() {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
-                  <FieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldLabel>
+                </FieldPro>
+                <FieldPro orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
+                  <FieldProLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldProLabel>
                   <CheckboxPro id="dev-maintainable" v-model:checked="createForm.maintainable" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
                 <ButtonPro type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
@@ -339,6 +339,6 @@ async function submitDevice() {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="devices.total.value" />
+    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="devices.total.value" @update:page-size="(v) => (pageSize = String(v))" />
   </BusinessLayout>
 </template>

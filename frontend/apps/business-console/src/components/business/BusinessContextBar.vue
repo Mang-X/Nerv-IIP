@@ -2,9 +2,9 @@
 import { useBusinessContextStore, type BusinessContextState } from '@/stores/businessContext'
 import {
   ButtonPro,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   SelectPro,
   SelectProContent,
@@ -142,9 +142,9 @@ function clearExecutionScope() {
       <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
       <ButtonPro size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空范围</ButtonPro>
     </div>
-    <FieldGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
-      <Field v-if="showSite">
-        <FieldLabel for="business-context-site">工厂</FieldLabel>
+    <FieldProGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+      <FieldPro v-if="showSite">
+        <FieldProLabel for="business-context-site">工厂</FieldProLabel>
         <SelectPro v-if="siteOptions.length" v-model="siteValue">
           <SelectProTrigger id="business-context-site">
             <SelectProValue placeholder="全部工厂" />
@@ -156,9 +156,9 @@ function clearExecutionScope() {
           </SelectProContent>
         </SelectPro>
         <InputPro v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
-      </Field>
-      <Field v-if="showLine">
-        <FieldLabel for="business-context-line">产线</FieldLabel>
+      </FieldPro>
+      <FieldPro v-if="showLine">
+        <FieldProLabel for="business-context-line">产线</FieldProLabel>
         <SelectPro v-if="lineOptions.length" v-model="lineValue">
           <SelectProTrigger id="business-context-line">
             <SelectProValue placeholder="全部产线" />
@@ -170,9 +170,9 @@ function clearExecutionScope() {
           </SelectProContent>
         </SelectPro>
         <InputPro v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
-      </Field>
-      <Field v-if="showWorkCenter">
-        <FieldLabel for="business-context-work-center">工作中心</FieldLabel>
+      </FieldPro>
+      <FieldPro v-if="showWorkCenter">
+        <FieldProLabel for="business-context-work-center">工作中心</FieldProLabel>
         <SelectPro v-if="workCenterOptions.length" v-model="workCenterValue">
           <SelectProTrigger id="business-context-work-center">
             <SelectProValue placeholder="全部工作中心" />
@@ -184,9 +184,9 @@ function clearExecutionScope() {
           </SelectProContent>
         </SelectPro>
         <InputPro v-else id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
-      </Field>
-      <Field v-if="showShift">
-        <FieldLabel for="business-context-shift">班次</FieldLabel>
+      </FieldPro>
+      <FieldPro v-if="showShift">
+        <FieldProLabel for="business-context-shift">班次</FieldProLabel>
         <SelectPro v-if="shiftOptions.length" v-model="shiftValue">
           <SelectProTrigger id="business-context-shift">
             <SelectProValue placeholder="全部班次" />
@@ -198,8 +198,8 @@ function clearExecutionScope() {
           </SelectProContent>
         </SelectPro>
         <InputPro v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
-      </Field>
-    </FieldGroup>
+      </FieldPro>
+    </FieldProGroup>
     <slot />
   </div>
 </template>

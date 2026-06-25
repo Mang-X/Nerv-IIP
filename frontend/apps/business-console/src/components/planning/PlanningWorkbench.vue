@@ -19,9 +19,9 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -345,16 +345,16 @@ function inputDegradationSourceLabel(source: string) {
             <DialogProDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogProDescription>
           </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel>开始日期</FieldLabel>
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro>
+                <FieldProLabel>开始日期</FieldProLabel>
                 <DatePickerPro v-model="runRequest.horizonStart" placeholder="选择开始日期" class="w-full" />
-              </Field>
-              <Field>
-                <FieldLabel>结束日期</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel>结束日期</FieldProLabel>
                 <DatePickerPro v-model="runRequest.horizonEnd" placeholder="选择结束日期" class="w-full" />
-              </Field>
-            </FieldGroup>
+              </FieldPro>
+            </FieldProGroup>
             <DialogProFooter>
               <ButtonPro type="button" variant="outline" @click="mrpOpen = false">取消</ButtonPro>
               <ButtonPro type="submit" :disabled="runMrpPending">
@@ -379,56 +379,56 @@ function inputDegradationSourceLabel(source: string) {
             <DialogProDescription>录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</DialogProDescription>
           </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitDemand">
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel>需求类型</FieldLabel>
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro>
+                <FieldProLabel>需求类型</FieldProLabel>
                 <SelectPro v-model="demandForm.demandType">
                   <SelectProTrigger aria-label="需求类型"><SelectProValue /></SelectProTrigger>
                   <SelectProContent>
                     <SelectProItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
-              <Field>
-                <FieldLabel for="demand-source">来源单号</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-source">来源单号</FieldProLabel>
                 <InputPro id="demand-source" v-model="demandForm.sourceReference" placeholder="SO-2026-001" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-sku">SKU</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-sku">SKU</FieldProLabel>
                 <SelectPro v-model="demandForm.skuCode">
                   <SelectProTrigger id="demand-sku"><SelectProValue placeholder="选择 SKU" /></SelectProTrigger>
                   <SelectProContent>
                     <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
-              <Field>
-                <FieldLabel for="demand-site">工厂</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-site">工厂</FieldProLabel>
                 <SelectPro v-model="demandForm.siteCode">
                   <SelectProTrigger id="demand-site"><SelectProValue placeholder="选择工厂" /></SelectProTrigger>
                   <SelectProContent>
                     <SelectProItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
-              <Field>
-                <FieldLabel for="demand-uom">单位</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-uom">单位</FieldProLabel>
                 <SelectPro v-model="demandForm.uomCode">
                   <SelectProTrigger id="demand-uom"><SelectProValue placeholder="选择单位" /></SelectProTrigger>
                   <SelectProContent>
                     <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
-              <Field>
-                <FieldLabel for="demand-qty">数量</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-qty">数量</FieldProLabel>
                 <InputPro id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
-              </Field>
-              <Field>
-                <FieldLabel>需求日期</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel>需求日期</FieldProLabel>
                 <DatePickerPro v-model="demandForm.dueDate" placeholder="选择需求日期" class="w-full" />
-              </Field>
-            </FieldGroup>
+              </FieldPro>
+            </FieldProGroup>
             <DialogProFooter>
               <ButtonPro type="button" variant="outline" @click="demandOpen = false">取消</ButtonPro>
               <ButtonPro type="submit" :disabled="createDemandPending || !canSubmitDemand">

@@ -6,7 +6,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   PageHeader,
 } from '@nerv-iip/ui'
@@ -102,7 +102,12 @@ function formatError(error: unknown) {
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="productionReportsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

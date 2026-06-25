@@ -14,10 +14,10 @@ import {
   DialogProDescription,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -225,10 +225,10 @@ function isNonEmpty(value: string) {
     >
       <template #cell-actions="{ row }">
         <RowActions :label="`盘点操作 ${row.countTaskId}`">
-          <DropdownMenuItem @click="openAdjustment(row)">
+          <DropdownMenuProItem @click="openAdjustment(row)">
             <CheckCircle2Icon aria-hidden="true" />
             确认差异
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
@@ -242,44 +242,44 @@ function isNonEmpty(value: string) {
         <form class="grid gap-4" @submit.prevent="submitTask">
           <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">{{ taskErrorMessage }}</p>
           <p v-if="taskSuccess" class="text-sm text-success" role="status">{{ taskSuccess }}</p>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="count-task-sku">SKU</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="count-task-sku">SKU</FieldProLabel>
               <InputPro id="count-task-sku" v-model="taskForm.skuCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-uom">单位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-uom">单位</FieldProLabel>
               <InputPro id="count-task-uom" v-model="taskForm.uomCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-site">工厂</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-site">工厂</FieldProLabel>
               <InputPro id="count-task-site" v-model="taskForm.siteCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-location">库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-location">库位</FieldProLabel>
               <InputPro id="count-task-location" v-model="taskForm.locationCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-quality">质量状态</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-quality">质量状态</FieldProLabel>
               <InputPro id="count-task-quality" v-model="taskForm.qualityStatus" />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-owner-type">货主类型</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-owner-type">货主类型</FieldProLabel>
               <InputPro id="count-task-owner-type" v-model="taskForm.ownerType" />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-owner-id">货主</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-owner-id">货主</FieldProLabel>
               <InputPro id="count-task-owner-id" v-model="taskForm.ownerId" placeholder="可选货主名称或编码" />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-lot">批次</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-lot">批次</FieldProLabel>
               <InputPro id="count-task-lot" v-model="taskForm.lotNo" />
-            </Field>
-            <Field>
-              <FieldLabel for="count-task-serial">序列号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-task-serial">序列号</FieldProLabel>
               <InputPro id="count-task-serial" v-model="taskForm.serialNo" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
           <div class="flex justify-end">
             <ButtonPro type="submit" :disabled="createCountTaskPending || !canCreateTask">
               <Spinner v-if="createCountTaskPending" aria-hidden="true" />
@@ -300,16 +300,16 @@ function isNonEmpty(value: string) {
         <form class="grid content-start gap-4" @submit.prevent="submitAdjustment">
           <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">{{ adjustmentErrorMessage }}</p>
           <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">{{ adjustmentSuccess }}</p>
-          <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="count-adjust-task-id">盘点任务</FieldLabel>
+          <FieldProGroup class="grid gap-3">
+            <FieldPro>
+              <FieldProLabel for="count-adjust-task-id">盘点任务</FieldProLabel>
               <InputPro id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="count-adjust-quantity">实盘数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="count-adjust-quantity">实盘数量</FieldProLabel>
               <InputPro id="count-adjust-quantity" v-model="adjustmentForm.countedQuantity" inputmode="decimal" required type="number" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
           <div class="flex justify-end">
             <ButtonPro type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
               <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />

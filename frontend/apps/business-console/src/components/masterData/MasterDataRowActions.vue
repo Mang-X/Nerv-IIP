@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
   DialogPro,
   DialogProContent,
@@ -16,7 +16,7 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
+  DropdownMenuProItem,
   RowActions,
   StatusBadgePro,
   toast,
@@ -78,19 +78,19 @@ async function confirmToggle() {
 
 <template>
   <RowActions :label="`${entityLabel}操作 ${row.code ?? ''}`">
-    <DropdownMenuItem @click="detailOpen = true">
+    <DropdownMenuProItem @click="detailOpen = true">
       <EyeIcon aria-hidden="true" />
       查看详情
-    </DropdownMenuItem>
-    <DropdownMenuItem :disabled="!row.code" @click="emit('edit', row)">
+    </DropdownMenuProItem>
+    <DropdownMenuProItem :disabled="!row.code" @click="emit('edit', row)">
       <PencilIcon aria-hidden="true" />
       编辑
-    </DropdownMenuItem>
-    <DropdownMenuItem :disabled="!row.code" @click="toggleOpen = true">
+    </DropdownMenuProItem>
+    <DropdownMenuProItem :disabled="!row.code" @click="toggleOpen = true">
       <CircleSlashIcon v-if="row.active !== false" aria-hidden="true" />
       <PlayIcon v-else aria-hidden="true" />
       {{ row.active !== false ? '停用' : '启用' }}
-    </DropdownMenuItem>
+    </DropdownMenuProItem>
   </RowActions>
 
   <!-- 查看详情（只读） -->
@@ -117,29 +117,29 @@ async function confirmToggle() {
   </DialogPro>
 
   <!-- 停用 / 启用 二次确认 -->
-  <AlertDialog v-model:open="toggleOpen">
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>
+  <AlertDialogPro v-model:open="toggleOpen">
+    <AlertDialogProContent>
+      <AlertDialogProHeader>
+        <AlertDialogProTitle>
           {{ row.active !== false ? `确认停用该${entityLabel}？` : `确认启用该${entityLabel}？` }}
-        </AlertDialogTitle>
-        <AlertDialogDescription>
+        </AlertDialogProTitle>
+        <AlertDialogProDescription>
           {{
             row.active !== false
               ? '停用后将不能用于新建/计划，已有记录不受影响。'
               : '启用后可重新用于新建与计划。'
           }}
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>取消</AlertDialogCancel>
-        <AlertDialogAction
+        </AlertDialogProDescription>
+      </AlertDialogProHeader>
+      <AlertDialogProFooter>
+        <AlertDialogProCancel>取消</AlertDialogProCancel>
+        <AlertDialogProAction
           :disabled="actions.disablePending.value || actions.enablePending.value"
           @click="confirmToggle"
         >
           {{ row.active !== false ? '确认停用' : '确认启用' }}
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
+        </AlertDialogProAction>
+      </AlertDialogProFooter>
+    </AlertDialogProContent>
+  </AlertDialogPro>
 </template>

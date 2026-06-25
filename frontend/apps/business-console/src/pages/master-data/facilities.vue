@@ -19,10 +19,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   ScrollArea,
@@ -848,58 +848,58 @@ function childLabelOf(type: string): string | undefined {
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <p v-if="createShowErrors && !canCreate" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FormSectionTitle>基础信息</FormSectionTitle>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-              <FieldLabel for="create-name">{{ NODE_LABEL[createType] }}名称 <span class="text-destructive">*</span></FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+              <FieldProLabel for="create-name">{{ NODE_LABEL[createType] }}名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="create-name" v-model="createForm.name" autocomplete="off" required />
-              <FieldDescription>编码由系统自动生成，保存后即可在列表查看。</FieldDescription>
-            </Field>
+              <FieldProDescription>编码由系统自动生成，保存后即可在列表查看。</FieldProDescription>
+            </FieldPro>
             <!-- 工厂：时区 -->
-            <Field v-if="createType === 'site'" :data-invalid="createShowErrors && !isNonEmpty(createForm.timezone)">
-              <FieldLabel for="create-tz">时区 <span class="text-destructive">*</span></FieldLabel>
+            <FieldPro v-if="createType === 'site'" :data-invalid="createShowErrors && !isNonEmpty(createForm.timezone)">
+              <FieldProLabel for="create-tz">时区 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="create-tz" v-model="createForm.timezone" autocomplete="off" required />
-              <FieldDescription>如 Asia/Shanghai，用于排程与报表的本地时间。</FieldDescription>
-            </Field>
-          </FieldGroup>
+              <FieldProDescription>如 Asia/Shanghai，用于排程与报表的本地时间。</FieldProDescription>
+            </FieldPro>
+          </FieldProGroup>
 
           <!-- 归属（就地建子级时带入且只读） -->
           <template v-if="createType !== 'site'">
             <FormSectionTitle>归属</FormSectionTitle>
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field v-if="createType === 'workshop' || createType === 'production-line'">
-                <FieldLabel for="create-site">所属工厂</FieldLabel>
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro v-if="createType === 'workshop' || createType === 'production-line'">
+                <FieldProLabel for="create-site">所属工厂</FieldProLabel>
                 <InputPro id="create-site" :model-value="parentCtx.siteCode" disabled />
-              </Field>
-              <Field v-if="createType === 'production-line'">
-                <FieldLabel for="create-workshop">所属车间</FieldLabel>
+              </FieldPro>
+              <FieldPro v-if="createType === 'production-line'">
+                <FieldProLabel for="create-workshop">所属车间</FieldProLabel>
                 <InputPro id="create-workshop" :model-value="parentCtx.workshopCode" disabled />
-              </Field>
-              <Field v-if="createType === 'work-center'">
-                <FieldLabel for="create-plant">所属工厂</FieldLabel>
+              </FieldPro>
+              <FieldPro v-if="createType === 'work-center'">
+                <FieldProLabel for="create-plant">所属工厂</FieldProLabel>
                 <InputPro id="create-plant" :model-value="parentCtx.plantCode" disabled />
-              </Field>
-              <Field v-if="createType === 'work-center'">
-                <FieldLabel for="create-line">所属产线</FieldLabel>
+              </FieldPro>
+              <FieldPro v-if="createType === 'work-center'">
+                <FieldProLabel for="create-line">所属产线</FieldProLabel>
                 <InputPro id="create-line" :model-value="parentCtx.lineCode" disabled />
-              </Field>
-            </FieldGroup>
+              </FieldPro>
+            </FieldProGroup>
           </template>
 
           <!-- 工作中心：产能 -->
           <template v-if="createType === 'work-center'">
             <FormSectionTitle>产能</FormSectionTitle>
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.defaultCalendarCode)">
-                <FieldLabel for="create-cal">默认工作日历 <span class="text-destructive">*</span></FieldLabel>
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.defaultCalendarCode)">
+                <FieldProLabel for="create-cal">默认工作日历 <span class="text-destructive">*</span></FieldProLabel>
                 <InputPro id="create-cal" v-model="createForm.defaultCalendarCode" autocomplete="off" required />
-                <FieldDescription>填写「排班与日历」页中已建工作日历的编码。</FieldDescription>
-              </Field>
-              <Field :data-invalid="createShowErrors && !((Number(createForm.capacityMinutesPerDay) || 0) > 0)">
-                <FieldLabel for="create-cap">日产能（分钟） <span class="text-destructive">*</span></FieldLabel>
+                <FieldProDescription>填写「排班与日历」页中已建工作日历的编码。</FieldProDescription>
+              </FieldPro>
+              <FieldPro :data-invalid="createShowErrors && !((Number(createForm.capacityMinutesPerDay) || 0) > 0)">
+                <FieldProLabel for="create-cap">日产能（分钟） <span class="text-destructive">*</span></FieldProLabel>
                 <InputPro id="create-cap" v-model="createForm.capacityMinutesPerDay" type="number" min="1" inputmode="numeric" />
-                <FieldDescription>单日可用产能分钟数，默认 480（8 小时）。</FieldDescription>
-              </Field>
-            </FieldGroup>
+                <FieldProDescription>单日可用产能分钟数，默认 480（8 小时）。</FieldProDescription>
+              </FieldPro>
+            </FieldProGroup>
           </template>
 
           <DialogProFooter>
@@ -923,27 +923,27 @@ function childLabelOf(type: string): string | undefined {
         <form class="grid gap-4" @submit.prevent="submitEdit">
           <p v-if="editShowErrors && !canEdit" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FormSectionTitle>基础信息</FormSectionTitle>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="edit-code">{{ NODE_LABEL[editType] }}编码</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="edit-code">{{ NODE_LABEL[editType] }}编码</FieldProLabel>
               <InputPro id="edit-code" :model-value="editCode" disabled />
-            </Field>
-            <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.name)">
-              <FieldLabel for="edit-name">{{ NODE_LABEL[editType] }}名称 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="editShowErrors && !isNonEmpty(editForm.name)">
+              <FieldProLabel for="edit-name">{{ NODE_LABEL[editType] }}名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="edit-name" v-model="editForm.name" autocomplete="off" required />
-            </Field>
-            <Field v-if="editType === 'site'">
-              <FieldLabel for="edit-tz">时区</FieldLabel>
+            </FieldPro>
+            <FieldPro v-if="editType === 'site'">
+              <FieldProLabel for="edit-tz">时区</FieldProLabel>
               <InputPro id="edit-tz" v-model="editForm.timezone" autocomplete="off" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <!-- 归属（可改挂上级；选项取页内已加载列表，跨层不成环） -->
           <template v-if="editType !== 'site'">
             <FormSectionTitle>归属</FormSectionTitle>
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field v-if="editType === 'workshop'" :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
-                <FieldLabel for="edit-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro v-if="editType === 'workshop'" :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
+                <FieldProLabel for="edit-site">所属工厂 <span class="text-destructive">*</span></FieldProLabel>
                 <SelectPro v-model="editForm.siteCode">
                   <SelectProTrigger id="edit-site"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
                   <SelectProContent>
@@ -952,10 +952,10 @@ function childLabelOf(type: string): string | undefined {
                     </SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
+              </FieldPro>
               <template v-if="editType === 'production-line'">
-                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
-                  <FieldLabel for="edit-line-site">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro :data-invalid="editShowErrors && !isNonEmpty(editForm.siteCode)">
+                  <FieldProLabel for="edit-line-site">所属工厂 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="editForm.siteCode">
                     <SelectProTrigger id="edit-line-site"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
                     <SelectProContent>
@@ -964,9 +964,9 @@ function childLabelOf(type: string): string | undefined {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field>
-                  <FieldLabel for="edit-line-workshop">所属车间</FieldLabel>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel for="edit-line-workshop">所属车间</FieldProLabel>
                   <SelectPro v-model="editForm.workshopCode">
                     <SelectProTrigger id="edit-line-workshop"><SelectProValue placeholder="无（直挂工厂）" /></SelectProTrigger>
                     <SelectProContent>
@@ -976,12 +976,12 @@ function childLabelOf(type: string): string | undefined {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>留空表示该产线直接挂在工厂下（无车间层）。</FieldDescription>
-                </Field>
+                  <FieldProDescription>留空表示该产线直接挂在工厂下（无车间层）。</FieldProDescription>
+                </FieldPro>
               </template>
               <template v-if="editType === 'work-center'">
-                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.plantCode)">
-                  <FieldLabel for="edit-wc-plant">所属工厂 <span class="text-destructive">*</span></FieldLabel>
+                <FieldPro :data-invalid="editShowErrors && !isNonEmpty(editForm.plantCode)">
+                  <FieldProLabel for="edit-wc-plant">所属工厂 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="editForm.plantCode">
                     <SelectProTrigger id="edit-wc-plant"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
                     <SelectProContent>
@@ -990,9 +990,9 @@ function childLabelOf(type: string): string | undefined {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field :data-invalid="editShowErrors && !isNonEmpty(editForm.lineCode)">
-                  <FieldLabel for="edit-wc-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="editShowErrors && !isNonEmpty(editForm.lineCode)">
+                  <FieldProLabel for="edit-wc-line">所属产线 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="editForm.lineCode">
                     <SelectProTrigger id="edit-wc-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
                     <SelectProContent>
@@ -1001,9 +1001,9 @@ function childLabelOf(type: string): string | undefined {
                       </SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
+                </FieldPro>
               </template>
-            </FieldGroup>
+            </FieldProGroup>
           </template>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="editOpen = false">取消</ButtonPro>

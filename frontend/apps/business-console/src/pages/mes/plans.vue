@@ -8,7 +8,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -16,9 +16,9 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SelectPro,
@@ -323,7 +323,12 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionPlansTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="productionPlansTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="convertOpen">
       <DialogProContent>
@@ -338,21 +343,21 @@ function formatError(error: unknown) {
             <span class="font-medium text-warning">转工单前需处理：</span>
             <span v-for="(reason, i) in selectedBlockingReasons" :key="i" class="text-muted-foreground">· {{ reason.label }}（{{ reason.nextStep }}）</span>
           </div>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="convert-wc">工作中心</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="convert-wc">工作中心</FieldProLabel>
               <SelectPro v-model="convertForm.workCenterId">
                 <SelectProTrigger id="convert-wc"><SelectProValue placeholder="按工艺路线默认" /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="convert-due">交期</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="convert-due">交期</FieldProLabel>
               <InputPro id="convert-due" v-model="convertForm.dueUtc" type="datetime-local" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="convertOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">

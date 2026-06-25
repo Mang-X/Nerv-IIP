@@ -9,7 +9,7 @@ import { useEngineeringChanges } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DatePickerPro,
   DialogPro,
@@ -19,10 +19,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -32,11 +32,11 @@ import {
   SelectProItem,
   SelectProTrigger,
   SelectProValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -248,23 +248,23 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>变更信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field :data-invalid="showErrors && !reasonValid">
-                  <FieldLabel for="eco-reason">变更原因 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro :data-invalid="showErrors && !reasonValid">
+                  <FieldProLabel for="eco-reason">变更原因 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="eco-reason" v-model="form.reason" placeholder="说明本次变更的内容与原因" />
-                </Field>
+                </FieldPro>
                 <div class="grid gap-3 sm:grid-cols-2">
-                  <Field :data-invalid="showErrors && !approvalValid">
-                    <FieldLabel for="eco-approval">审批参考 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !approvalValid">
+                    <FieldProLabel for="eco-approval">审批参考 <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro id="eco-approval" v-model="form.approvalReferenceId" placeholder="审批单 / 决议引用 ID" />
-                    <FieldDescription>记录线下审批的引用编号，便于追溯。</FieldDescription>
-                  </Field>
-                  <Field :data-invalid="showErrors && !effectiveValid">
-                    <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
+                    <FieldProDescription>记录线下审批的引用编号，便于追溯。</FieldProDescription>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !effectiveValid">
+                    <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
                     <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                  </Field>
+                  </FieldPro>
                 </div>
-              </FieldGroup>
+              </FieldProGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>受影响版本</FormSectionTitle>
@@ -279,19 +279,19 @@ function formatError(error: unknown) {
                   :key="index"
                   class="grid grid-cols-[12rem_1fr_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !row.versionKind.trim()">
-                    <FieldLabel :for="`eco-kind-${index}`">对象种类 <span class="text-destructive">*</span></FieldLabel>
+                  <FieldPro :data-invalid="showErrors && !row.versionKind.trim()">
+                    <FieldProLabel :for="`eco-kind-${index}`">对象种类 <span class="text-destructive">*</span></FieldProLabel>
                     <SelectPro v-model="row.versionKind">
                       <SelectProTrigger :id="`eco-kind-${index}`"><SelectProValue placeholder="选择对象" /></SelectProTrigger>
                       <SelectProContent>
                         <SelectProItem v-for="o in VERSION_KIND_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
                       </SelectProContent>
                     </SelectPro>
-                  </Field>
-                  <Field :data-invalid="showErrors && !row.versionId.trim()">
-                    <FieldLabel :for="`eco-vid-${index}`">版本 ID <span class="text-destructive">*</span></FieldLabel>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !row.versionId.trim()">
+                    <FieldProLabel :for="`eco-vid-${index}`">版本 ID <span class="text-destructive">*</span></FieldProLabel>
                     <InputPro :id="`eco-vid-${index}`" v-model="row.versionId" placeholder="受影响的版本标识" />
-                  </Field>
+                  </FieldPro>
                   <ButtonPro
                     type="button"
                     variant="ghost"
@@ -362,16 +362,21 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="changesTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="changesTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>工程变更 · 受影响版本</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-lg">
+        <SheetProHeader>
+          <SheetProTitle>工程变更 · 受影响版本</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.changeNumber} · ${viewTarget.reason ?? ''}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
@@ -415,7 +420,7 @@ function formatError(error: unknown) {
             该变更没有受影响版本记录。
           </p>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

@@ -4,8 +4,8 @@ import { useMesOverview } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  Card,
-  CardContent,
+  CardPro,
+  CardProContent,
   DataTablePro,
   PageHeader,
   SectionCard,
@@ -150,8 +150,8 @@ function formatError(error: unknown) {
       </div>
 
       <div class="grid gap-4">
-        <Card>
-          <CardContent class="p-0">
+        <CardPro>
+          <CardProContent class="p-0">
             <div class="border-b px-4 py-3">
               <h2 class="text-sm font-semibold text-foreground">角色工作台</h2>
               <p class="mt-1 text-xs text-muted-foreground">把同一批生产事实按一线角色重组入口。</p>
@@ -173,11 +173,11 @@ function formatError(error: unknown) {
                 </div>
               </RouterLink>
             </div>
-          </CardContent>
-        </Card>
+          </CardProContent>
+        </CardPro>
 
-        <Card>
-          <CardContent class="grid gap-3">
+        <CardPro>
+          <CardProContent class="grid gap-3">
             <div class="flex items-center gap-2">
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
               <h2 class="text-sm font-semibold text-foreground">下一步建议</h2>
@@ -198,8 +198,8 @@ function formatError(error: unknown) {
                 <RouterLink :to="{ path: '/mes/capacity' }"><WrenchIcon aria-hidden="true" />异常与产能</RouterLink>
               </ButtonPro>
             </div>
-          </CardContent>
-        </Card>
+          </CardProContent>
+        </CardPro>
       </div>
     </div>
   </BusinessLayout>

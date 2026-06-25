@@ -5,9 +5,9 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -88,28 +88,28 @@ const columns: DataTableProColumn<ReadinessArea>[] = [
     </p>
 
     <div class="grid gap-3 rounded-lg border bg-card p-4">
-      <FieldGroup class="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Field>
-          <FieldLabel for="foundation-site">工厂</FieldLabel>
+      <FieldProGroup class="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
+        <FieldPro>
+          <FieldProLabel for="foundation-site">工厂</FieldProLabel>
           <InputPro id="foundation-site" v-model="filters.siteCode" placeholder="全部" />
-        </Field>
-        <Field>
-          <FieldLabel for="foundation-line">产线</FieldLabel>
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="foundation-line">产线</FieldProLabel>
           <InputPro id="foundation-line" v-model="filters.lineCode" placeholder="全部" />
-        </Field>
-        <Field>
-          <FieldLabel for="foundation-work-center">工作中心</FieldLabel>
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="foundation-work-center">工作中心</FieldProLabel>
           <InputPro id="foundation-work-center" v-model="filters.workCenterCode" placeholder="全部" />
-        </Field>
-        <Field>
-          <FieldLabel for="foundation-sku">物料</FieldLabel>
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="foundation-sku">物料</FieldProLabel>
           <InputPro id="foundation-sku" v-model="filters.skuId" placeholder="全部" />
-        </Field>
-        <Field>
-          <FieldLabel for="foundation-version">生产版本</FieldLabel>
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="foundation-version">生产版本</FieldProLabel>
           <InputPro id="foundation-version" v-model="filters.productionVersionId" placeholder="全部" />
-        </Field>
-      </FieldGroup>
+        </FieldPro>
+      </FieldProGroup>
     </div>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>

@@ -17,7 +17,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -26,10 +26,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -363,7 +363,12 @@ function formatError(error: unknown) {
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="receivablesPaged.page.value" v-model:page-size="receivablesPaged.pageSize.value" :total-items="receivables.total.value" />
+        <DataTablePaginationPro
+          v-model:page="receivablesPaged.page.value"
+          :page-size="receivablesPaged.pageSize.value"
+          :total-items="receivables.total.value"
+          @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="payables" class="grid gap-4">
@@ -400,7 +405,12 @@ function formatError(error: unknown) {
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="payablesPaged.page.value" v-model:page-size="payablesPaged.pageSize.value" :total-items="payables.total.value" />
+        <DataTablePaginationPro
+          v-model:page="payablesPaged.page.value"
+          :page-size="payablesPaged.pageSize.value"
+          :total-items="payables.total.value"
+          @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="vouchers" class="grid gap-4">
@@ -429,7 +439,12 @@ function formatError(error: unknown) {
           <template #cell-totalCreditAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalCreditAmount) }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="vouchersPaged.page.value" v-model:page-size="vouchersPaged.pageSize.value" :total-items="vouchers.total.value" />
+        <DataTablePaginationPro
+          v-model:page="vouchersPaged.page.value"
+          :page-size="vouchersPaged.pageSize.value"
+          :total-items="vouchers.total.value"
+          @update:page-size="(v) => (vouchersPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="cost-candidates" class="grid gap-4">
@@ -457,7 +472,12 @@ function formatError(error: unknown) {
           <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="costCandidatesPaged.page.value" v-model:page-size="costCandidatesPaged.pageSize.value" :total-items="costCandidates.total.value" />
+        <DataTablePaginationPro
+          v-model:page="costCandidatesPaged.page.value"
+          :page-size="costCandidatesPaged.pageSize.value"
+          :total-items="costCandidates.total.value"
+          @update:page-size="(v) => (costCandidatesPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
     </TabsPro>
 
@@ -468,21 +488,21 @@ function formatError(error: unknown) {
           <DialogProDescription>对已发货销售单据登记客户应收。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitReceivable">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-ar-source">来源单据</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-source">来源单据</FieldProLabel>
               <InputPro id="erp-ar-source" v-model="receivableForm.sourceDocumentNo" autocomplete="off" placeholder="如 销售订单号 / 发货单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ar-customer">客户</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-customer">客户</FieldProLabel>
               <InputPro id="erp-ar-customer" v-model="receivableForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ar-amount">金额（元）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-amount">金额（元）</FieldProLabel>
               <InputPro id="erp-ar-amount" v-model="receivableForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="receivableFormError" :errors="[receivableFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="receivableFormError" :errors="[receivableFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -503,21 +523,21 @@ function formatError(error: unknown) {
           <DialogProDescription>对已收货采购单据登记供应商应付。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitPayable">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-ap-source">来源单据</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-source">来源单据</FieldProLabel>
               <InputPro id="erp-ap-source" v-model="payableForm.sourceDocumentNo" autocomplete="off" placeholder="如 采购订单号 / 入库单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ap-supplier">供应商</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-supplier">供应商</FieldProLabel>
               <InputPro id="erp-ap-supplier" v-model="payableForm.supplierCode" autocomplete="off" placeholder="如 SUP-XINWEI" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ap-amount">金额（元）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-amount">金额（元）</FieldProLabel>
               <InputPro id="erp-ap-amount" v-model="payableForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="payableFormError" :errors="[payableFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="payableFormError" :errors="[payableFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -538,9 +558,9 @@ function formatError(error: unknown) {
           <DialogProDescription>归集待结转成本，过账后形成会计凭证。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCost">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-cc-type">来源类型</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-type">来源类型</FieldProLabel>
               <SelectPro v-model="costForm.sourceType">
                 <SelectProTrigger id="erp-cc-type" aria-label="来源类型"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
@@ -550,17 +570,17 @@ function formatError(error: unknown) {
                   <SelectProItem value="logistics">物流成本</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="erp-cc-source">来源单据</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-source">来源单据</FieldProLabel>
               <InputPro id="erp-cc-source" v-model="costForm.sourceDocumentNo" autocomplete="off" placeholder="如 工单号 / 采购单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-cc-amount">金额（元）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-amount">金额（元）</FieldProLabel>
               <InputPro id="erp-cc-amount" v-model="costForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="costFormError" :errors="[costFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="costFormError" :errors="[costFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -581,29 +601,29 @@ function formatError(error: unknown) {
           <DialogProDescription>登记一借一贷分录并过账，借贷自动平衡。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitVoucher">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="erp-jv-date">过账日期</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="erp-jv-date">过账日期</FieldProLabel>
               <InputPro id="erp-jv-date" v-model="voucherForm.postingDate" type="date" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-amount">金额（元）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-amount">金额（元）</FieldProLabel>
               <InputPro id="erp-jv-amount" v-model="voucherForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-debit">借方科目</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-debit">借方科目</FieldProLabel>
               <InputPro id="erp-jv-debit" v-model="voucherForm.debitAccount" autocomplete="off" placeholder="如 5001 生产成本" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-credit">贷方科目</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-credit">贷方科目</FieldProLabel>
               <InputPro id="erp-jv-credit" v-model="voucherForm.creditAccount" autocomplete="off" placeholder="如 1403 原材料" />
-            </Field>
-            <Field class="sm:col-span-2">
-              <FieldLabel for="erp-jv-memo">摘要</FieldLabel>
+            </FieldPro>
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="erp-jv-memo">摘要</FieldProLabel>
               <InputPro id="erp-jv-memo" v-model="voucherForm.memo" autocomplete="off" placeholder="如 结转本月生产领料成本" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="voucherFormError" :errors="[voucherFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="voucherFormError" :errors="[voucherFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>

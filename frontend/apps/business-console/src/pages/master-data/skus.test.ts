@@ -88,21 +88,24 @@ const dialogStubs = {
   DialogProFooter: { template: '<div><slot /></div>' },
   DialogProTitle: { template: '<h2><slot /></h2>' },
   DialogProDescription: { template: '<p><slot /></p>' },
-  // 行操作里的 base AlertDialog（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogTrigger: { template: '<div><slot /></div>' },
-  AlertDialogContent: { template: '<div><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // 行操作里的 AlertDialogPro（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // RowActions 的 Pro 下拉就地渲染，避免 reka DropdownMenu portal 在 jsdom 卸载崩。
+  DropdownMenuProContent: { template: '<div><slot /></div>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // RowActions 下拉就地渲染，让「编辑」可点。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {

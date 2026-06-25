@@ -2,14 +2,14 @@
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { useBusinessWorkers, useTeamMembers } from '@/composables/useBusinessMasterData'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
   ButtonPro,
   CheckboxPro,
   DialogPro,
@@ -18,8 +18,8 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldLabel,
+  FieldPro,
+  FieldProLabel,
   Spinner,
   StatusBadgePro,
   toast,
@@ -118,14 +118,14 @@ async function confirmRemove() {
       <p v-if="errorText" class="text-sm text-destructive" role="alert">{{ errorText }}</p>
 
       <form class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end" @submit.prevent="submitAdd">
-        <Field :data-invalid="showErrors && !canAdd">
-          <FieldLabel for="member-worker">工人 <span class="text-destructive">*</span></FieldLabel>
+        <FieldPro :data-invalid="showErrors && !canAdd">
+          <FieldProLabel for="member-worker">工人 <span class="text-destructive">*</span></FieldProLabel>
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
-        </Field>
-        <Field class="flex flex-row items-center gap-2">
+        </FieldPro>
+        <FieldPro class="flex flex-row items-center gap-2">
           <CheckboxPro id="member-leader" v-model="isLeader" />
-          <FieldLabel for="member-leader" class="mb-0">设为组长</FieldLabel>
-        </Field>
+          <FieldProLabel for="member-leader" class="mb-0">设为组长</FieldProLabel>
+        </FieldPro>
         <ButtonPro type="submit" size="sm" :disabled="addPending">
           <Spinner v-if="addPending" aria-hidden="true" />添加成员
         </ButtonPro>
@@ -166,16 +166,16 @@ async function confirmRemove() {
     </DialogProContent>
   </DialogPro>
 
-  <AlertDialog :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>确认移除该成员？</AlertDialogTitle>
-        <AlertDialogDescription>移除后该工人将不再归属本班组，可随时重新添加。</AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>取消</AlertDialogCancel>
-        <AlertDialogAction :disabled="removePending" @click="confirmRemove">确认移除</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
+  <AlertDialogPro :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
+    <AlertDialogProContent>
+      <AlertDialogProHeader>
+        <AlertDialogProTitle>确认移除该成员？</AlertDialogProTitle>
+        <AlertDialogProDescription>移除后该工人将不再归属本班组，可随时重新添加。</AlertDialogProDescription>
+      </AlertDialogProHeader>
+      <AlertDialogProFooter>
+        <AlertDialogProCancel>取消</AlertDialogProCancel>
+        <AlertDialogProAction :disabled="removePending" @click="confirmRemove">确认移除</AlertDialogProAction>
+      </AlertDialogProFooter>
+    </AlertDialogProContent>
+  </AlertDialogPro>
 </template>

@@ -68,19 +68,23 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 把 RowActions 的下拉换成同步渲染插槽的轻量桩，让「编辑」菜单项可直接点击。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // RowActions 内的下拉项已迁到 Pro（DropdownMenuProItem 是真 .vue 包装，stub 按 Pro 名）。
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
-// 行操作里的二次确认弹窗（base AlertDialog，reka portal/Teleport 在 jsdom 下不稳）就地渲染，避免渲染崩溃。
+// 行操作里 RowActions 的下拉内容 + 二次确认弹窗已迁到 Pro（DropdownMenuProContent / AlertDialogProContent
+// 含 reka portal/Teleport，jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
 const alertDialogStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogTrigger: { template: '<div><slot /></div>' },
-  AlertDialogContent: { template: '<div><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  DropdownMenuProContent: { template: '<div><slot /></div>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {

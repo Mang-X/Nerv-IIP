@@ -6,7 +6,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -15,10 +15,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   StatusBadgePro,
@@ -158,7 +158,12 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="pickingTasksTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="pickingTasksTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>
@@ -167,34 +172,34 @@ function formatError(error: unknown) {
           <DialogProDescription>从拣货库位拣出出库单所需库存，完成出库拣货扣减。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel for="wms-picking-outbound">出库单</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="wms-picking-outbound">出库单</FieldProLabel>
               <InputPro id="wms-picking-outbound" v-model="createForm.outboundOrderId" autocomplete="off" placeholder="出库单标识" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-no">任务号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-no">任务号</FieldProLabel>
               <InputPro id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-line">行号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-line">行号</FieldProLabel>
               <InputPro id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-from">拣货库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-from">拣货库位</FieldProLabel>
               <InputPro id="wms-picking-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="货架库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-to">目标库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-to">目标库位</FieldProLabel>
               <InputPro id="wms-picking-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="集货/暂存库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-qty">拣货数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-qty">拣货数量</FieldProLabel>
               <InputPro id="wms-picking-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

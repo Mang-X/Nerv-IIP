@@ -14,7 +14,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -22,12 +22,12 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  DropdownMenuProSeparator,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -439,32 +439,37 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`工单操作 ${row.workOrderId ?? ''}`">
-          <DropdownMenuItem @click="openOrderDetail(row)">
+          <DropdownMenuProItem @click="openOrderDetail(row)">
             <EyeIcon aria-hidden="true" />
             查看详情
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/materials', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/materials', row)">
             <PackageCheckIcon aria-hidden="true" />
             齐套检查
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/operation-tasks', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/operation-tasks', row)">
             <RouteIcon aria-hidden="true" />
             查看工序
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem :disabled="!canReportOrder(row)" @click="useWorkOrder(row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProSeparator />
+          <DropdownMenuProItem :disabled="!canReportOrder(row)" @click="useWorkOrder(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/capacity', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/capacity', row)">
             <WrenchIcon aria-hidden="true" />
             异常与产能
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="workOrdersTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="workOrdersTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="rushSheetOpen">
       <DialogProContent class="sm:max-w-2xl">
@@ -476,9 +481,9 @@ function isNonEmpty(value: string) {
           <p v-if="rushErrorMessage" class="text-sm text-destructive" role="alert">{{ rushErrorMessage }}</p>
           <p v-if="rushSuccess" class="text-sm text-success" role="status">{{ rushSuccess }}</p>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="rush-sku">物料 <span class="text-destructive">*</span></FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="rush-sku">物料 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-if="skuOptions.length" v-model="rushForm.skuId">
                 <SelectProTrigger id="rush-sku"><SelectProValue placeholder="选择物料" /></SelectProTrigger>
                 <SelectProContent>
@@ -486,21 +491,21 @@ function isNonEmpty(value: string) {
                 </SelectProContent>
               </SelectPro>
               <InputPro v-else id="rush-sku" v-model="rushForm.skuId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-version">生产版本</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-version">生产版本</FieldProLabel>
               <InputPro id="rush-version" v-model="rushForm.productionVersionId" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-quantity">数量 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-quantity">数量 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="rush-quantity" v-model="rushForm.quantity" inputmode="decimal" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-due">交期 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-due">交期 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="rush-due" v-model="rushForm.dueUtc" required type="datetime-local" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-work-center">工作中心 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-work-center">工作中心 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
                 <SelectProTrigger id="rush-work-center"><SelectProValue placeholder="选择工作中心" /></SelectProTrigger>
                 <SelectProContent>
@@ -508,20 +513,20 @@ function isNonEmpty(value: string) {
                 </SelectProContent>
               </SelectPro>
               <InputPro v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-operation-task">工序任务</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-operation-task">工序任务</FieldProLabel>
               <InputPro id="rush-operation-task" v-model="rushForm.operationTaskId" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-operation-sequence">工序序号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-operation-sequence">工序序号</FieldProLabel>
               <InputPro id="rush-operation-sequence" v-model="rushForm.operationSequence" inputmode="numeric" type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-duration">工时分钟 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-duration">工时分钟 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="rush-duration" v-model="rushForm.durationMinutes" inputmode="numeric" required type="number" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div v-if="lastRushScheduleVersion || lastRushAffectedWorkOrders.length" class="grid gap-2 rounded-lg border p-3">
             <p class="text-sm font-semibold text-foreground">排程结果</p>
@@ -551,39 +556,39 @@ function isNonEmpty(value: string) {
           <p v-if="reportErrorMessage" class="text-sm text-destructive" role="alert">{{ reportErrorMessage }}</p>
           <p v-if="reportSuccess" class="text-sm text-success" role="status">{{ reportSuccess }}</p>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel>报工对象</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel>报工对象</FieldProLabel>
               <div class="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 工单与工序来自所选行，只能从工单列表或工序任务带入。
               </div>
-            </Field>
-            <Field>
-              <FieldLabel for="report-work-order">工单号 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-work-order">工单号 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="report-work-order" v-model="reportForm.workOrderId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="report-operation-task">工序任务 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-operation-task">工序任务 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="report-operation-task" v-model="reportForm.operationTaskId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="report-good">良品数 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-good">良品数 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" min="0" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="report-scrap">报废数 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-scrap">报废数 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" min="0" required type="number" />
-              <FieldDescription>良品和报废必须为非负数，合计必须大于 0。</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel for="report-time">报工时间 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProDescription>良品和报废必须为非负数，合计必须大于 0。</FieldProDescription>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-time">报工时间 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="report-time" v-model="reportForm.reportedAtUtc" required type="datetime-local" />
-            </Field>
-            <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldLabel for="report-complete">完成当前工序</FieldLabel>
+            </FieldPro>
+            <FieldPro orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+              <FieldProLabel for="report-complete">完成当前工序</FieldProLabel>
               <CheckboxPro id="report-complete" v-model:checked="reportForm.completesOperation" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="reportSheetOpen = false">取消</ButtonPro>

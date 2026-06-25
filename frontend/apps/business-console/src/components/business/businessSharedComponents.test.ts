@@ -47,9 +47,10 @@ vi.mock('@nerv-iip/ui', () => {
           h('button', { ...attrs, disabled: props.disabled, type: props.type }, slots.default?.())
       },
     }),
-    DropdownMenu: passthrough('DropdownMenu'),
-    DropdownMenuContent: passthrough('DropdownMenuContent'),
-    DropdownMenuTrigger: passthrough('DropdownMenuTrigger'),
+    // BusinessRowActions 已迁到 Pro 下拉，整模块 mock 按 Pro 导出名打桩。
+    DropdownMenuPro: passthrough('DropdownMenuPro'),
+    DropdownMenuProContent: passthrough('DropdownMenuProContent'),
+    DropdownMenuProTrigger: passthrough('DropdownMenuProTrigger'),
     Pagination: defineComponent({
       name: 'Pagination',
       props: {

@@ -10,18 +10,18 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -293,15 +293,20 @@ function isPresent(value: string | undefined | null): value is string {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`检验方案操作 ${row.code ?? ''}`">
-          <DropdownMenuItem @click="useInspectionPlan(row)">
+          <DropdownMenuProItem @click="useInspectionPlan(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             创建检验记录
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inspectionPlansTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="inspectionPlansTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="recordSheetOpen">
       <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
@@ -313,13 +318,13 @@ function isPresent(value: string | undefined | null): value is string {
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
           <p v-if="recordSuccess" class="text-sm text-success" role="status">{{ recordSuccess }}</p>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="record-plan">检验方案 ID</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="record-plan">检验方案 ID</FieldProLabel>
               <InputPro id="record-plan" v-model="recordForm.inspectionPlanId" />
-            </Field>
-            <Field>
-              <FieldLabel>来源类型</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel>来源类型</FieldProLabel>
               <SelectPro v-model="recordForm.sourceType">
                 <SelectProTrigger aria-label="来源类型"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
@@ -330,9 +335,9 @@ function isPresent(value: string | undefined | null): value is string {
                   <SelectProItem value="customer-return">客户退货</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel>来源服务</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel>来源服务</FieldProLabel>
               <SelectPro v-model="recordForm.sourceService">
                 <SelectProTrigger aria-label="来源服务"><SelectProValue /></SelectProTrigger>
                 <SelectProContent>
@@ -346,28 +351,28 @@ function isPresent(value: string | undefined | null): value is string {
                   <SelectProItem value="customer-return">客户退货</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="record-source-document">来源单据</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-source-document">来源单据</FieldProLabel>
               <InputPro id="record-source-document" v-model="recordForm.sourceDocumentId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="record-sku">SKU</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-sku">SKU</FieldProLabel>
               <InputPro id="record-sku" v-model="recordForm.skuCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="record-quantity">检验数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-quantity">检验数量</FieldProLabel>
               <InputPro id="record-quantity" v-model="recordForm.inspectedQuantity" inputmode="decimal" min="0.000001" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="record-batch">批次</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-batch">批次</FieldProLabel>
               <InputPro id="record-batch" v-model="recordForm.batchNo" />
-            </Field>
-            <Field>
-              <FieldLabel for="record-serial">序列号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-serial">序列号</FieldProLabel>
               <InputPro id="record-serial" v-model="recordForm.serialNo" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
@@ -383,12 +388,12 @@ function isPresent(value: string | undefined | null): value is string {
                 :key="index"
                 class="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_140px_1fr_110px_auto]"
               >
-                <Field>
-                  <FieldLabel :for="`characteristic-code-${index}`">特性编码</FieldLabel>
+                <FieldPro>
+                  <FieldProLabel :for="`characteristic-code-${index}`">特性编码</FieldProLabel>
                   <InputPro :id="`characteristic-code-${index}`" v-model="line.characteristicCode" required />
-                </Field>
-                <Field>
-                  <FieldLabel>结果</FieldLabel>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel>结果</FieldProLabel>
                   <SelectPro v-model="line.result">
                     <SelectProTrigger :aria-label="`第 ${index + 1} 个特性结果`"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
@@ -397,23 +402,23 @@ function isPresent(value: string | undefined | null): value is string {
                       <SelectProItem value="conditional-release">让步放行</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                </Field>
-                <Field>
-                  <FieldLabel :for="`observed-value-${index}`">实测值</FieldLabel>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel :for="`observed-value-${index}`">实测值</FieldProLabel>
                   <InputPro :id="`observed-value-${index}`" v-model="line.observedValue" required />
-                </Field>
-                <Field>
-                  <FieldLabel :for="`unit-code-${index}`">单位</FieldLabel>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel :for="`unit-code-${index}`">单位</FieldProLabel>
                   <InputPro :id="`unit-code-${index}`" v-model="line.unitCode" />
-                </Field>
-                <Field class="md:col-span-2">
-                  <FieldLabel :for="`defect-reason-${index}`">缺陷原因</FieldLabel>
+                </FieldPro>
+                <FieldPro class="md:col-span-2">
+                  <FieldProLabel :for="`defect-reason-${index}`">缺陷原因</FieldProLabel>
                   <InputPro :id="`defect-reason-${index}`" v-model="line.defectReason" />
-                </Field>
-                <Field>
-                  <FieldLabel :for="`defect-quantity-${index}`">缺陷数量</FieldLabel>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel :for="`defect-quantity-${index}`">缺陷数量</FieldProLabel>
                   <InputPro :id="`defect-quantity-${index}`" v-model="line.defectQuantity" inputmode="decimal" type="number" />
-                </Field>
+                </FieldPro>
                 <div class="flex items-end justify-end">
                   <ButtonPro size="icon-sm" variant="ghost" type="button" @click="removeCharacteristicRow(index)">
                     <Trash2Icon />
@@ -424,17 +429,17 @@ function isPresent(value: string | undefined | null): value is string {
             </div>
           </div>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="record-disposition">处置原因{{ requiresDispositionReason ? ' *' : '' }}</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="record-disposition">处置原因{{ requiresDispositionReason ? ' *' : '' }}</FieldProLabel>
               <InputPro id="record-disposition" v-model="recordForm.dispositionReason" :required="requiresDispositionReason" />
-              <FieldDescription v-if="requiresDispositionReason">当任一特性不合格或让步放行时必填。</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel for="record-files">附件文件 ID</FieldLabel>
+              <FieldProDescription v-if="requiresDispositionReason">当任一特性不合格或让步放行时必填。</FieldProDescription>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="record-files">附件文件 ID</FieldProLabel>
               <InputPro id="record-files" v-model="recordForm.dispositionAttachmentFileIds" placeholder="file-1, file-2" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="flex justify-end">
             <ButtonPro type="submit" :disabled="createInspectionRecordPending || !canCreateRecord">

@@ -9,22 +9,22 @@ import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  AlertDialogProTrigger,
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
-  DropdownMenuItem,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -33,12 +33,12 @@ import {
   SelectProItem,
   SelectProTrigger,
   SelectProValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProFooter,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -251,19 +251,24 @@ watch(targetNcr, (ncr) => {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`NCR 操作 ${row.code ?? ''}`">
-          <DropdownMenuItem @click="openNcr(row)">打开处置</DropdownMenuItem>
+          <DropdownMenuProItem @click="openNcr(row)">打开处置</DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ncrsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="ncrsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="detailOpen">
-      <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader>
-          <SheetTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</SheetTitle>
-          <SheetDescription>{{ selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。' }}</SheetDescription>
-        </SheetHeader>
+    <SheetPro v-model:open="detailOpen">
+      <SheetProContent class="w-full overflow-y-auto sm:max-w-xl">
+        <SheetProHeader>
+          <SheetProTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</SheetProTitle>
+          <SheetProDescription>{{ selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。' }}</SheetProDescription>
+        </SheetProHeader>
 
         <div class="grid gap-4 px-1">
           <div class="grid gap-2 rounded-lg border p-3">
@@ -278,9 +283,9 @@ watch(targetNcr, (ncr) => {
             <h2 class="text-base font-semibold text-foreground">提交处置</h2>
             <p v-if="dispositionErrorMessage" class="text-sm text-destructive" role="alert">{{ dispositionErrorMessage }}</p>
             <p v-if="dispositionSuccess" class="text-sm text-success" role="status">{{ dispositionSuccess }}</p>
-            <FieldGroup class="grid gap-3">
-              <Field>
-                <FieldLabel>处置类型</FieldLabel>
+            <FieldProGroup class="grid gap-3">
+              <FieldPro>
+                <FieldProLabel>处置类型</FieldProLabel>
                 <SelectPro v-model="dispositionForm.dispositionType">
                   <SelectProTrigger aria-label="处置类型"><SelectProValue /></SelectProTrigger>
                   <SelectProContent>
@@ -290,16 +295,16 @@ watch(targetNcr, (ncr) => {
                     <SelectProItem value="return-to-supplier">退供应商</SelectProItem>
                   </SelectProContent>
                 </SelectPro>
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-approval-chain">审批链</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-approval-chain">审批链</FieldProLabel>
                 <InputPro id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-disposition-files">附件文件 ID</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-disposition-files">附件文件 ID</FieldProLabel>
                 <InputPro id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
-              </Field>
-            </FieldGroup>
+              </FieldPro>
+            </FieldProGroup>
             <div class="flex justify-end">
               <ButtonPro type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                 <Spinner v-if="submitDispositionPending" aria-hidden="true" />
@@ -313,45 +318,45 @@ watch(targetNcr, (ncr) => {
             <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
             <p v-if="closeErrorMessage" class="text-sm text-destructive" role="alert">{{ closeErrorMessage }}</p>
             <p v-if="closeSuccess" class="text-sm text-success" role="status">{{ closeSuccess }}</p>
-            <FieldGroup class="grid gap-3">
-              <Field>
-                <FieldLabel for="ncr-rework">返工工单</FieldLabel>
+            <FieldProGroup class="grid gap-3">
+              <FieldPro>
+                <FieldProLabel for="ncr-rework">返工工单</FieldProLabel>
                 <InputPro id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-scrap">报废库存移动</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-scrap">报废库存移动</FieldProLabel>
                 <InputPro id="ncr-scrap" v-model="closeForm.scrapMovementId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-return">退货单据</FieldLabel>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-return">退货单据</FieldProLabel>
                 <InputPro id="ncr-return" v-model="closeForm.returnDocumentId" />
-              </Field>
-            </FieldGroup>
+              </FieldPro>
+            </FieldProGroup>
 
-            <SheetFooter>
-              <AlertDialog>
-                <AlertDialogTrigger as-child>
+            <SheetProFooter>
+              <AlertDialogPro>
+                <AlertDialogProTrigger as-child>
                   <ButtonPro type="button" variant="destructive" :disabled="closeNcrPending || !canCloseNcr">
                     <Spinner v-if="closeNcrPending" aria-hidden="true" />
                     <CheckCircle2Icon v-else aria-hidden="true" />
                     关闭不合格品
                   </ButtonPro>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>确认关闭该不合格品？</AlertDialogTitle>
-                    <AlertDialogDescription>这里仅提交质量关闭动作，库存、WMS 和 MES 仍按各自服务流程处理。</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction @click="submitCloseNcr">确认关闭</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </SheetFooter>
+                </AlertDialogProTrigger>
+                <AlertDialogProContent>
+                  <AlertDialogProHeader>
+                    <AlertDialogProTitle>确认关闭该不合格品？</AlertDialogProTitle>
+                    <AlertDialogProDescription>这里仅提交质量关闭动作，库存、WMS 和 MES 仍按各自服务流程处理。</AlertDialogProDescription>
+                  </AlertDialogProHeader>
+                  <AlertDialogProFooter>
+                    <AlertDialogProCancel>取消</AlertDialogProCancel>
+                    <AlertDialogProAction @click="submitCloseNcr">确认关闭</AlertDialogProAction>
+                  </AlertDialogProFooter>
+                </AlertDialogProContent>
+              </AlertDialogPro>
+            </SheetProFooter>
           </form>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

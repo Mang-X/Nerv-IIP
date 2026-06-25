@@ -16,7 +16,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -25,11 +25,11 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -335,7 +335,12 @@ function formatError(error: unknown) {
         >
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="opportunitiesPaged.page.value" v-model:page-size="opportunitiesPaged.pageSize.value" :total-items="opportunities.total.value" />
+        <DataTablePaginationPro
+          v-model:page="opportunitiesPaged.page.value"
+          :page-size="opportunitiesPaged.pageSize.value"
+          :total-items="opportunities.total.value"
+          @update:page-size="(v) => (opportunitiesPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="quotations" class="grid gap-4">
@@ -374,15 +379,20 @@ function formatError(error: unknown) {
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
           <template #cell-actions="{ row }">
             <RowActions v-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
-              <DropdownMenuItem :disabled="quotations.approveQuotationPending.value" @click="approveQuotation(row)">
+              <DropdownMenuProItem :disabled="quotations.approveQuotationPending.value" @click="approveQuotation(row)">
                 <CheckCircle2Icon aria-hidden="true" />
                 审批通过
-              </DropdownMenuItem>
+              </DropdownMenuProItem>
             </RowActions>
             <span v-else class="text-muted-foreground">—</span>
           </template>
         </DataTablePro>
-        <DataTablePagination v-model:page="quotationsPaged.page.value" v-model:page-size="quotationsPaged.pageSize.value" :total-items="quotations.total.value" />
+        <DataTablePaginationPro
+          v-model:page="quotationsPaged.page.value"
+          :page-size="quotationsPaged.pageSize.value"
+          :total-items="quotations.total.value"
+          @update:page-size="(v) => (quotationsPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="orders" class="grid gap-4">
@@ -410,7 +420,12 @@ function formatError(error: unknown) {
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="ordersPaged.page.value" v-model:page-size="ordersPaged.pageSize.value" :total-items="orders.salesOrdersTotal.value" />
+        <DataTablePaginationPro
+          v-model:page="ordersPaged.page.value"
+          :page-size="ordersPaged.pageSize.value"
+          :total-items="orders.salesOrdersTotal.value"
+          @update:page-size="(v) => (ordersPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
 
       <TabsProContent value="deliveries" class="grid gap-4">
@@ -431,7 +446,12 @@ function formatError(error: unknown) {
         >
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePagination v-model:page="deliveriesPaged.page.value" v-model:page-size="deliveriesPaged.pageSize.value" :total-items="deliveries.total.value" />
+        <DataTablePaginationPro
+          v-model:page="deliveriesPaged.page.value"
+          :page-size="deliveriesPaged.pageSize.value"
+          :total-items="deliveries.total.value"
+          @update:page-size="(v) => (deliveriesPaged.pageSize.value = String(v))"
+        />
       </TabsProContent>
     </TabsPro>
 
@@ -442,17 +462,17 @@ function formatError(error: unknown) {
           <DialogProDescription>登记客户线索与商机主题，进入销售漏斗跟进。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitOpportunity">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-opp-customer">客户</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-opp-customer">客户</FieldProLabel>
               <InputPro id="erp-opp-customer" v-model="opportunityForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-opp-topic">商机主题</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-opp-topic">商机主题</FieldProLabel>
               <InputPro id="erp-opp-topic" v-model="opportunityForm.topic" autocomplete="off" placeholder="如 智能网关G200 批量采购意向" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="opportunityFormError" :errors="[opportunityFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="opportunityFormError" :errors="[opportunityFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -473,33 +493,33 @@ function formatError(error: unknown) {
           <DialogProDescription>面向客户报价，提交后经审批转为销售订单。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitQuotation">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="erp-quo-customer">客户</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="erp-quo-customer">客户</FieldProLabel>
               <InputPro id="erp-quo-customer" v-model="quotationForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-quo-expires">有效期至</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-quo-expires">有效期至</FieldProLabel>
               <InputPro id="erp-quo-expires" v-model="quotationForm.expiresOn" type="date" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-quo-sku">物料</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-quo-sku">物料</FieldProLabel>
               <InputPro id="erp-quo-sku" v-model="quotationForm.skuCode" autocomplete="off" placeholder="如 智能网关G200 的物料编码" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-quo-required">需求日期</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-quo-required">需求日期</FieldProLabel>
               <InputPro id="erp-quo-required" v-model="quotationForm.requiredDate" type="date" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-quo-qty">数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-quo-qty">数量</FieldProLabel>
               <InputPro id="erp-quo-qty" v-model="quotationForm.quantity" type="number" min="1" step="1" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-quo-price">单价（元）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-quo-price">单价（元）</FieldProLabel>
               <InputPro id="erp-quo-price" v-model="quotationForm.unitPrice" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="quotationFormError" :errors="[quotationFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="quotationFormError" :errors="[quotationFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -520,17 +540,17 @@ function formatError(error: unknown) {
           <DialogProDescription>由已批准的报价转换生成销售订单，订单明细沿用报价。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitOrder">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-so-quotation">报价单号</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-so-quotation">报价单号</FieldProLabel>
               <InputPro id="erp-so-quotation" v-model="orderForm.quotationNo" autocomplete="off" placeholder="已批准的报价单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-so-no">销售单号（可选）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-so-no">销售单号（可选）</FieldProLabel>
               <InputPro id="erp-so-no" v-model="orderForm.salesOrderNo" autocomplete="off" placeholder="留空由系统编号" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="orderFormError" :errors="[orderFormError]" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="orderFormError" :errors="[orderFormError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>

@@ -6,8 +6,8 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuProItem,
+  DropdownMenuProSeparator,
   InputPro,
   PageHeader,
   RowActions,
@@ -185,15 +185,15 @@ function formatError(error: unknown) {
       <template #cell-frozen="{ row }"><span class="tabular-nums">{{ formatQuantity(lineFrozen(row.onHandQuantity, row.availableQuantity)) }}</span></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`库存操作 ${row.locationCode ?? ''}`">
-          <DropdownMenuItem @click="openMovement(row)">
+          <DropdownMenuProItem @click="openMovement(row)">
             <MoveRightIcon aria-hidden="true" />
             发起移动
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem @click="openCount(row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProSeparator />
+          <DropdownMenuProItem @click="openCount(row)">
             <ClipboardListIcon aria-hidden="true" />
             创建盘点
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>

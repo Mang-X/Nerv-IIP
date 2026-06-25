@@ -10,7 +10,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -19,10 +19,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -32,11 +32,11 @@ import {
   SelectProItem,
   SelectProTrigger,
   SelectProValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -237,9 +237,9 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>派生对象</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel for="item-mode">派生方式</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro>
+                  <FieldProLabel for="item-mode">派生方式</FieldProLabel>
                   <SelectPro v-model="form.targetMode">
                     <SelectProTrigger id="item-mode"><SelectProValue /></SelectProTrigger>
                     <SelectProContent>
@@ -247,36 +247,36 @@ function formatError(error: unknown) {
                       <SelectProItem value="existing">在已有物料上派生</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>
+                  <FieldProDescription>
                     新建物料时编码由系统自动生成；派生时沿用所选物料编码。
-                  </FieldDescription>
-                </Field>
-                <Field v-if="form.targetMode === 'existing'" :data-invalid="showErrors && !targetValid">
-                  <FieldLabel for="item-code">物料编码 <span class="text-destructive">*</span></FieldLabel>
+                  </FieldProDescription>
+                </FieldPro>
+                <FieldPro v-if="form.targetMode === 'existing'" :data-invalid="showErrors && !targetValid">
+                  <FieldProLabel for="item-code">物料编码 <span class="text-destructive">*</span></FieldProLabel>
                   <SelectPro v-model="form.itemCode">
                     <SelectProTrigger id="item-code"><SelectProValue placeholder="选择已有物料" /></SelectProTrigger>
                     <SelectProContent>
                       <SelectProItem v-for="code in knownItemCodes" :key="code" :value="code">{{ code }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
-                  <FieldDescription>从当前列表里已存在的物料编码中选择。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>从当前列表里已存在的物料编码中选择。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>修订内容</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="item-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="item-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="item-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </Field>
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="item-name">名称 <span class="text-destructive">*</span></FieldLabel>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="item-name">名称 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="item-name" v-model="form.name" placeholder="物料名称" />
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+              </FieldProGroup>
 
-              <Field>
-                <FieldLabel>发布</FieldLabel>
+              <FieldPro>
+                <FieldProLabel>发布</FieldProLabel>
                 <label
                   for="item-release"
                   class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
@@ -284,8 +284,8 @@ function formatError(error: unknown) {
                   <span>创建后立即发布该修订</span>
                   <CheckboxPro id="item-release" v-model:checked="form.release" />
                 </label>
-                <FieldDescription>不勾选则保存为草稿；发布后该修订不可变。</FieldDescription>
-              </Field>
+                <FieldProDescription>不勾选则保存为草稿；发布后该修订不可变。</FieldProDescription>
+              </FieldPro>
 
               <DialogProFooter>
                 <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
@@ -338,16 +338,21 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="itemsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="itemsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>工程物料 · 修订明细</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-md">
+        <SheetProHeader>
+          <SheetProTitle>工程物料 · 修订明细</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.itemCode} · 修订 ${viewTarget.revision}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
             <Spinner aria-hidden="true" />
@@ -379,7 +384,7 @@ function formatError(error: unknown) {
             </p>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

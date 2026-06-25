@@ -18,10 +18,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   ScrollArea,
@@ -680,18 +680,18 @@ function openMembers(row: BusinessConsoleResourceItem) {
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreateDept">
           <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
-              <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
+              <FieldProLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="dept-name" v-model="deptForm.name" autocomplete="off" required />
-              <FieldDescription>编码由系统自动生成，保存后即可在树中查看。</FieldDescription>
-            </Field>
-            <Field v-if="deptParentLocked">
-              <FieldLabel for="dept-parent">上级部门</FieldLabel>
+              <FieldProDescription>编码由系统自动生成，保存后即可在树中查看。</FieldProDescription>
+            </FieldPro>
+            <FieldPro v-if="deptParentLocked">
+              <FieldProLabel for="dept-parent">上级部门</FieldProLabel>
               <InputPro id="dept-parent" :model-value="deptForm.parentDepartmentCode" disabled />
-            </Field>
-            <Field v-else>
-              <FieldLabel for="dept-parent">上级部门</FieldLabel>
+            </FieldPro>
+            <FieldPro v-else>
+              <FieldProLabel for="dept-parent">上级部门</FieldProLabel>
               <SelectPro v-model="deptForm.parentDepartmentCode">
                 <SelectProTrigger id="dept-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
                 <SelectProContent>
@@ -700,9 +700,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </SelectProItem>
                 </SelectProContent>
               </SelectPro>
-              <FieldDescription>留空表示顶级部门。</FieldDescription>
-            </Field>
-          </FieldGroup>
+              <FieldProDescription>留空表示顶级部门。</FieldProDescription>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="deptCreateOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="departments.createPending.value">
@@ -722,17 +722,17 @@ function openMembers(row: BusinessConsoleResourceItem) {
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitEditDept">
           <p v-if="deptEditShowErrors && !canEditDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="dept-edit-code">部门编码</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="dept-edit-code">部门编码</FieldProLabel>
               <InputPro id="dept-edit-code" :model-value="deptEditCode" disabled />
-            </Field>
-            <Field :data-invalid="deptEditShowErrors && !isNonEmpty(deptEditForm.name)">
-              <FieldLabel for="dept-edit-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="deptEditShowErrors && !isNonEmpty(deptEditForm.name)">
+              <FieldProLabel for="dept-edit-name">部门名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="dept-edit-name" v-model="deptEditForm.name" autocomplete="off" required />
-            </Field>
-            <Field>
-              <FieldLabel for="dept-edit-parent">上级部门</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="dept-edit-parent">上级部门</FieldProLabel>
               <SelectPro v-model="deptEditForm.parentDepartmentCode">
                 <SelectProTrigger id="dept-edit-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
                 <SelectProContent>
@@ -742,9 +742,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </SelectProItem>
                 </SelectProContent>
               </SelectPro>
-              <FieldDescription>留空表示顶级部门；不能挂到自己或其下级部门下。</FieldDescription>
-            </Field>
-          </FieldGroup>
+              <FieldProDescription>留空表示顶级部门；不能挂到自己或其下级部门下。</FieldProDescription>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="deptEditOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
@@ -764,22 +764,22 @@ function openMembers(row: BusinessConsoleResourceItem) {
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitTeam">
           <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field v-if="teamEditingCode">
-              <FieldLabel for="team-code">班组编码</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro v-if="teamEditingCode">
+              <FieldProLabel for="team-code">班组编码</FieldProLabel>
               <InputPro id="team-code" :model-value="teamForm.code" disabled />
-            </Field>
-            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
-              <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
+              <FieldProLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldProLabel>
               <InputPro id="team-name" v-model="teamForm.name" autocomplete="off" required />
-              <FieldDescription v-if="!teamEditingCode">编码由系统自动生成。</FieldDescription>
-            </Field>
-            <Field v-if="teamDepartmentLocked && !teamEditingCode">
-              <FieldLabel for="team-dept-locked">所属部门</FieldLabel>
+              <FieldProDescription v-if="!teamEditingCode">编码由系统自动生成。</FieldProDescription>
+            </FieldPro>
+            <FieldPro v-if="teamDepartmentLocked && !teamEditingCode">
+              <FieldProLabel for="team-dept-locked">所属部门</FieldProLabel>
               <InputPro id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
-            </Field>
-            <Field v-else :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)">
-              <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro v-else :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)">
+              <FieldProLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-model="teamForm.departmentCode">
                 <SelectProTrigger id="team-dept"><SelectProValue placeholder="请选择部门" /></SelectProTrigger>
                 <SelectProContent>
@@ -788,9 +788,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.shiftCode)">
-              <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="teamShowErrors && !isNonEmpty(teamForm.shiftCode)">
+              <FieldProLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-model="teamForm.shiftCode">
                 <SelectProTrigger id="team-shift"><SelectProValue placeholder="请选择班次" /></SelectProTrigger>
                 <SelectProContent>
@@ -799,9 +799,9 @@ function openMembers(row: BusinessConsoleResourceItem) {
                   </SelectProItem>
                 </SelectProContent>
               </SelectPro>
-              <FieldDescription>班次在「排班与日历」页维护。</FieldDescription>
-            </Field>
-          </FieldGroup>
+              <FieldProDescription>班次在「排班与日历」页维护。</FieldProDescription>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="teamOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">

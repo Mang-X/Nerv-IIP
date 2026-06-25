@@ -6,7 +6,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -15,10 +15,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   StatusBadgePro,
@@ -158,7 +158,12 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="putawayTasksTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="putawayTasksTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>
@@ -167,34 +172,34 @@ function formatError(error: unknown) {
           <DialogProDescription>将收货入库单的暂存库存移入目标库位，完成上架增量。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel for="wms-putaway-inbound">入库单</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="wms-putaway-inbound">入库单</FieldProLabel>
               <InputPro id="wms-putaway-inbound" v-model="createForm.inboundOrderId" autocomplete="off" placeholder="入库单标识" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-no">任务号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-no">任务号</FieldProLabel>
               <InputPro id="wms-putaway-no" v-model="createForm.taskNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-line">行号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-line">行号</FieldProLabel>
               <InputPro id="wms-putaway-line" v-model="createForm.lineNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-from">来源库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-from">来源库位</FieldProLabel>
               <InputPro id="wms-putaway-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="暂存库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-to">目标库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-to">目标库位</FieldProLabel>
               <InputPro id="wms-putaway-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="货架库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-qty">上架数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-qty">上架数量</FieldProLabel>
               <InputPro id="wms-putaway-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

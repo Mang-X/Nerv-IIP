@@ -6,7 +6,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -15,11 +15,11 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -221,23 +221,28 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`WCS 任务操作 ${row.externalTaskId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
+          <DropdownMenuProItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
             <SendIcon aria-hidden="true" />
             重新派发
-          </DropdownMenuItem>
-          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
             <XCircleIcon aria-hidden="true" />
             标记失败
-          </DropdownMenuItem>
-          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('complete', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem :disabled="!row.externalTaskId" @click="openDialog('complete', row)">
             <CheckCircle2Icon aria-hidden="true" />
             标记完成
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wcsTasksTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="wcsTasksTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro :open="openAction === 'dispatch'" @update:open="(v) => { if (!v) openAction = '' }">
       <DialogProContent>
@@ -246,21 +251,21 @@ function formatError(error: unknown) {
           <DialogProDescription>将仓库任务派发到设备控制系统（WCS）适配器。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitDispatch">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-adapter">适配器</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-adapter">适配器</FieldProLabel>
               <InputPro id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-external">外部任务号</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-external">外部任务号</FieldProLabel>
               <InputPro id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-payload">派发载荷（JSON）</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-payload">派发载荷（JSON）</FieldProLabel>
               <InputPro id="wcs-payload" v-model="dispatchForm.payloadJson" class="font-mono" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -278,17 +283,17 @@ function formatError(error: unknown) {
           <DialogProDescription>记录 {{ pendingTask?.externalTaskId ?? '' }} 的失败代码与说明，便于后续重试。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitFail">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-failure-code">失败代码</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-failure-code">失败代码</FieldProLabel>
               <InputPro id="wcs-failure-code" v-model="failForm.failureCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-failure-message">失败说明</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-failure-message">失败说明</FieldProLabel>
               <InputPro id="wcs-failure-message" v-model="failForm.failureMessage" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -306,13 +311,13 @@ function formatError(error: unknown) {
           <DialogProDescription>提交 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-completion">完成回执（JSON）</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-completion">完成回执（JSON）</FieldProLabel>
               <InputPro id="wcs-completion" v-model="completeForm.completionPayloadJson" class="font-mono" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>

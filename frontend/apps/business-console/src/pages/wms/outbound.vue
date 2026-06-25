@@ -7,7 +7,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -16,10 +16,10 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -264,7 +264,12 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="outboundOrdersTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="outboundOrdersTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="reviewOpen">
       <DialogProContent>
@@ -275,17 +280,17 @@ function formatError(error: unknown) {
           </DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitReview">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wms-pack-review-no">复核单号</FieldLabel>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wms-pack-review-no">复核单号</FieldProLabel>
               <InputPro id="wms-pack-review-no" v-model="form.packReviewNo" :aria-invalid="Boolean(formError)" autocomplete="off" />
-              <FieldError v-if="formError" :errors="[formError]" />
-            </Field>
-            <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldLabel for="wms-pack-passed">复核通过</FieldLabel>
+              <FieldProError v-if="formError" :errors="[formError]" />
+            </FieldPro>
+            <FieldPro orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+              <FieldProLabel for="wms-pack-passed">复核通过</FieldProLabel>
               <CheckboxPro id="wms-pack-passed" v-model:checked="form.passed" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>
@@ -303,24 +308,24 @@ function formatError(error: unknown) {
           <DialogProDescription>登记出库发货单的来源与明细，提交后进入拣货/复核流程。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="wms-out-no">出库单号</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="wms-out-no">出库单号</FieldProLabel>
               <InputPro id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-site">工厂</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-site">工厂</FieldProLabel>
               <InputPro id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-srctype">来源类型</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-srctype">来源类型</FieldProLabel>
               <InputPro id="wms-out-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 销售发货" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-srcid">来源单据</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-srcid">来源单据</FieldProLabel>
               <InputPro id="wms-out-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
@@ -354,7 +359,7 @@ function formatError(error: unknown) {
             </div>
           </div>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
           <DialogProFooter>
             <DialogProClose as-child>

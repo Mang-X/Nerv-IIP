@@ -21,10 +21,10 @@ import {
   DialogProHeader,
   DialogProTitle,
   DialogProTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   SectionCard,
@@ -366,13 +366,13 @@ async function submitSkill() {
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitSkill">
           <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
-              <FieldLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2" :data-invalid="skillShowErrors && !isNonEmpty(skillForm.userId)">
+              <FieldProLabel for="skill-worker">工人 <span class="text-destructive">*</span></FieldProLabel>
               <WorkerSelect id="skill-worker" v-model="skillForm.userId" placeholder="搜索并选择工人" />
-            </Field>
-            <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
-              <FieldLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
+              <FieldProLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-model="skillForm.skillCode">
                 <SelectProTrigger id="skill-code"><SelectProValue placeholder="请选择技能" /></SelectProTrigger>
                 <SelectProContent>
@@ -380,22 +380,22 @@ async function submitSkill() {
                 </SelectProContent>
               </SelectPro>
               <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「基础数据 › 技能目录」里维护技能项。</p>
-            </Field>
-            <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
-              <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>
+            </FieldPro>
+            <FieldPro :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
+              <FieldProLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldProLabel>
               <SelectPro v-model="skillForm.level">
                 <SelectProTrigger id="skill-level"><SelectProValue placeholder="请选择等级" /></SelectProTrigger>
                 <SelectProContent>
                   <SelectProItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectProItem>
                 </SelectProContent>
               </SelectPro>
-            </Field>
-            <Field>
-              <FieldLabel for="skill-from">生效日期</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="skill-from">生效日期</FieldProLabel>
               <InputPro id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
-              <FieldDescription>留空表示即时生效。</FieldDescription>
-            </Field>
-          </FieldGroup>
+              <FieldProDescription>留空表示即时生效。</FieldProDescription>
+            </FieldPro>
+          </FieldProGroup>
           <DialogProFooter>
             <ButtonPro type="button" variant="outline" @click="skillOpen = false">取消</ButtonPro>
             <ButtonPro type="submit" :disabled="skillAssignment.assignPending.value">

@@ -9,7 +9,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePagination,
+  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -18,11 +18,11 @@ import {
   DialogProFooter,
   DialogProHeader,
   DialogProTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
   InputPro,
   PageHeader,
   RowActions,
@@ -234,15 +234,20 @@ function formatError(error: unknown) {
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`盘点操作 ${row.countNo ?? countNo(row)}`">
-          <DropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
+          <DropdownMenuProItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="countExecutionsTotal" />
+    <DataTablePaginationPro
+      v-model:page="page"
+      :page-size="pageSize"
+      :total-items="countExecutionsTotal"
+      @update:page-size="(v) => (pageSize = String(v))"
+    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>
@@ -251,34 +256,34 @@ function formatError(error: unknown) {
           <DialogProDescription>按库位与 SKU 登记盘点单，账面数量留空则由系统取值。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="cnt-no">盘点单号</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="cnt-no">盘点单号</FieldProLabel>
               <InputPro id="cnt-no" v-model="createForm.countNo" autocomplete="off" placeholder="如 CNT-2026-0003" />
-            </Field>
-            <Field>
-              <FieldLabel for="cnt-sku">SKU</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cnt-sku">SKU</FieldProLabel>
               <InputPro id="cnt-sku" v-model="createForm.skuCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="cnt-site">工厂</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cnt-site">工厂</FieldProLabel>
               <InputPro id="cnt-site" v-model="createForm.siteCode" autocomplete="off" placeholder="如 SITE-HD" />
-            </Field>
-            <Field>
-              <FieldLabel for="cnt-location">库位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cnt-location">库位</FieldProLabel>
               <InputPro id="cnt-location" v-model="createForm.locationCode" autocomplete="off" placeholder="如 RACK-A-01-01" />
-            </Field>
-            <Field>
-              <FieldLabel for="cnt-uom">单位</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cnt-uom">单位</FieldProLabel>
               <InputPro id="cnt-uom" v-model="createForm.uomCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="cnt-expected">账面数量</FieldLabel>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="cnt-expected">账面数量</FieldProLabel>
               <InputPro id="cnt-expected" v-model="createForm.expectedQuantity" type="number" min="0" step="any" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
+          <FieldProError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>
@@ -302,14 +307,14 @@ function formatError(error: unknown) {
           </DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="cnt-counted">实盘数量</FieldLabel>
+          <FieldProGroup class="grid gap-3">
+            <FieldPro>
+              <FieldProLabel for="cnt-counted">实盘数量</FieldProLabel>
               <InputPro id="cnt-counted" v-model="completeForm.countedQuantity" type="number" min="0" step="any" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
+          <FieldProError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
           <DialogProFooter>
             <DialogProClose as-child>
