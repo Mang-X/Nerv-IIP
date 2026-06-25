@@ -224,3 +224,23 @@
 .ds-wide .content-container {
   max-width: 1080px !important;
 }
+
+/* ----------------------------------------------------------------------------
+ * Screen-layer tables. VitePress styles every `.vp-doc table` (full cell
+ * borders, grey zebra, display:block, margins). On screen-component doc pages
+ * that bleeds onto ScreenTable / AlarmTable and fights their scoped design.
+ * Strip it so their own styles (hairline rows, cyan hover, rounded frame) win.
+ * gallery (layout:false) has no .vp-doc, so it was unaffected all along.
+ * ------------------------------------------------------------------------- */
+.vp-doc :is(.sb-tbl, .sb-at-tbl) {
+  display: table;
+  margin: 0;
+  overflow: visible;
+}
+.vp-doc :is(.sb-tbl, .sb-at-tbl) tr {
+  background: transparent !important;
+  border: 0;
+}
+.vp-doc :is(.sb-tbl, .sb-at-tbl) :is(th, td) {
+  border: 0;
+}
