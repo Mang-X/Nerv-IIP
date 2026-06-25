@@ -102,6 +102,7 @@ export default defineConfig({
           text: '表单',
           items: [
             { text: 'Input 输入框', link: '/components/desktop/input' },
+            { text: 'Field 表单字段', link: '/components/desktop/field' },
             { text: 'Select 选择器', link: '/components/desktop/select' },
             { text: 'Checkbox 复选框', link: '/components/desktop/checkbox' },
             { text: 'Radio 单选框', link: '/components/desktop/radio' },
@@ -127,6 +128,9 @@ export default defineConfig({
           items: [
             { text: 'Alert 警告提示', link: '/components/desktop/alert' },
             { text: 'Dialog 对话框', link: '/components/desktop/dialog' },
+            { text: 'AlertDialog 警示对话框', link: '/components/desktop/alert-dialog' },
+            { text: 'Sheet 抽屉', link: '/components/desktop/sheet' },
+            { text: 'DropdownMenu 下拉菜单', link: '/components/desktop/dropdown-menu' },
             { text: 'Popconfirm 气泡确认', link: '/components/desktop/popconfirm' },
             { text: 'Tooltip 文字提示', link: '/components/desktop/tooltip' },
             { text: 'Notify 消息提醒', link: '/components/desktop/notify' },

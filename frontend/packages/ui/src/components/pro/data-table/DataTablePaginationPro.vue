@@ -25,7 +25,8 @@ import {
 const props = withDefaults(
   defineProps<{
     page: number
-    pageSize: number
+    /** Accepts a string too, so it drops in over `usePagedList`'s string pageSize. */
+    pageSize: number | string
     totalItems: number
     pageSizeOptions?: number[]
     /** Sibling page count on each side of the current page. */
@@ -49,7 +50,9 @@ const emit = defineEmits<{
   'update:pageSize': [value: number]
 }>()
 
-const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / props.pageSize)))
+// Normalise to a number — pageSize may arrive as a string (e.g. from usePagedList).
+const size = computed(() => Number(props.pageSize) || 10)
+const totalPages = computed(() => Math.max(1, Math.ceil(props.totalItems / size.value)))
 const currentPage = computed(() => Math.min(Math.max(1, props.page), totalPages.value))
 
 // Correct an out-of-range parent page (e.g. data shrank under the active window).
@@ -59,8 +62,8 @@ watch([totalPages, () => props.page], ([pages, page]) => {
 
 const summary = computed(() => {
   if (props.totalItems <= 0) return '0 条'
-  const start = (currentPage.value - 1) * props.pageSize + 1
-  const end = Math.min(currentPage.value * props.pageSize, props.totalItems)
+  const start = (currentPage.value - 1) * size.value + 1
+  const end = Math.min(currentPage.value * size.value, props.totalItems)
   return `${start}–${end} / ${props.totalItems} 条`
 })
 
