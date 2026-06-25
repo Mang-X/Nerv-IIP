@@ -63,18 +63,23 @@
 - `select/index.ts`：`SelectProGroup`(=SelectGroup)、`SelectProValue`(=SelectValue)
 - `tooltip/index.ts`：`TooltipProProvider`、`TooltipPro`(=TooltipRoot)、`TooltipProTrigger`
 
-## Pro 层缺口（迁移时仍需混用 base / blocks）
+## 已补齐的 Pro 套件（本轮新增，可直接用）
 
-下列在 `pro/` 暂无对应版本，业务页可继续用 base `ui/` 或 `blocks/`；是否补 Pro 版见“建议”。
+按 base 同名结构克隆为 Pro 版（命名 `<Base>Pro<Part>`，base 原版零改动）：
 
-| 组件 | pro/ | 现可用来源 | 建议 |
-| --- | :---: | --- | --- |
-| DropdownMenu* | ❌ | base `ui/dropdown-menu` | 高频，建议补 `DropdownMenuPro`（行操作菜单 RowActions 依赖） |
-| Card 子件（Header/Content/Footer/Title/Description） | ⚠️ 仅 `CardPro`/`MetricCardPro` | base `ui/card` | 建议补子件 Pro 版以成套 |
-| Field* / FieldGroup / FieldLabel / FieldError | ❌ | base `ui/field` | 表单高频，建议补 |
-| AlertDialog* | ❌ | base `ui/alert-dialog` | 建议补（删除确认等） |
-| Sheet* | ❌ | base `ui/sheet` | 建议补 |
-| DateRangePicker | ❌ | base `ui/date-picker` | 中频，可后置 |
-| PageHeader / RowActions / Toolbar / SectionCard(s) | ❌ | `blocks/*` | 属 pattern 层，base `ui/` 也无；按需上移 Pro |
+| 族 | 导出 | 目录 |
+| --- | --- | --- |
+| Card 子件 | `CardProHeader / CardProContent / CardProFooter / CardProTitle / CardProDescription / CardProAction`（补全 `CardPro` 成套） | `pro/card/` |
+| DropdownMenu | `DropdownMenuPro` + 13 部件（Trigger/Content/Item/CheckboxItem/RadioGroup/RadioItem/Label/Separator/Shortcut/Group/Sub/SubTrigger/SubContent）+ `DropdownMenuProPortal` | `pro/dropdown-menu/` |
+| Field | `FieldPro` + Content/Description/Error/Group/Label/Legend/Separator/Set/Title + `fieldProVariants` | `pro/field/` |
+| AlertDialog | `AlertDialogPro` + Trigger/Content/Header/Footer/Title/Description/Action/Cancel/Media（Action/Cancel 用 `ButtonPro`） | `pro/alert-dialog/` |
+| Sheet | `SheetPro` + Trigger/Close/Content/Header/Footer/Title/Description（Content 保留 `side` 四向 + 玻璃遮罩 + 关闭按钮） | `pro/sheet/` |
 
-> 这些缺口是后续“补齐 Pro 套件”的工作清单，不阻塞当前迁移（base/blocks 均可用）。
+## 仍缺口（按需后续）
+
+| 组件 | 现可用来源 | 备注 |
+| --- | --- | --- |
+| DateRangePicker | base `ui/date-picker`（`DatePickerPro` 仅单日） | 中频，可后置 |
+| PageHeader / RowActions / Toolbar / SectionCard(s) | `blocks/*` | 属 pattern 层（base `ui/` 也无）；按需上移 Pro。注：RowActions 现已可基于上面的 `DropdownMenuPro` 组合 |
+
+> 不阻塞迁移（base/blocks 均可用）。
