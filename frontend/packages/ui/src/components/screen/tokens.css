@@ -9,8 +9,8 @@
   /* surfaces — near-black blue; panels barely lift off the base */
   --sb-bg: #060912;
   --sb-bg-accent: #0a1322;
-  --sb-panel-a: #0c1019;
-  --sb-panel-b: #080b12;
+  --sb-panel-a: rgba(24, 36, 60, 0.55);
+  --sb-panel-b: rgba(12, 18, 32, 0.5);
   --sb-line: rgba(255, 255, 255, 0.06);
   --sb-line-2: rgba(255, 255, 255, 0.1);
   --sb-divider: rgba(255, 255, 255, 0.055);
