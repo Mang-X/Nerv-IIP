@@ -3,6 +3,7 @@ extern alias WmsWeb;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
@@ -27,7 +28,8 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
     {
         await using var dbContext = CreateDbContext();
         var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-001", "SO-AR-001", "SO-LINE-001", 2m, 80m);
-        var integrationEvent = BuildWmsCompletedEvent(delivery);
+        var completedAtUtc = DateTimeOffset.Parse("2026-07-03T16:30:00Z");
+        var integrationEvent = BuildWmsCompletedEvent(delivery) with { OccurredAtUtc = completedAtUtc };
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateHandler(dbContext, deadLetters);
 
@@ -43,6 +45,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         Assert.Equal("CUS-001", receivable.CustomerCode);
         Assert.Equal(160m, receivable.Amount);
         Assert.Equal("CNY", receivable.CurrencyCode);
+        Assert.Equal(DateOnly.FromDateTime(completedAtUtc.UtcDateTime), dbContext.AccountReceivables.Single().InvoiceDate);
         Assert.Single(dbContext.AccountReceivables);
         Assert.Single(dbContext.JournalVouchers);
         Assert.Single(dbContext.ProcessedIntegrationEvents);
@@ -53,11 +56,68 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
     }
 
     [Fact]
+    public async Task OutboundOrderCompletedHandler_CalculatesReceivableFromAllErpDeliveryLines()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(
+            dbContext,
+            "DO-AR-MULTI",
+            "SO-AR-MULTI",
+            [
+                new SalesDeliveryLineSpec("SO-LINE-001", 2m, 80m),
+                new SalesDeliveryLineSpec("SO-LINE-002", 3m, 12.5m),
+            ]);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(BuildWmsCompletedEvent(delivery), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receivable = await new GetAccountReceivableBySourceDocumentQueryHandler(dbContext).Handle(
+            new GetAccountReceivableBySourceDocumentQuery("org-001", "env-dev", "DO-AR-MULTI"),
+            CancellationToken.None);
+        Assert.Equal(197.5m, receivable.Amount);
+        Assert.Single(dbContext.AccountReceivables);
+        Assert.Single(dbContext.JournalVouchers);
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersLineReferenceMismatchWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-AR-LINE-MISMATCH", "SO-AR-LINE-MISMATCH", "SO-LINE-001", 2m, 80m);
+        var integrationEvent = BuildWmsCompletedEvent(delivery) with
+        {
+            Payload = BuildWmsCompletedEvent(delivery).Payload with { LineReference = "SO-LINE-MISSING" },
+        };
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(dbContext.AccountReceivables);
+        Assert.Empty(dbContext.JournalVouchers);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("missing-source-facts", deadLetter.FailureCode);
+        Assert.Equal(integrationEvent.IdempotencyKey, deadLetter.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task OutboundOrderCompletedHandler_IgnoresUnmatchedOutboundWithoutSideEffects()
     {
         await using var dbContext = CreateDbContext();
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
-        var handler = CreateHandler(dbContext, deadLetters);
+        var logger = new TestLogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>();
+        var handler = CreateHandler(dbContext, deadLetters, logger);
         var integrationEvent = BuildWmsCompletedEvent("WMS-OUT-UNRELATED", "SO-UNRELATED", "LINE-001");
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -70,16 +130,22 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
+        Assert.Contains(logger.Messages, x =>
+            x.Level == LogLevel.Debug
+            && x.Message.Contains("WMS outbound completion", StringComparison.Ordinal)
+            && x.Message.Contains("WMS-OUT-UNRELATED", StringComparison.Ordinal));
     }
 
     private static WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable CreateHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore deadLetterStore)
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        ILogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>? logger = null)
     {
         return new WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable(
             dbContext,
             deadLetterStore,
-            new ErpCodingService());
+            new ErpCodingService(),
+            logger ?? new TestLogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable>());
     }
 
     private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
@@ -90,19 +156,32 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         decimal deliveryQuantity,
         decimal unitPrice)
     {
+        return await ReleaseDeliveryOrderAsync(
+            dbContext,
+            deliveryOrderNo,
+            salesOrderNo,
+            [new SalesDeliveryLineSpec(lineNo, deliveryQuantity, unitPrice)]);
+    }
+
+    private static async Task<DeliveryOrder> ReleaseDeliveryOrderAsync(
+        ApplicationDbContext dbContext,
+        string deliveryOrderNo,
+        string salesOrderNo,
+        IReadOnlyCollection<SalesDeliveryLineSpec> lines)
+    {
         var quotation = Quotation.Create(
             "org-001",
             "env-dev",
             $"Q-{salesOrderNo}",
             "CUS-001",
             DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
-            [new QuotationLineDraft(lineNo, "SKU-FG-1000", "kg", 5m, unitPrice, new DateOnly(2026, 7, 1))]);
+            lines.Select(x => new QuotationLineDraft(x.LineNo, "SKU-FG-1000", "kg", 5m, x.UnitPrice, new DateOnly(2026, 7, 1))).ToArray());
         quotation.Approve();
         var salesOrder = SalesOrder.CreateFromQuotation(salesOrderNo, quotation);
         var delivery = DeliveryOrder.Release(
             salesOrder,
             deliveryOrderNo,
-            [new DeliveryOrderLineDraft(lineNo, deliveryQuantity, "LOC-A-01", "LOT-001")]);
+            lines.Select(x => new DeliveryOrderLineDraft(x.LineNo, x.DeliveryQuantity, "LOC-A-01", "LOT-001")).ToArray());
         dbContext.Quotations.Add(quotation);
         dbContext.SalesOrders.Add(salesOrder);
         dbContext.DeliveryOrders.Add(delivery);
@@ -117,7 +196,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         return BuildWmsCompletedEvent(
             outboundRequested.Payload.DeliveryOrderNo,
             outboundRequested.Payload.SalesOrderNo,
-            outboundRequested.Payload.Lines.Single().SourceLineNo);
+            outboundRequested.Payload.Lines.OrderBy(x => x.SourceLineNo, StringComparer.Ordinal).First().SourceLineNo);
     }
 
     private static WmsIntegrationEvent BuildWmsCompletedEvent(
@@ -156,6 +235,34 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             .UseInMemoryDatabase($"erp-wms-outbound-ar-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot())
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private sealed record SalesDeliveryLineSpec(string LineNo, decimal DeliveryQuantity, decimal UnitPrice);
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add((logLevel, formatter(state, exception)));
+        }
     }
 
     private sealed class NoopMediator : IMediator

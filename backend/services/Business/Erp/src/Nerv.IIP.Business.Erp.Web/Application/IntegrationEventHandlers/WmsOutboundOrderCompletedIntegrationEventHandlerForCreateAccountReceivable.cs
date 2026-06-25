@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
@@ -16,7 +17,8 @@ namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ErpCodingService codingService)
+    ErpCodingService codingService,
+    ILogger<WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable> logger)
     : IIntegrationEventHandler<WmsIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.wms-outbound-completed-ar-accrual";
@@ -81,9 +83,15 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
                 cancellationToken);
         if (delivery is null)
         {
+            logger.LogDebug(
+                "Ignoring WMS outbound completion {PublicReference} because no ERP delivery order matched org {OrganizationId} env {EnvironmentId}.",
+                integrationEvent.Payload.PublicReference,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
             return;
         }
 
+        // WMS completion is currently order-level; LineReference carries the first completed line only as a sanity check.
         if (!string.IsNullOrWhiteSpace(integrationEvent.Payload.LineReference)
             && !delivery.Lines.Any(x => string.Equals(x.SalesOrderLineNo, integrationEvent.Payload.LineReference, StringComparison.Ordinal)))
         {
@@ -147,7 +155,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
                 delivery.CustomerCode,
                 amount,
                 DefaultDeliveryAccrualCurrencyCode,
-                DateOnly.FromDateTime(delivery.ReleasedAtUtc),
+                DateOnly.FromDateTime(integrationEvent.OccurredAtUtc.UtcDateTime),
                 null,
                 "DELIVERY-AR",
                 $"{ConsumerName}:{delivery.OrganizationId}:{delivery.EnvironmentId}:{delivery.DeliveryOrderNo}:{lineSignature}:{integrationEvent.IdempotencyKey}"),
