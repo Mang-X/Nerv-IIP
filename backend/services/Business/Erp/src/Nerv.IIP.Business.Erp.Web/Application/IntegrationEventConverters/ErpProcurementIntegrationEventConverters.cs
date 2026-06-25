@@ -49,23 +49,31 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
 }
 
 public sealed class PurchaseReceiptRecordedIntegrationEventConverter
-    : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, ErpIntegrationEvent<PurchaseReceiptRecordedPayload>>
+    : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, PurchaseReceiptRecordedIntegrationEvent>
 {
-    public ErpIntegrationEvent<PurchaseReceiptRecordedPayload> Convert(PurchaseReceiptRecordedDomainEvent domainEvent)
+    public PurchaseReceiptRecordedIntegrationEvent Convert(PurchaseReceiptRecordedDomainEvent domainEvent)
     {
         var receipt = domainEvent.PurchaseReceipt;
-        return Envelope(
+        var payload = new PurchaseReceiptRecordedPayload(
+            PublicId(receipt.Id),
+            receipt.PurchaseReceiptNo,
+            receipt.PurchaseOrderNo,
+            receipt.SupplierCode,
+            receipt.SiteCode,
+            receipt.QualityStatus);
+        return new PurchaseReceiptRecordedIntegrationEvent(
+            EventIds.New(),
             ErpIntegrationEventTypes.PurchaseReceiptRecorded,
+            1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
             receipt.OrganizationId,
             receipt.EnvironmentId,
+            "system:erp",
             EventIds.Idempotency("purchase-receipt-recorded", receipt.OrganizationId, receipt.EnvironmentId, receipt.PurchaseReceiptNo),
-            new PurchaseReceiptRecordedPayload(
-                PublicId(receipt.Id),
-                receipt.PurchaseReceiptNo,
-                receipt.PurchaseOrderNo,
-                receipt.SupplierCode,
-                receipt.SiteCode,
-                receipt.QualityStatus));
+            payload);
     }
 }
 
