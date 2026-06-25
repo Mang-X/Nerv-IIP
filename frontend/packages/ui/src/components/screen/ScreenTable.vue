@@ -91,9 +91,9 @@ withDefaults(
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--sb-cyan);
+  color: var(--sb-text-2);
   white-space: nowrap;
-  background: linear-gradient(180deg, #14233a, #0e1626);
+  background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid var(--sb-line-2);
 }
 .sb-tbl tbody td {

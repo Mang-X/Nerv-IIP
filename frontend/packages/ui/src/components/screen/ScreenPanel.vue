@@ -39,6 +39,9 @@ defineProps<{
   /* white top highlight (glass) + a quiet depth shadow — no colored bloom */
   box-shadow:
     inset 0 1px 0 var(--sb-highlight),
+    /* left-corner glow, stronger at the top — light flows down the left edge */
+    -9px -9px 22px -14px rgba(135, 208, 255, 0.5),
+    -7px 9px 18px -15px rgba(135, 208, 255, 0.2),
     0 10px 30px -18px rgba(0, 0, 0, 0.9);
 }
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */

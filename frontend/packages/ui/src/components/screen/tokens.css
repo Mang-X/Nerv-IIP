@@ -40,12 +40,13 @@
   --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
   /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
      white is reserved for the top highlight (--sb-highlight), not the edge body. */
+  /* left side brighter than right (light comes from the upper-left) */
   --sb-edge-gradient: linear-gradient(
     90deg,
-    rgba(135, 208, 255, 1),
-    rgba(135, 208, 255, 0.14) 15%,
-    rgba(135, 208, 255, 0.14) 85%,
-    rgba(135, 208, 255, 1)
+    rgba(135, 208, 255, 0.82),
+    rgba(135, 208, 255, 0.12) 16%,
+    rgba(135, 208, 255, 0.12) 84%,
+    rgba(135, 208, 255, 0.5)
   );
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
