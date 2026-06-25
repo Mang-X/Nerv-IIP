@@ -18,7 +18,9 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -64,6 +66,8 @@ public sealed class ErpSchemaConventionTests
             typeof(CostCandidate),
             typeof(CodeCounter),
             typeof(CodeIdempotencyKey),
+            typeof(ProcessedIntegrationEvent),
+            typeof(IntegrationEventDeadLetter),
         };
 
         var failures = new List<string>();
@@ -71,6 +75,7 @@ public sealed class ErpSchemaConventionTests
         failures.AddRange(SchemaConventionAssertions.BusinessTablesHaveComments(fixture.DbContext, ErpFacts.ServiceName, businessEntities));
         failures.AddRange(SchemaConventionAssertions.BusinessColumnsHaveComments(fixture.DbContext, ErpFacts.ServiceName, businessEntities));
         failures.AddRange(SchemaConventionAssertions.MigrationsHistoryTableIsInSchema(fixture.DbContext, ErpFacts.ServiceName, ErpFacts.Schema));
+        failures.AddRange(ProcessedIntegrationEventHasUniqueInboxIndex(fixture.DbContext.Model));
 
         Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
@@ -89,6 +94,27 @@ public sealed class ErpSchemaConventionTests
         {
             Assert.DoesNotContain(names, name => name.Contains(fragment, StringComparison.OrdinalIgnoreCase));
         }
+    }
+
+    private static IReadOnlyCollection<string> ProcessedIntegrationEventHasUniqueInboxIndex(IModel model)
+    {
+        var entity = model.FindEntityType(typeof(ProcessedIntegrationEvent));
+        if (entity is null)
+        {
+            return [$"{ErpFacts.ServiceName}: missing processed integration event entity metadata."];
+        }
+
+        var hasUniqueIndex = entity.GetIndexes().Any(index =>
+            index.IsUnique &&
+            index.GetDatabaseName() == "ux_processed_integration_events_consumer_idempotency_key" &&
+            index.Properties.Select(property => property.Name).SequenceEqual([
+                nameof(ProcessedIntegrationEvent.ConsumerName),
+                nameof(ProcessedIntegrationEvent.IdempotencyKey),
+            ]));
+
+        return hasUniqueIndex
+            ? []
+            : [$"{ErpFacts.ServiceName}: processed integration event inbox requires a unique consumer/idempotency key index."];
     }
 
     private static SchemaFixture CreateFixture()
