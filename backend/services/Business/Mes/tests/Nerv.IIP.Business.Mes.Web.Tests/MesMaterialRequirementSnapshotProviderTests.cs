@@ -409,9 +409,9 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
     public async Task Http_provider_treats_unresolved_production_version_as_missing_snapshot()
     {
         var productEngineeringHandler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.NotFound)
+            new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new { message = "No active production version matched." }),
+                Content = JsonContent.Create(new { data = (object?)null, success = false, message = "No active production version matched.", code = 0 }),
             });
         var inventoryHandler = new StubHttpMessageHandler(request =>
             throw new InvalidOperationException($"Inventory should not be called when ProductEngineering has no matching production version: {request.RequestUri}"));
