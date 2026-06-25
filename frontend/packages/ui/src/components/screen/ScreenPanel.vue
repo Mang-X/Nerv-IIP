@@ -81,10 +81,10 @@ defineProps<{
   /* sides keep the white-highlight feel (accent mixed toward white), ends dim */
   background: linear-gradient(
     90deg,
-    color-mix(in oklch, rgb(var(--pa)), white 50%),
-    rgba(var(--pa), 0.05) 18%,
-    rgba(var(--pa), 0.05) 82%,
-    color-mix(in oklch, rgb(var(--pa)), white 32%)
+    color-mix(in srgb, color-mix(in oklch, rgb(var(--pa)), white 52%) 60%, transparent),
+    rgba(var(--pa), 0.04) 18%,
+    rgba(var(--pa), 0.04) 82%,
+    color-mix(in srgb, color-mix(in oklch, rgb(var(--pa)), white 36%) 52%, transparent)
   );
 }
 .sb-panel > * {
