@@ -163,7 +163,7 @@ const label = computed(() =>
         <span
           v-for="w in WEEKDAYS"
           :key="w"
-          class="grid h-8 place-items-center text-xs text-muted-foreground"
+          class="grid size-8 place-items-center text-xs text-muted-foreground"
           >{{ w }}</span
         >
         <button
@@ -172,7 +172,7 @@ const label = computed(() =>
           type="button"
           :class="
             cn(
-              'ds-dp-cell grid h-8 place-items-center text-sm tabular-nums transition-colors',
+              'ds-dp-cell grid size-8 place-items-center text-sm tabular-nums transition-colors',
               cell.inRange ? 'bg-accent' : 'rounded-md',
               cell.isStart && 'rounded-l-md bg-accent',
               cell.isEnd && 'rounded-r-md bg-accent',
