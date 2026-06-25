@@ -82,8 +82,8 @@ defineProps<{
   background: linear-gradient(
     90deg,
     color-mix(in oklch, rgb(var(--pa)), white 50%),
-    rgba(var(--pa), 0.1) 18%,
-    rgba(var(--pa), 0.1) 82%,
+    rgba(var(--pa), 0.05) 18%,
+    rgba(var(--pa), 0.05) 82%,
     color-mix(in oklch, rgb(var(--pa)), white 32%)
   );
 }
