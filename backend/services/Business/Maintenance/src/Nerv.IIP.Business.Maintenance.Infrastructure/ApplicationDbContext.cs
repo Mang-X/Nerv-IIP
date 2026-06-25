@@ -47,4 +47,11 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
             cancellationToken);
     }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+            this,
+            () => base.SaveChanges(acceptAllChangesOnSuccess));
+    }
 }

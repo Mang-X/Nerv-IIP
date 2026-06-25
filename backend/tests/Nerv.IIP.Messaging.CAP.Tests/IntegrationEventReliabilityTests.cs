@@ -253,6 +253,46 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Equal(1, await assertionContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task Processed_integration_event_inbox_sync_save_wrapper_ignores_concurrent_duplicate_loser()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        using (var setup = new TestProcessedEventDbContext(options))
+        {
+            setup.Database.EnsureCreated();
+        }
+
+        using var firstContext = new TestProcessedEventDbContext(options);
+        using var secondContext = new TestProcessedEventDbContext(options);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            firstContext,
+            firstContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-sync-race-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            secondContext,
+            secondContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-sync-race-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+
+        firstContext.SaveChanges();
+        var saved = ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<SampleProcessedIntegrationEvent>(
+            secondContext,
+            secondContext.SaveChanges);
+
+        Assert.Equal(0, saved);
+        using var assertionContext = new TestProcessedEventDbContext(options);
+        Assert.Equal(1, assertionContext.ProcessedIntegrationEvents.Count());
+    }
+
     private static string[] IndexProperties(IIndex index)
     {
         return index.Properties.Select(property => property.Name).ToArray();

@@ -103,6 +103,28 @@ public static class ProcessedIntegrationEventInbox
         }
     }
 
+    public static int SaveChangesOrIgnoreDuplicate<TEntity>(
+        DbContext dbContext,
+        Func<int> saveChanges,
+        string? constraintOrIndexName = UniqueIndexName)
+        where TEntity : class
+    {
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(saveChanges);
+
+        try
+        {
+            return saveChanges();
+        }
+        catch (DbUpdateException exception) when (
+            HasPendingProcessedRecord<TEntity>(dbContext) &&
+            IsUniqueConflict(exception, dbContext, constraintOrIndexName))
+        {
+            dbContext.ChangeTracker.Clear();
+            return 0;
+        }
+    }
+
     private static bool HasProcessedKey<TEntity>(
         DbContext dbContext,
         TEntity entity,

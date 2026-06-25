@@ -78,6 +78,13 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             cancellationToken);
     }
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+            this,
+            () => base.SaveChanges(acceptAllChangesOnSuccess));
+    }
+
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PublishedMessage>().ToTable("cap_published_messages").HasKey(x => x.Id);
