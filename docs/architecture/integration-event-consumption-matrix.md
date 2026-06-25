@@ -1,5 +1,7 @@
 # Integration Event Consumption Matrix
 
+> Verified against `main` @ `8de8d51dbce1d6d77aa11f62a444cb39d6d7ef80` on 2026-06-25. Re-verify when adding/removing any public `*IntegrationEvent` contract or `IIntegrationEventHandler`/`CapSubscribe` consumer.
+
 This matrix is the current code-backed decision record for public integration
 events and business-service-local integration events. It prevents older
 `#419`/`#485` "published but unconsumed" lists from being treated as current
@@ -26,7 +28,8 @@ Classification values:
 
 - `consumed-internally`: an in-repo service currently has a real handler.
 - `needs-business-consumer`: a real business flow is incomplete; the row links
-  an existing issue or the `#485` child that owns the follow-up.
+  an existing issue, the `#485` child that owns the follow-up, or explicitly
+  marks the gap as awaiting triage under `#485` when no child exists yet.
 - `audit-or-external-only`: no in-platform state change is required now; the
   event is for audit, observability, notifications already covered elsewhere, or
   external extension consumers.
@@ -70,7 +73,7 @@ This PR does not implement those consumers and does not close `#485`.
 | `Nerv.IIP.Contracts.Inventory` | `inventory.StockMovementPosted` / `StockMovementPostedIntegrationEvent` | Inventory publishes successful postings. | WMS and MES consume `StockMovementPostedIntegrationEvent`. | `consumed-internally` | AP automation may also observe receipt facts later, but the event is not unconsumed. |
 | `Nerv.IIP.Contracts.Inventory` | `inventory.StockMovementPostingFailed` / `StockMovementPostingFailedIntegrationEvent` | Inventory publishes business-rejected movement requests. | WMS consumes `StockMovementPostingFailedIntegrationEvent`. | `consumed-internally` | No dangling action. |
 | `Nerv.IIP.Contracts.Inventory` | `inventory.StockCountVarianceConfirmed` / `StockCountVarianceConfirmedIntegrationEvent` | Inventory count variance converter. | No active handler found. | `producer-only-until-feature` | Keep as a public inventory governance fact. Future finance, notification, or analytics consumers remain under `#485` if required. |
-| `Nerv.IIP.Contracts.Inventory` | `inventory.StockAvailabilityChanged` / `StockAvailabilityChangedIntegrationEvent` | Inventory ledger changes publish availability changes. | No active handler found. | `needs-business-consumer` | `#485` owns follow-up decision/children for DemandPlanning/MES readiness refresh or equivalent availability projection. |
+| `Nerv.IIP.Contracts.Inventory` | `inventory.StockAvailabilityChanged` / `StockAvailabilityChangedIntegrationEvent` | Inventory ledger changes publish availability changes. | No active handler found. | `needs-business-consumer` | Awaiting triage under `#485`; no concrete child issue currently owns DemandPlanning/MES readiness refresh or equivalent availability projection. |
 | `Nerv.IIP.Contracts.Maintenance` | `maintenance.AssetUnavailable` / `AssetUnavailableIntegrationEvent` | Maintenance publishes asset unavailability. | MES consumes `AssetUnavailableIntegrationEvent` for reschedule/capacity impact. | `consumed-internally` | No dangling action. |
 | `Nerv.IIP.Contracts.Maintenance` | `maintenance.AssetRestored` / `AssetRestoredIntegrationEvent` | Maintenance publishes asset restoration. | MES consumes `AssetRestoredIntegrationEvent` for reschedule/capacity impact. | `consumed-internally` | No dangling action. |
 | `Nerv.IIP.Contracts.MasterData` | `masterData.SkuChanged` / `SkuChangedIntegrationEvent` | MasterData SKU converter. | No active handler found. | `producer-only-until-feature` | Current services resolve/snapshot SKU facts through APIs. Add consumers only when a downstream cache/projection feature exists; track via `#485`. |
@@ -139,5 +142,6 @@ This PR does not implement those consumers and does not close `#485`.
   annotations. A no-consumer event is only a defect when classified
   `needs-business-consumer`.
 - `needs-business-consumer` rows in this matrix deliberately map to existing
-  issues (`#485`, `#508`, `#509`, `#510`) or their enabling child (`#507`).
-  This document does not create additional GitHub issues.
+  issues (`#508`, `#509`, `#510`), their enabling child (`#507`), or a clearly
+  marked `#485` triage gap where no concrete child exists yet. This document
+  does not create additional GitHub issues.
