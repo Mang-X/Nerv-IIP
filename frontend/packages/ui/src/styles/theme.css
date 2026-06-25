@@ -303,3 +303,35 @@
     backdrop-filter: blur(10px) saturate(1.4);
   }
 }
+
+/* ----------------------------------------------------------------------------
+ * Sidebar — unified PREMIUM selected state (Linear / Vercel form), applied
+ * system-wide so every app-shell / page sidebar reads premium instead of
+ * shadcn's gray default: hover is a clean neutral wash, the selected row is a
+ * neutral *elevated* fill (no hue — a tinted fill reads muddy at any accent),
+ * foreground text, and the glyph carries identity in the brand accent.
+ *
+ * UNLAYERED on purpose and qualified to (0,3,0) so it out-ranks the
+ * same-specificity `data-active:bg-sidebar-accent` utilities on
+ * SidebarMenuButton regardless of import order. This polish was previously
+ * trapped in the Sidebar doc page's `.ds-sb` block; promoting it here makes the
+ * real product chrome match the docs. (The doc's `.ds-sb`-scoped copy keeps an
+ * even higher specificity, so those demos render exactly as authored.)
+ * ------------------------------------------------------------------------- */
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
+  color: var(--sidebar-foreground);
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
+  color: var(--sidebar-foreground);
+  font-weight: 500;
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'] svg,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'] svg {
+  color: var(--brand-strong);
+}
