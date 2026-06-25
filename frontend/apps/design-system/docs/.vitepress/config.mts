@@ -32,6 +32,7 @@ export default defineConfig({
       { text: '桌面 PC', link: '/components/desktop/', activeMatch: '/components/desktop' },
       { text: 'PDA 移动', link: '/components/mobile/', activeMatch: '/components/mobile' },
       { text: '一体机看板', link: '/components/board', activeMatch: '/components/board' },
+      { text: '大屏', link: '/components/screen/', activeMatch: '/components/screen' },
     ],
     sidebar: {
       '/guide/': [
@@ -235,6 +236,60 @@ export default defineConfig({
         {
           text: '一体机看板',
           items: [{ text: '工位看板', link: '/components/board' }],
+        },
+      ],
+      // 大屏 / 控制室 —— 独立 --sb-* 工业蓝令牌层，每组件一页，按分类分组
+      '/components/screen': [
+        {
+          text: '大屏 / 控制室',
+          items: [{ text: '概览', link: '/components/screen/' }],
+        },
+        {
+          text: '容器 / 外壳',
+          items: [
+            { text: 'ScreenPanel 面板', link: '/components/screen/screen-panel' },
+            { text: 'BorderPanel 描边面板', link: '/components/screen/border-panel' },
+            { text: 'TechFrame 科技边框', link: '/components/screen/tech-frame' },
+            { text: 'TitleBar 标题栏', link: '/components/screen/title-bar' },
+            { text: 'ScreenHeader 大屏页头', link: '/components/screen/screen-header' },
+            { text: 'GlowDivider 辉光分割', link: '/components/screen/glow-divider' },
+          ],
+        },
+        {
+          text: '指标 / 图表',
+          items: [
+            { text: 'OeeHero 核心指标', link: '/components/screen/oee-hero' },
+            { text: 'RingGauge 环形仪表', link: '/components/screen/ring-gauge' },
+            { text: 'CapsuleBar 胶囊进度', link: '/components/screen/capsule-bar' },
+            { text: 'DigitalFlop 数字翻牌', link: '/components/screen/digital-flop' },
+            { text: 'Sparkline 迷你趋势', link: '/components/screen/sparkline' },
+            { text: 'TrendChart 趋势图', link: '/components/screen/trend-chart' },
+            { text: 'TaktGantt 节拍甘特', link: '/components/screen/takt-gantt' },
+          ],
+        },
+        {
+          text: '数据 / 状态',
+          items: [
+            { text: 'StatusCard 产线状态卡', link: '/components/screen/status-card' },
+            { text: 'KpiBar 指标条', link: '/components/screen/kpi-bar' },
+            { text: 'AlarmTable 告警表', link: '/components/screen/alarm-table' },
+            { text: 'StatusLight 状态灯', link: '/components/screen/status-light' },
+            { text: 'StatusTag 状态标签', link: '/components/screen/status-tag' },
+          ],
+        },
+        {
+          text: '控件（大屏化）',
+          items: [
+            { text: 'ScreenButton 按钮', link: '/components/screen/screen-button' },
+            { text: 'ScreenInput 输入框', link: '/components/screen/screen-input' },
+            { text: 'ScreenSelect 下拉选择', link: '/components/screen/screen-select' },
+            { text: 'ScreenSearch 搜索框', link: '/components/screen/screen-search' },
+            { text: 'ScreenTable 数据表格', link: '/components/screen/screen-table' },
+            { text: 'ScreenTabs 标签页', link: '/components/screen/screen-tabs' },
+            { text: 'ScreenSegmented 分段控制', link: '/components/screen/screen-segmented' },
+            { text: 'ScreenSwitch 开关', link: '/components/screen/screen-switch' },
+            { text: 'ScreenPagination 分页', link: '/components/screen/screen-pagination' },
+          ],
         },
       ],
     },
