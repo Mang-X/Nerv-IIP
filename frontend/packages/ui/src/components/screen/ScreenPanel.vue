@@ -39,10 +39,20 @@ defineProps<{
   /* white top highlight (glass) + a quiet depth shadow — no colored bloom */
   box-shadow:
     inset 0 1px 0 var(--sb-highlight),
-    /* contained corner INNER glow — strong top-left, faint bottom-left */
-    inset 7px 7px 12px -9px rgba(135, 208, 255, 0.5),
-    inset 7px -7px 11px -10px rgba(135, 208, 255, 0.22),
     0 10px 30px -18px rgba(0, 0, 0, 0.9);
+}
+/* corner points of light — a soft radial pooled in the two LEFT corners only
+   (not along the edges); top-left brighter, bottom-left fainter. */
+.sb-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at top left, rgba(135, 208, 255, 0.5), transparent 15%),
+    radial-gradient(circle at bottom left, rgba(135, 208, 255, 0.2), transparent 11%);
 }
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
