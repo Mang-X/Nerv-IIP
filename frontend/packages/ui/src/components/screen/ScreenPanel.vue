@@ -78,12 +78,13 @@ defineProps<{
 .sb-panel.amber::before,
 .sb-panel.red::before,
 .sb-panel.indigo::before {
+  /* sides keep the white-highlight feel (accent mixed toward white), ends dim */
   background: linear-gradient(
     90deg,
-    rgba(var(--pa), 0.85),
-    rgba(var(--pa), 0.14) 16%,
-    rgba(var(--pa), 0.14) 84%,
-    rgba(var(--pa), 0.55)
+    color-mix(in oklch, rgb(var(--pa)), white 50%),
+    rgba(var(--pa), 0.1) 18%,
+    rgba(var(--pa), 0.1) 82%,
+    color-mix(in oklch, rgb(var(--pa)), white 32%)
   );
 }
 .sb-panel > * {
