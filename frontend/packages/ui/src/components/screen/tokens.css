@@ -42,10 +42,10 @@
      white is reserved for the top highlight (--sb-highlight), not the edge body. */
   --sb-edge-gradient: linear-gradient(
     90deg,
-    rgba(86, 168, 238, 0.65),
-    rgba(86, 168, 238, 0.22) 22%,
-    rgba(86, 168, 238, 0.22) 78%,
-    rgba(86, 168, 238, 0.65)
+    rgba(135, 208, 255, 1),
+    rgba(135, 208, 255, 0.52) 22%,
+    rgba(135, 208, 255, 0.52) 78%,
+    rgba(135, 208, 255, 1)
   );
   --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
   --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
