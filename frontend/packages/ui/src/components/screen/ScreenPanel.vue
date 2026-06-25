@@ -46,12 +46,13 @@ defineProps<{
 .sb-panel::after {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  /* inset from the panel edge so the arc sits INSIDE the corner with a gap to
+     the border, not riding on it */
+  inset: 6px;
+  border-radius: calc(var(--sb-radius) - 3px);
   pointer-events: none;
   z-index: 0;
-  /* a highlight that traces the rounded corner itself — the top + left border
-     light up and the border-radius bends them into an arc; mask keeps it to the
+  /* top + left lit, bent into an arc by the radius; mask keeps it to the
      top-left (bright) and bottom-left (faint) corners only. */
   border: 2px solid transparent;
   border-top-color: rgba(216, 238, 255, 0.95);
