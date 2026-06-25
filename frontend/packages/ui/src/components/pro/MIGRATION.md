@@ -75,11 +75,22 @@
 | AlertDialog | `AlertDialogPro` + Trigger/Content/Header/Footer/Title/Description/Action/Cancel/Media（Action/Cancel 用 `ButtonPro`） | `pro/alert-dialog/` |
 | Sheet | `SheetPro` + Trigger/Close/Content/Header/Footer/Title/Description（Content 保留 `side` 四向 + 玻璃遮罩 + 关闭按钮） | `pro/sheet/` |
 
+## 又补了一批（blocks 内部 Pro 化 + 新组件）
+
+| 项 | 改动 |
+| --- | --- |
+| `DateRangePickerPro` | 新建（`pro/date-picker/`）：起止区间，首点定起点、再点定终点（自动排序）+ 悬停预览，模型 `{ start, end }` |
+| `blocks/RowActions` | 内部 base `Button`/`DropdownMenu*` → `ButtonPro` + `DropdownMenuPro*` |
+| `blocks/Toolbar` | 内部 base `Input` → `InputPro`（搜索图标改用 `#leading` 槽） |
+
+文档：design-system PC 端新增 `dropdown-menu` / `field` / `alert-dialog` / `sheet` 四页 +
+`date-picker` 页补 DateRangePicker 段（已接入侧栏）。
+
 ## 仍缺口（按需后续）
 
-| 组件 | 现可用来源 | 备注 |
+| 组件 | 现状 | 备注 |
 | --- | --- | --- |
-| DateRangePicker | base `ui/date-picker`（`DatePickerPro` 仅单日） | 中频，可后置 |
-| PageHeader / RowActions / Toolbar / SectionCard(s) | `blocks/*` | 属 pattern 层（base `ui/` 也无）；按需上移 Pro。注：RowActions 现已可基于上面的 `DropdownMenuPro` 组合 |
+| `blocks/SectionCard` | 仍用 base `Card`（结构化：flex-col+py+gap） | 迁到裸 `CardPro` 需重加布局、低收益；`MetricCardPro` 已是 Pro 指标卡 |
+| `blocks/PageHeader` | 仍用 base `Breadcrumb*` | pro/ 无 `BreadcrumbPro`，建 Pro 面包屑后再迁 |
 
 > 不阻塞迁移（base/blocks 均可用）。
