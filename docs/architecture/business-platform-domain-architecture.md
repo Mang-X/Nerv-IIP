@@ -15,6 +15,8 @@
 
 首批必须纳入规划的是 ProductEngineering、DemandPlanning、Scheduling/APS lite、IndustrialTelemetry、Maintenance。CRM、SRM、CPQ、OMS、WCS、CAD、SCADA、PLC/DCS 不全部独立建设，而是按子域、外部系统或升级边界处理。
 
+procure-to-pay 与 order-to-cash 的跨服务推进按 [ADR 0017](../adr/0017-business-process-manager-and-compensation-strategy.md) 执行：当前不引入中心 saga/process-manager，继续使用 choreography、服务本地幂等/DLQ/replay 和拥有服务发布的补偿事实。
+
 ## 系统取舍
 
 | 名称 | 首批处理 | 原因 |
