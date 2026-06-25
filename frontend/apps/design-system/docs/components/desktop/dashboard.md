@@ -93,8 +93,18 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
       <SidebarGroupLabel>生产</SidebarGroupLabel>
       <SidebarMenu>
         <SidebarMenuItem><SidebarMenuButton :is-active="true"><LayoutDashboardIcon /><span>总览</span></SidebarMenuButton></SidebarMenuItem>
+        <SidebarMenuItem><SidebarMenuButton><WrenchIcon /><span>设备</span><SidebarProDot tone="ok" /></SidebarMenuButton></SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
+  </template>
+  <template #sidebar-footer>
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton size="lg">
+          <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   </template>
   <template #header><Breadcrumb>…</Breadcrumb></template>
 
