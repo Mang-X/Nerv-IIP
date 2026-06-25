@@ -27,7 +27,7 @@ defineProps<{ wide?: boolean }>()
   margin: 18px 0;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(135% 130% at 50% -10%, #16294e 0%, #0e1a32 36%, #0a1120 66%, #080c16 100%);
+  background: radial-gradient(135% 130% at 50% -10%, #0a1830 0%, #07101f 38%, #050a14 68%, #03050b 100%);
   padding: 34px 32px;
   overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);

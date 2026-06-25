@@ -103,7 +103,7 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
 
 <style scoped>
 .g-stage {
-  background: radial-gradient(130% 100% at 50% -8%, #0c1730 0%, #0a1224 36%, #070c18 66%, #05080f 100%);
+  background: radial-gradient(130% 100% at 50% -8%, #081328 0%, #060d1c 38%, #04080f 68%, #03050a 100%);
   min-height: 100vh;
   padding: 26px 30px 60px;
   color: var(--sb-text);
