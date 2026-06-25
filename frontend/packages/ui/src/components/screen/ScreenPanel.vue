@@ -50,9 +50,19 @@ defineProps<{
   border-radius: inherit;
   pointer-events: none;
   z-index: 0;
-  background:
-    radial-gradient(circle at var(--sb-radius) var(--sb-radius), rgba(135, 208, 255, 0.3), transparent 26px),
-    radial-gradient(circle at var(--sb-radius) calc(100% - var(--sb-radius)), rgba(135, 208, 255, 0.14), transparent 20px);
+  /* a highlight that traces the rounded corner itself — the top + left border
+     light up and the border-radius bends them into an arc; mask keeps it to the
+     top-left (bright) and bottom-left (faint) corners only. */
+  border: 1.6px solid transparent;
+  border-top-color: rgba(150, 214, 255, 0.85);
+  border-left-color: rgba(150, 214, 255, 0.85);
+  border-bottom-color: rgba(150, 214, 255, 0.35);
+  -webkit-mask:
+    linear-gradient(135deg, #000, transparent 18%),
+    linear-gradient(45deg, #000, transparent 13%);
+  mask:
+    linear-gradient(135deg, #000, transparent 18%),
+    linear-gradient(45deg, #000, transparent 13%);
 }
 /* gradient hairline — a touch brighter down the two sides, dim top/bottom */
 .sb-panel::before {
