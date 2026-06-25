@@ -10,11 +10,12 @@ import {
   SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge,
   SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
   SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, SidebarInset,
+  SidebarProBrand, SidebarProDot, SidebarProUser, SidebarProSub,
   TooltipProvider,
 } from '@nerv-iip/ui'
 import {
   LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, SettingsIcon,
-  FactoryIcon, ChevronRightIcon, ChevronsUpDownIcon, PlusIcon, BellIcon, SearchIcon,
+  FactoryIcon, ChevronRightIcon, PlusIcon, BellIcon, SearchIcon,
   GaugeIcon, ActivityIcon,
 } from 'lucide-vue-next'
 
@@ -42,14 +43,7 @@ const todo = ref('待派工单')
   <SidebarProvider>
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <button type="button" class="ds-sb-brand group-data-[collapsible=icon]:justify-center">
-          <span class="ds-sb-logo">N</span>
-          <span class="ds-sb-brand-text group-data-[collapsible=icon]:hidden">
-            <span class="ds-sb-brand-name">Nerv-IIP</span>
-            <span class="ds-sb-brand-sub">总装一厂 · 早班</span>
-          </span>
-          <ChevronsUpDownIcon class="ds-sb-brand-caret group-data-[collapsible=icon]:hidden" />
-        </button>
+        <SidebarProBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -72,13 +66,13 @@ const todo = ref('待派工单')
             <SidebarMenuItem>
               <SidebarMenuButton :is-active="nav === '设备'" tooltip="设备 · 在线" @click="nav = '设备'">
                 <WrenchIcon /><span>设备</span>
-                <span class="ds-sb-dot ds-sb-dot-ok" aria-hidden="true" />
+                <SidebarProDot tone="ok" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton :is-active="nav === '告警'" tooltip="告警 · 2 条未读" @click="nav = '告警'">
                 <BellIcon /><span>告警</span>
-                <span class="ds-sb-dot ds-sb-dot-warn" aria-hidden="true" />
+                <SidebarProDot tone="warn" />
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem><SidebarMenuButton :is-active="nav === '设置'" tooltip="设置" @click="nav = '设置'"><SettingsIcon /><span>设置</span></SidebarMenuButton></SidebarMenuItem>
@@ -89,12 +83,7 @@ const todo = ref('待派工单')
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" tooltip="张伟 · 班长">
-              <span class="ds-sb-avatar">张<span class="ds-sb-avatar-status" aria-hidden="true" /></span>
-              <span class="ds-sb-user group-data-[collapsible=icon]:hidden">
-                <span class="ds-sb-user-name">张伟</span>
-                <span class="ds-sb-user-role">班长 · 早班</span>
-              </span>
-              <ChevronsUpDownIcon class="ds-sb-brand-caret group-data-[collapsible=icon]:hidden" />
+              <SidebarProUser name="张伟" role="班长 · 早班" initials="张" />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -160,29 +149,25 @@ const nav = ref('总览')
                 <FactoryIcon /><span>冲压车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="press && 'rotate-90'" />
               </SidebarMenuButton>
-              <div class="ds-sb-sub" :class="press && 'is-open'">
-                <div class="ds-sb-sub-clip">
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L02'" @click="line = 'L02'">L02 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L03'" @click="line = 'L03'">L03 产线</SidebarMenuSubButton></SidebarMenuSubItem>
-                  </SidebarMenuSub>
-                </div>
-              </div>
+              <SidebarProSub :open="press">
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L01'" @click="line = 'L01'">L01 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L02'" @click="line = 'L02'">L02 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'L03'" @click="line = 'L03'">L03 产线</SidebarMenuSubButton></SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </SidebarProSub>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton @click="weld = !weld">
                 <FactoryIcon /><span>焊接车间</span>
                 <ChevronRightIcon class="ds-sb-chevron ml-auto" :class="weld && 'rotate-90'" />
               </SidebarMenuButton>
-              <div class="ds-sb-sub" :class="weld && 'is-open'">
-                <div class="ds-sb-sub-clip">
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W01'" @click="line = 'W01'">W01 工位</SidebarMenuSubButton></SidebarMenuSubItem>
-                    <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W02'" @click="line = 'W02'">W02 工位</SidebarMenuSubButton></SidebarMenuSubItem>
-                  </SidebarMenuSub>
-                </div>
-              </div>
+              <SidebarProSub :open="weld">
+                <SidebarMenuSub>
+                  <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W01'" @click="line = 'W01'">W01 工位</SidebarMenuSubButton></SidebarMenuSubItem>
+                  <SidebarMenuSubItem><SidebarMenuSubButton :is-active="line === 'W02'" @click="line = 'W02'">W02 工位</SidebarMenuSubButton></SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </SidebarProSub>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -282,6 +267,14 @@ const nav = ref('总览')
 - `SidebarSeparator` / `SidebarInput` — 分隔线与侧栏输入框。
 - `SidebarRail` — 右缘可点/可拖的折叠条；`SidebarTrigger` — 折叠按钮（放任意处）。
 
+### Pro 件（高级化封装，配合上面的原子件）
+
+- `SidebarProBrand` — 工作区品牌锁头（渐变 logo + 名称 + 副标题），放 `SidebarHeader`；折叠为图标条时文字/箭头自动隐藏。属性：`name`、`sub?`、`logo?`、`caret?`。
+- `SidebarProDot` — 行尾状态点（`tone` `ok` / `warn` / `danger`），作 `SidebarMenuButton` 末位子节点。
+- `SidebarProUser` — 底栏用户行（首字头像 + 在线点 + 名称/角色），放页脚的 `SidebarMenuButton size="lg"`。属性：`name`、`role?`、`initials?`、`online?`、`caret?`。
+- `SidebarProSub` — 二级菜单高度动画外壳（`grid-rows 0fr→1fr` + 缩进导引线），`open` 用你自己的 `ref` 驱动，内裹 `SidebarMenuSub`。
+- 统一**选中态**（中性高起填充 + 品牌色图标）已是系统默认（`theme.css` 全局），无需额外样式即对所有侧栏生效。
+
 ## 属性
 
 | 组件 | 属性 | 说明 | 类型 | 默认 |
@@ -340,97 +333,9 @@ const nav = ref('总览')
   color: var(--brand-strong);
 }
 
-/* ── animated submenu (grid-rows 0fr→1fr) + clearer indent guide ────────── */
-.ds-sb-sub {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.26s var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
-}
-.ds-sb-sub.is-open { grid-template-rows: 1fr; }
-/* indent + guide line live on the wrapper div, not the <ul> — Tailwind preflight
-   resets `ul { margin:0; padding:0 }` and wins over a same-target rule, so the
-   component's mx-3.5/px-2.5 never indent here. */
-.ds-sb-sub-clip {
-  overflow: hidden;
-  margin-top: 0.1875rem;
-  margin-left: 0.9rem;
-  padding-left: 0.8rem;
-  border-left: 1px solid var(--sidebar-border); /* hairline indent guide, neutral */
-}
-
-/* ── workspace brand lockup ─────────────────────────────────────────────── */
-.ds-sb-brand {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 0.625rem;
-  border-radius: 0.625rem;
-  padding: 0.375rem 0.375rem;
-  text-align: left;
-  transition: background-color 0.15s ease;
-}
-.ds-sb-brand:hover { background: var(--sidebar-accent, var(--muted)); }
-.ds-sb-logo {
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  flex-shrink: 0;
-  border-radius: 0.5rem;
-  background: linear-gradient(140deg, var(--brand), color-mix(in oklch, var(--brand) 70%, black));
-  color: var(--brand-foreground);
-  font-size: 0.875rem;
-  font-weight: 700;
-  box-shadow: inset 0 1px 0 0 color-mix(in oklch, white 22%, transparent);
-}
-.ds-sb-brand-text { display: flex; min-width: 0; flex: 1; flex-direction: column; line-height: 1.2; }
-.ds-sb-brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600; }
-.ds-sb-brand-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--muted-foreground); }
-.ds-sb-brand-caret { width: 1rem; height: 1rem; flex-shrink: 0; color: var(--muted-foreground); }
-
-/* ── status dots trailing a menu label ─────────────────────────────────── */
-.ds-sb-dot {
-  margin-left: auto;
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-}
-.ds-sb-dot-ok {
-  background: oklch(0.72 0.17 152);
-  box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.72 0.17 152) 16%, transparent);
-}
-.ds-sb-dot-warn {
-  background: oklch(0.78 0.16 75);
-  box-shadow: 0 0 0 3px color-mix(in oklch, oklch(0.78 0.16 75) 16%, transparent);
-}
-
-/* ── footer user (avatar + online status) ──────────────────────────────── */
-.ds-sb-avatar {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.ds-sb-avatar-status {
-  position: absolute;
-  right: -1px;
-  bottom: -1px;
-  width: 0.625rem;
-  height: 0.625rem;
-  border-radius: 9999px;
-  background: oklch(0.72 0.17 152);
-  border: 2px solid var(--sidebar, var(--background));
-}
-.ds-sb-user { display: flex; min-width: 0; flex: 1; flex-direction: column; line-height: 1.2; }
-.ds-sb-user-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8125rem; font-weight: 600; }
-.ds-sb-user-role { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.6875rem; color: var(--muted-foreground); }
+/* Brand lockup / status dots / footer user / animated submenu now live in the
+   SidebarPro* components — SidebarProBrand / SidebarProDot / SidebarProUser /
+   SidebarProSub — so this demo composes them instead of re-styling locally. */
 
 /* ── inset canvas (top bar + KPI tiles) ────────────────────────────────── */
 .ds-sb-inset { display: flex; min-width: 0; flex: 1; flex-direction: column; }

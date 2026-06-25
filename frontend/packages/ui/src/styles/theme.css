@@ -318,6 +318,9 @@
  * real product chrome match the docs. (The doc's `.ds-sb`-scoped copy keeps an
  * even higher specificity, so those demos render exactly as authored.)
  * ------------------------------------------------------------------------- */
+[data-slot='sidebar-menu'] {
+  gap: 0.1875rem;
+}
 [data-slot='sidebar-menu'] [data-slot='sidebar-menu-button']:hover,
 [data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button']:hover {
   background-color: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
