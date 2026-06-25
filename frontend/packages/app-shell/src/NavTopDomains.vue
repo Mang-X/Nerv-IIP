@@ -2,11 +2,11 @@
 import type { NavDomain } from './types'
 import { ChevronDownIcon } from 'lucide-vue-next'
 import {
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  ButtonPro,
+  DropdownMenuPro,
+  DropdownMenuProContent,
+  DropdownMenuProItem,
+  DropdownMenuProTrigger,
   cn,
 } from '@nerv-iip/ui'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -125,9 +125,9 @@ const tabClass = (active: boolean) =>
         <span>{{ domain.title }}</span>
       </RouterLink>
 
-      <DropdownMenu v-if="overflow.length">
-        <DropdownMenuTrigger as-child>
-          <Button
+      <DropdownMenuPro v-if="overflow.length">
+        <DropdownMenuProTrigger as-child>
+          <ButtonPro
             type="button"
             variant="ghost"
             size="sm"
@@ -135,10 +135,10 @@ const tabClass = (active: boolean) =>
           >
             更多
             <ChevronDownIcon class="size-4" aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" class="w-52">
-          <DropdownMenuItem
+          </ButtonPro>
+        </DropdownMenuProTrigger>
+        <DropdownMenuProContent align="start" class="w-52">
+          <DropdownMenuProItem
             v-for="domain in overflow"
             :key="domain.id"
             as-child
@@ -148,9 +148,9 @@ const tabClass = (active: boolean) =>
               <component :is="domain.icon" v-if="domain.icon" class="size-4" aria-hidden="true" />
               {{ domain.title }}
             </RouterLink>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuProItem>
+        </DropdownMenuProContent>
+      </DropdownMenuPro>
     </nav>
   </div>
 </template>
