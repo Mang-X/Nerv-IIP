@@ -35,7 +35,8 @@ public sealed record MasterDataResourceItem(
     decimal? Factor = null,
     decimal? Offset = null,
     int? Precision = null,
-    string? RoundingMode = null);
+    string? RoundingMode = null,
+    string? DeviceAssetId = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -284,7 +285,7 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, x.LineCode, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active"));
+            .Select(x => Item(resourceType, x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, x.LineCode, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, x.Id.ToString()));
     }
 
     private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, string resourceType)
@@ -373,7 +374,8 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         decimal? Factor = null,
         decimal? Offset = null,
         int? Precision = null,
-        string? RoundingMode = null)
+        string? RoundingMode = null,
+        string? DeviceAssetId = null)
     {
         return new MasterDataResourceItem(
             resourceType,
@@ -408,7 +410,8 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Factor,
             Offset,
             Precision,
-            RoundingMode);
+            RoundingMode,
+            DeviceAssetId);
     }
 
     private static string? NormalizeKeyword(string? keyword)

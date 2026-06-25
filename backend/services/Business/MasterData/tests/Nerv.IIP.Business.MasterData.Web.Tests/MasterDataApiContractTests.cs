@@ -509,6 +509,7 @@ public sealed class MasterDataApiContractTests
         var device = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "device-asset"), CancellationToken.None)).Resources);
         Assert.Equal("LINE-001", device.LineCode);
         Assert.Equal("WC-001", device.WorkCenterCode);
+        Assert.False(string.IsNullOrWhiteSpace(device.DeviceAssetId));
         Assert.Equal("active", device.Status);
 
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
