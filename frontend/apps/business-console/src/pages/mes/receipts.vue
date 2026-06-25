@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesCreateReceiptRequest } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesReceiptStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -8,29 +8,29 @@ import { useMesFinishedGoodsReceipts } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   RowActions,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -124,7 +124,7 @@ watch(
 )
 
 type ReceiptRow = (typeof receiptRequests)['value'][number]
-const columns: DataTableColumn<ReceiptRow>[] = [
+const columns: DataTableProColumn<ReceiptRow>[] = [
   { key: 'requestNo', header: '入库单', cellClass: 'font-medium', accessor: (r) => r.requestNo ?? r.receiptRequestId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'skuId', header: '成品', accessor: (r) => resolveSku(r.skuCode ?? r.skuId) ?? '无' },
@@ -213,36 +213,38 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="完工入库" :breadcrumbs="[{ label: '制造执行' }]" :count="`${receiptRequestsTotal} 条入库登记`">
       <template #actions>
-        <Button size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
+        <ButtonPro size="sm" type="button" :disabled="!hasReceiptContext" @click="openReceiptSheet">
           <PackageCheckIcon aria-hidden="true" />
           {{ hasReceiptContext ? '登记完工入库' : '从工单详情发起' }}
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="receiptRequestsPending" @click="refreshReceiptRequests">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="按入库状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="按入库状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="receiptRequests"
       row-key="receiptRequestId"
       :loading="receiptRequestsPending"
       empty-message="还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-requestNo="{ row }">
         <span v-if="row.requestNo">{{ row.requestNo }}</span>
@@ -266,7 +268,7 @@ function isNonEmpty(value: string) {
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-unitCost="{ row }"><span class="tabular-nums">{{ formatUnitCost(row.unitCost) }}</span></template>
       <template #cell-receiptStatus="{ row }">
-        <StatusBadge :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
+        <StatusBadgePro :value="row.receiptStatus" :label="receiptStatusLabel(row.receiptStatus)" />
       </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
       <template #cell-actions="{ row }">
@@ -277,16 +279,16 @@ function isNonEmpty(value: string) {
           </DropdownMenuItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="receiptRequestsTotal" />
 
-    <Dialog v-model:open="receiptSheetOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>登记完工入库</DialogTitle>
-          <DialogDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="receiptSheetOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>登记完工入库</DialogProTitle>
+          <DialogProDescription>把完工成品登记入库。工单与成品由报工完成或工单详情带出，只需确认入库数量、单位成本和单位。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitReceiptRequest">
           <p v-if="createErrorMessage" class="text-sm text-destructive" role="alert">{{ createErrorMessage }}</p>
           <p v-if="successMessage" class="text-sm text-success" role="status">{{ successMessage }}</p>
@@ -294,41 +296,41 @@ function isNonEmpty(value: string) {
           <FieldGroup class="grid gap-3">
             <Field>
               <FieldLabel for="receipt-work-order">工单号</FieldLabel>
-              <Input id="receipt-work-order" v-model="form.workOrderId" readonly required />
+              <InputPro id="receipt-work-order" v-model="form.workOrderId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="receipt-sku">成品</FieldLabel>
-              <Input id="receipt-sku" v-model="form.skuId" readonly required />
+              <InputPro id="receipt-sku" v-model="form.skuId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="receipt-quantity">入库数量</FieldLabel>
-              <Input id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
+              <InputPro id="receipt-quantity" v-model="form.quantity" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="receipt-unit-cost">单位成本</FieldLabel>
-              <Input id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
+              <InputPro id="receipt-unit-cost" v-model="form.unitCost" inputmode="decimal" min="0.000001" step="0.000001" required type="number" />
             </Field>
             <Field>
               <FieldLabel for="receipt-uom">单位</FieldLabel>
-              <Input id="receipt-uom" v-model="form.uomCode" required />
+              <InputPro id="receipt-uom" v-model="form.uomCode" required />
             </Field>
             <Field>
               <FieldLabel for="receipt-requested-at">登记时间</FieldLabel>
-              <Input id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
+              <InputPro id="receipt-requested-at" v-model="form.requestedAtUtc" required type="datetime-local" />
             </Field>
           </FieldGroup>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="receiptSheetOpen = false">取消</Button>
-            <Button type="submit" :disabled="createReceiptRequestPending || !canCreate">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="receiptSheetOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="createReceiptRequestPending || !canCreate">
               <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
               <PackageCheckIcon v-else aria-hidden="true" />
               提交入库登记
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

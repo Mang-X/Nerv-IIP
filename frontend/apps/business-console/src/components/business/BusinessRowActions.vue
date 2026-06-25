@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  Button,
+  ButtonPro,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
@@ -24,7 +24,7 @@ withDefaults(
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button
+      <ButtonPro
         class="h-8 w-8 rounded-md p-0"
         :disabled="disabled"
         size="sm"
@@ -34,7 +34,7 @@ withDefaults(
         :title="label"
       >
         <MoreHorizontalIcon class="h-4 w-4" />
-      </Button>
+      </ButtonPro>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" :class="[widthClass, 'max-w-72']">
       <slot />

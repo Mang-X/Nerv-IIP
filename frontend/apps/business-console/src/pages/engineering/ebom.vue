@@ -3,43 +3,43 @@ import type {
   BusinessConsoleEngineeringBomItem,
   BusinessConsoleReleaseEngineeringBomRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
 import { useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -129,7 +129,7 @@ const draftCount = computed(() => eboms.value.filter((b) => (b.status ?? '').toL
 
 const listErrorMessage = computed(() => formatError(ebomsError.value))
 
-const columns: DataTableColumn<BusinessConsoleEngineeringBomItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleEngineeringBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'parentItemCode', header: '父项' },
@@ -292,24 +292,24 @@ function uomLabel(code?: string | null) {
       :count="`${ebomsTotal} 个版本`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="ebomsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="ebomsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               发布新版本
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>发布设计 BOM 新版本</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-3xl">
+            <DialogProHeader>
+              <DialogProTitle>发布设计 BOM 新版本</DialogProTitle>
+              <DialogProDescription>
                 设计 BOM 一经发布即不可变。修改请填一套新的组件行 + 新修订号，发布出新版本。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && selfReferenceComponent" class="text-sm text-destructive" role="alert">
                 组件不能与父项「{{ skuLabel(selfReferenceComponent) }}」相同——一个物料不能把自己当组件，请改选别的组件。
@@ -325,30 +325,30 @@ function uomLabel(code?: string | null) {
               <FieldGroup class="grid gap-3 sm:grid-cols-3">
                 <Field :data-invalid="showErrors && !parentValid">
                   <FieldLabel for="ebom-parent">父项物料 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.parentItemCode">
-                    <SelectTrigger id="ebom-parent"><SelectValue placeholder="选择父项" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.parentItemCode">
+                    <SelectProTrigger id="ebom-parent"><SelectProValue placeholder="选择父项" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                   <FieldDescription>来自基础数据物料。</FieldDescription>
                 </Field>
                 <Field :data-invalid="showErrors && !revisionValid">
                   <FieldLabel for="ebom-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <InputPro id="ebom-rev" v-model="form.revision" placeholder="如 A、B、001" />
                 </Field>
                 <Field :data-invalid="showErrors && !effectiveValid">
                   <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
-                  <DatePicker v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
+                  <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
                 </Field>
               </FieldGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>组件行</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" @click="addLine">
+                <ButtonPro type="button" variant="outline" size="sm" @click="addLine">
                   <PlusIcon aria-hidden="true" />
                   增加组件
-                </Button>
+                </ButtonPro>
               </div>
               <div class="grid gap-2">
                 <div
@@ -358,27 +358,27 @@ function uomLabel(code?: string | null) {
                 >
                   <Field :data-invalid="showErrors && !line.componentCode.trim()">
                     <FieldLabel :for="`ebom-comp-${index}`">组件物料 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.componentCode" @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))">
-                      <SelectTrigger :id="`ebom-comp-${index}`"><SelectValue placeholder="选择组件" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SelectPro v-model="line.componentCode" @update:model-value="(v) => applyComponentUom(line, String(v ?? ''))">
+                      <SelectProTrigger :id="`ebom-comp-${index}`"><SelectProValue placeholder="选择组件" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
                   </Field>
                   <Field :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
                     <FieldLabel :for="`ebom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`ebom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
+                    <InputPro :id="`ebom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
                   </Field>
                   <Field :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
                     <FieldLabel :for="`ebom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.unitOfMeasureCode">
-                      <SelectTrigger :id="`ebom-uom-${index}`"><SelectValue placeholder="单位" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SelectPro v-model="line.unitOfMeasureCode">
+                      <SelectProTrigger :id="`ebom-uom-${index}`"><SelectProValue placeholder="单位" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
                   </Field>
-                  <Button
+                  <ButtonPro
                     type="button"
                     variant="ghost"
                     size="icon"
@@ -387,20 +387,20 @@ function uomLabel(code?: string | null) {
                     @click="removeLine(index)"
                   >
                     <Trash2Icon aria-hidden="true" />
-                  </Button>
+                  </ButtonPro>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -411,22 +411,24 @@ function uomLabel(code?: string | null) {
 
     <Toolbar v-model:search="parentSearch" search-placeholder="按父项物料编码筛选">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="eboms"
       :row-key="(r) => `${r.bomCode}:${r.revision}`"
       :loading="ebomsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前范围没有设计 BOM。可发布新版本，把父项物料与其组件行登记为一个不可变版本。"
     >
       <template #cell-parentItemCode="{ row }">
@@ -436,15 +438,15 @@ function uomLabel(code?: string | null) {
         </div>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
+        <StatusBadgePro :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
       </template>
       <template #cell-effectiveDate="{ row }">{{ row.effectiveDate ? formatDate(row.effectiveDate) : '长期' }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ebomsTotal" />
 
@@ -460,7 +462,7 @@ function uomLabel(code?: string | null) {
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+              <StatusBadgePro :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">生效日</span>

@@ -9,16 +9,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  ButtonPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   DropdownMenuItem,
   RowActions,
-  StatusBadge,
+  StatusBadgePro,
   toast,
 } from '@nerv-iip/ui'
 import { CircleSlashIcon, EyeIcon, PencilIcon, PlayIcon } from 'lucide-vue-next'
@@ -94,12 +94,12 @@ async function confirmToggle() {
   </RowActions>
 
   <!-- 查看详情（只读） -->
-  <Dialog v-model:open="detailOpen">
-    <DialogContent class="sm:max-w-lg">
-      <DialogHeader>
-        <DialogTitle>{{ entityLabel }}详情</DialogTitle>
-        <DialogDescription>{{ row.displayName ?? row.code ?? '' }} 的关键信息。</DialogDescription>
-      </DialogHeader>
+  <DialogPro v-model:open="detailOpen">
+    <DialogProContent class="sm:max-w-lg">
+      <DialogProHeader>
+        <DialogProTitle>{{ entityLabel }}详情</DialogProTitle>
+        <DialogProDescription>{{ row.displayName ?? row.code ?? '' }} 的关键信息。</DialogProDescription>
+      </DialogProHeader>
       <dl class="grid gap-3 sm:grid-cols-2">
         <div v-for="field in detailFields" :key="field.label" class="grid gap-1">
           <dt class="text-xs text-muted-foreground">{{ field.label }}</dt>
@@ -107,14 +107,14 @@ async function confirmToggle() {
         </div>
         <div class="grid gap-1">
           <dt class="text-xs text-muted-foreground">状态</dt>
-          <dd><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></dd>
+          <dd><StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" /></dd>
         </div>
       </dl>
-      <DialogFooter>
-        <Button type="button" variant="outline" @click="detailOpen = false">关闭</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+      <DialogProFooter>
+        <ButtonPro type="button" variant="outline" @click="detailOpen = false">关闭</ButtonPro>
+      </DialogProFooter>
+    </DialogProContent>
+  </DialogPro>
 
   <!-- 停用 / 启用 二次确认 -->
   <AlertDialog v-model:open="toggleOpen">

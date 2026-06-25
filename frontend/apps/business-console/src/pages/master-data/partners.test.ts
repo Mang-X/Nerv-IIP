@@ -70,27 +70,44 @@ const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
   DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
+// 行操作里的二次确认弹窗（base AlertDialog，reka portal/Teleport 在 jsdom 下不稳）就地渲染，避免渲染崩溃。
+const alertDialogStubs = {
+  AlertDialog: { template: '<div><slot /></div>' },
+  AlertDialogTrigger: { template: '<div><slot /></div>' },
+  AlertDialogContent: { template: '<div><slot /></div>' },
+  AlertDialogHeader: { template: '<div><slot /></div>' },
+  AlertDialogFooter: { template: '<div><slot /></div>' },
+  AlertDialogTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogDescription: { template: '<p><slot /></p>' },
+  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+}
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  // DialogPro/DialogProTrigger/DialogProClose 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger/DialogClose。
+  DialogPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  DialogProTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
 const selectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  // SelectProValue 是 reka-ui SelectValue 再导出，组件名仍是 SelectValue。
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 打开「新建伙伴」并填好默认空的必填项（名称；主角色默认 customer 合法；编码由系统自动生成）。
@@ -185,7 +202,7 @@ describe('master-data partners page', () => {
     stub.createPartner.mockClear()
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
     await flushPromises()
     await openAndFillValid(wrapper)
 
@@ -206,7 +223,7 @@ describe('master-data partners page', () => {
     stub.toastSuccess.mockClear()
     stub.toastError.mockClear()
     stub.createPartner.mockRejectedValueOnce(new Error('downstream-invalid-response'))
-    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, ...alertDialogStubs } } })
     await flushPromises()
     await openAndFillValid(wrapper)
 

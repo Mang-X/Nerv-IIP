@@ -4,7 +4,7 @@ import type {
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -18,21 +18,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
+  DataTablePro,
   DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   RowActions,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -40,7 +40,7 @@ import {
   SheetHeader,
   SheetTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
@@ -111,7 +111,7 @@ const statusFilter = computed({
 })
 
 type NcrRow = BusinessConsoleQualityItem
-const columns: DataTableColumn<NcrRow>[] = [
+const columns: DataTableProColumn<NcrRow>[] = [
   { key: 'code', header: 'NCR', cellClass: 'font-medium', accessor: (r) => r.code ?? r.id ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
@@ -210,24 +210,24 @@ watch(targetNcr, (ncr) => {
   <BusinessLayout>
     <PageHeader title="不合格品处理" :breadcrumbs="[{ label: '质量' }]" :count="`${ncrsTotal} 条 NCR`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="ncrsPending" @click="refreshNcrs">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="ncrsPending" @click="refreshNcrs">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="NCR 状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="NCR 状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
@@ -236,23 +236,25 @@ watch(targetNcr, (ncr) => {
       未找到 NCR {{ targetNcrId }}。请确认该 NCR 是否已归档或无权访问。
     </p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="ncrs"
       :row-key="(r) => r.id ?? r.code ?? '无'"
       :loading="ncrsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="未返回不合格报告。检验不合格或质量阻塞会在这里生成 NCR。"
     >
       <template #cell-code="{ row }">
         <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`NCR 操作 ${row.code ?? ''}`">
           <DropdownMenuItem @click="openNcr(row)">打开处置</DropdownMenuItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ncrsTotal" />
 
@@ -267,7 +269,7 @@ watch(targetNcr, (ncr) => {
           <div class="grid gap-2 rounded-lg border p-3">
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-medium text-foreground">状态</span>
-              <StatusBadge :value="selectedNcr?.status" />
+              <StatusBadgePro :value="selectedNcr?.status" />
             </div>
             <p class="text-sm text-muted-foreground">{{ selectedNcr ? qualityItemSummary(selectedNcr) : '无' }}</p>
           </div>
@@ -279,31 +281,31 @@ watch(targetNcr, (ncr) => {
             <FieldGroup class="grid gap-3">
               <Field>
                 <FieldLabel>处置类型</FieldLabel>
-                <Select v-model="dispositionForm.dispositionType">
-                  <SelectTrigger aria-label="处置类型"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="use-as-is">让步接收</SelectItem>
-                    <SelectItem value="rework">返工</SelectItem>
-                    <SelectItem value="scrap">报废</SelectItem>
-                    <SelectItem value="return-to-supplier">退供应商</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectPro v-model="dispositionForm.dispositionType">
+                  <SelectProTrigger aria-label="处置类型"><SelectProValue /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem value="use-as-is">让步接收</SelectProItem>
+                    <SelectProItem value="rework">返工</SelectProItem>
+                    <SelectProItem value="scrap">报废</SelectProItem>
+                    <SelectProItem value="return-to-supplier">退供应商</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
               </Field>
               <Field>
                 <FieldLabel for="ncr-approval-chain">审批链</FieldLabel>
-                <Input id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
+                <InputPro id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
               </Field>
               <Field>
                 <FieldLabel for="ncr-disposition-files">附件文件 ID</FieldLabel>
-                <Input id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
+                <InputPro id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
               </Field>
             </FieldGroup>
             <div class="flex justify-end">
-              <Button type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
+              <ButtonPro type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                 <Spinner v-if="submitDispositionPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
                 提交处置
-              </Button>
+              </ButtonPro>
             </div>
           </form>
 
@@ -314,26 +316,26 @@ watch(targetNcr, (ncr) => {
             <FieldGroup class="grid gap-3">
               <Field>
                 <FieldLabel for="ncr-rework">返工工单</FieldLabel>
-                <Input id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
+                <InputPro id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
               </Field>
               <Field>
                 <FieldLabel for="ncr-scrap">报废库存移动</FieldLabel>
-                <Input id="ncr-scrap" v-model="closeForm.scrapMovementId" />
+                <InputPro id="ncr-scrap" v-model="closeForm.scrapMovementId" />
               </Field>
               <Field>
                 <FieldLabel for="ncr-return">退货单据</FieldLabel>
-                <Input id="ncr-return" v-model="closeForm.returnDocumentId" />
+                <InputPro id="ncr-return" v-model="closeForm.returnDocumentId" />
               </Field>
             </FieldGroup>
 
             <SheetFooter>
               <AlertDialog>
                 <AlertDialogTrigger as-child>
-                  <Button type="button" variant="destructive" :disabled="closeNcrPending || !canCloseNcr">
+                  <ButtonPro type="button" variant="destructive" :disabled="closeNcrPending || !canCloseNcr">
                     <Spinner v-if="closeNcrPending" aria-hidden="true" />
                     <CheckCircle2Icon v-else aria-hidden="true" />
                     关闭不合格品
-                  </Button>
+                  </ButtonPro>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>

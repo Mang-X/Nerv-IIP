@@ -11,29 +11,29 @@ import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
 import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  ButtonPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   ScrollArea,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
 } from '@nerv-iip/ui'
 import {
   PlusIcon,
@@ -499,14 +499,14 @@ function openMembers(row: BusinessConsoleResourceItem) {
   <BusinessLayout>
     <PageHeader title="组织与班组" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalDepartments} 个部门`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="treePending" @click="refreshAll">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="treePending" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreateRootDept">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreateRootDept">
           <PlusIcon aria-hidden="true" />
           新建部门
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -521,12 +521,12 @@ function openMembers(row: BusinessConsoleResourceItem) {
       <section class="flex flex-col gap-3 rounded-lg border border-border bg-card p-3" aria-label="部门树">
         <div class="relative">
           <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input v-model="treeSearch" class="pl-8" placeholder="搜索部门编码、名称" aria-label="搜索部门树" />
+          <InputPro v-model="treeSearch" class="pl-8" placeholder="搜索部门编码、名称" aria-label="搜索部门树" />
         </div>
         <div class="flex items-center justify-between">
-          <Button v-if="tree.length" size="sm" variant="ghost" type="button" class="h-7 px-2 text-xs" @click="expandAllToggle">
+          <ButtonPro v-if="tree.length" size="sm" variant="ghost" type="button" class="h-7 px-2 text-xs" @click="expandAllToggle">
             {{ allExpanded ? '全部折叠' : '全部展开' }}
-          </Button>
+          </ButtonPro>
         </div>
 
         <p v-if="treeListError" class="text-sm text-destructive" role="alert">{{ treeListError }}</p>
@@ -536,14 +536,14 @@ function openMembers(row: BusinessConsoleResourceItem) {
           <div v-else-if="!tree.length" class="grid gap-2 px-1 py-6 text-center">
             <UsersRoundIcon class="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
             <p class="text-sm text-muted-foreground">还没有部门，点击创建第一条。</p>
-            <Button size="sm" type="button" class="mx-auto" @click="openCreateRootDept">
+            <ButtonPro size="sm" type="button" class="mx-auto" @click="openCreateRootDept">
               <PlusIcon aria-hidden="true" />
               新建部门
-            </Button>
+            </ButtonPro>
           </div>
           <div v-else-if="treeSearch.trim() && !filteredForest.length" class="grid gap-2 px-1 py-6 text-center">
             <p class="text-sm text-muted-foreground">没有匹配「{{ treeSearch.trim() }}」的部门。</p>
-            <Button size="sm" variant="outline" type="button" class="mx-auto" @click="treeSearch = ''">清空搜索</Button>
+            <ButtonPro size="sm" variant="outline" type="button" class="mx-auto" @click="treeSearch = ''">清空搜索</ButtonPro>
           </div>
           <ul v-else class="grid gap-0.5" role="tree">
             <MasterDataTreeNode
@@ -591,17 +591,17 @@ function openMembers(row: BusinessConsoleResourceItem) {
             <div class="flex items-center gap-2">
               <h2 class="text-base font-semibold text-foreground">{{ selectedNode.displayName }}</h2>
               <span class="text-xs text-muted-foreground">部门 · {{ selectedNode.code }}</span>
-              <StatusBadge :value="selectedNode.active ? 'active' : 'disabled'" />
+              <StatusBadgePro :value="selectedNode.active ? 'active' : 'disabled'" />
             </div>
             <div class="flex items-center gap-2">
-              <Button size="sm" variant="outline" type="button" @click="openCreateChildDept(selectedNode)">
+              <ButtonPro size="sm" variant="outline" type="button" @click="openCreateChildDept(selectedNode)">
                 <PlusIcon aria-hidden="true" />
                 新建子部门
-              </Button>
-              <Button size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
+              </ButtonPro>
+              <ButtonPro size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
                 <PlusIcon aria-hidden="true" />
                 在此部门下新建班组
-              </Button>
+              </ButtonPro>
               <MasterDataRowActions
                 :row="selectedNode.item"
                 entity-label="部门"
@@ -624,10 +624,10 @@ function openMembers(row: BusinessConsoleResourceItem) {
           <div class="border-t border-border/60 pt-3">
             <div class="mb-2 flex items-center justify-between gap-2">
               <h3 class="text-sm font-medium text-foreground">班组</h3>
-              <Button size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
+              <ButtonPro size="sm" type="button" @click="openCreateTeam(selectedNode.code)">
                 <PlusIcon aria-hidden="true" />
                 新建班组
-              </Button>
+              </ButtonPro>
             </div>
             <p class="mb-2 text-xs text-muted-foreground">
               归属本部门的班组；可编辑、改挂部门 / 班次、维护成员，新建时已带入本部门归属。
@@ -648,12 +648,12 @@ function openMembers(row: BusinessConsoleResourceItem) {
                     {{ row.displayName ?? row.code ?? '无' }}
                   </span>
                   <span class="shrink-0 text-xs text-muted-foreground">{{ row.code }}</span>
-                  <StatusBadge v-if="row.active === false" value="disabled" />
+                  <StatusBadgePro v-if="row.active === false" value="disabled" />
                 </div>
                 <div class="flex shrink-0 items-center gap-1">
-                  <Button type="button" variant="ghost" size="sm" :disabled="!row.code" @click="openMembers(row)">
+                  <ButtonPro type="button" variant="ghost" size="sm" :disabled="!row.code" @click="openMembers(row)">
                     <UsersIcon aria-hidden="true" />管理成员
-                  </Button>
+                  </ButtonPro>
                   <MasterDataRowActions
                     :row="row"
                     entity-label="班组"
@@ -670,147 +670,147 @@ function openMembers(row: BusinessConsoleResourceItem) {
     </div>
 
     <!-- 新建部门对话框（含就地建子部门，父归属只读） -->
-    <Dialog v-model:open="deptCreateOpen">
-      <DialogContent class="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{{ deptParentLocked ? '新建子部门' : '新建部门' }}</DialogTitle>
-          <DialogDescription>
+    <DialogPro v-model:open="deptCreateOpen">
+      <DialogProContent class="sm:max-w-lg">
+        <DialogProHeader>
+          <DialogProTitle>{{ deptParentLocked ? '新建子部门' : '新建部门' }}</DialogProTitle>
+          <DialogProDescription>
             {{ deptParentLocked ? '在所选上级部门下登记一个子部门。上级已带入且不可更改。带 * 为必填项。' : '登记一个组织部门，可选挂靠上级部门。带 * 为必填项。' }}
-          </DialogDescription>
-        </DialogHeader>
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreateDept">
           <p v-if="deptShowErrors && !canCreateDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field :data-invalid="deptShowErrors && !isNonEmpty(deptForm.name)">
               <FieldLabel for="dept-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="dept-name" v-model="deptForm.name" autocomplete="off" required />
+              <InputPro id="dept-name" v-model="deptForm.name" autocomplete="off" required />
               <FieldDescription>编码由系统自动生成，保存后即可在树中查看。</FieldDescription>
             </Field>
             <Field v-if="deptParentLocked">
               <FieldLabel for="dept-parent">上级部门</FieldLabel>
-              <Input id="dept-parent" :model-value="deptForm.parentDepartmentCode" disabled />
+              <InputPro id="dept-parent" :model-value="deptForm.parentDepartmentCode" disabled />
             </Field>
             <Field v-else>
               <FieldLabel for="dept-parent">上级部门</FieldLabel>
-              <Select v-model="deptForm.parentDepartmentCode">
-                <SelectTrigger id="dept-parent"><SelectValue placeholder="无（顶级部门）" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+              <SelectPro v-model="deptForm.parentDepartmentCode">
+                <SelectProTrigger id="dept-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
                     {{ d.displayName ?? d.code }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </SelectProItem>
+                </SelectProContent>
+              </SelectPro>
               <FieldDescription>留空表示顶级部门。</FieldDescription>
             </Field>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="deptCreateOpen = false">取消</Button>
-            <Button type="submit" :disabled="departments.createPending.value">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="deptCreateOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="departments.createPending.value">
               <Spinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
     <!-- 编辑部门对话框（编码只读；改名 + 改挂上级） -->
-    <Dialog v-model:open="deptEditOpen">
-      <DialogContent class="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>编辑部门 · {{ deptEditCode }}</DialogTitle>
-          <DialogDescription>修改部门名称，或改挂到其他上级部门（编码不可修改）。带 * 为必填项。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="deptEditOpen">
+      <DialogProContent class="sm:max-w-lg">
+        <DialogProHeader>
+          <DialogProTitle>编辑部门 · {{ deptEditCode }}</DialogProTitle>
+          <DialogProDescription>修改部门名称，或改挂到其他上级部门（编码不可修改）。带 * 为必填项。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitEditDept">
           <p v-if="deptEditShowErrors && !canEditDept" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="dept-edit-code">部门编码</FieldLabel>
-              <Input id="dept-edit-code" :model-value="deptEditCode" disabled />
+              <InputPro id="dept-edit-code" :model-value="deptEditCode" disabled />
             </Field>
             <Field :data-invalid="deptEditShowErrors && !isNonEmpty(deptEditForm.name)">
               <FieldLabel for="dept-edit-name">部门名称 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="dept-edit-name" v-model="deptEditForm.name" autocomplete="off" required />
+              <InputPro id="dept-edit-name" v-model="deptEditForm.name" autocomplete="off" required />
             </Field>
             <Field>
               <FieldLabel for="dept-edit-parent">上级部门</FieldLabel>
-              <Select v-model="deptEditForm.parentDepartmentCode">
-                <SelectTrigger id="dept-edit-parent"><SelectValue placeholder="无（顶级部门）" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">无（顶级部门）</SelectItem>
-                  <SelectItem v-for="d in deptParentOptions" :key="d.code" :value="d.code ?? ''">
+              <SelectPro v-model="deptEditForm.parentDepartmentCode">
+                <SelectProTrigger id="dept-edit-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem value="">无（顶级部门）</SelectProItem>
+                  <SelectProItem v-for="d in deptParentOptions" :key="d.code" :value="d.code ?? ''">
                     {{ d.displayName ?? d.code }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </SelectProItem>
+                </SelectProContent>
+              </SelectPro>
               <FieldDescription>留空表示顶级部门；不能挂到自己或其下级部门下。</FieldDescription>
             </Field>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="deptEditOpen = false">取消</Button>
-            <Button type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="deptEditOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
               <Spinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
     <!-- 班组对话框（新建：挂部门 + 班次；编辑：改名 + 改挂部门 / 班次，编码只读） -->
-    <Dialog v-model:open="teamOpen">
-      <DialogContent class="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogTitle>
-          <DialogDescription>{{ teamEditingCode ? '修改班组名称，或改挂到其他部门 / 班次（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="teamOpen">
+      <DialogProContent class="sm:max-w-lg">
+        <DialogProHeader>
+          <DialogProTitle>{{ teamEditingCode ? `编辑班组 · ${teamEditingCode}` : '新建班组' }}</DialogProTitle>
+          <DialogProDescription>{{ teamEditingCode ? '修改班组名称，或改挂到其他部门 / 班次（编码不可修改）。带 * 为必填项。' : '将班组挂靠到部门与班次。带 * 为必填项。' }}</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitTeam">
           <p v-if="teamShowErrors && !teamFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field v-if="teamEditingCode">
               <FieldLabel for="team-code">班组编码</FieldLabel>
-              <Input id="team-code" :model-value="teamForm.code" disabled />
+              <InputPro id="team-code" :model-value="teamForm.code" disabled />
             </Field>
             <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.name)">
               <FieldLabel for="team-name">班组名称 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="team-name" v-model="teamForm.name" autocomplete="off" required />
+              <InputPro id="team-name" v-model="teamForm.name" autocomplete="off" required />
               <FieldDescription v-if="!teamEditingCode">编码由系统自动生成。</FieldDescription>
             </Field>
             <Field v-if="teamDepartmentLocked && !teamEditingCode">
               <FieldLabel for="team-dept-locked">所属部门</FieldLabel>
-              <Input id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
+              <InputPro id="team-dept-locked" :model-value="teamForm.departmentCode" disabled />
             </Field>
             <Field v-else :data-invalid="teamShowErrors && !isNonEmpty(teamForm.departmentCode)">
               <FieldLabel for="team-dept">所属部门 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="teamForm.departmentCode">
-                <SelectTrigger id="team-dept"><SelectValue placeholder="请选择部门" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+              <SelectPro v-model="teamForm.departmentCode">
+                <SelectProTrigger id="team-dept"><SelectProValue placeholder="请选择部门" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
                     {{ d.displayName ?? d.code }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </SelectProItem>
+                </SelectProContent>
+              </SelectPro>
             </Field>
             <Field :data-invalid="teamShowErrors && !isNonEmpty(teamForm.shiftCode)">
               <FieldLabel for="team-shift">所属班次 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="teamForm.shiftCode">
-                <SelectTrigger id="team-shift"><SelectValue placeholder="请选择班次" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
+              <SelectPro v-model="teamForm.shiftCode">
+                <SelectProTrigger id="team-shift"><SelectProValue placeholder="请选择班次" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
                     {{ s.displayName ?? s.code }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </SelectProItem>
+                </SelectProContent>
+              </SelectPro>
               <FieldDescription>班次在「排班与日历」页维护。</FieldDescription>
             </Field>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="teamOpen = false">取消</Button>
-            <Button type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="teamOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="teams.createPending.value || teamActions.updatePending.value || teamEditLoading">
               <Spinner v-if="teams.createPending.value || teamActions.updatePending.value" aria-hidden="true" />{{ teamEditingCode ? '保存修改' : '保存班组' }}
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
     <TeamMembersDialog v-model:open="membersOpen" :team-code="membersTeam.code" :team-name="membersTeam.name" />
   </BusinessLayout>

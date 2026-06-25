@@ -5,7 +5,7 @@ import type {
   BusinessConsoleErpQuotationItem,
   BusinessConsoleErpSalesOrderItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import {
   useErpDeliveryOrders,
   useErpOpportunities,
@@ -15,36 +15,37 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   DropdownMenuItem,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -116,14 +117,14 @@ function refreshActive() {
   else void deliveries.refresh()
 }
 
-const opportunityColumns: DataTableColumn<BusinessConsoleErpOpportunityItem>[] = [
+const opportunityColumns: DataTableProColumn<BusinessConsoleErpOpportunityItem>[] = [
   { key: 'opportunityNo', header: '商机编号', cellClass: 'font-medium', accessor: (r) => r.opportunityNo ?? '—' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '—' },
   { key: 'topic', header: '主题', accessor: (r) => r.topic ?? '—' },
   { key: 'status', header: '阶段', width: 'w-28' },
   { key: 'openedAtUtc', header: '创建时间', width: 'w-40', accessor: (r) => formatDateTime(r.openedAtUtc) },
 ]
-const quotationColumns: DataTableColumn<BusinessConsoleErpQuotationItem>[] = [
+const quotationColumns: DataTableProColumn<BusinessConsoleErpQuotationItem>[] = [
   { key: 'quotationNo', header: '报价单号', cellClass: 'font-medium', accessor: (r) => r.quotationNo ?? '—' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '—' },
   { key: 'status', header: '状态', width: 'w-28' },
@@ -131,13 +132,13 @@ const quotationColumns: DataTableColumn<BusinessConsoleErpQuotationItem>[] = [
   { key: 'totalAmount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.totalAmount ?? 0 },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
-const orderColumns: DataTableColumn<BusinessConsoleErpSalesOrderItem>[] = [
+const orderColumns: DataTableProColumn<BusinessConsoleErpSalesOrderItem>[] = [
   { key: 'salesOrderNo', header: '销售单号', cellClass: 'font-medium', accessor: (r) => r.salesOrderNo ?? '—' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '—' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'totalAmount', header: '金额', align: 'end', width: 'w-32', accessor: (r) => r.totalAmount ?? 0 },
 ]
-const deliveryColumns: DataTableColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
+const deliveryColumns: DataTableProColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
   { key: 'deliveryOrderNo', header: '发货单号', cellClass: 'font-medium', accessor: (r) => r.deliveryOrderNo ?? '—' },
   { key: 'salesOrderNo', header: '关联销售单', accessor: (r) => r.salesOrderNo ?? '—' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '—' },
@@ -288,10 +289,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="销售管理" :breadcrumbs="[{ label: '经营管理' }]" :count="`${orders.salesOrdersTotal.value} 张销售订单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" @click="refreshActive">
+        <ButtonPro size="sm" type="button" variant="outline" @click="refreshActive">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -302,70 +303,74 @@ function formatError(error: unknown) {
       <SectionCard description="本页订单金额" :value="formatAmount(ordersAmount)" hint="本页销售订单合计" />
     </SectionCards>
 
-    <Tabs v-model="activeTab">
-      <TabsList>
-        <TabsTrigger value="opportunities">商机</TabsTrigger>
-        <TabsTrigger value="quotations">报价单</TabsTrigger>
-        <TabsTrigger value="orders">销售订单</TabsTrigger>
-        <TabsTrigger value="deliveries">发货单</TabsTrigger>
-      </TabsList>
+    <TabsPro v-model="activeTab">
+      <TabsProList>
+        <TabsProTrigger value="opportunities">商机</TabsProTrigger>
+        <TabsProTrigger value="quotations">报价单</TabsProTrigger>
+        <TabsProTrigger value="orders">销售订单</TabsProTrigger>
+        <TabsProTrigger value="deliveries">发货单</TabsProTrigger>
+      </TabsProList>
 
-      <TabsContent value="opportunities" class="grid gap-4">
+      <TabsProContent value="opportunities" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="opportunities.filters.keyword" class="h-9 w-48" placeholder="商机编号 / 客户" aria-label="商机关键字" />
+            <InputPro v-model="opportunities.filters.keyword" class="h-9 w-48" placeholder="商机编号 / 客户" aria-label="商机关键字" />
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openOpportunityDialog">
+            <ButtonPro size="sm" type="button" @click="openOpportunityDialog">
               <PlusIcon aria-hidden="true" />
               开立商机
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="opportunitiesError" class="text-sm text-destructive" role="alert">{{ opportunitiesError }}</p>
-        <DataTable
+        <DataTablePro
           :columns="opportunityColumns"
           :rows="opportunities.items.value"
           :row-key="(r: BusinessConsoleErpOpportunityItem) => r.opportunityNo ?? '商机'"
           :loading="opportunities.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无商机。从这里开立线索，转化为报价与销售订单。"
         >
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
         <DataTablePagination v-model:page="opportunitiesPaged.page.value" v-model:page-size="opportunitiesPaged.pageSize.value" :total-items="opportunities.total.value" />
-      </TabsContent>
+      </TabsProContent>
 
-      <TabsContent value="quotations" class="grid gap-4">
+      <TabsProContent value="quotations" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="quotations.filters.keyword" class="h-9 w-48" placeholder="报价单号 / 客户" aria-label="报价单关键字" />
-            <Select v-model="quotationStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="报价单状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="Draft">待审</SelectItem>
-                <SelectItem value="Approved">已批准</SelectItem>
-                <SelectItem value="Rejected">已拒绝</SelectItem>
-                <SelectItem value="Expired">已过期</SelectItem>
-              </SelectContent>
-            </Select>
+            <InputPro v-model="quotations.filters.keyword" class="h-9 w-48" placeholder="报价单号 / 客户" aria-label="报价单关键字" />
+            <SelectPro v-model="quotationStatus">
+              <SelectProTrigger class="h-9 w-32" aria-label="报价单状态"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
+              <SelectProContent>
+                <SelectProItem value="all">全部状态</SelectProItem>
+                <SelectProItem value="Draft">待审</SelectProItem>
+                <SelectProItem value="Approved">已批准</SelectProItem>
+                <SelectProItem value="Rejected">已拒绝</SelectProItem>
+                <SelectProItem value="Expired">已过期</SelectProItem>
+              </SelectProContent>
+            </SelectPro>
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openQuotationDialog">
+            <ButtonPro size="sm" type="button" @click="openQuotationDialog">
               <PlusIcon aria-hidden="true" />
               新建报价
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="quotationsError" class="text-sm text-destructive" role="alert">{{ quotationsError }}</p>
-        <DataTable
+        <DataTablePro
           :columns="quotationColumns"
           :rows="quotations.items.value"
           :row-key="(r: BusinessConsoleErpQuotationItem) => r.quotationNo ?? '报价单'"
           :loading="quotations.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无报价单。报价批准后即可转为销售订单。"
         >
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
           <template #cell-actions="{ row }">
             <RowActions v-if="isApprovable(row)" :label="`报价单操作 ${row.quotationNo ?? ''}`">
@@ -376,154 +381,167 @@ function formatError(error: unknown) {
             </RowActions>
             <span v-else class="text-muted-foreground">—</span>
           </template>
-        </DataTable>
+        </DataTablePro>
         <DataTablePagination v-model:page="quotationsPaged.page.value" v-model:page-size="quotationsPaged.pageSize.value" :total-items="quotations.total.value" />
-      </TabsContent>
+      </TabsProContent>
 
-      <TabsContent value="orders" class="grid gap-4">
+      <TabsProContent value="orders" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="orders.filters.keyword" class="h-9 w-48" placeholder="销售单号 / 客户" aria-label="销售订单关键字" />
+            <InputPro v-model="orders.filters.keyword" class="h-9 w-48" placeholder="销售单号 / 客户" aria-label="销售订单关键字" />
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openOrderDialog">
+            <ButtonPro size="sm" type="button" @click="openOrderDialog">
               <PlusIcon aria-hidden="true" />
               新建销售订单
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="ordersError" class="text-sm text-destructive" role="alert">{{ ordersError }}</p>
-        <DataTable
+        <DataTablePro
           :columns="orderColumns"
           :rows="orders.salesOrders.value"
           :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
           :loading="orders.salesOrdersPending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无销售订单。报价批准并转换后会出现在这里。"
         >
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
-        </DataTable>
+        </DataTablePro>
         <DataTablePagination v-model:page="ordersPaged.page.value" v-model:page-size="ordersPaged.pageSize.value" :total-items="orders.salesOrdersTotal.value" />
-      </TabsContent>
+      </TabsProContent>
 
-      <TabsContent value="deliveries" class="grid gap-4">
+      <TabsProContent value="deliveries" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="deliveries.filters.keyword" class="h-9 w-48" placeholder="发货单号 / 客户" aria-label="发货单关键字" />
+            <InputPro v-model="deliveries.filters.keyword" class="h-9 w-48" placeholder="发货单号 / 客户" aria-label="发货单关键字" />
           </template>
         </Toolbar>
         <p v-if="deliveriesError" class="text-sm text-destructive" role="alert">{{ deliveriesError }}</p>
-        <DataTable
+        <DataTablePro
           :columns="deliveryColumns"
           :rows="deliveries.items.value"
           :row-key="(r: BusinessConsoleErpDeliveryOrderItem) => r.deliveryOrderNo ?? '发货单'"
           :loading="deliveries.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无发货单。销售订单履约出货后会在这里生成。"
         >
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
         <DataTablePagination v-model:page="deliveriesPaged.page.value" v-model:page-size="deliveriesPaged.pageSize.value" :total-items="deliveries.total.value" />
-      </TabsContent>
-    </Tabs>
+      </TabsProContent>
+    </TabsPro>
 
-    <Dialog v-model:open="opportunityOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>开立商机</DialogTitle>
-          <DialogDescription>登记客户线索与商机主题，进入销售漏斗跟进。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="opportunityOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>开立商机</DialogProTitle>
+          <DialogProDescription>登记客户线索与商机主题，进入销售漏斗跟进。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitOpportunity">
           <FieldGroup>
             <Field>
               <FieldLabel for="erp-opp-customer">客户</FieldLabel>
-              <Input id="erp-opp-customer" v-model="opportunityForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
+              <InputPro id="erp-opp-customer" v-model="opportunityForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
             </Field>
             <Field>
               <FieldLabel for="erp-opp-topic">商机主题</FieldLabel>
-              <Input id="erp-opp-topic" v-model="opportunityForm.topic" autocomplete="off" placeholder="如 智能网关G200 批量采购意向" />
+              <InputPro id="erp-opp-topic" v-model="opportunityForm.topic" autocomplete="off" placeholder="如 智能网关G200 批量采购意向" />
             </Field>
           </FieldGroup>
           <FieldError v-if="opportunityFormError" :errors="[opportunityFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="opportunities.openOpportunityPending.value">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="opportunities.openOpportunityPending.value">
               <Spinner v-if="opportunities.openOpportunityPending.value" aria-hidden="true" />
               开立商机
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="quotationOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建报价</DialogTitle>
-          <DialogDescription>面向客户报价，提交后经审批转为销售订单。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="quotationOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建报价</DialogProTitle>
+          <DialogProDescription>面向客户报价，提交后经审批转为销售订单。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitQuotation">
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="erp-quo-customer">客户</FieldLabel>
-              <Input id="erp-quo-customer" v-model="quotationForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
+              <InputPro id="erp-quo-customer" v-model="quotationForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
             </Field>
             <Field>
               <FieldLabel for="erp-quo-expires">有效期至</FieldLabel>
-              <Input id="erp-quo-expires" v-model="quotationForm.expiresOn" type="date" />
+              <InputPro id="erp-quo-expires" v-model="quotationForm.expiresOn" type="date" />
             </Field>
             <Field>
               <FieldLabel for="erp-quo-sku">物料</FieldLabel>
-              <Input id="erp-quo-sku" v-model="quotationForm.skuCode" autocomplete="off" placeholder="如 智能网关G200 的物料编码" />
+              <InputPro id="erp-quo-sku" v-model="quotationForm.skuCode" autocomplete="off" placeholder="如 智能网关G200 的物料编码" />
             </Field>
             <Field>
               <FieldLabel for="erp-quo-required">需求日期</FieldLabel>
-              <Input id="erp-quo-required" v-model="quotationForm.requiredDate" type="date" />
+              <InputPro id="erp-quo-required" v-model="quotationForm.requiredDate" type="date" />
             </Field>
             <Field>
               <FieldLabel for="erp-quo-qty">数量</FieldLabel>
-              <Input id="erp-quo-qty" v-model="quotationForm.quantity" type="number" min="1" step="1" />
+              <InputPro id="erp-quo-qty" v-model="quotationForm.quantity" type="number" min="1" step="1" />
             </Field>
             <Field>
               <FieldLabel for="erp-quo-price">单价（元）</FieldLabel>
-              <Input id="erp-quo-price" v-model="quotationForm.unitPrice" type="number" min="0" step="0.01" />
+              <InputPro id="erp-quo-price" v-model="quotationForm.unitPrice" type="number" min="0" step="0.01" />
             </Field>
           </FieldGroup>
           <FieldError v-if="quotationFormError" :errors="[quotationFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="quotations.createQuotationPending.value">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="quotations.createQuotationPending.value">
               <Spinner v-if="quotations.createQuotationPending.value" aria-hidden="true" />
               创建报价
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="orderOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建销售订单</DialogTitle>
-          <DialogDescription>由已批准的报价转换生成销售订单，订单明细沿用报价。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="orderOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建销售订单</DialogProTitle>
+          <DialogProDescription>由已批准的报价转换生成销售订单，订单明细沿用报价。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitOrder">
           <FieldGroup>
             <Field>
               <FieldLabel for="erp-so-quotation">报价单号</FieldLabel>
-              <Input id="erp-so-quotation" v-model="orderForm.quotationNo" autocomplete="off" placeholder="已批准的报价单号" />
+              <InputPro id="erp-so-quotation" v-model="orderForm.quotationNo" autocomplete="off" placeholder="已批准的报价单号" />
             </Field>
             <Field>
               <FieldLabel for="erp-so-no">销售单号（可选）</FieldLabel>
-              <Input id="erp-so-no" v-model="orderForm.salesOrderNo" autocomplete="off" placeholder="留空由系统编号" />
+              <InputPro id="erp-so-no" v-model="orderForm.salesOrderNo" autocomplete="off" placeholder="留空由系统编号" />
             </Field>
           </FieldGroup>
           <FieldError v-if="orderFormError" :errors="[orderFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="orders.createSalesOrderPending.value">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="orders.createSalesOrderPending.value">
               <Spinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
               创建销售订单
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

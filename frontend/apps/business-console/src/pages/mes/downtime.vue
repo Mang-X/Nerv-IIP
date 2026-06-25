@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesDowntimeEvents } from '@/composables/useBusinessMes'
 import { mesDowntimeStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Input,
+  DataTablePro,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -36,7 +36,7 @@ watch(statusFilter, (value) => {
 })
 
 type DowntimeRow = (typeof downtimeEvents)['value'][number]
-const columns: DataTableColumn<DowntimeRow>[] = [
+const columns: DataTableProColumn<DowntimeRow>[] = [
   { key: 'downtimeEventId', header: '停机事件', cellClass: 'font-medium', accessor: (r) => r.downtimeEventId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '未关联' },
   { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '未关联' },
@@ -60,10 +60,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="设备与停机" :breadcrumbs="[{ label: '制造执行' }]" :count="`${downtimeEventsTotal} 条停机事件`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="downtimeEventsPending" @click="refreshDowntimeEvents">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -75,28 +75,30 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="停机状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesDowntimeStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="停机状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesDowntimeStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="downtimeEvents"
       row-key="downtimeEventId"
       :loading="downtimeEventsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无停机事件。从工序执行记录异常会在这里汇总。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-startedAtUtc="{ row }">{{ formatDateTime(row.startedAtUtc) }}</template>
       <template #cell-recoveredAtUtc="{ row }">{{ formatDateTime(row.recoveredAtUtc) }}</template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="downtimeEventsTotal" />
   </BusinessLayout>

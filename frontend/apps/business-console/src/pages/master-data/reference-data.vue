@@ -1,33 +1,33 @@
 <script setup lang="ts">
 import type { BusinessConsoleCreateReferenceDataCodeRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useReferenceDataCodes, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
+  DataTablePro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -114,7 +114,7 @@ const pagedRows = computed(() => sortedRows.value)
 
 const listErrorMessage = computed(() => formatError(codesError.value))
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
@@ -252,71 +252,71 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="数据字典" :breadcrumbs="[{ label: '基础数据' }]" :count="`${CODE_SETS.length} 个字典分组`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="codesPending" @click="refreshCodes">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="codesPending" @click="refreshCodes">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="createOpen" @update:open="syncFormOnOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" :disabled="!selectedCodeSetCanAdd" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="createOpen" @update:open="syncFormOnOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" :disabled="!selectedCodeSetCanAdd" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建字典条目
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目' }}</DialogTitle>
-              <DialogDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogDescription>
-            </DialogHeader>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-lg">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目' }}</DialogProTitle>
+              <DialogProDescription>{{ editingCode ? '修改字典条目名称（所属字典与编码不可修改）。带 * 为必填项。' : '选择所属字典，填写编码与名称。带 * 为必填项。' }}</DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-4" @submit.prevent="submitCode">
               <p v-if="createShowErrors && !canSubmitCode" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.codeSet)">
                 <FieldLabel for="ref-code-set">所属字典 <span class="text-destructive">*</span></FieldLabel>
-                <Select v-model="createForm.codeSet" :disabled="!!editingCode">
-                  <SelectTrigger id="ref-code-set"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
+                <SelectPro v-model="createForm.codeSet" :disabled="!!editingCode">
+                  <SelectProTrigger id="ref-code-set"><SelectProValue /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem
                       v-for="s in CODE_SETS"
                       :key="s.codeSet"
                       :value="s.codeSet"
                       :disabled="s.kind === 'system-enum'"
                     >
                       {{ s.label }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                    </SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
                 <FieldDescription>该条目归属的字典分组。</FieldDescription>
               </Field>
 
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.code)">
                   <FieldLabel for="ref-code">编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
+                  <InputPro id="ref-code" v-model="createForm.code" autocomplete="off" aria-required="true" :disabled="!!editingCode" required />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
                   <FieldLabel for="ref-name">名称 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="ref-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                  <InputPro id="ref-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
                 </Field>
               </FieldGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || !canSubmitCode">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createCodePending || codeActions.updatePending.value || editLoading || !canSubmitCode">
                   <Spinner v-if="createCodePending || codeActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存条目' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
 
     <div class="grid items-start gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
       <nav class="grid h-fit gap-1 rounded-lg border p-2" aria-label="字典分组">
-        <Button
+        <ButtonPro
           v-for="s in CODE_SETS"
           :key="s.codeSet"
           type="button"
@@ -328,7 +328,7 @@ function isNonEmpty(value: string) {
           @click="selectCodeSet(s.codeSet)"
         >
           {{ s.label }}
-        </Button>
+        </ButtonPro>
       </nav>
 
       <div class="grid min-h-[32rem] content-start gap-4">
@@ -336,7 +336,8 @@ function isNonEmpty(value: string) {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTable
+        <DataTablePro
+          :searchable="false" :column-settings="false"
           v-model:sort="sort"
           :columns="columns"
           :rows="pagedRows"
@@ -346,12 +347,12 @@ function isNonEmpty(value: string) {
           :empty-message="selectedCodeSetCanAdd ? `「${selectedLabel}」暂无条目。可新建字典条目。` : `「${selectedLabel}」暂无条目。该分组由平台维护。`"
         >
           <template #cell-active="{ row }">
-            <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions :row="row" entity-label="字典条目" :detail-fields="codeDetailFields(row)" :actions="codeActions" @edit="openEdit" />
           </template>
-        </DataTable>
+        </DataTablePro>
 
         <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="codesTotal" />
       </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { describeMesReadinessReason, useMesWipSummary } from '@/composables/useBusinessMes'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
@@ -7,16 +7,16 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
+  DataTablePro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -38,7 +38,7 @@ const errorMessage = computed(() => formatError(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
 // facade 回显示字段（workOrderNo / operationTaskNo / workCenterName），accessor 优先取人读显示值。
-const columns: DataTableColumn<WipRow>[] = [
+const columns: DataTableProColumn<WipRow>[] = [
   { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'operationTaskId', header: '工序任务', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无' },
@@ -71,31 +71,33 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="在制跟踪" :breadcrumbs="[{ label: '制造执行' }]" :count="`${wipTotal} 行在制`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="wipPending" @click="refreshWip">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="wipPending" @click="refreshWip">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="在制状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="在制状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
     >
       <template #cell-workOrderId="{ row }">
@@ -109,7 +111,7 @@ function formatError(error: unknown) {
         </button>
         <span v-else class="text-muted-foreground">—</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-progress="{ row }">
         <div class="flex flex-col gap-1">
           <span class="text-sm tabular-nums">
@@ -129,13 +131,13 @@ function formatError(error: unknown) {
       <template #cell-blockingReasons="{ row }">
         <div v-if="row.blockingReasons?.length" class="grid gap-2">
           <div v-for="reason in readinessList(row.blockingReasons)" :key="`${row.operationTaskId}-${reason.code}`" class="grid gap-0.5">
-            <StatusBadge :label="reason.label" tone="warning" />
+            <StatusBadgePro :label="reason.label" tone="warning" />
             <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
           </div>
         </div>
         <span v-else class="text-muted-foreground">无卡点</span>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wipTotal" />
 

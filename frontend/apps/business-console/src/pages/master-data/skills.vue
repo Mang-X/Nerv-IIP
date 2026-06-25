@@ -12,34 +12,34 @@ import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  BadgePro,
+  ButtonPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
   Toolbar,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+  TooltipPro,
+  TooltipProContent,
+  TooltipProProvider,
+  TooltipProTrigger,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -225,14 +225,14 @@ async function submitSkill() {
   <BusinessLayout>
     <PageHeader title="人员技能" :breadcrumbs="[{ label: '基础数据' }]" :count="`${matrix.rows.value.length} 名工人`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="matrix.matrixPending.value" @click="refreshAll">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="matrix.matrixPending.value" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openAssign()">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openAssign()">
           <PlusIcon aria-hidden="true" />
           登记技能
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -252,15 +252,15 @@ async function submitSkill() {
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
       <template #filters>
-        <Select v-model="skillFilter">
-          <SelectTrigger class="w-44"><SelectValue placeholder="按技能筛选" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部技能</SelectItem>
-            <SelectItem v-for="code in matrix.skillCodes.value" :key="code" :value="code">
+        <SelectPro v-model="skillFilter">
+          <SelectProTrigger class="w-44"><SelectProValue placeholder="按技能筛选" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部技能</SelectProItem>
+            <SelectProItem v-for="code in matrix.skillCodes.value" :key="code" :value="code">
               {{ skillName(code) }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
@@ -272,10 +272,10 @@ async function submitSkill() {
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
       <p class="text-sm text-muted-foreground">还没有任何技能登记，先为工人登记一项技能即可生成矩阵。</p>
-      <Button size="sm" type="button" @click="openAssign()">
+      <ButtonPro size="sm" type="button" @click="openAssign()">
         <PlusIcon aria-hidden="true" />
         去登记技能
-      </Button>
+      </ButtonPro>
     </div>
 
     <!-- 筛选无结果。 -->
@@ -286,7 +286,7 @@ async function submitSkill() {
       <p class="text-sm text-muted-foreground">
         没有符合条件的工人{{ skillFilter !== 'all' ? `（持有「${skillName(skillFilter)}」）` : '' }}。
       </p>
-      <Button size="sm" variant="outline" type="button" @click="keyword = ''; skillFilter = 'all'">清空筛选</Button>
+      <ButtonPro size="sm" variant="outline" type="button" @click="keyword = ''; skillFilter = 'all'">清空筛选</ButtonPro>
     </div>
 
     <!-- 矩阵网格：横向可滚、首列（工人）冻结。 -->
@@ -302,14 +302,14 @@ async function submitSkill() {
               :key="code"
               class="min-w-32 px-3 py-2 text-left font-medium text-muted-foreground"
             >
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger as-child>
+              <TooltipProProvider>
+                <TooltipPro>
+                  <TooltipProTrigger as-child>
                     <span class="block max-w-32 truncate">{{ skillName(code) }}</span>
-                  </TooltipTrigger>
-                  <TooltipContent>{{ skillName(code) }}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                  </TooltipProTrigger>
+                  <TooltipProContent>{{ skillName(code) }}</TooltipProContent>
+                </TooltipPro>
+              </TooltipProProvider>
             </th>
           </tr>
         </thead>
@@ -326,15 +326,15 @@ async function submitSkill() {
                 class="flex w-full flex-col items-start gap-1 rounded-sm px-2 py-1 text-left transition-colors hover:bg-accent"
                 @click="openAssign({ userId: row.userId, skillCode: code })"
               >
-                <Badge
-                  variant="outline"
+                <BadgePro
+                  variant="neutral"
                   :class="['rounded-sm', EXPIRY_CLASS[expiryTone(cellOf(row, code)!.effectiveTo)]]"
                 >
                   {{ levelLabel(cellOf(row, code)!.level) }}
                   <span v-if="EXPIRY_BADGE[expiryTone(cellOf(row, code)!.effectiveTo)]" class="ml-1">
                     · {{ EXPIRY_BADGE[expiryTone(cellOf(row, code)!.effectiveTo)] }}
                   </span>
-                </Badge>
+                </BadgePro>
                 <span v-if="cellOf(row, code)!.effectiveTo" class="text-xs text-muted-foreground">
                   至 {{ formatDate(cellOf(row, code)!.effectiveTo) }}
                 </span>
@@ -355,15 +355,15 @@ async function submitSkill() {
     </div>
 
     <!-- 登记 Dialog：录入 / 更新某工人某技能等级；可由「登记技能」按钮或格子点击触发。 -->
-    <Dialog v-model:open="skillOpen">
-      <DialogTrigger class="sr-only" as-child>
+    <DialogPro v-model:open="skillOpen">
+      <DialogProTrigger class="sr-only" as-child>
         <button type="button">登记技能</button>
-      </DialogTrigger>
-      <DialogContent class="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>登记人员技能</DialogTitle>
-          <DialogDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogDescription>
-        </DialogHeader>
+      </DialogProTrigger>
+      <DialogProContent class="sm:max-w-lg">
+        <DialogProHeader>
+          <DialogProTitle>登记人员技能</DialogProTitle>
+          <DialogProDescription>为某位工人登记一项技能与等级，可选填生效日期。带 * 为必填项。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitSkill">
           <p v-if="skillShowErrors && !canAssignSkill" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
@@ -373,37 +373,37 @@ async function submitSkill() {
             </Field>
             <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.skillCode)">
               <FieldLabel for="skill-code">技能 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="skillForm.skillCode">
-                <SelectTrigger id="skill-code"><SelectValue placeholder="请选择技能" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{ s.label }}</SelectItem>
-                </SelectContent>
-              </Select>
+              <SelectPro v-model="skillForm.skillCode">
+                <SelectProTrigger id="skill-code"><SelectProValue placeholder="请选择技能" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="s in skillOptions" :key="s.value" :value="s.value">{{ s.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
               <p v-if="!skillOptions.length" class="text-xs text-muted-foreground">技能目录为空——请先在「基础数据 › 技能目录」里维护技能项。</p>
             </Field>
             <Field :data-invalid="skillShowErrors && !isNonEmpty(skillForm.level)">
               <FieldLabel for="skill-level">等级 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-model="skillForm.level">
-                <SelectTrigger id="skill-level"><SelectValue placeholder="请选择等级" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectItem>
-                </SelectContent>
-              </Select>
+              <SelectPro v-model="skillForm.level">
+                <SelectProTrigger id="skill-level"><SelectProValue placeholder="请选择等级" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="lvl in SKILL_LEVELS" :key="lvl.value" :value="lvl.value">{{ lvl.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
             </Field>
             <Field>
               <FieldLabel for="skill-from">生效日期</FieldLabel>
-              <Input id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
+              <InputPro id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
               <FieldDescription>留空表示即时生效。</FieldDescription>
             </Field>
           </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="skillOpen = false">取消</Button>
-            <Button type="submit" :disabled="skillAssignment.assignPending.value">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="skillOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="skillAssignment.assignPending.value">
               <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

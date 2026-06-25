@@ -3,22 +3,22 @@ import type {
   BusinessConsoleConfirmStockCountAdjustmentRequest,
   BusinessConsoleCreateStockCountTaskRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProHeader,
+  DialogProTitle,
   DropdownMenuItem,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   RowActions,
   Spinner,
@@ -114,7 +114,7 @@ const canConfirmAdjustment = computed(
 )
 
 type QueueRow = CountTaskQueueRow
-const columns: DataTableColumn<QueueRow>[] = [
+const columns: DataTableProColumn<QueueRow>[] = [
   { key: 'countTaskId', header: '任务号', cellClass: 'font-medium' },
   { key: 'skuCode', header: '物料' },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode} / ${r.locationCode}` },
@@ -205,20 +205,22 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="库存盘点" :breadcrumbs="[{ label: '库存' }]" :count="`${countTaskQueue.length} 个本次任务`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" @click="taskSheetOpen = true">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="taskSheetOpen = true">
           <ClipboardPlusIcon aria-hidden="true" />
           创建盘点任务
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="countTaskQueue"
       row-key="countTaskId"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无盘点任务。先创建盘点任务，再从任务行进入差异确认。"
     >
       <template #cell-actions="{ row }">
@@ -229,94 +231,94 @@ function isNonEmpty(value: string) {
           </DropdownMenuItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <Dialog v-model:open="taskSheetOpen">
-      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>创建盘点任务</DialogTitle>
-          <DialogDescription>指定物料、工厂、库位和批次后创建盘点任务。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="taskSheetOpen">
+      <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogProHeader>
+          <DialogProTitle>创建盘点任务</DialogProTitle>
+          <DialogProDescription>指定物料、工厂、库位和批次后创建盘点任务。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitTask">
           <p v-if="taskErrorMessage" class="text-sm text-destructive" role="alert">{{ taskErrorMessage }}</p>
           <p v-if="taskSuccess" class="text-sm text-success" role="status">{{ taskSuccess }}</p>
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="count-task-sku">SKU</FieldLabel>
-              <Input id="count-task-sku" v-model="taskForm.skuCode" required />
+              <InputPro id="count-task-sku" v-model="taskForm.skuCode" required />
             </Field>
             <Field>
               <FieldLabel for="count-task-uom">单位</FieldLabel>
-              <Input id="count-task-uom" v-model="taskForm.uomCode" required />
+              <InputPro id="count-task-uom" v-model="taskForm.uomCode" required />
             </Field>
             <Field>
               <FieldLabel for="count-task-site">工厂</FieldLabel>
-              <Input id="count-task-site" v-model="taskForm.siteCode" required />
+              <InputPro id="count-task-site" v-model="taskForm.siteCode" required />
             </Field>
             <Field>
               <FieldLabel for="count-task-location">库位</FieldLabel>
-              <Input id="count-task-location" v-model="taskForm.locationCode" required />
+              <InputPro id="count-task-location" v-model="taskForm.locationCode" required />
             </Field>
             <Field>
               <FieldLabel for="count-task-quality">质量状态</FieldLabel>
-              <Input id="count-task-quality" v-model="taskForm.qualityStatus" />
+              <InputPro id="count-task-quality" v-model="taskForm.qualityStatus" />
             </Field>
             <Field>
               <FieldLabel for="count-task-owner-type">货主类型</FieldLabel>
-              <Input id="count-task-owner-type" v-model="taskForm.ownerType" />
+              <InputPro id="count-task-owner-type" v-model="taskForm.ownerType" />
             </Field>
             <Field>
               <FieldLabel for="count-task-owner-id">货主</FieldLabel>
-              <Input id="count-task-owner-id" v-model="taskForm.ownerId" placeholder="可选货主名称或编码" />
+              <InputPro id="count-task-owner-id" v-model="taskForm.ownerId" placeholder="可选货主名称或编码" />
             </Field>
             <Field>
               <FieldLabel for="count-task-lot">批次</FieldLabel>
-              <Input id="count-task-lot" v-model="taskForm.lotNo" />
+              <InputPro id="count-task-lot" v-model="taskForm.lotNo" />
             </Field>
             <Field>
               <FieldLabel for="count-task-serial">序列号</FieldLabel>
-              <Input id="count-task-serial" v-model="taskForm.serialNo" />
+              <InputPro id="count-task-serial" v-model="taskForm.serialNo" />
             </Field>
           </FieldGroup>
           <div class="flex justify-end">
-            <Button type="submit" :disabled="createCountTaskPending || !canCreateTask">
+            <ButtonPro type="submit" :disabled="createCountTaskPending || !canCreateTask">
               <Spinner v-if="createCountTaskPending" aria-hidden="true" />
               <ClipboardPlusIcon v-else aria-hidden="true" />
               创建任务
-            </Button>
+            </ButtonPro>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="adjustmentSheetOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>确认盘点差异</DialogTitle>
-          <DialogDescription>从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="adjustmentSheetOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>确认盘点差异</DialogProTitle>
+          <DialogProDescription>从已完成实盘的任务进入差异确认，重复提交保护由系统处理。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitAdjustment">
           <p v-if="adjustmentErrorMessage" class="text-sm text-destructive" role="alert">{{ adjustmentErrorMessage }}</p>
           <p v-if="adjustmentSuccess" class="text-sm text-success" role="status">{{ adjustmentSuccess }}</p>
           <FieldGroup class="grid gap-3">
             <Field>
               <FieldLabel for="count-adjust-task-id">盘点任务</FieldLabel>
-              <Input id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" readonly required />
+              <InputPro id="count-adjust-task-id" v-model="adjustmentForm.countTaskId" readonly required />
             </Field>
             <Field>
               <FieldLabel for="count-adjust-quantity">实盘数量</FieldLabel>
-              <Input id="count-adjust-quantity" v-model="adjustmentForm.countedQuantity" inputmode="decimal" required type="number" />
+              <InputPro id="count-adjust-quantity" v-model="adjustmentForm.countedQuantity" inputmode="decimal" required type="number" />
             </Field>
           </FieldGroup>
           <div class="flex justify-end">
-            <Button type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
+            <ButtonPro type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
               <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
-            </Button>
+            </ButtonPro>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

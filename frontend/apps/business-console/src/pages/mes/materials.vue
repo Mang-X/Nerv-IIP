@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
 import { mesMaterialIssueStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
+  DataTablePro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { ArrowUpRightIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -48,7 +48,7 @@ watch(statusFilter, (value) => {
 })
 
 type RequestRow = (typeof materialIssueRequests)['value'][number]
-const columns: DataTableColumn<RequestRow>[] = [
+const columns: DataTableProColumn<RequestRow>[] = [
   { key: 'requestId', header: '申请号', cellClass: 'font-medium', accessor: (r) => r.requestId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'materialId', header: '物料', accessor: (r) => resolveSku(r.materialCode ?? r.materialId) ?? '无' },
@@ -85,10 +85,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="领料与齐套" :breadcrumbs="[{ label: '制造执行' }]" :count="`${materialIssueRequestsTotal} 条领料申请`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="materialIssueRequestsPending" @click="refreshMaterialIssueRequests">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="materialIssueRequestsPending" @click="refreshMaterialIssueRequests">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -98,22 +98,24 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="领料状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesMaterialIssueStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="领料状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesMaterialIssueStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="materialIssueRequests"
       row-key="requestId"
       :loading="materialIssueRequestsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
     >
       <template #cell-receivedQuantity="{ row }">
@@ -130,7 +132,7 @@ function formatError(error: unknown) {
           </div>
         </div>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-wmsRequestId="{ row }">
         <RouterLink
           v-if="row.wmsRequestId"
@@ -143,7 +145,7 @@ function formatError(error: unknown) {
         <span v-else class="text-sm text-muted-foreground">未下发</span>
       </template>
       <template #cell-requestedAtUtc="{ row }">{{ formatDateTime(row.requestedAtUtc) }}</template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="materialIssueRequestsTotal" />
   </BusinessLayout>

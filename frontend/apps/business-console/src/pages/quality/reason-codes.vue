@@ -3,7 +3,7 @@ import type {
   CreateQualityReasonRequest,
   QualityReasonItem,
 } from '@/composables/usePromotedCatalogs'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -16,29 +16,29 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -97,7 +97,7 @@ const listErrorMessage = computed(() =>
   reasonsError.value instanceof Error ? reasonsError.value.message : '',
 )
 
-const columns: DataTableColumn<QualityReasonItem>[] = [
+const columns: DataTableProColumn<QualityReasonItem>[] = [
   { key: 'reasonCode', header: '编码', width: 'w-32' },
   { key: 'reasonName', header: '原因', cellClass: 'font-medium' },
   { key: 'groupName', header: '原因组' },
@@ -226,24 +226,24 @@ async function confirmArchive() {
       :count="`${reasonsTotal} 个原因`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="reasonsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="reasonsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建原因
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? '编辑质量原因' : '新建质量原因' }}</DialogProTitle>
+              <DialogProDescription>
                 质量原因是可复用的质量主数据：按原因组归类，预设严重度与默认处置，供检验 / 不合格品记录引用。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写带 * 的必填项（已标红）。
@@ -253,31 +253,31 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="showErrors && !codeValid">
                   <FieldLabel for="reason-code">原因编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input
+                  <InputPro
                     v-if="!editingCode"
                     id="reason-code"
                     v-model="form.reasonCode"
                     placeholder="例如：DEF-SCRATCH"
                   />
-                  <Input v-else :model-value="editingCode" readonly disabled />
+                  <InputPro v-else :model-value="editingCode" readonly disabled />
                   <FieldDescription>{{ editingCode ? '编码是原因身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
                 </Field>
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="reason-name">原因 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="reason-name" v-model="form.reasonName" placeholder="例如：尺寸超差" />
+                  <InputPro id="reason-name" v-model="form.reasonName" placeholder="例如：尺寸超差" />
                 </Field>
                 <Field :data-invalid="showErrors && !groupValid">
                   <FieldLabel for="reason-group">原因组 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="reason-group" v-model="form.groupName" placeholder="例如：外观缺陷" />
+                  <InputPro id="reason-group" v-model="form.groupName" placeholder="例如：外观缺陷" />
                 </Field>
                 <Field :data-invalid="showErrors && !severityValid">
                   <FieldLabel for="reason-severity">严重度 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.severity">
-                    <SelectTrigger id="reason-severity"><SelectValue placeholder="选择严重度" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in severityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.severity">
+                    <SelectProTrigger id="reason-severity"><SelectProValue placeholder="选择严重度" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in severityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                 </Field>
               </FieldGroup>
 
@@ -285,20 +285,20 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3">
                 <Field>
                   <FieldLabel for="reason-disposition">默认处置</FieldLabel>
-                  <Input id="reason-disposition" v-model="form.defaultDisposition" placeholder="例如：返工 / 报废 / 让步接收" />
+                  <InputPro id="reason-disposition" v-model="form.defaultDisposition" placeholder="例如：返工 / 报废 / 让步接收" />
                 </Field>
               </FieldGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建原因' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -306,11 +306,13 @@ async function confirmArchive() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="reasons"
       row-key="reasonCode"
       :loading="reasonsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="原因码目录为空。新建可复用质量原因（按原因组归类、预设严重度与默认处置），供检验 / 不合格品记录引用。"
     >
       <template #cell-groupName="{ row }">
@@ -318,7 +320,7 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-severity="{ row }">
-        <StatusBadge v-if="row.severity" :label="severityLabel(row.severity)" :tone="severityTone(row.severity)" />
+        <StatusBadgePro v-if="row.severity" :label="severityLabel(row.severity)" :tone="severityTone(row.severity)" />
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-defaultDisposition="{ row }">
@@ -326,18 +328,18 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge
+        <StatusBadgePro
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <Button type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</Button>
-          <Button type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
+          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="reasonsTotal" />
 

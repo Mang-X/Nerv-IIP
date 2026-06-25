@@ -3,32 +3,33 @@ import type {
   BusinessConsoleCreateWmsCountExecutionRequest,
   BusinessConsoleWmsCountExecutionItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   DropdownMenuItem,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -88,7 +89,7 @@ const createErrorMessage = computed(() => createError.value || formatError(creat
 const completeErrorMessage = computed(() => completeError.value || formatError(completeCountExecutionError.value))
 
 type CountRow = BusinessConsoleWmsCountExecutionItem
-const columns: DataTableColumn<CountRow>[] = [
+const columns: DataTableProColumn<CountRow>[] = [
   { key: 'countNo', header: '盘点单号', cellClass: 'font-medium', accessor: (r) => r.countNo ?? countNo(r) },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode ?? '—'} / ${r.locationCode ?? '—'}` },
   { key: 'skuCode', header: 'SKU', accessor: (r) => r.skuCode ?? '—' },
@@ -193,14 +194,14 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="盘点执行" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${countExecutionsTotal} 张盘点单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="countExecutionsPending" @click="refreshCountExecutions">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="countExecutionsPending" @click="refreshCountExecutions">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建盘点单
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -211,24 +212,26 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.locationCode" class="h-9 w-32" placeholder="库位" aria-label="库位" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="盘点状态" />
+        <InputPro v-model="filters.locationCode" class="h-9 w-32" placeholder="库位" aria-label="库位" />
+        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="盘点状态" />
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="countExecutions"
       :row-key="rowKey"
       :loading="countExecutionsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无盘点单。按库位 × SKU 新建盘点单，实盘后完成以触发库存调整。"
     >
       <template #cell-varianceQuantity="{ row }">
         <span :class="hasVariance(row) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ varianceLabel(row.varianceQuantity) }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`盘点操作 ${row.countNo ?? countNo(row)}`">
           <DropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
@@ -237,83 +240,89 @@ function formatError(error: unknown) {
           </DropdownMenuItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="countExecutionsTotal" />
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建盘点单</DialogTitle>
-          <DialogDescription>按库位与 SKU 登记盘点单，账面数量留空则由系统取值。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建盘点单</DialogProTitle>
+          <DialogProDescription>按库位与 SKU 登记盘点单，账面数量留空则由系统取值。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <FieldGroup class="grid gap-3 sm:grid-cols-2">
             <Field>
               <FieldLabel for="cnt-no">盘点单号</FieldLabel>
-              <Input id="cnt-no" v-model="createForm.countNo" autocomplete="off" placeholder="如 CNT-2026-0003" />
+              <InputPro id="cnt-no" v-model="createForm.countNo" autocomplete="off" placeholder="如 CNT-2026-0003" />
             </Field>
             <Field>
               <FieldLabel for="cnt-sku">SKU</FieldLabel>
-              <Input id="cnt-sku" v-model="createForm.skuCode" autocomplete="off" />
+              <InputPro id="cnt-sku" v-model="createForm.skuCode" autocomplete="off" />
             </Field>
             <Field>
               <FieldLabel for="cnt-site">工厂</FieldLabel>
-              <Input id="cnt-site" v-model="createForm.siteCode" autocomplete="off" placeholder="如 SITE-HD" />
+              <InputPro id="cnt-site" v-model="createForm.siteCode" autocomplete="off" placeholder="如 SITE-HD" />
             </Field>
             <Field>
               <FieldLabel for="cnt-location">库位</FieldLabel>
-              <Input id="cnt-location" v-model="createForm.locationCode" autocomplete="off" placeholder="如 RACK-A-01-01" />
+              <InputPro id="cnt-location" v-model="createForm.locationCode" autocomplete="off" placeholder="如 RACK-A-01-01" />
             </Field>
             <Field>
               <FieldLabel for="cnt-uom">单位</FieldLabel>
-              <Input id="cnt-uom" v-model="createForm.uomCode" autocomplete="off" />
+              <InputPro id="cnt-uom" v-model="createForm.uomCode" autocomplete="off" />
             </Field>
             <Field>
               <FieldLabel for="cnt-expected">账面数量</FieldLabel>
-              <Input id="cnt-expected" v-model="createForm.expectedQuantity" type="number" min="0" step="any" placeholder="可选" />
+              <InputPro id="cnt-expected" v-model="createForm.expectedQuantity" type="number" min="0" step="any" placeholder="可选" />
             </Field>
           </FieldGroup>
 
           <FieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createCountExecutionPending">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createCountExecutionPending">
               <Spinner v-if="createCountExecutionPending" aria-hidden="true" />
               创建盘点单
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="completeOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>完成盘点</DialogTitle>
-          <DialogDescription>
+    <DialogPro v-model:open="completeOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>完成盘点</DialogProTitle>
+          <DialogProDescription>
             {{ completeTarget ? `${completeTarget.countNo ?? countNo(completeTarget)} · 账面 ${formatQuantity(completeTarget.expectedQuantity)}` : '录入实盘数量。' }}
-          </DialogDescription>
-        </DialogHeader>
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
           <FieldGroup class="grid gap-3">
             <Field>
               <FieldLabel for="cnt-counted">实盘数量</FieldLabel>
-              <Input id="cnt-counted" v-model="completeForm.countedQuantity" type="number" min="0" step="any" />
+              <InputPro id="cnt-counted" v-model="completeForm.countedQuantity" type="number" min="0" step="any" />
             </Field>
           </FieldGroup>
 
           <FieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="completeCountExecutionPending">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="completeCountExecutionPending">
               <Spinner v-if="completeCountExecutionPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               完成盘点
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

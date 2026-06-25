@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { useBusinessContextStore, type BusinessContextState } from '@/stores/businessContext'
 import {
-  Button,
+  ButtonPro,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  InputPro,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 
@@ -140,64 +140,64 @@ function clearExecutionScope() {
   <div class="grid gap-3 rounded-lg border bg-background p-4">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h2 class="text-sm font-semibold text-foreground">{{ title }}</h2>
-      <Button size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空范围</Button>
+      <ButtonPro size="sm" type="button" variant="ghost" @click="clearExecutionScope">清空范围</ButtonPro>
     </div>
     <FieldGroup class="grid gap-3 md:grid-cols-4 xl:grid-cols-6">
       <Field v-if="showSite">
         <FieldLabel for="business-context-site">工厂</FieldLabel>
-        <Select v-if="siteOptions.length" v-model="siteValue">
-          <SelectTrigger id="business-context-site">
-            <SelectValue placeholder="全部工厂" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in siteOptions" :key="option.value" :value="option.value">
+        <SelectPro v-if="siteOptions.length" v-model="siteValue">
+          <SelectProTrigger id="business-context-site">
+            <SelectProValue placeholder="全部工厂" />
+          </SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in siteOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <InputPro v-else id="business-context-site" v-model="siteValue" placeholder="可选" />
       </Field>
       <Field v-if="showLine">
         <FieldLabel for="business-context-line">产线</FieldLabel>
-        <Select v-if="lineOptions.length" v-model="lineValue">
-          <SelectTrigger id="business-context-line">
-            <SelectValue placeholder="全部产线" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in lineOptions" :key="option.value" :value="option.value">
+        <SelectPro v-if="lineOptions.length" v-model="lineValue">
+          <SelectProTrigger id="business-context-line">
+            <SelectProValue placeholder="全部产线" />
+          </SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in lineOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <InputPro v-else id="business-context-line" v-model="lineValue" placeholder="可选" />
       </Field>
       <Field v-if="showWorkCenter">
         <FieldLabel for="business-context-work-center">工作中心</FieldLabel>
-        <Select v-if="workCenterOptions.length" v-model="workCenterValue">
-          <SelectTrigger id="business-context-work-center">
-            <SelectValue placeholder="全部工作中心" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">
+        <SelectPro v-if="workCenterOptions.length" v-model="workCenterValue">
+          <SelectProTrigger id="business-context-work-center">
+            <SelectProValue placeholder="全部工作中心" />
+          </SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-else id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <InputPro v-else id="business-context-work-center" v-model="workCenterValue" placeholder="可选" />
       </Field>
       <Field v-if="showShift">
         <FieldLabel for="business-context-shift">班次</FieldLabel>
-        <Select v-if="shiftOptions.length" v-model="shiftValue">
-          <SelectTrigger id="business-context-shift">
-            <SelectValue placeholder="全部班次" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in shiftOptions" :key="option.value" :value="option.value">
+        <SelectPro v-if="shiftOptions.length" v-model="shiftValue">
+          <SelectProTrigger id="business-context-shift">
+            <SelectProValue placeholder="全部班次" />
+          </SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in shiftOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <InputPro v-else id="business-context-shift" v-model="shiftValue" placeholder="可选" />
       </Field>
     </FieldGroup>
     <slot />

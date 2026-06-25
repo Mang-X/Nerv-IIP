@@ -2,7 +2,7 @@
 import {
   Alert,
   AlertDescription,
-  Button,
+  ButtonPro,
   Card,
   CardContent,
   CardDescription,
@@ -13,7 +13,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   Spinner,
 } from '@nerv-iip/ui'
 import { LogInIcon } from 'lucide-vue-next'
@@ -65,7 +65,7 @@ function submit() {
         <FieldGroup>
           <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
             <FieldLabel for="login-name">{{ t('login.loginName') }}</FieldLabel>
-            <Input
+            <InputPro
               id="login-name"
               v-model="form.loginName"
               :aria-invalid="Boolean(error)"
@@ -80,7 +80,7 @@ function submit() {
 
           <Field :data-invalid="Boolean(error) || undefined" :data-disabled="pending || undefined">
             <FieldLabel for="password">{{ t('login.password') }}</FieldLabel>
-            <Input
+            <InputPro
               id="password"
               v-model="form.password"
               :aria-invalid="Boolean(error)"
@@ -95,11 +95,11 @@ function submit() {
       </CardContent>
 
       <CardFooter>
-        <Button class="w-full" :disabled="pending" type="submit">
+        <ButtonPro class="w-full" :disabled="pending" type="submit">
           <Spinner v-if="pending" data-icon="inline-start" />
           <LogInIcon v-else data-icon="inline-start" />
           {{ pending ? t('login.pending') : t('login.title') }}
-        </Button>
+        </ButtonPro>
       </CardFooter>
     </form>
   </Card>

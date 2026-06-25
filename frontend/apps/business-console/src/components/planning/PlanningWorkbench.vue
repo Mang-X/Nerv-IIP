@@ -5,38 +5,38 @@ import type {
   BusinessConsoleMrpRunItem,
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import {
-  Button,
-  DataTable,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  ButtonPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
 } from '@nerv-iip/ui'
 import { CornerDownRightIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
@@ -230,7 +230,7 @@ const suggestionTypeFilterOptions = [
   { label: '采购建议 (→ERP)', value: 'planned-purchase' },
 ]
 
-const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
+const demandColumns: DataTableProColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
   { key: 'demandType', header: '类型', width: 'w-24' },
   { key: 'skuCode', header: 'SKU' },
@@ -240,7 +240,7 @@ const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'urgency', header: '紧迫度', width: 'w-28' },
   { key: 'coverage', header: '覆盖', width: 'w-28' },
 ]
-const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
+const runColumns: DataTableProColumn<BusinessConsoleMrpRunItem>[] = [
   // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
   { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -251,14 +251,14 @@ const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
   { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
   { key: 'actions', header: '', align: 'end', width: 'w-24' },
 ]
-const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
+const peggingColumns: DataTableProColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'demandSourceReference', header: '需求来源', cellClass: 'font-medium' },
   { key: 'peggingType', header: '展开类型', width: 'w-28' },
   { key: 'sku', header: '物料层级' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'engineeringRef', header: '工程引用' },
 ]
-const suggestionColumns: DataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
+const suggestionColumns: DataTableProColumn<BusinessConsolePlanningSuggestionItem>[] = [
   // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
   { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
   { key: 'skuCode', header: 'SKU' },
@@ -327,118 +327,118 @@ function inputDegradationSourceLabel(source: string) {
 <template>
   <PageHeader title="需求与计划" :breadcrumbs="[{ label: '需求与计划' }]">
     <template #actions>
-      <Button size="sm" type="button" variant="outline" :disabled="demandsPending" @click="refreshPlanning">
+      <ButtonPro size="sm" type="button" variant="outline" :disabled="demandsPending" @click="refreshPlanning">
         <RefreshCwIcon aria-hidden="true" />
         刷新
-      </Button>
+      </ButtonPro>
 
-      <Dialog v-model:open="mrpOpen">
-        <DialogTrigger as-child>
-          <Button size="sm" type="button" variant="outline">
+      <DialogPro v-model:open="mrpOpen">
+        <DialogProTrigger as-child>
+          <ButtonPro size="sm" type="button" variant="outline">
             <PlayIcon aria-hidden="true" />
             运行 MRP
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>运行 MRP</DialogTitle>
-            <DialogDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogDescription>
-          </DialogHeader>
+          </ButtonPro>
+        </DialogProTrigger>
+        <DialogProContent>
+          <DialogProHeader>
+            <DialogProTitle>运行 MRP</DialogProTitle>
+            <DialogProDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogProDescription>
+          </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
             <FieldGroup class="grid gap-3 sm:grid-cols-2">
               <Field>
                 <FieldLabel>开始日期</FieldLabel>
-                <DatePicker v-model="runRequest.horizonStart" placeholder="选择开始日期" class="w-full" />
+                <DatePickerPro v-model="runRequest.horizonStart" placeholder="选择开始日期" class="w-full" />
               </Field>
               <Field>
                 <FieldLabel>结束日期</FieldLabel>
-                <DatePicker v-model="runRequest.horizonEnd" placeholder="选择结束日期" class="w-full" />
+                <DatePickerPro v-model="runRequest.horizonEnd" placeholder="选择结束日期" class="w-full" />
               </Field>
             </FieldGroup>
-            <DialogFooter>
-              <Button type="button" variant="outline" @click="mrpOpen = false">取消</Button>
-              <Button type="submit" :disabled="runMrpPending">
+            <DialogProFooter>
+              <ButtonPro type="button" variant="outline" @click="mrpOpen = false">取消</ButtonPro>
+              <ButtonPro type="submit" :disabled="runMrpPending">
                 <Spinner v-if="runMrpPending" aria-hidden="true" />
                 运行
-              </Button>
-            </DialogFooter>
+              </ButtonPro>
+            </DialogProFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </DialogProContent>
+      </DialogPro>
 
-      <Dialog v-model:open="demandOpen">
-        <DialogTrigger as-child>
-          <Button size="sm" type="button">
+      <DialogPro v-model:open="demandOpen">
+        <DialogProTrigger as-child>
+          <ButtonPro size="sm" type="button">
             <PlusIcon aria-hidden="true" />
             新建需求
-          </Button>
-        </DialogTrigger>
-        <DialogContent class="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>新建需求</DialogTitle>
-            <DialogDescription>录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</DialogDescription>
-          </DialogHeader>
+          </ButtonPro>
+        </DialogProTrigger>
+        <DialogProContent class="sm:max-w-2xl">
+          <DialogProHeader>
+            <DialogProTitle>新建需求</DialogProTitle>
+            <DialogProDescription>录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</DialogProDescription>
+          </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitDemand">
             <FieldGroup class="grid gap-3 sm:grid-cols-2">
               <Field>
                 <FieldLabel>需求类型</FieldLabel>
-                <Select v-model="demandForm.demandType">
-                  <SelectTrigger aria-label="需求类型"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectPro v-model="demandForm.demandType">
+                  <SelectProTrigger aria-label="需求类型"><SelectProValue /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
               </Field>
               <Field>
                 <FieldLabel for="demand-source">来源单号</FieldLabel>
-                <Input id="demand-source" v-model="demandForm.sourceReference" placeholder="SO-2026-001" />
+                <InputPro id="demand-source" v-model="demandForm.sourceReference" placeholder="SO-2026-001" />
               </Field>
               <Field>
                 <FieldLabel for="demand-sku">SKU</FieldLabel>
-                <Select v-model="demandForm.skuCode">
-                  <SelectTrigger id="demand-sku"><SelectValue placeholder="选择 SKU" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectPro v-model="demandForm.skuCode">
+                  <SelectProTrigger id="demand-sku"><SelectProValue placeholder="选择 SKU" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
               </Field>
               <Field>
                 <FieldLabel for="demand-site">工厂</FieldLabel>
-                <Select v-model="demandForm.siteCode">
-                  <SelectTrigger id="demand-site"><SelectValue placeholder="选择工厂" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectPro v-model="demandForm.siteCode">
+                  <SelectProTrigger id="demand-site"><SelectProValue placeholder="选择工厂" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
               </Field>
               <Field>
                 <FieldLabel for="demand-uom">单位</FieldLabel>
-                <Select v-model="demandForm.uomCode">
-                  <SelectTrigger id="demand-uom"><SelectValue placeholder="选择单位" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectPro v-model="demandForm.uomCode">
+                  <SelectProTrigger id="demand-uom"><SelectProValue placeholder="选择单位" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
               </Field>
               <Field>
                 <FieldLabel for="demand-qty">数量</FieldLabel>
-                <Input id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
+                <InputPro id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
               </Field>
               <Field>
                 <FieldLabel>需求日期</FieldLabel>
-                <DatePicker v-model="demandForm.dueDate" placeholder="选择需求日期" class="w-full" />
+                <DatePickerPro v-model="demandForm.dueDate" placeholder="选择需求日期" class="w-full" />
               </Field>
             </FieldGroup>
-            <DialogFooter>
-              <Button type="button" variant="outline" @click="demandOpen = false">取消</Button>
-              <Button type="submit" :disabled="createDemandPending || !canSubmitDemand">
+            <DialogProFooter>
+              <ButtonPro type="button" variant="outline" @click="demandOpen = false">取消</ButtonPro>
+              <ButtonPro type="submit" :disabled="createDemandPending || !canSubmitDemand">
                 <Spinner v-if="createDemandPending" aria-hidden="true" />
                 保存需求
-              </Button>
-            </DialogFooter>
+              </ButtonPro>
+            </DialogProFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </DialogProContent>
+      </DialogPro>
     </template>
   </PageHeader>
 
@@ -450,15 +450,15 @@ function inputDegradationSourceLabel(source: string) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <Tabs default-value="demands">
-    <TabsList>
-      <TabsTrigger value="demands">需求池 ({{ demands.length }})</TabsTrigger>
-      <TabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</TabsTrigger>
-      <TabsTrigger value="suggestions">计划建议 ({{ suggestions.length }})</TabsTrigger>
-    </TabsList>
+  <TabsPro default-value="demands">
+    <TabsProList>
+      <TabsProTrigger value="demands">需求池 ({{ demands.length }})</TabsProTrigger>
+      <TabsProTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</TabsProTrigger>
+      <TabsProTrigger value="suggestions">计划建议 ({{ suggestions.length }})</TabsProTrigger>
+    </TabsProList>
 
-    <TabsContent value="demands">
-      <DataTable :columns="demandColumns" :rows="demands" row-key="demandSourceId" :loading="demandsPending" empty-message="当前范围没有计划需求。">
+    <TabsProContent value="demands">
+      <DataTablePro :columns="demandColumns" :rows="demands" row-key="demandSourceId" :loading="demandsPending" :searchable="false" :column-settings="false" empty-message="当前范围没有计划需求。">
         <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
         <template #cell-skuCode="{ row }">
           <div class="flex flex-col gap-0.5">
@@ -474,18 +474,18 @@ function inputDegradationSourceLabel(source: string) {
         </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
-        <template #cell-urgency="{ row }"><StatusBadge :label="dueUrgency(row.dueDate).label" :tone="dueUrgency(row.dueDate).tone" /></template>
-        <template #cell-coverage="{ row }"><StatusBadge :label="demandCoverage(row.skuCode).label" :tone="demandCoverage(row.skuCode).tone" /></template>
-      </DataTable>
-    </TabsContent>
+        <template #cell-urgency="{ row }"><StatusBadgePro :label="dueUrgency(row.dueDate).label" :tone="dueUrgency(row.dueDate).tone" /></template>
+        <template #cell-coverage="{ row }"><StatusBadgePro :label="demandCoverage(row.skuCode).label" :tone="demandCoverage(row.skuCode).tone" /></template>
+      </DataTablePro>
+    </TabsProContent>
 
-    <TabsContent value="runs" class="grid gap-4">
-      <DataTable :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" empty-message="尚未运行 MRP。">
+    <TabsProContent value="runs" class="grid gap-4">
+      <DataTablePro :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" :searchable="false" :column-settings="false" empty-message="尚未运行 MRP。">
         <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
-        <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
         <template #cell-demandCount="{ row }"><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template>
         <template #cell-inputDegradationSources="{ row }">
-          <StatusBadge
+          <StatusBadgePro
             :label="inputDegradationLabel(row.inputDegradationSources)"
             :tone="row.hasInputDegradation ? 'warning' : 'success'"
           />
@@ -494,36 +494,38 @@ function inputDegradationSourceLabel(source: string) {
         <template #cell-coverage="{ row }"><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template>
         <template #cell-availabilityCount="{ row }"><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template>
         <template #cell-actions="{ row }">
-          <Button
+          <ButtonPro
             size="sm"
             type="button"
             :variant="runSelection.runId === row.runId ? 'secondary' : 'ghost'"
             @click="runSelection.runId = row.runId ?? ''"
           >
             查看追溯
-          </Button>
+          </ButtonPro>
         </template>
-      </DataTable>
+      </DataTablePro>
 
       <div class="grid gap-2">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">需求追溯</span>
           <span class="text-sm text-muted-foreground">{{ runHorizonLabel(selectedRun) }}</span>
-          <StatusBadge
+          <StatusBadgePro
             v-if="selectedRun"
             :label="planningStatus(selectedRun.status).label"
             :tone="planningStatus(selectedRun.status).tone"
           />
         </div>
-        <DataTable
+        <DataTablePro
           :columns="peggingColumns"
           :rows="pegging"
           :row-key="(r) => `${r.suggestionId}:${r.componentSkuCode}`"
           :loading="peggingPending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="选择一条 MRP 运行查看需求与物料来源。"
         >
           <template #cell-peggingType="{ row }">
-            <StatusBadge :label="peggingTypeLabel(row.peggingType).label" :tone="peggingTypeLabel(row.peggingType).tone" />
+            <StatusBadgePro :label="peggingTypeLabel(row.peggingType).label" :tone="peggingTypeLabel(row.peggingType).tone" />
           </template>
           <template #cell-sku="{ row }">
             <div :class="isComponentRow(row) ? 'flex items-start gap-1.5 pl-5' : 'flex flex-col gap-0.5'">
@@ -549,33 +551,33 @@ function inputDegradationSourceLabel(source: string) {
               <span v-if="row.routingReference" class="text-xs text-muted-foreground">工艺 {{ row.routingReference }}</span>
             </div>
           </template>
-        </DataTable>
+        </DataTablePro>
       </div>
-    </TabsContent>
+    </TabsProContent>
 
-    <TabsContent value="suggestions" class="grid gap-3">
+    <TabsProContent value="suggestions" class="grid gap-3">
       <div class="flex flex-wrap items-center gap-2">
-        <Select v-model="suggestionTypeFilter.type">
-          <SelectTrigger class="h-9 w-44" aria-label="建议分型"><SelectValue placeholder="全部类型" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in suggestionTypeFilterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="suggestionTypeFilter.type">
+          <SelectProTrigger class="h-9 w-44" aria-label="建议分型"><SelectProValue placeholder="全部类型" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in suggestionTypeFilterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
         <span class="text-sm text-muted-foreground">
           生产建议 → MES · 采购建议 → ERP
         </span>
         <div class="ms-auto flex items-center gap-2">
-          <Select v-model="suggestionFilters.status">
-            <SelectTrigger class="h-9 w-32" aria-label="建议状态"><SelectValue placeholder="建议状态" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-            </SelectContent>
-          </Select>
+          <SelectPro v-model="suggestionFilters.status">
+            <SelectProTrigger class="h-9 w-32" aria-label="建议状态"><SelectProValue placeholder="建议状态" /></SelectProTrigger>
+            <SelectProContent>
+              <SelectProItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+            </SelectProContent>
+          </SelectPro>
         </div>
       </div>
-      <DataTable :columns="suggestionColumns" :rows="visibleSuggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
+      <DataTablePro :columns="suggestionColumns" :rows="visibleSuggestions" row-key="suggestionId" :loading="suggestionsPending" :searchable="false" :column-settings="false" empty-message="当前范围没有计划建议。">
         <template #cell-suggestionType="{ row }">
-          <StatusBadge
+          <StatusBadgePro
             :label="suggestionTypeLabel(row.suggestionType)"
             :tone="row.suggestionType === 'planned-work-order' ? 'info' : 'neutral'"
           />
@@ -589,8 +591,8 @@ function inputDegradationSourceLabel(source: string) {
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
         <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
-        <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
-      </DataTable>
-    </TabsContent>
-  </Tabs>
+        <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+      </DataTablePro>
+    </TabsProContent>
+  </TabsPro>
 </template>

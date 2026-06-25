@@ -10,18 +10,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  ButtonPro,
+  CheckboxPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   Field,
   FieldLabel,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   toast,
 } from '@nerv-iip/ui'
 import { Trash2Icon } from 'lucide-vue-next'
@@ -108,12 +108,12 @@ async function confirmRemove() {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent class="sm:max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>{{ teamName }} · 成员维护</DialogTitle>
-        <DialogDescription>登记班组成员与组长，移除时仅解除归属、不影响人员档案。</DialogDescription>
-      </DialogHeader>
+  <DialogPro v-model:open="open">
+    <DialogProContent class="sm:max-w-2xl">
+      <DialogProHeader>
+        <DialogProTitle>{{ teamName }} · 成员维护</DialogProTitle>
+        <DialogProDescription>登记班组成员与组长，移除时仅解除归属、不影响人员档案。</DialogProDescription>
+      </DialogProHeader>
 
       <p v-if="errorText" class="text-sm text-destructive" role="alert">{{ errorText }}</p>
 
@@ -123,12 +123,12 @@ async function confirmRemove() {
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
         </Field>
         <Field class="flex flex-row items-center gap-2">
-          <Checkbox id="member-leader" v-model="isLeader" />
+          <CheckboxPro id="member-leader" v-model="isLeader" />
           <FieldLabel for="member-leader" class="mb-0">设为组长</FieldLabel>
         </Field>
-        <Button type="submit" size="sm" :disabled="addPending">
+        <ButtonPro type="submit" size="sm" :disabled="addPending">
           <Spinner v-if="addPending" aria-hidden="true" />添加成员
-        </Button>
+        </ButtonPro>
       </form>
 
       <div class="rounded-md border">
@@ -143,10 +143,10 @@ async function confirmRemove() {
           >
             <div class="flex items-center gap-2">
               <span class="text-sm">{{ memberLabel(member.userId) }}</span>
-              <StatusBadge v-if="member.isLeader" value="active" />
+              <StatusBadgePro v-if="member.isLeader" value="active" />
               <span v-if="member.isLeader" class="text-xs text-muted-foreground">组长</span>
             </div>
-            <Button
+            <ButtonPro
               type="button"
               variant="ghost"
               size="sm"
@@ -155,16 +155,16 @@ async function confirmRemove() {
               @click="removeTarget = member.userId ?? null"
             >
               <Trash2Icon aria-hidden="true" />移除
-            </Button>
+            </ButtonPro>
           </li>
         </ul>
       </div>
 
-      <DialogFooter>
-        <Button type="button" variant="outline" @click="open = false">关闭</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+      <DialogProFooter>
+        <ButtonPro type="button" variant="outline" @click="open = false">关闭</ButtonPro>
+      </DialogProFooter>
+    </DialogProContent>
+  </DialogPro>
 
   <AlertDialog :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
     <AlertDialogContent>

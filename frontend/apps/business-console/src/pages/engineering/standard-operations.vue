@@ -3,7 +3,7 @@ import type {
   BusinessConsoleCreateStandardOperationRequest,
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useStandardOperations } from '@/composables/useProductEngineering'
@@ -17,30 +17,30 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
-  Checkbox,
-  DataTable,
+  ButtonPro,
+  CheckboxPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -106,7 +106,7 @@ function formatMinutes(setup?: number | null, run?: number | null) {
   return `准备 ${setup ?? 0} / 加工 ${run ?? 0}`
 }
 
-const columns: DataTableColumn<BusinessConsoleStandardOperationItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleStandardOperationItem>[] = [
   { key: 'operationCode', header: '编码', width: 'w-32' },
   { key: 'operationName', header: '工序名', cellClass: 'font-medium' },
   { key: 'defaultWorkCenter', header: '默认工作中心' },
@@ -270,24 +270,24 @@ async function confirmArchive() {
       :count="`${standardOperationsTotal} 个工序`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="standardOperationsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="standardOperationsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建工序
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑标准工序' : '新建标准工序' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? '编辑标准工序' : '新建标准工序' }}</DialogProTitle>
+              <DialogProDescription>
                 标准工序是可复用的工程主数据：预设默认工作中心、控制键与标准工时，工艺路线选用时自动带出，避免逐行重填。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写带 * 的必填项，并确保标准工时为非负数（已标红）。
@@ -297,32 +297,32 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="showErrors && !codeValid">
                   <FieldLabel for="op-code">工序编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Input
+                  <InputPro
                     v-if="!editingCode"
                     id="op-code"
                     v-model="form.operationCode"
                     placeholder="例如：OP-CNC-ROUGH"
                   />
-                  <Input v-else :model-value="editingCode" readonly disabled />
+                  <InputPro v-else :model-value="editingCode" readonly disabled />
                   <FieldDescription>{{ editingCode ? '编码是工序身份，不可更改。' : '由工厂自定义、需唯一。' }}</FieldDescription>
                 </Field>
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="op-name">工序名 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="op-name" v-model="form.operationName" placeholder="例如：CNC 粗加工" />
+                  <InputPro id="op-name" v-model="form.operationName" placeholder="例如：CNC 粗加工" />
                 </Field>
                 <Field :data-invalid="showErrors && !workCenterValid">
                   <FieldLabel for="op-wc">默认工作中心 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.defaultWorkCenterCode" :disabled="workCentersPending">
-                    <SelectTrigger id="op-wc"><SelectValue placeholder="选择默认工作中心" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.defaultWorkCenterCode" :disabled="workCentersPending">
+                    <SelectProTrigger id="op-wc"><SelectProValue placeholder="选择默认工作中心" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                   <FieldDescription>来自基础数据工作中心；工艺路线选此工序时自动带出。</FieldDescription>
                 </Field>
                 <Field :data-invalid="showErrors && !controlKeyValid">
                   <FieldLabel for="op-control">控制键 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="op-control" v-model="form.controlKey" placeholder="例如：INHOUSE / INHOUSE-QC" />
+                  <InputPro id="op-control" v-model="form.controlKey" placeholder="例如：INHOUSE / INHOUSE-QC" />
                   <FieldDescription>决定报工/质检/外协等执行行为的控制键。</FieldDescription>
                 </Field>
               </FieldGroup>
@@ -331,11 +331,11 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="showErrors && !setupValid">
                   <FieldLabel for="op-setup">准备工时（分）</FieldLabel>
-                  <Input id="op-setup" v-model="form.standardSetupMinutes" type="number" min="0" placeholder="0" />
+                  <InputPro id="op-setup" v-model="form.standardSetupMinutes" type="number" min="0" placeholder="0" />
                 </Field>
                 <Field :data-invalid="showErrors && !runValid">
                   <FieldLabel for="op-run">加工工时（分）</FieldLabel>
-                  <Input id="op-run" v-model="form.standardRunMinutes" type="number" min="0" placeholder="0" />
+                  <InputPro id="op-run" v-model="form.standardRunMinutes" type="number" min="0" placeholder="0" />
                   <FieldDescription>单件加工标准时间；与准备工时一并带入工艺路线。</FieldDescription>
                 </Field>
               </FieldGroup>
@@ -344,15 +344,15 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-2">
                 <label for="op-report" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>需要报工</span>
-                  <Checkbox id="op-report" v-model:checked="form.requiresReporting" />
+                  <CheckboxPro id="op-report" v-model:checked="form.requiresReporting" />
                 </label>
                 <label for="op-inspect" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>需要质检</span>
-                  <Checkbox id="op-inspect" v-model:checked="form.requiresQualityInspection" />
+                  <CheckboxPro id="op-inspect" v-model:checked="form.requiresQualityInspection" />
                 </label>
                 <label for="op-outsource" class="flex cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                   <span>外协工序</span>
-                  <Checkbox id="op-outsource" v-model:checked="form.isOutsourced" />
+                  <CheckboxPro id="op-outsource" v-model:checked="form.isOutsourced" />
                 </label>
               </FieldGroup>
 
@@ -360,20 +360,20 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3">
                 <Field>
                   <FieldLabel for="op-desc">说明</FieldLabel>
-                  <Input id="op-desc" v-model="form.description" placeholder="可选，工序用途或注意事项" />
+                  <InputPro id="op-desc" v-model="form.description" placeholder="可选，工序用途或注意事项" />
                 </Field>
               </FieldGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建工序' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -381,11 +381,13 @@ async function confirmArchive() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="standardOperations"
       row-key="operationCode"
       :loading="standardOperationsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="标准工序目录为空。新建可复用工序（默认工作中心 + 标准工时 + 控制键），工艺路线即可选用。"
     >
       <template #cell-defaultWorkCenter="{ row }">
@@ -400,26 +402,26 @@ async function confirmArchive() {
       <template #cell-control="{ row }">
         <div class="flex flex-col gap-1">
           <div class="flex flex-wrap gap-1">
-            <StatusBadge v-if="row.requiresReporting" label="报工" tone="info" />
-            <StatusBadge v-if="row.requiresQualityInspection" label="质检" tone="warning" />
-            <StatusBadge v-if="row.isOutsourced" label="外协" tone="neutral" />
+            <StatusBadgePro v-if="row.requiresReporting" label="报工" tone="info" />
+            <StatusBadgePro v-if="row.requiresQualityInspection" label="质检" tone="warning" />
+            <StatusBadgePro v-if="row.isOutsourced" label="外协" tone="neutral" />
           </div>
           <span v-if="row.controlKey" class="text-xs text-muted-foreground">{{ row.controlKey }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge
+        <StatusBadgePro
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <Button type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</Button>
-          <Button type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
+          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="standardOperationsTotal" />
 

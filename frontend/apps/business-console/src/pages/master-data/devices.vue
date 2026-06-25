@@ -3,35 +3,35 @@ import type {
   BusinessConsoleRegisterDeviceAssetRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -84,7 +84,7 @@ const createForm = reactive({
   maintainable: DEVICE_DEFAULTS.maintainable,
 })
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'lineCode', header: '所属产线', width: 'w-32', accessor: (r) => lineName(r.lineCode) },
@@ -227,93 +227,93 @@ async function submitDevice() {
   <BusinessLayout>
     <PageHeader title="设备台账" :breadcrumbs="[{ label: '基础数据' }]" :count="`${devices.total.value} 台设备`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="devices.pending.value" @click="refreshAll">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="devices.pending.value" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="createOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="createOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建设备
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</DialogTitle>
-              <DialogDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogDescription>
-            </DialogHeader>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? `编辑设备 · ${editingCode}` : '新建设备' }}</DialogProTitle>
+              <DialogProDescription>{{ editingCode ? '修改设备档案（编码不可修改）。带 * 为必填项。' : '为产线与工作中心登记一台设备资产。带 * 为必填项。' }}</DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-4" @submit.prevent="submitDevice">
               <p v-if="createShowErrors && !canCreateDevice" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field v-if="editingCode">
                   <FieldLabel for="dev-code">设备编码</FieldLabel>
-                  <Input id="dev-code" :model-value="createForm.code" disabled />
+                  <InputPro id="dev-code" :model-value="createForm.code" disabled />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
                   <FieldLabel for="dev-model">设备型号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-model" v-model="createForm.model" autocomplete="off" required />
+                  <InputPro id="dev-model" v-model="createForm.model" autocomplete="off" required />
                   <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
                   <FieldLabel for="dev-maker">制造商 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
+                  <InputPro id="dev-maker" v-model="createForm.manufacturer" autocomplete="off" required />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
                   <FieldLabel for="dev-serial">出厂序列号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
+                  <InputPro id="dev-serial" v-model="createForm.serialNo" autocomplete="off" required />
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
                   <FieldLabel for="dev-class">设备类别 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
+                  <InputPro id="dev-class" v-model="createForm.assetClassCode" autocomplete="off" required />
                   <FieldDescription>填写「数据字典」中维护的设备类别编码。</FieldDescription>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
                   <FieldLabel for="dev-criticality">关键度 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.criticality">
-                    <SelectTrigger id="dev-criticality"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="createForm.criticality">
+                    <SelectProTrigger id="dev-criticality"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in CRITICALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
                   <FieldLabel for="dev-line">所属产线 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.lineCode">
-                    <SelectTrigger id="dev-line"><SelectValue placeholder="请选择产线" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="l in lines.items.value" :key="l.code" :value="l.code ?? ''">
+                  <SelectPro v-model="createForm.lineCode">
+                    <SelectProTrigger id="dev-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="l in lines.items.value" :key="l.code" :value="l.code ?? ''">
                         {{ l.displayName ?? l.code }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      </SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                 </Field>
                 <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
                   <FieldLabel for="dev-wc">所属工作中心 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.workCenterCode">
-                    <SelectTrigger id="dev-wc"><SelectValue placeholder="请选择工作中心" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="w in workCenters.items.value" :key="w.code" :value="w.code ?? ''">
+                  <SelectPro v-model="createForm.workCenterCode">
+                    <SelectProTrigger id="dev-wc"><SelectProValue placeholder="请选择工作中心" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="w in workCenters.items.value" :key="w.code" :value="w.code ?? ''">
                         {{ w.displayName ?? w.code }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      </SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                 </Field>
                 <Field orientation="horizontal" class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2">
                   <FieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</FieldLabel>
-                  <Checkbox id="dev-maintainable" v-model:checked="createForm.maintainable" />
+                  <CheckboxPro id="dev-maintainable" v-model:checked="createForm.maintainable" />
                 </Field>
               </FieldGroup>
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="devices.createPending.value || deviceActions.updatePending.value || editLoading">
                   <Spinner v-if="devices.createPending.value || deviceActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存设备' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -321,7 +321,8 @@ async function submitDevice() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      :searchable="false" :column-settings="false"
       :columns="columns"
       :rows="listRows"
       :row-key="rowKey"
@@ -331,12 +332,12 @@ async function submitDevice() {
       <template #cell-lineCode="{ row }">{{ lineName(row.lineCode) }}</template>
       <template #cell-workCenterCode="{ row }">{{ wcName(row.workCenterCode) }}</template>
       <template #cell-active="{ row }">
-        <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+        <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions :row="row" entity-label="设备" :detail-fields="deviceDetailFields(row)" :actions="deviceActions" @edit="openEdit" />
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="devices.total.value" />
   </BusinessLayout>

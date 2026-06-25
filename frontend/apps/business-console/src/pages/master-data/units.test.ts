@@ -103,13 +103,25 @@ const rowActionStubs = {
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  DialogProTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  // 行操作里的 base AlertDialog（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
+  AlertDialog: { template: '<div><slot /></div>' },
+  AlertDialogTrigger: { template: '<div><slot /></div>' },
+  AlertDialogContent: { template: '<div><slot /></div>' },
+  AlertDialogHeader: { template: '<div><slot /></div>' },
+  AlertDialogFooter: { template: '<div><slot /></div>' },
+  AlertDialogTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogDescription: { template: '<p><slot /></p>' },
+  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 停用/启用二次确认弹窗就地渲染（不 teleport），便于点「确认停用」。
 const alertDialogStubs = {
@@ -124,15 +136,16 @@ const alertDialogStubs = {
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 打开「新建计量单位」并填合法值（名称为文本，量纲/取整为常量回退下拉；编码由系统自动生成）。

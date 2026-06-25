@@ -3,42 +3,42 @@ import type {
   BusinessConsoleCreateEngineeringItemRevisionRequest,
   BusinessConsoleEngineeringItemRevisionItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringItems } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
+  ButtonPro,
+  CheckboxPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { GitBranchIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -109,7 +109,7 @@ const knownItemCodes = computed(() => {
 
 const listErrorMessage = computed(() => formatError(itemsError.value))
 
-const columns: DataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleEngineeringItemRevisionItem>[] = [
   { key: 'itemCode', header: '物料编码', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'name', header: '名称' },
@@ -213,24 +213,24 @@ function formatError(error: unknown) {
       :count="`${itemsTotal} 个修订`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="itemsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="itemsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建修订
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle>新建物料修订</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-xl">
+            <DialogProHeader>
+              <DialogProTitle>新建物料修订</DialogProTitle>
+              <DialogProDescription>
                 工程物料不直接编辑，而是派生新修订。可新建一个物料，或在已有物料上派生下一修订。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项；在已有物料上派生时还需选择物料编码。
@@ -240,25 +240,25 @@ function formatError(error: unknown) {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field>
                   <FieldLabel for="item-mode">派生方式</FieldLabel>
-                  <Select v-model="form.targetMode">
-                    <SelectTrigger id="item-mode"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="new">新建物料</SelectItem>
-                      <SelectItem value="existing">在已有物料上派生</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.targetMode">
+                    <SelectProTrigger id="item-mode"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem value="new">新建物料</SelectProItem>
+                      <SelectProItem value="existing">在已有物料上派生</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                   <FieldDescription>
                     新建物料时编码由系统自动生成；派生时沿用所选物料编码。
                   </FieldDescription>
                 </Field>
                 <Field v-if="form.targetMode === 'existing'" :data-invalid="showErrors && !targetValid">
                   <FieldLabel for="item-code">物料编码 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.itemCode">
-                    <SelectTrigger id="item-code"><SelectValue placeholder="选择已有物料" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="code in knownItemCodes" :key="code" :value="code">{{ code }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.itemCode">
+                    <SelectProTrigger id="item-code"><SelectProValue placeholder="选择已有物料" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="code in knownItemCodes" :key="code" :value="code">{{ code }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                   <FieldDescription>从当前列表里已存在的物料编码中选择。</FieldDescription>
                 </Field>
               </FieldGroup>
@@ -267,11 +267,11 @@ function formatError(error: unknown) {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="showErrors && !revisionValid">
                   <FieldLabel for="item-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="item-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <InputPro id="item-rev" v-model="form.revision" placeholder="如 A、B、001" />
                 </Field>
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="item-name">名称 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="item-name" v-model="form.name" placeholder="物料名称" />
+                  <InputPro id="item-name" v-model="form.name" placeholder="物料名称" />
                 </Field>
               </FieldGroup>
 
@@ -282,21 +282,21 @@ function formatError(error: unknown) {
                   class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                 >
                   <span>创建后立即发布该修订</span>
-                  <Checkbox id="item-release" v-model:checked="form.release" />
+                  <CheckboxPro id="item-release" v-model:checked="form.release" />
                 </label>
                 <FieldDescription>不勾选则保存为草稿；发布后该修订不可变。</FieldDescription>
               </Field>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending">
                   <Spinner v-if="createPending" aria-hidden="true" />
                   {{ form.release ? '创建并发布' : '创建草稿' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -307,34 +307,36 @@ function formatError(error: unknown) {
 
     <Toolbar v-model:search="itemSearch" search-placeholder="按物料编码筛选">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="items"
       :row-key="(r) => `${r.itemCode}:${r.revision}`"
       :loading="itemsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前范围没有工程物料。可新建一个物料，或在已有物料上派生新修订。"
     >
       <template #cell-status="{ row }">
-        <StatusBadge :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
+        <StatusBadgePro :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
       </template>
       <template #cell-updatedAtUtc="{ row }">{{ formatDateTime(row.updatedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="itemsTotal" />
 
@@ -361,7 +363,7 @@ function formatError(error: unknown) {
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+              <StatusBadgePro :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">创建时间</span>

@@ -46,13 +46,13 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
   Sheet: { template: '<div><slot /></div>' },

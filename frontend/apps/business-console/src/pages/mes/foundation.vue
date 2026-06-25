@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
+  DataTablePro,
   Field,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  StatusBadge,
+  StatusBadgePro,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -61,7 +61,7 @@ function issueText(issue: { code?: string, message?: string }) {
   return issue.message ?? issue.code ?? '未命名问题'
 }
 
-const columns: DataTableColumn<ReadinessArea>[] = [
+const columns: DataTableProColumn<ReadinessArea>[] = [
   { key: 'areaCode', header: '检查区域', cellClass: 'font-medium', width: 'w-40' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'issues', header: '问题' },
@@ -76,10 +76,10 @@ const columns: DataTableColumn<ReadinessArea>[] = [
       :count="`${areas.length} 个检查区域`"
     >
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="readinessPending" @click="refreshReadiness">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="readinessPending" @click="refreshReadiness">
           <RefreshCwIcon aria-hidden="true" />
           重新检查
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -91,23 +91,23 @@ const columns: DataTableColumn<ReadinessArea>[] = [
       <FieldGroup class="grid gap-3 md:grid-cols-3 lg:grid-cols-5">
         <Field>
           <FieldLabel for="foundation-site">工厂</FieldLabel>
-          <Input id="foundation-site" v-model="filters.siteCode" placeholder="全部" />
+          <InputPro id="foundation-site" v-model="filters.siteCode" placeholder="全部" />
         </Field>
         <Field>
           <FieldLabel for="foundation-line">产线</FieldLabel>
-          <Input id="foundation-line" v-model="filters.lineCode" placeholder="全部" />
+          <InputPro id="foundation-line" v-model="filters.lineCode" placeholder="全部" />
         </Field>
         <Field>
           <FieldLabel for="foundation-work-center">工作中心</FieldLabel>
-          <Input id="foundation-work-center" v-model="filters.workCenterCode" placeholder="全部" />
+          <InputPro id="foundation-work-center" v-model="filters.workCenterCode" placeholder="全部" />
         </Field>
         <Field>
           <FieldLabel for="foundation-sku">物料</FieldLabel>
-          <Input id="foundation-sku" v-model="filters.skuId" placeholder="全部" />
+          <InputPro id="foundation-sku" v-model="filters.skuId" placeholder="全部" />
         </Field>
         <Field>
           <FieldLabel for="foundation-version">生产版本</FieldLabel>
-          <Input id="foundation-version" v-model="filters.productionVersionId" placeholder="全部" />
+          <InputPro id="foundation-version" v-model="filters.productionVersionId" placeholder="全部" />
         </Field>
       </FieldGroup>
     </div>
@@ -132,16 +132,18 @@ const columns: DataTableColumn<ReadinessArea>[] = [
       </ul>
     </div>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="areas"
       row-key="areaCode"
       :loading="readinessPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无检查结果。点「重新检查」按当前范围运行就绪检查。"
     >
       <template #cell-areaCode="{ row }">{{ areaLabel(row.areaCode) }}</template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="statusMeta(row.status).label" :tone="statusMeta(row.status).tone" />
+        <StatusBadgePro :label="statusMeta(row.status).label" :tone="statusMeta(row.status).tone" />
       </template>
       <template #cell-issues="{ row }">
         <div v-if="row.issues?.length" class="grid gap-1">
@@ -149,6 +151,6 @@ const columns: DataTableColumn<ReadinessArea>[] = [
         </div>
         <span v-else class="text-muted-foreground">无问题</span>
       </template>
-    </DataTable>
+    </DataTablePro>
   </BusinessLayout>
 </template>

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { useMesProductionReports } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
+  DataTablePro,
   PageHeader,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -30,7 +30,7 @@ const quickViewWorkOrderId = ref<string | null>(null)
 const errorMessage = computed(() => formatError(productionReportsError.value))
 
 type ReportRow = (typeof productionReports)['value'][number]
-const columns: DataTableColumn<ReportRow>[] = [
+const columns: DataTableProColumn<ReportRow>[] = [
   { key: 'reportNo', header: '报工单', cellClass: 'font-medium', accessor: (r) => r.reportNo ?? r.productionReportId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
@@ -58,21 +58,23 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="报工记录" :breadcrumbs="[{ label: '制造执行' }]" :count="`${productionReportsTotal} 条报工`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="productionReportsPending" @click="refreshProductionReports">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-workOrderId="{ row }">
         <button
@@ -98,7 +100,7 @@ function formatError(error: unknown) {
         </div>
       </template>
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionReportsTotal" />
 

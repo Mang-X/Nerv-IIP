@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -9,19 +9,19 @@ import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
+  DataTablePro,
   DropdownMenuItem,
   DropdownMenuSeparator,
   PageHeader,
   RowActions,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
@@ -99,7 +99,7 @@ const pagedTasks = computed(() => sortedTasks.value)
 
 // facade 返回人读编码（workOrderId=WO-…、workCenterId=WC-…、operationTaskId=WO-…-OP-序号）：
 // 工序序号(operationSequence)作主锚点，工单/工作中心直接展示编码即可分辨。
-const columns: DataTableColumn<Row>[] = [
+const columns: DataTableProColumn<Row>[] = [
   { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -179,50 +179,52 @@ function formatError(error: unknown) {
       :count="`${operationTasksTotal} 个工序任务`"
     >
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="operationTasksPending" @click="refreshOperationTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="工序状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="workCenterFilter">
-          <SelectTrigger class="h-9 w-40" aria-label="工作中心"><SelectValue placeholder="全部工作中心" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部工作中心</SelectItem>
-            <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="shiftFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="班次"><SelectValue placeholder="全部班次" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部班次</SelectItem>
-            <SelectItem v-for="option in shiftOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="工序状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="workCenterFilter">
+          <SelectProTrigger class="h-9 w-40" aria-label="工作中心"><SelectProValue placeholder="全部工作中心" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部工作中心</SelectProItem>
+            <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="shiftFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="班次"><SelectProValue placeholder="全部班次" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部班次</SelectProItem>
+            <SelectProItem v-for="option in shiftOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
       <template #actions>
-        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedTasks"
       :row-key="rowKey"
       :client-sort="false"
       :loading="operationTasksPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
     >
       <template #cell-operationSequence="{ row }">
@@ -240,7 +242,7 @@ function formatError(error: unknown) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :value="row.status" />
+        <StatusBadgePro :value="row.status" />
       </template>
       <template #cell-plannedStartUtc="{ row }">
         {{ formatDateTime(row.plannedStartUtc) }}
@@ -255,7 +257,7 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex items-center justify-end gap-1">
-          <Button
+          <ButtonPro
             v-if="showReportButton(row)"
             size="sm"
             type="button"
@@ -263,7 +265,7 @@ function formatError(error: unknown) {
           >
             <ClipboardCheckIcon aria-hidden="true" />
             报工
-          </Button>
+          </ButtonPro>
           <RowActions :label="`工序任务操作 工序 ${row.operationSequence ?? ''}`">
             <DropdownMenuItem
               v-if="!showReportButton(row)"
@@ -289,7 +291,7 @@ function formatError(error: unknown) {
           </RowActions>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination
       v-model:page="page"

@@ -3,7 +3,7 @@ import type {
   CreateProductCategoryRequest,
   ProductCategoryItem,
 } from '@/composables/usePromotedCatalogs'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -16,29 +16,29 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -93,7 +93,7 @@ const listErrorMessage = computed(() =>
   categoriesError.value instanceof Error ? categoriesError.value.message : '',
 )
 
-const columns: DataTableColumn<ProductCategoryItem>[] = [
+const columns: DataTableProColumn<ProductCategoryItem>[] = [
   { key: 'categoryCode', header: '编码', width: 'w-32' },
   { key: 'categoryName', header: '分类名', cellClass: 'font-medium' },
   { key: 'parent', header: '上级分类' },
@@ -218,24 +218,24 @@ async function confirmArchive() {
       :count="`${categoriesTotal} 个分类`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="categoriesPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="categoriesPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建分类
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑产品分类' : '新建产品分类' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? '编辑产品分类' : '新建产品分类' }}</DialogProTitle>
+              <DialogProDescription>
                 产品分类是物料与产品的归类主数据：维护层级（上级分类）后，可在选型与统计中按分类树聚合。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写分类名（已标红）。
@@ -245,21 +245,21 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3 sm:grid-cols-2">
                 <Field :data-invalid="showErrors && !nameValid">
                   <FieldLabel for="cat-name">分类名 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
+                  <InputPro id="cat-name" v-model="form.categoryName" placeholder="例如：结构件" />
                 </Field>
                 <Field v-if="editingCode">
                   <FieldLabel>编码</FieldLabel>
-                  <Input :model-value="editingCode" readonly disabled />
+                  <InputPro :model-value="editingCode" readonly disabled />
                   <FieldDescription>编码由系统自动生成，不可更改。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel for="cat-parent">上级分类</FieldLabel>
-                  <Select v-model="form.parentCode">
-                    <SelectTrigger id="cat-parent"><SelectValue placeholder="顶级分类（可空）" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SelectPro v-model="form.parentCode">
+                    <SelectProTrigger id="cat-parent"><SelectProValue placeholder="顶级分类（可空）" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in parentOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
                   <FieldDescription>选择上级以形成分类树；留空为顶级分类。</FieldDescription>
                 </Field>
               </FieldGroup>
@@ -268,20 +268,20 @@ async function confirmArchive() {
               <FieldGroup class="grid gap-3">
                 <Field>
                   <FieldLabel for="cat-desc">说明</FieldLabel>
-                  <Input id="cat-desc" v-model="form.description" placeholder="可选，分类用途或范围" />
+                  <InputPro id="cat-desc" v-model="form.description" placeholder="可选，分类用途或范围" />
                 </Field>
               </FieldGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建分类' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -289,29 +289,31 @@ async function confirmArchive() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="categories"
       row-key="categoryCode"
       :loading="categoriesPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="产品分类为空。新建分类（支持上级分类）以形成分类树，供选型与统计聚合。"
     >
       <template #cell-parent="{ row }">
         <span>{{ parentLabel(row) }}</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge
+        <StatusBadgePro
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <Button type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</Button>
-          <Button type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
+          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="categoriesTotal" />
 

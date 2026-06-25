@@ -3,42 +3,42 @@ import type {
   BusinessConsoleEngineeringChangeItem,
   BusinessConsoleReleaseEngineeringChangeRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringChanges } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
+  ButtonPro,
   DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
   Field,
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  Input,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -103,7 +103,7 @@ const affectedTotal = computed(() =>
 
 const listErrorMessage = computed(() => formatError(changesError.value))
 
-const columns: DataTableColumn<BusinessConsoleEngineeringChangeItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleEngineeringChangeItem>[] = [
   { key: 'changeNumber', header: '变更号', cellClass: 'font-medium' },
   { key: 'reason', header: '变更原因' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -224,24 +224,24 @@ function formatError(error: unknown) {
       :count="`${changesTotal} 个变更`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="changesPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="changesPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               发布变更
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>发布工程变更</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>发布工程变更</DialogProTitle>
+              <DialogProDescription>
                 变更一步发布并即时生效（无多步审批）。填写变更原因、审批参考、生效日与受影响版本。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本 ID。
@@ -251,27 +251,27 @@ function formatError(error: unknown) {
               <FieldGroup class="grid gap-3">
                 <Field :data-invalid="showErrors && !reasonValid">
                   <FieldLabel for="eco-reason">变更原因 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="eco-reason" v-model="form.reason" placeholder="说明本次变更的内容与原因" />
+                  <InputPro id="eco-reason" v-model="form.reason" placeholder="说明本次变更的内容与原因" />
                 </Field>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <Field :data-invalid="showErrors && !approvalValid">
                     <FieldLabel for="eco-approval">审批参考 <span class="text-destructive">*</span></FieldLabel>
-                    <Input id="eco-approval" v-model="form.approvalReferenceId" placeholder="审批单 / 决议引用 ID" />
+                    <InputPro id="eco-approval" v-model="form.approvalReferenceId" placeholder="审批单 / 决议引用 ID" />
                     <FieldDescription>记录线下审批的引用编号，便于追溯。</FieldDescription>
                   </Field>
                   <Field :data-invalid="showErrors && !effectiveValid">
                     <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
-                    <DatePicker v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
+                    <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
                   </Field>
                 </div>
               </FieldGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>受影响版本</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" @click="addAffected">
+                <ButtonPro type="button" variant="outline" size="sm" @click="addAffected">
                   <PlusIcon aria-hidden="true" />
                   增加一条
-                </Button>
+                </ButtonPro>
               </div>
               <div class="grid gap-2">
                 <div
@@ -281,18 +281,18 @@ function formatError(error: unknown) {
                 >
                   <Field :data-invalid="showErrors && !row.versionKind.trim()">
                     <FieldLabel :for="`eco-kind-${index}`">对象种类 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="row.versionKind">
-                      <SelectTrigger :id="`eco-kind-${index}`"><SelectValue placeholder="选择对象" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in VERSION_KIND_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SelectPro v-model="row.versionKind">
+                      <SelectProTrigger :id="`eco-kind-${index}`"><SelectProValue placeholder="选择对象" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in VERSION_KIND_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
                   </Field>
                   <Field :data-invalid="showErrors && !row.versionId.trim()">
                     <FieldLabel :for="`eco-vid-${index}`">版本 ID <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`eco-vid-${index}`" v-model="row.versionId" placeholder="受影响的版本标识" />
+                    <InputPro :id="`eco-vid-${index}`" v-model="row.versionId" placeholder="受影响的版本标识" />
                   </Field>
-                  <Button
+                  <ButtonPro
                     type="button"
                     variant="ghost"
                     size="icon"
@@ -301,20 +301,20 @@ function formatError(error: unknown) {
                     @click="removeAffected(index)"
                   >
                     <Trash2Icon aria-hidden="true" />
-                  </Button>
+                  </ButtonPro>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布变更
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -325,29 +325,31 @@ function formatError(error: unknown) {
 
     <Toolbar>
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="changes"
       :row-key="(r) => r.changeNumber ?? ''"
       :loading="changesPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前范围没有工程变更。可发布变更，登记变更原因、审批参考与受影响版本。"
     >
       <template #cell-reason="{ row }">
         <span class="line-clamp-2 text-sm">{{ row.reason || '—' }}</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="ecoStatus(row.status).label" :tone="ecoStatus(row.status).tone" />
+        <StatusBadgePro :label="ecoStatus(row.status).label" :tone="ecoStatus(row.status).tone" />
       </template>
       <template #cell-effectiveDate="{ row }">{{ row.effectiveDate ? formatDate(row.effectiveDate) : '即时' }}</template>
       <template #cell-affected="{ row }">
@@ -355,10 +357,10 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
     <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="changesTotal" />
 
@@ -374,7 +376,7 @@ function formatError(error: unknown) {
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadge :label="ecoStatus(viewTarget.status).label" :tone="ecoStatus(viewTarget.status).tone" />
+              <StatusBadgePro :label="ecoStatus(viewTarget.status).label" :tone="ecoStatus(viewTarget.status).tone" />
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">审批参考</span>

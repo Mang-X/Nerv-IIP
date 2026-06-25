@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { Badge } from '@nerv-iip/ui'
+import { BadgePro } from '@nerv-iip/ui'
 
 definePage({
   meta: {
@@ -70,7 +70,7 @@ const supportItems = [
             面向计划、车间、质量和库存的 PC 入口；从待关注事项进入队列，从业务动作进入已落地页面。
           </p>
         </div>
-        <Badge variant="secondary">PC 工作台</Badge>
+        <BadgePro variant="neutral">PC 工作台</BadgePro>
       </div>
 
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -90,7 +90,7 @@ const supportItems = [
                 <span class="block text-sm font-medium text-foreground">{{ item.label }}</span>
                 <span class="mt-0.5 block text-sm text-muted-foreground">{{ item.detail }}</span>
               </span>
-              <Badge variant="outline">{{ item.status }}</Badge>
+              <BadgePro variant="neutral">{{ item.status }}</BadgePro>
             </RouterLink>
           </div>
         </section>
