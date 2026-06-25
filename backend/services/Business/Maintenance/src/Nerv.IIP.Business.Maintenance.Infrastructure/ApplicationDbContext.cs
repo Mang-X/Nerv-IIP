@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggreg
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -35,5 +36,15 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     {
         ConfigureStronglyTypedIdValueConverter(configurationBuilder);
         base.ConfigureConventions(configurationBuilder);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            this,
+            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+            cancellationToken);
     }
 }

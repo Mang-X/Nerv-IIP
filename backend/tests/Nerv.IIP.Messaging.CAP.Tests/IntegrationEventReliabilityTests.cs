@@ -212,6 +212,47 @@ public sealed class IntegrationEventReliabilityTests
             ProcessedIntegrationEventInbox.UniqueIndexName));
     }
 
+    [Fact]
+    public async Task Processed_integration_event_inbox_save_wrapper_ignores_concurrent_duplicate_loser()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using (var setup = new TestProcessedEventDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+        }
+
+        await using var firstContext = new TestProcessedEventDbContext(options);
+        await using var secondContext = new TestProcessedEventDbContext(options);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            firstContext,
+            firstContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-race-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+        await ProcessedIntegrationEventInbox.TryRecordAsync(
+            secondContext,
+            secondContext.ProcessedIntegrationEvents,
+            "sample.consumer",
+            CreateValidEvent("event-race-001"),
+            SampleProcessedIntegrationEvent.FromInboxRecord,
+            CancellationToken.None);
+
+        await firstContext.SaveChangesAsync();
+        var saved = await ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<SampleProcessedIntegrationEvent>(
+            secondContext,
+            token => secondContext.SaveChangesAsync(token),
+            CancellationToken.None);
+
+        Assert.Equal(0, saved);
+        await using var assertionContext = new TestProcessedEventDbContext(options);
+        Assert.Equal(1, await assertionContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
     private static string[] IndexProperties(IIndex index)
     {
         return index.Properties.Select(property => property.Name).ToArray();

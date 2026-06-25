@@ -47,6 +47,21 @@ namespace Nerv.IIP.AppHub.Infrastructure.Migrations
                 oldMaxLength: 512,
                 oldComment: "AppHub dedupe key associated with the processed event.");
 
+            migrationBuilder.Sql("""
+                DELETE FROM apphub.processed_integration_events AS loser
+                USING (
+                    SELECT
+                        "Id",
+                        row_number() OVER (
+                            PARTITION BY "ConsumerName", "IdempotencyKey"
+                            ORDER BY "ProcessedAtUtc", "Id"
+                        ) AS duplicate_rank
+                    FROM apphub.processed_integration_events
+                ) AS ranked
+                WHERE loser."Id" = ranked."Id"
+                  AND ranked.duplicate_rank > 1;
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "ux_processed_integration_events_consumer_idempotency_key",
                 schema: "apphub",

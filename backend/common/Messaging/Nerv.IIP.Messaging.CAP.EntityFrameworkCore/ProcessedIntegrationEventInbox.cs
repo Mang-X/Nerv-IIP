@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
@@ -40,7 +39,7 @@ public static class ProcessedIntegrationEventInbox
         var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
         var idempotencyKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
 
-        if (dbSet.Local.Any(entity => HasProcessedKey(entity, consumerName, idempotencyKey)))
+        if (dbSet.Local.Any(entity => HasProcessedKey(dbContext, entity, consumerName, idempotencyKey)))
         {
             return false;
         }
@@ -76,23 +75,52 @@ public static class ProcessedIntegrationEventInbox
         var providerName = dbContext.Database.ProviderName ?? string.Empty;
         return EnumerateExceptions(exception).Any(inner =>
             IsPostgreSqlUniqueConflict(inner, constraintOrIndexName) ||
-            IsSqliteUniqueConflict(providerName, inner) ||
-            IsSqlServerUniqueConflict(providerName, inner) ||
-            IsMySqlUniqueConflict(providerName, inner));
+            IsSqliteUniqueConflict(providerName, inner, constraintOrIndexName) ||
+            IsSqlServerUniqueConflict(providerName, inner, constraintOrIndexName) ||
+            IsMySqlUniqueConflict(providerName, inner, constraintOrIndexName));
     }
 
-    private static bool HasProcessedKey<TEntity>(TEntity entity, string consumerName, string idempotencyKey)
+    public static async Task<int> SaveChangesOrIgnoreDuplicateAsync<TEntity>(
+        DbContext dbContext,
+        Func<CancellationToken, Task<int>> saveChangesAsync,
+        CancellationToken cancellationToken,
+        string? constraintOrIndexName = UniqueIndexName)
         where TEntity : class
     {
-        var type = entity.GetType();
-        return string.Equals(GetStringProperty(type, entity, ConsumerNameProperty), consumerName, StringComparison.Ordinal) &&
-            string.Equals(GetStringProperty(type, entity, IdempotencyKeyProperty), idempotencyKey, StringComparison.Ordinal);
+        ArgumentNullException.ThrowIfNull(dbContext);
+        ArgumentNullException.ThrowIfNull(saveChangesAsync);
+
+        try
+        {
+            return await saveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (
+            HasPendingProcessedRecord<TEntity>(dbContext) &&
+            IsUniqueConflict(exception, dbContext, constraintOrIndexName))
+        {
+            dbContext.ChangeTracker.Clear();
+            return 0;
+        }
     }
 
-    private static string? GetStringProperty(Type type, object instance, string propertyName)
+    private static bool HasProcessedKey<TEntity>(
+        DbContext dbContext,
+        TEntity entity,
+        string consumerName,
+        string idempotencyKey)
+        where TEntity : class
     {
-        var property = type.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        return property?.GetValue(instance) as string;
+        var entry = dbContext.Entry(entity);
+        return string.Equals(entry.Property<string>(ConsumerNameProperty).CurrentValue, consumerName, StringComparison.Ordinal) &&
+            string.Equals(entry.Property<string>(IdempotencyKeyProperty).CurrentValue, idempotencyKey, StringComparison.Ordinal);
+    }
+
+    private static bool HasPendingProcessedRecord<TEntity>(DbContext dbContext)
+        where TEntity : class
+    {
+        return dbContext.ChangeTracker
+            .Entries<TEntity>()
+            .Any(entry => entry.State == EntityState.Added);
     }
 
     private static string Required(string? value, string message)
@@ -129,7 +157,7 @@ public static class ProcessedIntegrationEventInbox
         return MatchesConstraintName(exception, constraintOrIndexName);
     }
 
-    private static bool IsSqliteUniqueConflict(string providerName, Exception exception)
+    private static bool IsSqliteUniqueConflict(string providerName, Exception exception, string? constraintOrIndexName)
     {
         var typeName = exception.GetType().FullName ?? string.Empty;
         if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) &&
@@ -140,10 +168,17 @@ public static class ProcessedIntegrationEventInbox
 
         var errorCode = GetIntProperty(exception, "SqliteErrorCode");
         var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
-        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
+        if (errorCode != 19 && extendedErrorCode is not (1555 or 2067))
+        {
+            return false;
+        }
+
+        return MatchesMessage(exception, constraintOrIndexName) ||
+            (exception.Message.Contains(ConsumerNameProperty, StringComparison.OrdinalIgnoreCase) &&
+                exception.Message.Contains(IdempotencyKeyProperty, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsSqlServerUniqueConflict(string providerName, Exception exception)
+    private static bool IsSqlServerUniqueConflict(string providerName, Exception exception, string? constraintOrIndexName)
     {
         var typeName = exception.GetType().FullName ?? string.Empty;
         if (!providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) &&
@@ -152,10 +187,15 @@ public static class ProcessedIntegrationEventInbox
             return false;
         }
 
-        return GetIntProperty(exception, "Number") is 2601 or 2627;
+        if (GetIntProperty(exception, "Number") is not (2601 or 2627))
+        {
+            return false;
+        }
+
+        return MatchesMessage(exception, constraintOrIndexName);
     }
 
-    private static bool IsMySqlUniqueConflict(string providerName, Exception exception)
+    private static bool IsMySqlUniqueConflict(string providerName, Exception exception, string? constraintOrIndexName)
     {
         var typeName = exception.GetType().FullName ?? string.Empty;
         if (!providerName.Contains("MySql", StringComparison.OrdinalIgnoreCase) &&
@@ -164,7 +204,12 @@ public static class ProcessedIntegrationEventInbox
             return false;
         }
 
-        return GetIntProperty(exception, "Number") == 1062;
+        if (GetIntProperty(exception, "Number") != 1062)
+        {
+            return false;
+        }
+
+        return MatchesMessage(exception, constraintOrIndexName);
     }
 
     private static bool MatchesConstraintName(Exception exception, string? constraintOrIndexName)
@@ -187,5 +232,11 @@ public static class ProcessedIntegrationEventInbox
             uint uintValue when uintValue <= int.MaxValue => (int)uintValue,
             _ => null
         };
+    }
+
+    private static bool MatchesMessage(Exception exception, string? constraintOrIndexName)
+    {
+        return string.IsNullOrWhiteSpace(constraintOrIndexName) ||
+            exception.Message.Contains(constraintOrIndexName, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -29,6 +29,16 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
         base.OnModelCreating(modelBuilder);
     }
 
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            this,
+            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+            cancellationToken);
+    }
+
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PublishedMessage>().ToTable("cap_published_messages").HasKey(x => x.Id);
