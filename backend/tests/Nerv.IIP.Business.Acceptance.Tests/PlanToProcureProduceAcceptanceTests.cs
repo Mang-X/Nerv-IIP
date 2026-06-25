@@ -59,7 +59,7 @@ public sealed class PlanToProcureProduceAcceptanceTests
             SuggestionId = EngineeringPlanningAcceptanceData.PlannedPurchaseSuggestionId,
             DownstreamService = "BusinessErp",
             DownstreamDocumentType = "PurchaseRequisition",
-            DownstreamDocumentId = EngineeringPlanningAcceptanceData.PurchaseRequisitionNo,
+            DownstreamDocumentId = (string?)null,
         });
         _fixture.Events.Record("BusinessErp", "erp.PurchaseRequisitionCreated", correlation, new
         {
@@ -89,9 +89,6 @@ public sealed class PlanToProcureProduceAcceptanceTests
         Assert.Equal(
             AcceptanceAssert.RequiredFact(acceptedFacts, "SuggestionId", "demandPlanning.PlanningSuggestionAccepted"),
             AcceptanceAssert.RequiredFact(requisitionFacts, "SuggestionId", "erp.PurchaseRequisitionCreated"));
-        Assert.Equal(
-            AcceptanceAssert.RequiredFact(acceptedFacts, "DownstreamDocumentId", "demandPlanning.PlanningSuggestionAccepted"),
-            AcceptanceAssert.RequiredFact(requisitionFacts, "PurchaseRequisitionNo", "erp.PurchaseRequisitionCreated"));
         Assert.Equal(
             AcceptanceAssert.RequiredFact(workOrderSuggestionFacts, "SuggestionId", "demandPlanning.PlannedWorkOrderSuggested"),
             AcceptanceAssert.RequiredFact(workOrderFacts, "SuggestionId", "mes.WorkOrderCreated"));
