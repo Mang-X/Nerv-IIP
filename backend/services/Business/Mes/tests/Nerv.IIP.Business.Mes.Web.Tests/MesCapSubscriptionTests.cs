@@ -32,6 +32,7 @@ public sealed class MesCapSubscriptionTests
     private const string AssetRestoredTopic = "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent";
     private const string SchedulePlanReleasedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
     private const string NcrDispositionDecidedTopic = "Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent";
+    private const string InspectionResultTopic = "Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent";
     private const string StockMovementPostedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent";
 
     [Fact]
@@ -60,6 +61,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
     }
 
@@ -89,6 +91,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Null(provider.GetService<IStorageInitializer>());
     }
@@ -102,6 +105,9 @@ public sealed class MesCapSubscriptionTests
 
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(NcrDispositionDecidedIntegrationEventHandlerForUpdateMesDefect) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted) &&

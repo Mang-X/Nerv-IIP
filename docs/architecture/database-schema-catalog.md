@@ -216,6 +216,7 @@ Source:
 12. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260612073555_AddCodingTables.cs`
 13. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260615092140_AddMesBusinessLoopFacts.cs`
 14. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260624151023_UseIdempotencyKeyForProcessedIntegrationEvents.cs`
+15. `backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/Migrations/20260624150553_AddMesQualityHoldContexts.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -224,6 +225,7 @@ Source:
 | `production_reports` | business | MES 报工事实，记录工单/工序的良品数、报废数、返工数、完工标记、报工时间、可选报废原因/不良记录号，以及产出批次/序列号谱系。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 是报工业务号唯一键；`work_order_id` 与 `operation_task_id` 为 MES 业务引用；`produced_lot_no` 和 `serial_no` 是追溯公开标识，不建立跨服务 FK。 | 报工号唯一索引用于重试和追踪；工单/工序/时间索引用于执行时间线查询。 | 报工创建后作为执行历史保留；物料消耗通过公共 Inventory movement request 集成事件表达库存扣减意图，Quality/ERP 仍拥有各自正式事实。 |
 | `production_report_material_consumptions` | business | MES 报工引用的实际物料批次消耗事实，用于工单、报工和物料批次追溯。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + report_no` 指向报工号；记录 `material_id`、`material_lot_id`、`uom_code`、消耗数量和线边领料申请号。 | 物料批次索引用于按批次追溯；工单索引用于工单谱系；报工/物料/批次唯一索引用于报工明细加载和重复写入兜底。 | 随报工写入，作为执行追溯历史保留；不拥有 Inventory 批次余额；历史缺失 UOM 的记录以 `UNSPECIFIED` 显式标记，不能用于发送库存事件。 |
 | `defect_records` | business | MES 制程不良事实，记录工单/可选工序、不良编码、数量、状态、记录时间、Quality NCR 链接和处置回写引用，支撑 MES 质量上下文列表。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + defect_no` 是不良记录业务号唯一键；`work_order_id` 指向 MES 工单业务号，`operation_task_id` 是可选工序业务引用；`ncr_id`、`ncr_code`、`disposition_type` 和 `disposition_reference_id` 只保存 Quality/downstream 公开引用。 | 不良号唯一索引用于重试和追踪；工单/时间与工序/时间索引用于质量上下文分页和工序追溯。 | 创建后通过公共 Quality defect-raised 事件请求 NCR；Quality 仍拥有正式 NCR/处置，MES 消费处置事件后只更新本地执行上下文。 |
+| `quality_hold_contexts` | business | MES 本地质量保留投影，消费 Quality 检验结果事件后记录工单/可选工序的当前质量 hold 状态，供 release/start 门禁使用。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 与可选 `operation_task_id` 绑定 MES 执行对象；`source_service + source_document_id` 记录 Quality 检验来源文档；`inspection_record_id`、`inspection_plan_id`、`result`、`event_type`、`disposition_reason`、`recorded_at_utc` 和 `active` 保存最新质量结论。 | `organization_id + environment_id + source_service + source_document_id` 唯一，防止同一 Quality 来源上下文重复投影；工单/active 索引用于 release/start 门禁快速查询。 | 由 Quality `InspectionResultIntegrationEvent` 更新；`rejected` 激活 hold，`passed`/`conditional-release` 清除 hold。Quality 仍拥有正式检验记录，MES 只保存门禁所需执行上下文。 |
 | `material_requirements` | business | MES 工单/工序级物料需求与供应快照，记录来自 released MBOM、Inventory 和 WMS readiness 的执行侧视图。 | `id` 为 Guid v7 强类型 ID；`work_order_id` 和可选 `operation_task_id` 绑定 MES 执行对象；`material_id`、`material_lot_id`、需求量、可用量、备料量和 source snapshot 保留来源。 | 工单/物料索引用于齐套检查；工序索引用于开工前阻断检查。 | 由上游 readiness/导入适配器或测试 fixture 捕获，后续重新计算可写新快照；MES 不把它作为库存余额真相源。 |
 | `material_issue_requests` | business | MES 领料/备料申请与线边接收事实，跟踪 requested/received 数量、单位和实际接收批次。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + request_no` 是领料申请业务号唯一键；记录工单、工序、物料、`uom_code`、批次、请求/接收数量和状态。 | 请求号唯一索引用于重试和下游引用；工单/物料索引用于齐套汇总；工序索引用于工序开工检查。 | 创建后作为 MES 执行事实保留，并通过公共 Inventory movement request 事件表达线边领料出库意图；历史缺失 UOM 的记录以 `UNSPECIFIED` 显式标记并被事件转换拒绝；WMS 拣货执行仍由 WMS 边界拥有。 |
 | `finished_goods_receipt_requests` | business | MES 完工入库请求事实，向 Inventory 边界表达成品收货意图，并保留可选产出批次/序列号、入库单位成本和 Inventory 过账引用。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + request_no` 是入库请求业务号唯一键；记录 `work_order_id`、`sku_id`、`quantity`、`uom_code`、`unit_cost`、`status`、请求时间、`produced_lot_no`、`serial_no`、`posted_inventory_movement_id` 和 `posted_at_utc`；`unit_cost` 对 legacy 记录可为空，新建请求需提供正数以传递给 Inventory 移动平均计价。 | 请求号唯一索引用于下游引用；工单/SKU/时间索引用于入库请求追踪；创建请求的幂等 fingerprint 包含 `unit_cost`，同一业务重试 key 携带不同成本时视为 payload 冲突。 | 创建后通过公共 Inventory movement request 事件表达入库意图；Inventory 拥有正式库存移动和计价结果，MES 只保存请求成本输入和已知过账引用。 |
@@ -242,7 +244,7 @@ Source:
 
 Known gaps:
 
-1. MES 当前已有物料需求快照、领料/线边接收、报工消耗批次、产出批次/序列号和工单进度追溯事实；仍需后续把 released MBOM、WMS 作业状态、Quality hold 和 ERP/采购到货通过正式 adapter/event 持续刷新这些执行快照。
+1. MES 当前已有物料需求快照、领料/线边接收、报工消耗批次、产出批次/序列号、质量 hold 投影和工单进度追溯事实；仍需后续把 WMS 作业状态和 ERP/采购到货通过正式 adapter/event 持续刷新执行快照。
 2. MES durable source plan reference 只保存来源计划/需求的稳定业务标识和快照字段；DemandPlanning 仍拥有需求来源、MRP run、pegging 和计划建议事实，MES 不读取 `demand_planning` schema，也不对来源表建外键。
 
 ## BusinessDemandPlanning Schema

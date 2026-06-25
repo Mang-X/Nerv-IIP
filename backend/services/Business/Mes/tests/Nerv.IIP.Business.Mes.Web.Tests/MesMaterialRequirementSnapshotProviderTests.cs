@@ -93,30 +93,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
+                Assert.Contains("effectiveDate=2026-06-19", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("lotSize=10", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 
@@ -240,31 +231,21 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
-                Assert.Contains("status=active", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("effectiveDate=2026-06-19", pathAndQuery, StringComparison.Ordinal);
+                Assert.Contains("lotSize=10", pathAndQuery, StringComparison.Ordinal);
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 
@@ -425,6 +406,37 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
     }
 
     [Fact]
+    public async Task Http_provider_treats_unresolved_production_version_as_missing_snapshot()
+    {
+        var productEngineeringHandler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { data = (object?)null, success = false, message = "No active production version matched.", code = 0 }),
+            });
+        var inventoryHandler = new StubHttpMessageHandler(request =>
+            throw new InvalidOperationException($"Inventory should not be called when ProductEngineering has no matching production version: {request.RequestUri}"));
+        var provider = new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+            new MesProductEngineeringHttpClient(new HttpClient(productEngineeringHandler) { BaseAddress = new Uri("http://product-engineering") }),
+            new MesInventoryHttpClient(new HttpClient(inventoryHandler) { BaseAddress = new Uri("http://inventory") }),
+            new MesMaterialRequirementInventoryOptions { DefaultSiteCode = "production" });
+
+        var result = await provider.GetSnapshotAsync(
+            new MesMaterialRequirementSnapshotRequest(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "FG-FSA",
+                "PV-MISSING",
+                10m,
+                DateTimeOffset.Parse("2026-06-19T08:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Equal(MesMaterialRequirementSnapshotStatus.Missing, result.Status);
+        Assert.Equal("product-engineering:production-version:PV-MISSING", result.SourceSystem);
+        Assert.Empty(result.Lines);
+    }
+
+    [Fact]
     public async Task Http_provider_wraps_http_timeouts_as_known_material_readiness_errors()
     {
         var productEngineeringHandler = new StubHttpMessageHandler(_ =>
@@ -503,30 +515,19 @@ public sealed class MesMaterialRequirementSnapshotProviderTests
         {
             Assert.NotNull(request.RequestUri);
             var pathAndQuery = request.RequestUri!.PathAndQuery;
-            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions?", StringComparison.Ordinal))
+            if (pathAndQuery.StartsWith("/api/business/v1/engineering/production-versions/resolve?", StringComparison.Ordinal))
             {
                 return JsonEnvelope(new
                 {
-                    items = new[]
-                    {
-                        new
-                        {
-                            productionVersionId = "PV-001",
-                            organizationId = "org-001",
-                            environmentId = "env-dev",
-                            skuCode = "FG-FSA",
-                            mbomVersionId = "MBOM-1000:A",
-                            routingVersionId = "ROUTE-1000:A",
-                            validFrom = "2026-06-01",
-                            validTo = (string?)null,
-                            lotSizeMin = (decimal?)null,
-                            lotSizeMax = (decimal?)null,
-                            priority = 10,
-                            isDefault = true,
-                            status = "active",
-                        },
-                    },
-                    total = 1,
+                    productionVersionId = "PV-001",
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    skuCode = "FG-FSA",
+                    mbomVersionId = "MBOM-1000:A",
+                    routingVersionId = "ROUTE-1000:A",
+                    effectiveDate = "2026-06-19",
+                    lotSize = 10m,
+                    status = "active",
                 });
             }
 

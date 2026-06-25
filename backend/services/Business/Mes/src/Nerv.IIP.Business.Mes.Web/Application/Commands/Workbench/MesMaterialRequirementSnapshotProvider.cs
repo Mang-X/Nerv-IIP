@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Caching.Memory;
@@ -122,18 +123,23 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
             return MesMaterialRequirementSnapshotResult.Missing("product-engineering:missing-production-version");
         }
 
-        var productionVersions = await SendAsync<ListProductionVersionsResponse>(
+        var selectedVersion = await SendOptionalAsync<ResolveProductionVersionResponse>(
             productEngineeringClient.HttpClient,
             "ProductEngineering",
-            "/api/business/v1/engineering/production-versions?" + Query(
+            "/api/business/v1/engineering/production-versions/resolve?" + Query(
                 ("organizationId", request.OrganizationId),
                 ("environmentId", request.EnvironmentId),
                 ("skuCode", request.SkuId),
-                ("status", ActiveProductionVersionStatus)),
+                ("effectiveDate", DateOnly.FromDateTime(request.CapturedAtUtc.UtcDateTime)),
+                ("lotSize", request.WorkOrderQuantity)),
             cancellationToken);
-        var selectedVersion = productionVersions.Items
-            .FirstOrDefault(x => string.Equals(x.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase));
         if (selectedVersion is null)
+        {
+            return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
+        }
+
+        if (!string.Equals(selectedVersion.ProductionVersionId, request.ProductionVersionId, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(selectedVersion.Status, ActiveProductionVersionStatus, StringComparison.OrdinalIgnoreCase))
         {
             return MesMaterialRequirementSnapshotResult.Missing($"product-engineering:production-version:{request.ProductionVersionId}");
         }
@@ -389,6 +395,36 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
     private async Task<T> SendAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)
         where T : class
     {
+        using var response = await SendRequestAsync(client, serviceName, requestUri, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+        return envelope?.Data ?? throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回空响应。");
+    }
+
+    private async Task<T?> SendOptionalAsync<T>(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)
+        where T : class
+    {
+        using var response = await SendRequestAsync(client, serviceName, requestUri, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+        return envelope?.Data;
+    }
+
+    private async Task<HttpResponseMessage> SendRequestAsync(HttpClient client, string serviceName, string requestUri, CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         var token = internalTokenProvider?.BearerToken;
         if (!string.IsNullOrWhiteSpace(token))
@@ -409,17 +445,7 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
         {
             throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务请求超时。{exception.Message}");
         }
-
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回 {(int)response.StatusCode} {response.ReasonPhrase}。");
-            }
-
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
-            return envelope?.Data ?? throw new KnownException($"MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE: {serviceName} 物料齐套来源服务返回空响应。");
-        }
+        return response;
     }
 
     private static IReadOnlyCollection<ManufacturingBomMaterialLineItem> SelectMaterialLines(
@@ -475,21 +501,15 @@ public sealed class HttpMesProductEngineeringMaterialRequirementSnapshotProvider
 
 internal sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 
-internal sealed record ListProductionVersionsResponse(IReadOnlyCollection<ProductionVersionListItem> Items);
-
-internal sealed record ProductionVersionListItem(
+internal sealed record ResolveProductionVersionResponse(
     string ProductionVersionId,
     string OrganizationId,
     string EnvironmentId,
     string SkuCode,
     string MbomVersionId,
     string RoutingVersionId,
-    DateOnly ValidFrom,
-    DateOnly? ValidTo,
-    decimal? LotSizeMin,
-    decimal? LotSizeMax,
-    int Priority,
-    bool IsDefault,
+    DateOnly EffectiveDate,
+    decimal LotSize,
     string Status);
 
 internal sealed record ListManufacturingBomsResponse(IReadOnlyCollection<ManufacturingBomListItem> Items);
