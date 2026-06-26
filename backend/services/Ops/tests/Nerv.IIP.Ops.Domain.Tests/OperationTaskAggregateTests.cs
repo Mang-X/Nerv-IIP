@@ -244,6 +244,34 @@ public sealed class OperationTaskAggregateTests
     }
 
     [Fact]
+    public void Audit_integrity_validator_distinguishes_legacy_unchained_hashes_from_tampering()
+    {
+        var legacyHash = AuditRecord.ComputeLegacyIntegrityHash(
+            "audit-legacy-001",
+            "op-000001",
+            "operation.requested",
+            "local-admin",
+            Now,
+            "corr-001");
+        var legacyRecord = new AuditRecordFact(
+            "audit-legacy-001",
+            "op-000001",
+            1,
+            string.Empty,
+            "operation.requested",
+            "local-admin",
+            Now,
+            "corr-001",
+            legacyHash);
+
+        var result = AuditIntegrityValidator.Validate([legacyRecord]);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("legacy-unchained-history", result.FailureCode);
+        Assert.Equal("audit-legacy-001", result.FirstInvalidAuditRecordId);
+    }
+
+    [Fact]
     public void Approval_decision_rejects_requester_self_approval()
     {
         var task = OperationTask.Create(TaskId(), CreateRequest("idem-self-approval-001"), Template("lifecycle.restart", requiresApproval: true), Now);

@@ -492,10 +492,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     private AuditRecord AddAudit(AuditRecordId auditRecordId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
+        // EF write paths restamp this aggregate-local chain against the persisted organization/environment chain before saving.
         var previous = _auditRecords.OrderBy(x => x.SequenceNo).LastOrDefault();
         var auditRecord = new AuditRecord(
             auditRecordId,
             Id,
+            OrganizationId,
+            EnvironmentId,
             previous?.SequenceNo + 1 ?? 1,
             previous?.IntegrityHash ?? string.Empty,
             action,
@@ -626,6 +629,8 @@ public sealed class AuditRecord : Entity<AuditRecordId>
     internal AuditRecord(
         AuditRecordId id,
         OperationTaskId operationTaskId,
+        string organizationId,
+        string environmentId,
         long sequenceNo,
         string previousIntegrityHash,
         string action,
@@ -635,6 +640,8 @@ public sealed class AuditRecord : Entity<AuditRecordId>
     {
         Id = id;
         OperationTaskId = operationTaskId;
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
         SequenceNo = sequenceNo;
         PreviousIntegrityHash = previousIntegrityHash;
         Action = action;
@@ -645,6 +652,8 @@ public sealed class AuditRecord : Entity<AuditRecordId>
     }
 
     public OperationTaskId OperationTaskId { get; private set; }
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
     public long SequenceNo { get; private set; }
     public string PreviousIntegrityHash { get; private set; } = string.Empty;
     public string Action { get; private set; } = string.Empty;
@@ -698,6 +707,25 @@ public sealed class AuditRecord : Entity<AuditRecordId>
             operationTaskId,
             sequenceNo.ToString(System.Globalization.CultureInfo.InvariantCulture),
             previousIntegrityHash,
+            action,
+            actor,
+            occurredAtUtc.ToUniversalTime().ToString("O"),
+            correlationId);
+        return $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))).ToLowerInvariant()}";
+    }
+
+    public static string ComputeLegacyIntegrityHash(
+        string auditRecordId,
+        string operationTaskId,
+        string action,
+        string actor,
+        DateTimeOffset occurredAtUtc,
+        string correlationId)
+    {
+        var material = string.Join(
+            "\u001f",
+            auditRecordId,
+            operationTaskId,
             action,
             actor,
             occurredAtUtc.ToUniversalTime().ToString("O"),

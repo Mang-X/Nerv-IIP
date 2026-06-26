@@ -330,6 +330,8 @@ internal static class OpsEndpointResults
 
 internal static class OpsApprovalActorResolver
 {
+    private const string TrustedActorHeaderName = "X-Authenticated-Actor";
+
     public static string ResolveActor(HttpContext context)
     {
         var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -345,13 +347,13 @@ internal static class OpsApprovalActorResolver
             return $"user:{name}";
         }
 
-        var forwardedActor = ReadHeader(context, "X-Actor");
+        var forwardedActor = ReadHeader(context, TrustedActorHeaderName);
         if (!string.IsNullOrWhiteSpace(forwardedActor))
         {
-            return forwardedActor;
+            return NormalizeForwardedActor(forwardedActor);
         }
 
-        return string.IsNullOrWhiteSpace(name) ? "system:ops" : $"system:{name}";
+        throw new InvalidOperationTaskRequestException("Trusted approval actor is required.");
     }
 
     private static bool IsInternalService(string? value)
@@ -364,6 +366,14 @@ internal static class OpsApprovalActorResolver
         return context.Request.Headers.TryGetValue(name, out var values)
             ? values.FirstOrDefault()
             : null;
+    }
+
+    private static string NormalizeForwardedActor(string actor)
+    {
+        var trimmed = actor.Trim();
+        return trimmed.Contains(':', StringComparison.Ordinal)
+            ? trimmed
+            : $"user:{trimmed}";
     }
 }
 

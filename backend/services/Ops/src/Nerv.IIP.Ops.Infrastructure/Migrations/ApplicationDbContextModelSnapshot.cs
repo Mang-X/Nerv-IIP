@@ -48,6 +48,12 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasComment("Correlation identifier.");
 
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope for the Ops audit chain.");
+
                     b.Property<string>("IntegrityHash")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -64,6 +70,12 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasComment("Operation task identifier.");
 
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope for the Ops audit chain.");
+
                     b.Property<string>("PreviousIntegrityHash")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -76,9 +88,10 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SequenceNo");
-
                     b.HasIndex("OperationTaskId", "OccurredAtUtc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SequenceNo")
+                        .IsUnique();
 
                     b.ToTable("audit_records", "ops", t =>
                         {

@@ -300,6 +300,22 @@ public static class AuditIntegrityValidator
                 audit.CorrelationId);
             if (!string.Equals(audit.IntegrityHash, expectedHash, StringComparison.Ordinal))
             {
+                var legacyHash = AggregatesModel.OperationTaskAggregate.AuditRecord.ComputeLegacyIntegrityHash(
+                    audit.AuditRecordId,
+                    audit.OperationTaskId,
+                    audit.Action,
+                    audit.Actor,
+                    audit.OccurredAtUtc,
+                    audit.CorrelationId);
+                if (string.Equals(audit.IntegrityHash, legacyHash, StringComparison.Ordinal))
+                {
+                    return AuditIntegrityValidationResult.Invalid(
+                        checkedRecords,
+                        audit,
+                        "legacy-unchained-history",
+                        "Audit record was created before chain metadata was notarized; it is distinguishable from hash tampering but cannot prove chain integrity.");
+                }
+
                 return AuditIntegrityValidationResult.Invalid(
                     checkedRecords,
                     audit,

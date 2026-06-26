@@ -1882,6 +1882,13 @@
           "operationTaskId": {
             "type": "string"
           },
+          "sequenceNo": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "previousIntegrityHash": {
+            "type": "string"
+          },
           "action": {
             "type": "string"
           },

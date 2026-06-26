@@ -112,6 +112,7 @@ public sealed class EfOperationTaskApplicationService(
             now,
             cancellationToken);
         var items = new List<OperationTaskDispatchFact>();
+        await repository.LockAuditChainAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         var chainHead = await repository.GetAuditChainHeadAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         foreach (var task in pendingTasks)
         {
@@ -239,6 +240,7 @@ public sealed class EfOperationTaskApplicationService(
             return;
         }
 
+        await repository.LockAuditChainAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
         var head = await repository.GetAuditChainHeadAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
         var sequenceNo = head?.SequenceNo ?? 0;
         var previousHash = head?.IntegrityHash ?? string.Empty;

@@ -143,6 +143,7 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     public async Task Approval_required_task_is_not_claimable_until_approved()
     {
         var client = CreateAuthorizedClient("org-approval", "env-dev");
+        AddTrustedApprovalActor(client, "ops-approver");
 
         await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
             "lifecycle.high-risk-restart",
@@ -195,10 +196,9 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
-    public async Task Approval_actor_is_derived_from_server_context_and_body_actor_is_ignored()
+    public async Task Approval_endpoint_rejects_body_actor_when_trusted_server_actor_is_missing()
     {
         var client = CreateInternalServiceClient(factory);
-        client.DefaultRequestHeaders.Add("X-Actor", "user:trusted-approver");
 
         await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
             "lifecycle.high-risk-restart.actor-derived",
@@ -224,21 +224,22 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
                 "approved from server context",
                 "corr-approval-actor-derived"));
 
-        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
-        var approved = await ReadResponseDataAsync<OperationTaskResponse>(approvalResponse);
-        Assert.NotNull(approved);
-        Assert.Equal("user:trusted-approver", approved.Approval?.DecidedBy);
-        Assert.Contains(approved.AuditRecords, x =>
-            x.Action == "operation.approved"
-            && x.Actor == "user:trusted-approver");
-        Assert.DoesNotContain(approved.AuditRecords, x => x.Actor == "user:spoofed-body-actor");
+        Assert.Equal(HttpStatusCode.BadRequest, approvalResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{created.OperationTaskId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        var detail = await ReadResponseDataAsync<OperationTaskResponse>(detailResponse);
+        Assert.NotNull(detail);
+        Assert.Equal("approval-pending", detail.Status);
+        Assert.DoesNotContain(detail.AuditRecords, x => x.Action == "operation.approved");
+        Assert.DoesNotContain(detail.AuditRecords, x => x.Actor == "user:spoofed-body-actor");
     }
 
     [Fact]
     public async Task Approval_endpoint_rejects_requester_self_approval_from_server_context()
     {
         var client = CreateInternalServiceClient(factory);
-        client.DefaultRequestHeaders.Add("X-Actor", "local-admin");
+        AddTrustedApprovalActor(client, "local-admin");
 
         await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
             "lifecycle.high-risk-restart.self",
@@ -1021,6 +1022,11 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         client.DefaultRequestHeaders.Add("X-Connector-Secret", secret);
         client.DefaultRequestHeaders.Add("X-Organization-Id", organizationId);
         client.DefaultRequestHeaders.Add("X-Environment-Id", environmentId);
+    }
+
+    private static void AddTrustedApprovalActor(HttpClient client, string actor)
+    {
+        client.DefaultRequestHeaders.Add("X-Authenticated-Actor", actor);
     }
 
     private static CreateOperationTaskRequest CreateRestartRequest(string idempotencyKey, string organizationId = "org-001", string environmentId = "env-dev")
