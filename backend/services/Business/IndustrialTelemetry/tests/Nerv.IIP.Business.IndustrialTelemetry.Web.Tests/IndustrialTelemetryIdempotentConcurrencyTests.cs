@@ -116,6 +116,58 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     }
 
     [Fact]
+    public async Task Duplicate_sample_save_conflict_with_different_payload_still_raises_known_conflict_after_retry()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var winningContext = database.CreateContext();
+        await using var racingContext = database.CreateContext();
+        var winningCommand = new RecordTelemetrySampleCommand(
+            "org-001",
+            "env-dev",
+            "DEV-RACE-03",
+            "temperature",
+            new DateTimeOffset(2026, 6, 1, 11, 59, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 6, 1, 12, 0, 0, TimeSpan.Zero),
+            1,
+            91m,
+            96m,
+            94m,
+            "race-sample-conflict-001",
+            "SCADA-A",
+            "opc-ua-cell-race");
+        var racingCommand = winningCommand with
+        {
+            AverageValue = 95m
+        };
+        await new RecordTelemetrySampleCommandHandler(winningContext).Handle(winningCommand, CancellationToken.None);
+        var racingHandler = new RecordTelemetrySampleCommandHandler(racingContext);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<RecordTelemetrySampleCommand, RecordTelemetrySampleResult>(racingContext);
+        var attempts = 0;
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => behavior.Handle(
+            racingCommand,
+            async ct =>
+            {
+                attempts++;
+                var result = await racingHandler.Handle(racingCommand, ct);
+                if (attempts == 1)
+                {
+                    await winningContext.SaveChangesAsync(ct);
+                }
+
+                await racingContext.SaveChangesAsync(ct);
+                return result;
+            },
+            CancellationToken.None));
+
+        Assert.Equal(2, attempts);
+        Assert.Contains("conflicting payload", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var assertionContext = database.CreateContext();
+        Assert.Equal(1, await assertionContext.TelemetrySummaries.CountAsync());
+    }
+
+    [Fact]
     public async Task Duplicate_alarm_save_conflict_with_different_payload_still_raises_known_conflict_after_retry()
     {
         await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
