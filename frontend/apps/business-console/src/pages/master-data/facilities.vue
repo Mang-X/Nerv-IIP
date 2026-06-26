@@ -568,6 +568,13 @@ const editWorkshopOptions = computed(() =>
 const editLineOptions = computed(() =>
   lines.items.value.filter((l) => !editForm.plantCode || (l.siteCode ?? '') === editForm.plantCode),
 )
+// reka 的 SelectItem 不允许空串 value。“无车间（直挂工厂）”用哨兵值表示，仅作用于下拉绑定；
+// 提交仍按 空串→null 处理（见保存逻辑）。
+const NONE_OPTION = '__none__'
+const editWorkshopValue = computed({
+  get: () => editForm.workshopCode || NONE_OPTION,
+  set: (v) => { editForm.workshopCode = v === NONE_OPTION ? '' : v },
+})
 // 改挂工厂后，原车间 / 产线可能不再归属该工厂——置空让用户重选，避免归属错配。
 const editCascadeReady = shallowRef(false)
 watch(() => editForm.siteCode, () => {
@@ -959,7 +966,7 @@ function childLabelOf(type: string): string | undefined {
                   <SelectPro v-model="editForm.siteCode">
                     <SelectProTrigger id="edit-line-site"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                      <SelectProItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? NONE_OPTION">
                         {{ s.displayName ?? s.code }}
                       </SelectProItem>
                     </SelectProContent>
@@ -967,11 +974,11 @@ function childLabelOf(type: string): string | undefined {
                 </FieldPro>
                 <FieldPro>
                   <FieldProLabel for="edit-line-workshop">所属车间</FieldProLabel>
-                  <SelectPro v-model="editForm.workshopCode">
+                  <SelectPro v-model="editWorkshopValue">
                     <SelectProTrigger id="edit-line-workshop"><SelectProValue placeholder="无（直挂工厂）" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem value="">无（直挂工厂）</SelectProItem>
-                      <SelectProItem v-for="w in editWorkshopOptions" :key="w.code" :value="w.code ?? ''">
+                      <SelectProItem :value="NONE_OPTION">无（直挂工厂）</SelectProItem>
+                      <SelectProItem v-for="w in editWorkshopOptions" :key="w.code" :value="w.code ?? NONE_OPTION">
                         {{ w.displayName ?? w.code }}
                       </SelectProItem>
                     </SelectProContent>
@@ -985,7 +992,7 @@ function childLabelOf(type: string): string | undefined {
                   <SelectPro v-model="editForm.plantCode">
                     <SelectProTrigger id="edit-wc-plant"><SelectProValue placeholder="请选择工厂" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? ''">
+                      <SelectProItem v-for="s in sites.items.value" :key="s.code" :value="s.code ?? NONE_OPTION">
                         {{ s.displayName ?? s.code }}
                       </SelectProItem>
                     </SelectProContent>
@@ -996,7 +1003,7 @@ function childLabelOf(type: string): string | undefined {
                   <SelectPro v-model="editForm.lineCode">
                     <SelectProTrigger id="edit-wc-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem v-for="l in editLineOptions" :key="l.code" :value="l.code ?? ''">
+                      <SelectProItem v-for="l in editLineOptions" :key="l.code" :value="l.code ?? NONE_OPTION">
                         {{ l.displayName ?? l.code }}
                       </SelectProItem>
                     </SelectProContent>

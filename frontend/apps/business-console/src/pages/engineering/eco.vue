@@ -336,7 +336,7 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="changes"
       :row-key="(r) => r.changeNumber ?? ''"

@@ -145,7 +145,7 @@ function rowKey(row: ProcurementRow) {
       </template>
     </Toolbar>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="rows"
       :row-key="rowKey"

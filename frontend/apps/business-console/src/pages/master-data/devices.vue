@@ -282,7 +282,7 @@ async function submitDevice() {
                   <SelectPro v-model="createForm.lineCode">
                     <SelectProTrigger id="dev-line"><SelectProValue placeholder="请选择产线" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem v-for="l in lines.items.value" :key="l.code" :value="l.code ?? ''">
+                      <SelectProItem v-for="l in lines.items.value" :key="l.code" :value="l.code ?? '__none__'">
                         {{ l.displayName ?? l.code }}
                       </SelectProItem>
                     </SelectProContent>
@@ -293,7 +293,7 @@ async function submitDevice() {
                   <SelectPro v-model="createForm.workCenterCode">
                     <SelectProTrigger id="dev-wc"><SelectProValue placeholder="请选择工作中心" /></SelectProTrigger>
                     <SelectProContent>
-                      <SelectProItem v-for="w in workCenters.items.value" :key="w.code" :value="w.code ?? ''">
+                      <SelectProItem v-for="w in workCenters.items.value" :key="w.code" :value="w.code ?? '__none__'">
                         {{ w.displayName ?? w.code }}
                       </SelectProItem>
                     </SelectProContent>
@@ -321,7 +321,7 @@ async function submitDevice() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :searchable="false" :column-settings="false"
       :columns="columns"
       :rows="listRows"

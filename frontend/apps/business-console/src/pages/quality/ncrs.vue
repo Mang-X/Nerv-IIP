@@ -236,7 +236,7 @@ watch(targetNcr, (ncr) => {
       未找到 NCR {{ targetNcrId }}。请确认该 NCR 是否已归档或无权访问。
     </p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="ncrs"
       :row-key="(r) => r.id ?? r.code ?? '无'"

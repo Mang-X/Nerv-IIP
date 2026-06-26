@@ -348,6 +348,14 @@ const deptParentOptions = computed(() => {
   const blocked = descendantCodesOf(deptEditCode.value)
   return departments.items.value.filter((d) => !blocked.has(d.code ?? ''))
 })
+
+// reka 的 SelectItem 不允许空串 value（空串保留给“清空占位”）。顶级部门（无上级）
+// 用哨兵值表示，仅作用于下拉绑定；提交仍按 空串→null 处理（见 saveEditDept）。
+const NONE_PARENT = '__root__'
+const deptEditParent = computed({
+  get: () => deptEditForm.parentDepartmentCode || NONE_PARENT,
+  set: (v) => { deptEditForm.parentDepartmentCode = v === NONE_PARENT ? '' : v },
+})
 watch(deptEditOpen, (open) => { if (open) deptEditShowErrors.value = false })
 async function openEditDept(node: MasterDataTreeNodeData) {
   if (!node.code) return
@@ -695,7 +703,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <SelectPro v-model="deptForm.parentDepartmentCode">
                 <SelectProTrigger id="dept-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
                 <SelectProContent>
-                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? NONE_PARENT">
                     {{ d.displayName ?? d.code }}
                   </SelectProItem>
                 </SelectProContent>
@@ -733,11 +741,11 @@ function openMembers(row: BusinessConsoleResourceItem) {
             </FieldPro>
             <FieldPro>
               <FieldProLabel for="dept-edit-parent">上级部门</FieldProLabel>
-              <SelectPro v-model="deptEditForm.parentDepartmentCode">
+              <SelectPro v-model="deptEditParent">
                 <SelectProTrigger id="dept-edit-parent"><SelectProValue placeholder="无（顶级部门）" /></SelectProTrigger>
                 <SelectProContent>
-                  <SelectProItem value="">无（顶级部门）</SelectProItem>
-                  <SelectProItem v-for="d in deptParentOptions" :key="d.code" :value="d.code ?? ''">
+                  <SelectProItem :value="NONE_PARENT">无（顶级部门）</SelectProItem>
+                  <SelectProItem v-for="d in deptParentOptions" :key="d.code" :value="d.code ?? NONE_PARENT">
                     {{ d.displayName ?? d.code }}
                   </SelectProItem>
                 </SelectProContent>
@@ -783,7 +791,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <SelectPro v-model="teamForm.departmentCode">
                 <SelectProTrigger id="team-dept"><SelectProValue placeholder="请选择部门" /></SelectProTrigger>
                 <SelectProContent>
-                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? ''">
+                  <SelectProItem v-for="d in departments.items.value" :key="d.code" :value="d.code ?? NONE_PARENT">
                     {{ d.displayName ?? d.code }}
                   </SelectProItem>
                 </SelectProContent>
@@ -794,7 +802,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <SelectPro v-model="teamForm.shiftCode">
                 <SelectProTrigger id="team-shift"><SelectProValue placeholder="请选择班次" /></SelectProTrigger>
                 <SelectProContent>
-                  <SelectProItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? ''">
+                  <SelectProItem v-for="s in shifts.items.value" :key="s.code" :value="s.code ?? NONE_PARENT">
                     {{ s.displayName ?? s.code }}
                   </SelectProItem>
                 </SelectProContent>

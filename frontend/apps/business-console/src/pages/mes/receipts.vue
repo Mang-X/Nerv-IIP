@@ -237,7 +237,7 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="receiptRequests"
       row-key="receiptRequestId"

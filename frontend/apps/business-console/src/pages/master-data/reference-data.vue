@@ -336,7 +336,7 @@ function isNonEmpty(value: string) {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :searchable="false" :column-settings="false"
           v-model:sort="sort"
           :columns="columns"

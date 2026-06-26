@@ -278,7 +278,7 @@ function isPresent(value: string | undefined | null): value is string {
       未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
     </p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="inspectionPlans"
       :row-key="(r) => r.id ?? r.code ?? '无'"

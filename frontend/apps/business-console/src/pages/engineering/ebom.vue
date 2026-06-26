@@ -422,7 +422,7 @@ function uomLabel(code?: string | null) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="eboms"
       :row-key="(r) => `${r.bomCode}:${r.revision}`"

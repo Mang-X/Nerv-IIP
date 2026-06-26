@@ -54,6 +54,9 @@ const props = withDefaults(
     selectable?: boolean
     /** Column show/hide + density menu. */
     columnSettings?: boolean
+    /** Built-in client-side pagination footer + row slicing. Turn off (`:pagination="false"`)
+     *  when the parent owns paging (server-side) and renders its own DataTablePaginationPro. */
+    pagination?: boolean
     /** Initial page size. */
     pageSize?: number
     pageSizeOptions?: number[]
@@ -81,6 +84,7 @@ const props = withDefaults(
     searchPlaceholder: '搜索…',
     selectable: false,
     columnSettings: true,
+    pagination: true,
     pageSize: 10,
     pageSizeOptions: () => [10, 20, 50, 100],
     density: 'comfortable',
@@ -313,6 +317,8 @@ const page = ref(1)
 const innerPageSize = ref(props.pageSize)
 const totalItems = computed(() => processed.value.length)
 const pagedRows = computed(() => {
+  // When the parent owns paging (`:pagination="false"`), render the given rows verbatim.
+  if (!props.pagination) return processed.value
   const start = (page.value - 1) * innerPageSize.value
   return processed.value.slice(start, start + innerPageSize.value)
 })
@@ -688,7 +694,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     </div>
 
     <!-- ░░ Footer / pagination ░░ -->
-    <template v-if="!loading && totalItems > 0">
+    <template v-if="pagination && !loading && totalItems > 0">
       <Separator />
       <DataTablePaginationPro
         class="px-3 py-3 sm:px-4"

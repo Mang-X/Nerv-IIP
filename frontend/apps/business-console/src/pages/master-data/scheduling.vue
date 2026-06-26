@@ -743,7 +743,7 @@ const sortedExceptions = computed(() =>
           </template>
         </Toolbar>
         <p v-if="shiftListError" class="text-sm text-destructive" role="alert">{{ shiftListError }}</p>
-        <DataTablePro :searchable="false" :column-settings="false" :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
+        <DataTablePro :pagination="false" :searchable="false" :column-settings="false" :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
           <template #cell-active="{ row }"><StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" /></template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions :row="row" entity-label="班次" :detail-fields="baseDetailFields(row, '班次编码', '班次名称')" :actions="shiftActions" @edit="openEditShift" />

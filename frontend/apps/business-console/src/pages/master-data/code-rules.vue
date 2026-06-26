@@ -505,7 +505,7 @@ async function submitForm() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :searchable="false" :column-settings="false"
       :columns="columns"
       :rows="pagedRules"

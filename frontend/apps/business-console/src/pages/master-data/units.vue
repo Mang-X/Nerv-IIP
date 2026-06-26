@@ -525,7 +525,7 @@ async function submitConversion() {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="columns"
           :rows="listRows"
           :row-key="rowKey"
@@ -624,7 +624,7 @@ async function submitConversion() {
 
         <p v-if="conversionListError" class="text-sm text-destructive" role="alert">{{ conversionListError }}</p>
 
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="conversionColumns"
           :rows="conversionRows"
           :row-key="rowKey"

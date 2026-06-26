@@ -135,7 +135,7 @@ function isNonEmpty(value: string) {
       <span class="text-sm text-muted-foreground">{{ formatDateTime(lastSchedule?.scheduledAtUtc) }}</span>
     </div>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       :columns="columns"
       :rows="pagedAssignments"
       :row-key="rowKey"

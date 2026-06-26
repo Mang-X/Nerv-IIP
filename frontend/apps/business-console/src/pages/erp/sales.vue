@@ -324,7 +324,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="opportunitiesError" class="text-sm text-destructive" role="alert">{{ opportunitiesError }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="opportunityColumns"
           :rows="opportunities.items.value"
           :row-key="(r: BusinessConsoleErpOpportunityItem) => r.opportunityNo ?? '商机'"
@@ -366,7 +366,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="quotationsError" class="text-sm text-destructive" role="alert">{{ quotationsError }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="quotationColumns"
           :rows="quotations.items.value"
           :row-key="(r: BusinessConsoleErpQuotationItem) => r.quotationNo ?? '报价单'"
@@ -408,7 +408,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="ordersError" class="text-sm text-destructive" role="alert">{{ ordersError }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="orderColumns"
           :rows="orders.salesOrders.value"
           :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
@@ -435,7 +435,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="deliveriesError" class="text-sm text-destructive" role="alert">{{ deliveriesError }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="deliveryColumns"
           :rows="deliveries.items.value"
           :row-key="(r: BusinessConsoleErpDeliveryOrderItem) => r.deliveryOrderNo ?? '发货单'"

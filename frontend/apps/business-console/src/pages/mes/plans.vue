@@ -268,7 +268,7 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro
+    <DataTablePro :pagination="false"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedPlans"

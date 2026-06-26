@@ -221,11 +221,12 @@ function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
 // 计划建议分型筛选后的可见行。
 const visibleSuggestions = computed(() => {
   const t = suggestionTypeFilter.type
-  if (!t) return suggestions.value
+  // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
+  if (!t || t === 'all') return suggestions.value
   return suggestions.value.filter((s) => s.suggestionType === t)
 })
 const suggestionTypeFilterOptions = [
-  { label: '全部类型', value: '' },
+  { label: '全部类型', value: 'all' },
   { label: '生产建议 (→MES)', value: 'planned-work-order' },
   { label: '采购建议 (→ERP)', value: 'planned-purchase' },
 ]

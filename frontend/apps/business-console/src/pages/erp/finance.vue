@@ -350,7 +350,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(receivables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(receivables.error.value) }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="receivableColumns"
           :rows="receivables.items.value"
           :row-key="(r: BusinessConsoleErpReceivableItem) => r.receivableNo ?? r.sourceDocumentNo ?? '应收'"
@@ -392,7 +392,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(payables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(payables.error.value) }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="payableColumns"
           :rows="payables.items.value"
           :row-key="(r: BusinessConsoleErpPayableItem) => r.payableNo ?? r.sourceDocumentNo ?? '应付'"
@@ -426,7 +426,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(vouchers.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(vouchers.error.value) }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="voucherColumns"
           :rows="vouchers.items.value"
           :row-key="(r: BusinessConsoleErpJournalVoucherItem) => r.voucherNo ?? '凭证'"
@@ -460,7 +460,7 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(costCandidates.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(costCandidates.error.value) }}</p>
-        <DataTablePro
+        <DataTablePro :pagination="false"
           :columns="costCandidateColumns"
           :rows="costCandidates.items.value"
           :row-key="(r: BusinessConsoleErpCostCandidateItem) => r.candidateNo ?? r.sourceDocumentNo ?? '成本候选'"
