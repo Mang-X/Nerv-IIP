@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
+using System.Security.Cryptography;
+using System.Text;
 using NetCorePal.Extensions.Repository;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
@@ -13,6 +16,8 @@ public interface IOperationTaskRepository : IRepository<OperationTask, Operation
     Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default);
     Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default);
     Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default);
+    Task LockAuditChainAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default);
+    Task<AuditChainHead?> GetAuditChainHeadAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default);
 }
 
 public sealed class OperationTaskRepository(ApplicationDbContext context)
@@ -67,6 +72,7 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
                 LIMIT {cappedTake}
                 """)
             .Include(x => x.Attempts)
+            .Include(x => x.AuditRecords)
             .ToListAsync(cancellationToken);
     }
 
@@ -84,5 +90,38 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
     public Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new AuditRecordId($"audit-{Guid.CreateVersion7():N}"));
+    }
+
+    public async Task LockAuditChainAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
+    {
+        if (!DbContext.Database.IsRelational())
+        {
+            return;
+        }
+
+        var lockKey = ComputeAuditChainLockKey(organizationId, environmentId);
+        await DbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            cancellationToken);
+    }
+
+    public async Task<AuditChainHead?> GetAuditChainHeadAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.AuditRecords
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .OrderByDescending(x => x.SequenceNo)
+            .ThenByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new AuditChainHead(x.SequenceNo, x.IntegrityHash))
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private static long ComputeAuditChainLockKey(string organizationId, string environmentId)
+    {
+        var material = $"ops-audit-chain\u001f{organizationId}\u001f{environmentId}";
+        Span<byte> hash = stackalloc byte[32];
+        SHA256.HashData(Encoding.UTF8.GetBytes(material), hash);
+        return BitConverter.ToInt64(hash);
     }
 }

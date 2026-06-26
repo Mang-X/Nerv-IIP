@@ -129,6 +129,8 @@ public sealed record OperationAttemptFact(
 public sealed record AuditRecordFact(
     string AuditRecordId,
     string OperationTaskId,
+    long SequenceNo,
+    string PreviousIntegrityHash,
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
@@ -150,9 +152,32 @@ public sealed record OperationTaskListItemFact(
 
 public sealed record AuditRecordListResult(IReadOnlyList<AuditRecordFact> Items);
 
+public sealed record AuditIntegrityValidationResult(
+    bool IsValid,
+    int CheckedRecords,
+    string? FirstInvalidAuditRecordId,
+    long? FirstInvalidSequenceNo,
+    string? FailureCode,
+    string? FailureMessage)
+{
+    public static AuditIntegrityValidationResult Valid(int checkedRecords) =>
+        new(true, checkedRecords, null, null, null, null);
+
+    public static AuditIntegrityValidationResult Invalid(
+        int checkedRecords,
+        AuditRecordFact audit,
+        string failureCode,
+        string failureMessage) =>
+        new(false, checkedRecords, audit.AuditRecordId, audit.SequenceNo, failureCode, failureMessage);
+}
+
+public sealed record AuditChainHead(long SequenceNo, string IntegrityHash);
+
 public sealed record AuditIntentResult(
     string AuditRecordId,
     string OperationTaskId,
+    long SequenceNo,
+    string PreviousIntegrityHash,
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
@@ -231,5 +256,77 @@ public static class AuditIntentValidator
         {
             throw new InvalidOperationTaskRequestException($"Audit intent {fieldName} is required.");
         }
+    }
+}
+
+public static class AuditIntegrityValidator
+{
+    public static AuditIntegrityValidationResult Validate(IReadOnlyList<AuditRecordFact> records)
+    {
+        var ordered = records.OrderBy(x => x.SequenceNo).ThenBy(x => x.AuditRecordId, StringComparer.Ordinal).ToArray();
+        var expectedSequenceNo = 1L;
+        var previousHash = string.Empty;
+
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var audit = ordered[index];
+            var checkedRecords = index + 1;
+            if (audit.SequenceNo != expectedSequenceNo)
+            {
+                return AuditIntegrityValidationResult.Invalid(
+                    checkedRecords,
+                    audit,
+                    "sequence-gap",
+                    $"Expected audit sequence {expectedSequenceNo}, found {audit.SequenceNo}.");
+            }
+
+            if (!string.Equals(audit.PreviousIntegrityHash, previousHash, StringComparison.Ordinal))
+            {
+                return AuditIntegrityValidationResult.Invalid(
+                    checkedRecords,
+                    audit,
+                    "previous-hash-mismatch",
+                    "Audit record previous hash does not match the prior record hash.");
+            }
+
+            var expectedHash = AggregatesModel.OperationTaskAggregate.AuditRecord.ComputeIntegrityHash(
+                audit.AuditRecordId,
+                audit.OperationTaskId,
+                audit.SequenceNo,
+                audit.PreviousIntegrityHash,
+                audit.Action,
+                audit.Actor,
+                audit.OccurredAtUtc,
+                audit.CorrelationId);
+            if (!string.Equals(audit.IntegrityHash, expectedHash, StringComparison.Ordinal))
+            {
+                var legacyHash = AggregatesModel.OperationTaskAggregate.AuditRecord.ComputeLegacyIntegrityHash(
+                    audit.AuditRecordId,
+                    audit.OperationTaskId,
+                    audit.Action,
+                    audit.Actor,
+                    audit.OccurredAtUtc,
+                    audit.CorrelationId);
+                if (string.Equals(audit.IntegrityHash, legacyHash, StringComparison.Ordinal))
+                {
+                    return AuditIntegrityValidationResult.Invalid(
+                        checkedRecords,
+                        audit,
+                        "legacy-unchained-history",
+                        "Audit record was created before chain metadata was notarized; it is distinguishable from hash tampering but cannot prove chain integrity.");
+                }
+
+                return AuditIntegrityValidationResult.Invalid(
+                    checkedRecords,
+                    audit,
+                    "hash-mismatch",
+                    "Audit record integrity hash does not match its immutable fields.");
+            }
+
+            expectedSequenceNo++;
+            previousHash = audit.IntegrityHash;
+        }
+
+        return AuditIntegrityValidationResult.Valid(ordered.Length);
     }
 }

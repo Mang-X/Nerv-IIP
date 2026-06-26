@@ -91,6 +91,7 @@ public sealed class EfOperationTaskApplicationService(
         }
 
         task.AssignPendingAuditIds(pendingAuditIds);
+        await AssignAuditChainAsync(task, pendingAuditIds, cancellationToken);
         await repository.AddAsync(task, cancellationToken);
         return task.ToDetailFact().ToContract();
     }
@@ -111,22 +112,33 @@ public sealed class EfOperationTaskApplicationService(
             now,
             cancellationToken);
         var items = new List<OperationTaskDispatchFact>();
+        await repository.LockAuditChainAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
+        var chainHead = await repository.GetAuditChainHeadAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         foreach (var task in pendingTasks)
         {
-            task.AbandonExpiredLease(await repository.NextAuditRecordIdAsync(cancellationToken), now);
+            var timeoutAuditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+            var auditCountBeforeTimeout = task.AuditRecords.Count;
+            task.AbandonExpiredLease(timeoutAuditId, now);
+            if (task.AuditRecords.Count > auditCountBeforeTimeout)
+            {
+                chainHead = AssignAuditChain(task, [timeoutAuditId], chainHead);
+            }
+
             if (!string.Equals(task.Status, "queued", StringComparison.Ordinal))
             {
                 continue;
             }
 
+            var claimAuditId = await repository.NextAuditRecordIdAsync(cancellationToken);
             items.Add(task.Claim(
                 await repository.NextAttemptIdAsync(cancellationToken),
-                await repository.NextAuditRecordIdAsync(cancellationToken),
+                claimAuditId,
                 Guid.NewGuid().ToString("N"),
                 request.ConnectorHostId,
                 now,
                 TimeSpan.FromSeconds(Math.Clamp(task.DefaultLeaseDurationSeconds, 30, 3600)),
                 Math.Clamp(task.DefaultMaxAttempts, 1, 10)));
+            chainHead = AssignAuditChain(task, [claimAuditId], chainHead);
         }
 
         return new PendingOperationTasksResult(items).ToContract();
@@ -136,24 +148,30 @@ public sealed class EfOperationTaskApplicationService(
     {
         var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(operationTaskId);
-        return task.AbandonLease(
+        var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+        task.AbandonLease(
             request.LeaseId,
             request.ConnectorHostId,
             request.AbandonReason,
-            await repository.NextAuditRecordIdAsync(cancellationToken),
-            now).ToContract();
+            auditId,
+            now);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        return task.ToDetailFact().ToContract();
     }
 
     public async Task<OperationTaskResponse> HeartbeatLeaseAsync(string operationTaskId, HeartbeatOperationTaskLeaseRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(operationTaskId);
-        return task.HeartbeatLease(
+        var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+        task.HeartbeatLease(
             request.LeaseId,
             request.ConnectorHostId,
             now,
             TimeSpan.FromSeconds(Math.Clamp(request.LeaseDurationSeconds, 30, 3600)),
-            await repository.NextAuditRecordIdAsync(cancellationToken)).ToContract();
+            auditId);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        return task.ToDetailFact().ToContract();
     }
 
     public async Task<OperationTaskResponse> RecordResultAsync(OperationResult result, CancellationToken cancellationToken)
@@ -161,37 +179,98 @@ public sealed class EfOperationTaskApplicationService(
         var task = await repository.GetByIdAsync(result.OperationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(result.OperationTaskId);
         var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
-        return task.RecordResult(result.ToDomainInput(), auditId).ToContract();
+        task.RecordResult(result.ToDomainInput(), auditId);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        return task.ToDetailFact().ToContract();
     }
 
     public async Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var task = await repository.GetByIdAsync(request.OperationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(request.OperationTaskId);
-        return task.SubmitAuditIntent(
+        var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+        var result = task.SubmitAuditIntent(
             request.ToDomainInput(),
-            await repository.NextAuditRecordIdAsync(cancellationToken),
-            now).ToContract();
+            auditId,
+            now);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        var audit = task.AuditRecords.Single(x => x.Id == auditId);
+        return new AuditIntentResponse(
+            audit.Id.Id,
+            audit.OperationTaskId.Id,
+            audit.SequenceNo,
+            audit.PreviousIntegrityHash,
+            result.Action,
+            result.Actor,
+            result.OccurredAtUtc,
+            result.CorrelationId,
+            audit.IntegrityHash);
     }
 
     public async Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(operationTaskId);
-        return task.Approve(
+        var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+        task.Approve(
             request.ToDomainInput(),
-            await repository.NextAuditRecordIdAsync(cancellationToken),
-            now).ToContract();
+            auditId,
+            now);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        return task.ToDetailFact().ToContract();
     }
 
     public async Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var task = await repository.GetByIdAsync(operationTaskId, cancellationToken)
             ?? throw new OperationTaskNotFoundException(operationTaskId);
-        return task.Reject(
+        var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+        task.Reject(
             request.ToDomainInput(),
-            await repository.NextAuditRecordIdAsync(cancellationToken),
-            now).ToContract();
+            auditId,
+            now);
+        await AssignAuditChainAsync(task, [auditId], cancellationToken);
+        return task.ToDetailFact().ToContract();
+    }
+
+    private async Task AssignAuditChainAsync(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, CancellationToken cancellationToken)
+    {
+        if (auditRecordIds.Count == 0)
+        {
+            return;
+        }
+
+        await repository.LockAuditChainAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
+        var head = await repository.GetAuditChainHeadAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
+        var sequenceNo = head?.SequenceNo ?? 0;
+        var previousHash = head?.IntegrityHash ?? string.Empty;
+
+        foreach (var auditRecordId in auditRecordIds)
+        {
+            sequenceNo++;
+            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
+            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
+        }
+    }
+
+    private static AuditChainHead? AssignAuditChain(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
+    {
+        if (auditRecordIds.Count == 0)
+        {
+            return head;
+        }
+
+        var sequenceNo = head?.SequenceNo ?? 0;
+        var previousHash = head?.IntegrityHash ?? string.Empty;
+
+        foreach (var auditRecordId in auditRecordIds)
+        {
+            sequenceNo++;
+            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
+            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
+        }
+
+        return new AuditChainHead(sequenceNo, previousHash);
     }
 
     private async Task<OperationTemplateSnapshot> ResolveTemplateAsync(string operationCode, CancellationToken cancellationToken)

@@ -176,6 +176,8 @@ internal static class OpsContractMapper
         return new AuditIntentResponse(
             result.AuditRecordId,
             result.OperationTaskId,
+            result.SequenceNo,
+            result.PreviousIntegrityHash,
             result.Action,
             result.Actor,
             result.OccurredAtUtc,
@@ -232,6 +234,8 @@ internal static class OpsContractMapper
         return new AuditRecordSummary(
             auditRecord.AuditRecordId,
             auditRecord.OperationTaskId,
+            auditRecord.SequenceNo,
+            auditRecord.PreviousIntegrityHash,
             auditRecord.Action,
             auditRecord.Actor,
             auditRecord.OccurredAtUtc,

@@ -48,11 +48,17 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasComment("Correlation identifier.");
 
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope for the Ops audit chain.");
+
                     b.Property<string>("IntegrityHash")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
-                        .HasComment("Tamper-evident SHA-256 hash over immutable audit fields.");
+                        .HasComment("Tamper-evident SHA-256 hash over immutable audit fields plus sequence and previous hash.");
 
                     b.Property<DateTimeOffset>("OccurredAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -64,9 +70,28 @@ namespace Nerv.IIP.Ops.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasComment("Operation task identifier.");
 
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope for the Ops audit chain.");
+
+                    b.Property<string>("PreviousIntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasComment("Previous audit record integrity hash in the organization and environment chain; empty for genesis.");
+
+                    b.Property<long>("SequenceNo")
+                        .HasColumnType("bigint")
+                        .HasComment("Monotonic Ops audit chain sequence number within organization and environment scope.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OperationTaskId", "OccurredAtUtc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SequenceNo")
+                        .IsUnique();
 
                     b.ToTable("audit_records", "ops", t =>
                         {

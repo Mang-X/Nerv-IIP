@@ -17,6 +17,7 @@ public interface IOpsStateStore
     OperationTaskDetailFact Get(string operationTaskId);
     OperationTaskListResult ListTasks(string organizationId, string environmentId, int? page, int? pageSize);
     AuditRecordListResult ListAuditRecords(string organizationId, string environmentId, string? operationTaskId);
+    AuditIntegrityValidationResult ValidateAuditIntegrity(string organizationId, string environmentId);
     AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, DateTimeOffset now);
     OperationTemplateFact CreateTemplate(CreateOperationTemplateInput request, DateTimeOffset now);
     OperationTemplateListResult ListTemplates();
@@ -160,6 +161,14 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         }
     }
 
+    public AuditIntegrityValidationResult ValidateAuditIntegrity(string organizationId, string environmentId)
+    {
+        lock (_gate)
+        {
+            return AuditIntegrityValidator.Validate(ListAuditRecords(organizationId, environmentId, null).Items);
+        }
+    }
+
     public AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, DateTimeOffset now)
     {
         lock (_gate)
@@ -171,6 +180,8 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             return new AuditIntentResult(
                 audit.AuditRecordId,
                 audit.OperationTaskId,
+                audit.SequenceNo,
+                audit.PreviousIntegrityHash,
                 audit.Action,
                 audit.Actor,
                 audit.OccurredAtUtc,
@@ -470,7 +481,6 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
 
     private static void ValidateApprovalDecision(OperationTaskFact task, DecideOperationApprovalInput request)
     {
-        // TODO: Keep this in-memory validation aligned with OperationTask.ValidateApprovalDecision.
         if (!string.Equals(task.OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(task.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
         {
@@ -482,10 +492,28 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             throw new InvalidOperationTaskRequestException("Approval decision actor is required.");
         }
 
+        if (IsSameActor(task.RequestedBy, request.Actor))
+        {
+            throw new InvalidOperationTaskRequestException("Operation requester cannot approve or reject the same operation task.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.CorrelationId))
         {
             throw new InvalidOperationTaskRequestException("Approval decision correlation id is required.");
         }
+    }
+
+    private static bool IsSameActor(string left, string right)
+    {
+        static string Normalize(string value)
+        {
+            var trimmed = value.Trim();
+            return trimmed.StartsWith("user:", StringComparison.OrdinalIgnoreCase)
+                ? trimmed["user:".Length..]
+                : trimmed;
+        }
+
+        return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
     }
 
     private void RequeueExpiredLeasesUnlocked(string organizationId, string environmentId, DateTimeOffset now)
@@ -544,9 +572,24 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     private AuditRecordFact AddAudit(string operationTaskId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
         var auditRecordId = $"audit-{_auditRecords.Count + 1:000000}";
+        var task = FindTask(operationTaskId);
+        var head = _auditRecords
+            .Where(x =>
+            {
+                var auditTask = FindTask(x.OperationTaskId);
+                return auditTask.OrganizationId == task.OrganizationId
+                    && auditTask.EnvironmentId == task.EnvironmentId;
+            })
+            .OrderByDescending(x => x.SequenceNo)
+            .ThenByDescending(x => x.OccurredAtUtc)
+            .FirstOrDefault();
+        var sequenceNo = (head?.SequenceNo ?? 0) + 1;
+        var previousIntegrityHash = head?.IntegrityHash ?? string.Empty;
         var audit = new AuditRecordFact(
             auditRecordId,
             operationTaskId,
+            sequenceNo,
+            previousIntegrityHash,
             action,
             actor,
             occurredAtUtc,
@@ -554,6 +597,8 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
             AggregatesModel.OperationTaskAggregate.AuditRecord.ComputeIntegrityHash(
                 auditRecordId,
                 operationTaskId,
+                sequenceNo,
+                previousIntegrityHash,
                 action,
                 actor,
                 occurredAtUtc,

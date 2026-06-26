@@ -50,6 +50,8 @@ export type NervIipContractsOpsOperationAttemptSummary = {
 export type NervIipContractsOpsAuditRecordSummary = {
     auditRecordId?: string;
     operationTaskId?: string;
+    sequenceNo?: number;
+    previousIntegrityHash?: string;
     action?: string;
     actor?: string;
     occurredAtUtc?: string;

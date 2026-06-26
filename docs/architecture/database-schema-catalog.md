@@ -550,12 +550,13 @@ Source:
 3. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260517055218_InitialCreate.cs`
 4. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260517074341_SchemaGovernanceMetadata.cs`
 5. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260526091719_AddOperationApprovalFields.cs`
+6. `backend/services/Ops/src/Nerv.IIP.Ops.Infrastructure/Migrations/20260626130722_AddOpsAuditHashChain.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
 | `operation_tasks` | business | 运维操作任务聚合根，记录目标实例、操作码、请求人、幂等范围、参数、审批状态和当前执行状态。 | `Id` 为业务生成 string 强类型 ID；`IdempotencyScope` 唯一；`OrganizationId + EnvironmentId + Status + RequestedAtUtc` 支持任务列表、审批队列和状态扫描。 |
 | `operation_attempts` | business | 操作任务执行尝试，记录 connector host 领取、开始、完成和失败原因。 | `OperationTaskId` 指向 `operation_tasks`；索引用于按任务查执行历史。 |
-| `audit_records` | business | 操作任务审计记录，记录动作、操作者、发生时间、correlation id 和 `IntegrityHash`。 | `OperationTaskId + OccurredAtUtc` 支持按任务时间线展示审计；`IntegrityHash` 是不可变审计字段的 tamper-evident SHA-256 摘要。 |
+| `audit_records` | business | 操作任务审计记录，记录组织/环境 scope、动作、操作者、发生时间、correlation id、`SequenceNo`、`PreviousIntegrityHash` 和 `IntegrityHash`。 | `OperationTaskId + OccurredAtUtc` 支持按任务时间线展示审计；`OrganizationId + EnvironmentId + SequenceNo` 唯一约束保证同 scope 审计链序号不重复；`IntegrityHash` 对不可变审计字段、序号和前序哈希做 SHA-256 摘要，`PreviousIntegrityHash` 将记录链接为可校验链。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于消费幂等和重试。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`；用于 CAP 内部协调。 |
@@ -565,8 +566,9 @@ Status value sources:
 
 1. `operation_tasks.Status` 当前由 `OperationTask` 聚合行为维护：`approval-pending`、`queued`、`dispatched`、`completed`、`failed`、`rejected`。
 2. `operation_templates.RequiresApproval=true` 的高风险动作会先进入 Ops 自有 approval gate；审批通过后才可被 Connector Host claim，审批拒绝后进入 `rejected` 终态。
-3. `operation_attempts.Status` 当前由 `OperationAttempt` 维护：`started`、`completed`、`failed`。
-4. Connector Protocol 的 `OperationResult.ExecutionStatus=succeeded` 映射为 Ops task/attempt 的 `completed`；其它失败结果映射为 `failed`。
+3. Ops 审批决策 actor 由服务端认证/转发上下文派生，不信任请求 body 的 `Actor`；请求人不得审批或拒绝自己发起的高风险动作。
+4. `operation_attempts.Status` 当前由 `OperationAttempt` 维护：`started`、`completed`、`failed`。
+5. Connector Protocol 的 `OperationResult.ExecutionStatus=succeeded` 映射为 Ops task/attempt 的 `completed`；其它失败结果映射为 `failed`。
 
 Known gaps:
 
