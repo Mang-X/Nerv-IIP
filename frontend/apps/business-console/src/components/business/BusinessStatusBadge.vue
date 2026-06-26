@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge } from '@nerv-iip/ui'
+import { BadgePro } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -48,20 +48,20 @@ const variant = computed(() => {
     return 'success'
   }
   if (['running', 'inprogress', 'in-progress', 'started', 'manual', 'released', 'issued', 'scheduled'].includes(value)) {
-    return 'default'
+    return 'neutral'
   }
   if (['blocked', 'failed', 'rejected', 'unavailable', 'cancelled', 'disabled'].includes(value)) {
-    return 'destructive'
+    return 'danger'
   }
   if (['pending', 'warning', 'conditional-release', 'conditionalrelease', 'held', 'paused', 'open', 'created', 'planned', 'queued', 'submitted'].includes(value)) {
     return 'warning'
   }
-  return 'secondary'
+  return 'neutral'
 })
 </script>
 
 <template>
-  <Badge class="max-w-32 truncate rounded-sm" :aria-label="`状态：${label}`" :variant="variant">
+  <BadgePro class="max-w-32 truncate rounded-sm" :aria-label="`状态：${label}`" :variant="variant">
     {{ label }}
-  </Badge>
+  </BadgePro>
 </template>

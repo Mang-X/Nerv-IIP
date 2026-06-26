@@ -70,15 +70,15 @@ vi.mock('@/composables/usePagedList', () => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // reka-ui Select 换成原生 <select>/<option>，让测试能枚举状态选项的 value 集合。
 const selectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 // RowActions 下拉默认 portal 渲染，stub 成就地容器，让审批触发器进入 DOM 可被断言。
 const rowActionStubs = {

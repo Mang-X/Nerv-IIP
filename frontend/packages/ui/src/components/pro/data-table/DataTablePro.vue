@@ -54,8 +54,22 @@ const props = withDefaults(
     selectable?: boolean
     /** Column show/hide + density menu. */
     columnSettings?: boolean
-    /** Initial page size. */
-    pageSize?: number
+    /** Pagination footer. Default on. */
+    pagination?: boolean
+    /** Server-driven pagination: parent owns the page window. Rows render verbatim (no client
+     *  slicing); the footer reflects `page` / `total` and emits `update:page` / `update:pageSize`. */
+    manual?: boolean
+    /** Controlled current page (1-based) — manual mode (`v-model:page`). */
+    page?: number
+    /** External total row count — manual mode（对应调用点的 `:total-items`）。 */
+    totalItems?: number
+    /** Initial (client mode) or controlled (manual mode) page size. */
+    pageSize?: number | string
+    /** Controlled sort state (`v-model:sort`); uncontrolled (internal) when omitted. */
+    sort?: DataTableProSort | null
+    /** Sort rows client-side. Turn off (`:client-sort="false"`) when the parent sorts
+     *  (server-side / page-controlled) and feeds already-sorted rows. */
+    clientSort?: boolean
     pageSizeOptions?: number[]
     /** Initial density. */
     density?: DataTableProDensity
@@ -81,6 +95,9 @@ const props = withDefaults(
     searchPlaceholder: '搜索…',
     selectable: false,
     columnSettings: true,
+    pagination: true,
+    manual: false,
+    clientSort: true,
     pageSize: 10,
     pageSizeOptions: () => [10, 20, 50, 100],
     density: 'comfortable',
@@ -92,6 +109,9 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:selected': [value: (string | number)[]]
+  'update:page': [value: number]
+  'update:pageSize': [value: number]
+  'update:sort': [value: DataTableProSort | null]
   'row-click': [row: T]
   refresh: []
 }>()
@@ -273,23 +293,28 @@ const filterChips = computed<FilterChip[]>(() =>
 )
 
 // ── Sorting (client-side) ──
-const sort = ref<DataTableProSort | null>(null)
+const innerSort = ref<DataTableProSort | null>(null)
+// Controlled when the parent passes `sort` (including null); otherwise internal.
+const currentSort = computed(() => (props.sort !== undefined ? props.sort : innerSort.value))
 function cycleSort(col: DataTableProColumn<T>) {
   if (!col.sortable) return
-  const cur = sort.value
-  if (!cur || cur.key !== col.key) sort.value = { key: col.key, direction: 'asc' }
-  else if (cur.direction === 'asc') sort.value = { key: col.key, direction: 'desc' }
-  else sort.value = null
+  const cur = currentSort.value
+  let next: DataTableProSort | null
+  if (!cur || cur.key !== col.key) next = { key: col.key, direction: 'asc' }
+  else if (cur.direction === 'asc') next = { key: col.key, direction: 'desc' }
+  else next = null
+  emit('update:sort', next)
+  if (props.sort === undefined) innerSort.value = next
 }
 function sortStateOf(key: string): false | 'asc' | 'desc' {
-  return sort.value?.key === key ? sort.value.direction : false
+  return currentSort.value?.key === key ? currentSort.value.direction : false
 }
 
 // ── Data pipeline: filter → search → sort ──
 const processed = computed(() => {
   let out = props.rows.filter((r) => matchesSearch(r) && matchesFilters(r))
-  if (sort.value) {
-    const { key, direction } = sort.value
+  if (props.clientSort && currentSort.value) {
+    const { key, direction } = currentSort.value
     const col = props.columns.find((c) => c.key === key)
     const sign = direction === 'desc' ? -1 : 1
     out = [...out].sort((a, b) => {
@@ -309,16 +334,31 @@ const processed = computed(() => {
 })
 
 // ── Pagination ──
-const page = ref(1)
-const innerPageSize = ref(props.pageSize)
-const totalItems = computed(() => processed.value.length)
+const innerPage = ref(1)
+const innerPageSize = ref(Number(props.pageSize) || 10)
+// Manual (server-driven) mode: parent owns page / size / total. Otherwise paginate client-side.
+const currentPage = computed(() => (props.manual ? (props.page ?? 1) : innerPage.value))
+const currentPageSize = computed(() => (props.manual ? (Number(props.pageSize) || 10) : innerPageSize.value))
+const resolvedTotal = computed(() => (props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length))
 const pagedRows = computed(() => {
-  const start = (page.value - 1) * innerPageSize.value
+  // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
+  if (props.manual || !props.pagination) return processed.value
+  const start = (innerPage.value - 1) * innerPageSize.value
   return processed.value.slice(start, start + innerPageSize.value)
 })
+function setPage(p: number) {
+  if (props.manual) emit('update:page', p)
+  else innerPage.value = p
+}
+function setPageSize(s: number) {
+  if (props.manual) { emit('update:pageSize', s); return }
+  innerPageSize.value = s
+  innerPage.value = 1
+}
 // Any pipeline change that shrinks results below the window snaps back to page 1.
 function resetPage() {
-  page.value = 1
+  if (props.manual) emit('update:page', 1)
+  else innerPage.value = 1
 }
 
 // ── Selection (covers the rows currently in view) ──
@@ -382,7 +422,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
       surface="plain"
       :title="title"
       :description="description"
-      :count="title != null ? totalItems : undefined"
+      :count="title != null ? resolvedTotal : undefined"
       :tabs="tabsWithCount"
       :searchable="searchable"
       :search-placeholder="searchPlaceholder"
@@ -688,17 +728,17 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     </div>
 
     <!-- ░░ Footer / pagination ░░ -->
-    <template v-if="!loading && totalItems > 0">
+    <template v-if="pagination && !loading && resolvedTotal > 0">
       <Separator />
       <DataTablePaginationPro
         class="px-3 py-3 sm:px-4"
-        :page="page"
-        :page-size="innerPageSize"
-        :total-items="totalItems"
+        :page="currentPage"
+        :page-size="currentPageSize"
+        :total-items="resolvedTotal"
         :page-size-options="pageSizeOptions"
         show-jump
-        @update:page="page = $event"
-        @update:page-size="innerPageSize = $event"
+        @update:page="setPage"
+        @update:page-size="setPageSize"
       />
     </template>
   </div>

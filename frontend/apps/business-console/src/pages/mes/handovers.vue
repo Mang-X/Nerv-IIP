@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { mesHandoverStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesShiftHandovers } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
+  ButtonPro,
+  DataTablePro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -35,7 +34,7 @@ const openIssueTotal = computed(() => handovers.value.reduce((s, r) => s + (r.op
 const errorMessage = computed(() => formatError(handoversError.value))
 
 type HandoverRow = (typeof handovers)['value'][number]
-const columns: DataTableColumn<HandoverRow>[] = [
+const columns: DataTableProColumn<HandoverRow>[] = [
   { key: 'handoverId', header: '交接单', cellClass: 'font-medium', accessor: (r) => r.handoverId ?? '无' },
   { key: 'shiftId', header: '班次', accessor: (r) => r.shiftId ?? '无' },
   { key: 'teamId', header: '班组', accessor: (r) => r.teamId ?? '无' },
@@ -58,10 +57,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="班次交接" :breadcrumbs="[{ label: '制造执行' }]" :count="`${handoversTotal} 条交接`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="handoversPending" @click="refreshHandovers">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="handoversPending" @click="refreshHandovers">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -73,29 +72,36 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="交接状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesHandoverStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="交接状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesHandoverStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="handoversTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="handovers"
       row-key="handoverId"
       :loading="handoversPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无班次交接。班次结束时创建交接单，记录未完成事项。"
     >
-      <template #cell-handoverStatus="{ row }"><StatusBadge :value="row.handoverStatus" /></template>
+      <template #cell-handoverStatus="{ row }"><StatusBadgePro :value="row.handoverStatus" /></template>
       <template #cell-openIssueCount="{ row }"><span class="tabular-nums">{{ row.openIssueCount ?? 0 }}</span></template>
       <template #cell-createdAtUtc="{ row }">{{ formatDateTime(row.createdAtUtc) }}</template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="handoversTotal" />
   </BusinessLayout>
 </template>

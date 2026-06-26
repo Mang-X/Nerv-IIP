@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsPickingTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -94,7 +94,7 @@ async function submitCreate() {
 const errorMessage = computed(() => formatError(pickingTasksError.value ?? createPickingError.value))
 
 type PickingRow = BusinessConsoleWmsWarehouseTaskItem
-const columns: DataTableColumn<PickingRow>[] = [
+const columns: DataTableProColumn<PickingRow>[] = [
   { key: 'taskNo', header: '任务号', cellClass: 'font-medium', accessor: (r) => r.taskNo ?? r.warehouseTaskId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
@@ -124,80 +124,90 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="拣货任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${pickingTasksTotal} 个拣货任务`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="pickingTasksPending" @click="refreshPickingTasks">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="pickingTasksPending" @click="refreshPickingTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建拣货任务
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.keyword" class="h-9 w-40" placeholder="任务号/物料" aria-label="关键字" />
-        <Input v-model="filters.locationCode" class="h-9 w-28" placeholder="库位" aria-label="库位" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="拣货任务状态" />
+        <InputPro v-model="filters.keyword" class="h-9 w-40" placeholder="任务号/物料" aria-label="关键字" />
+        <InputPro v-model="filters.locationCode" class="h-9 w-28" placeholder="库位" aria-label="库位" />
+        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="拣货任务状态" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="pickingTasksTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="pickingTasks"
       :row-key="rowKey"
       :loading="pickingTasksPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-    </DataTable>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="pickingTasksTotal" />
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建拣货任务</DialogTitle>
-          <DialogDescription>从拣货库位拣出出库单所需库存，完成出库拣货扣减。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建拣货任务</DialogProTitle>
+          <DialogProDescription>从拣货库位拣出出库单所需库存，完成出库拣货扣减。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel for="wms-picking-outbound">出库单</FieldLabel>
-              <Input id="wms-picking-outbound" v-model="createForm.outboundOrderId" autocomplete="off" placeholder="出库单标识" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-no">任务号</FieldLabel>
-              <Input id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-line">行号</FieldLabel>
-              <Input id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-from">拣货库位</FieldLabel>
-              <Input id="wms-picking-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="货架库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-to">目标库位</FieldLabel>
-              <Input id="wms-picking-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="集货/暂存库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-picking-qty">拣货数量</FieldLabel>
-              <Input id="wms-picking-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="wms-picking-outbound">出库单</FieldProLabel>
+              <InputPro id="wms-picking-outbound" v-model="createForm.outboundOrderId" autocomplete="off" placeholder="出库单标识" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-no">任务号</FieldProLabel>
+              <InputPro id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-line">行号</FieldProLabel>
+              <InputPro id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-from">拣货库位</FieldProLabel>
+              <InputPro id="wms-picking-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="货架库位" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-to">目标库位</FieldProLabel>
+              <InputPro id="wms-picking-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="集货/暂存库位" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-picking-qty">拣货数量</FieldProLabel>
+              <InputPro id="wms-picking-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createPickingPending">创建拣货任务</Button>
-          </DialogFooter>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createPickingPending">创建拣货任务</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

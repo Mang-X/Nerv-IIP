@@ -1,40 +1,40 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  AlertDialogPro,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -196,7 +196,7 @@ const contextUnavailable = computed(() => {
 })
 
 type InboundRow = BusinessConsoleWmsInboundOrderItem
-const columns: DataTableColumn<InboundRow>[] = [
+const columns: DataTableProColumn<InboundRow>[] = [
   { key: 'inboundOrderNo', header: '入库单号', cellClass: 'font-medium', accessor: (r) => r.inboundOrderNo ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
@@ -223,14 +223,14 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="收货入库" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${inboundOrdersTotal} 张入库单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="inboundOrdersPending" @click="refreshInboundOrders">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="inboundOrdersPending" @click="refreshInboundOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建入库单
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -246,26 +246,34 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.skuCode" class="h-9 w-32" placeholder="物料" aria-label="物料" />
-        <Input v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
-        <Input v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
-        <Input v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="入库单状态" />
+        <InputPro v-model="filters.skuCode" class="h-9 w-32" placeholder="物料" aria-label="物料" />
+        <InputPro v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
+        <InputPro v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
+        <InputPro v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
+        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="入库单状态" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="inboundOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="inboundOrders"
       :row-key="rowKey"
       :loading="inboundOrdersPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无入库单。收货作业产生入库单后会出现在这里。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <Button
+        <ButtonPro
           size="sm"
           type="button"
           variant="outline"
@@ -274,92 +282,94 @@ function formatError(error: unknown) {
           @click="openComplete(row)"
         >
           完成入库
-        </Button>
+        </ButtonPro>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="inboundOrdersTotal" />
 
-    <AlertDialog v-model:open="completeOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>完成入库</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="completeOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>完成入库</AlertDialogProTitle>
+          <AlertDialogProDescription>
             确认完成入库单 {{ pendingOrder?.inboundOrderNo ?? '' }}？完成后将按已收货明细过账入库。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel :disabled="completeInboundPending">取消</AlertDialogCancel>
-          <Button type="button" :disabled="completeInboundPending" @click="confirmComplete">完成入库</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel :disabled="completeInboundPending">取消</AlertDialogProCancel>
+          <ButtonPro type="button" :disabled="completeInboundPending" @click="confirmComplete">完成入库</ButtonPro>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>新建入库单</DialogTitle>
-          <DialogDescription>登记收货入库单的来源与明细，提交后进入入库待处理。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+        <DialogProHeader>
+          <DialogProTitle>新建入库单</DialogProTitle>
+          <DialogProDescription>登记收货入库单的来源与明细，提交后进入入库待处理。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="wms-in-no">入库单号</FieldLabel>
-              <Input id="wms-in-no" v-model="createForm.inboundOrderNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-site">工厂</FieldLabel>
-              <Input id="wms-in-site" v-model="createForm.siteCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-srctype">来源类型</FieldLabel>
-              <Input id="wms-in-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 采购收货" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-in-srcid">来源单据</FieldLabel>
-              <Input id="wms-in-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="wms-in-no">入库单号</FieldProLabel>
+              <InputPro id="wms-in-no" v-model="createForm.inboundOrderNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-site">工厂</FieldProLabel>
+              <InputPro id="wms-in-site" v-model="createForm.siteCode" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-srctype">来源类型</FieldProLabel>
+              <InputPro id="wms-in-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 采购收货" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-in-srcid">来源单据</FieldProLabel>
+              <InputPro id="wms-in-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">收货明细</span>
-              <Button type="button" size="sm" variant="outline" @click="addLine">
+              <ButtonPro type="button" size="sm" variant="outline" @click="addLine">
                 <PlusIcon aria-hidden="true" />
                 添加行
-              </Button>
+              </ButtonPro>
             </div>
             <div v-for="(line, index) in createForm.lines" :key="index" class="flex flex-wrap items-end gap-2 rounded-md border p-2">
-              <Input v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
-              <Input v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
-              <Input v-model="line.receivedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="收货数量*" :aria-label="`第 ${index + 1} 行收货数量`" />
-              <Input v-model="line.stagingLocationCode" class="h-9 w-24" placeholder="暂存库位*" :aria-label="`第 ${index + 1} 行暂存库位`" />
-              <Input v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
-              <Select v-model="line.qualityStatus">
-                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select v-model="line.ownerType">
-                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
+              <InputPro v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
+              <InputPro v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
+              <InputPro v-model="line.receivedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="收货数量*" :aria-label="`第 ${index + 1} 行收货数量`" />
+              <InputPro v-model="line.stagingLocationCode" class="h-9 w-24" placeholder="暂存库位*" :aria-label="`第 ${index + 1} 行暂存库位`" />
+              <InputPro v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <SelectPro v-model="line.qualityStatus">
+                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <SelectPro v-model="line.ownerType">
+                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <ButtonPro type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
                 <Trash2Icon class="size-4" aria-hidden="true" />
-              </Button>
+              </ButtonPro>
             </div>
           </div>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createInboundPending">创建入库单</Button>
-          </DialogFooter>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createInboundPending">创建入库单</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>
