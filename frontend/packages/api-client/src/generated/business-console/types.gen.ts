@@ -2468,6 +2468,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     precision?: number | null;
     roundingMode?: string | null;
     deviceAssetId?: string | null;
+    creditLimit?: number | null;
+    creditCurrencyCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -2683,6 +2685,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     userId?: string | null;
     skillCode?: string | null;
     skillLevel?: string | null;
+    creditLimit?: number | null;
+    creditCurrencyCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime = {
@@ -2763,6 +2767,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     factor?: number | null;
     offset?: number | null;
     effectiveFrom?: string | null;
+    creditLimit?: number | null;
+    creditCurrencyCode?: string | null;
+    clearCreditLimit?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {
@@ -2781,6 +2788,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     partnerRoles?: Array<string> | null;
     taxId?: string | null;
+    creditLimit?: number | null;
+    creditCurrencyCode?: string | null;
     idempotencyKey?: string | null;
 };
 

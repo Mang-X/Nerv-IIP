@@ -26869,6 +26869,15 @@
           "deviceAssetId": {
             "type": "string",
             "nullable": true
+          },
+          "creditLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "creditCurrencyCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -27716,6 +27725,15 @@
           "skillLevel": {
             "type": "string",
             "nullable": true
+          },
+          "creditLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "creditCurrencyCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -28072,6 +28090,21 @@
             "type": "string",
             "format": "date",
             "nullable": true
+          },
+          "creditLimit": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "creditCurrencyCode": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 0,
+            "nullable": true
+          },
+          "clearCreditLimit": {
+            "type": "boolean"
           }
         }
       },
@@ -28162,6 +28195,18 @@
           },
           "taxId": {
             "type": "string",
+            "nullable": true
+          },
+          "creditLimit": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "creditCurrencyCode": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 0,
             "nullable": true
           },
           "idempotencyKey": {

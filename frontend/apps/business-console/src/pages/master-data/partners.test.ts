@@ -22,7 +22,7 @@ const actionStub = vi.hoisted(() => ({
 
 // 列表桩数据带真实 typed 角色字段（partnerType 主角色 + partnerRoles 附加角色）。
 const partnerRows = [
-  { resourceType: 'business-partner', code: 'P-001', displayName: '广汽集团', active: true, partnerType: 'customer', partnerRoles: ['carrier'], taxId: '91440000MA5R' },
+  { resourceType: 'business-partner', code: 'P-001', displayName: '广汽集团', active: true, partnerType: 'customer', partnerRoles: ['carrier'], taxId: '91440000MA5R', creditLimit: 300000, creditCurrencyCode: 'CNY' },
   { resourceType: 'business-partner', code: 'P-002', displayName: '中石化润滑油', active: true, partnerType: 'supplier' },
 ]
 
@@ -112,6 +112,7 @@ describe('master-data partners page', () => {
     expect(wrapper.text()).toContain('客户')
     expect(wrapper.text()).toContain('承运商')
     expect(wrapper.text()).toContain('供应商')
+    expect(wrapper.text()).toContain('CNY 300000')
   })
 
   it('exposes a role filter select and a create-partner button', async () => {
@@ -199,6 +200,48 @@ describe('master-data partners page', () => {
     expect(body.partnerType).toBe('customer')
     expect(stub.toastSuccess).toHaveBeenCalled()
     expect(stub.toastError).not.toHaveBeenCalled()
+  })
+
+  it('客户建档可填写信用额度并提交给 createPartner', async () => {
+    stub.createPartner.mockClear()
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+    await openAndFillValid(wrapper)
+
+    expect(wrapper.text()).toContain('信用额度')
+    await wrapper.find('#partner-credit-limit').setValue('500000')
+    await wrapper.find('#partner-credit-currency').setValue('CNY')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const body = stub.createPartner.mock.calls[0]![0] as { creditLimit?: number, creditCurrencyCode?: string }
+    expect(body.creditLimit).toBe(500000)
+    expect(body.creditCurrencyCode).toBe('CNY')
+  })
+
+  it('编辑客户时清空信用额度会提交 clearCreditLimit', async () => {
+    actionStub.update.mockClear()
+    actionStub.fetchDetail.mockResolvedValueOnce({
+      name: '广汽集团',
+      partnerType: 'customer',
+      partnerRoles: ['customer'],
+      taxId: '91440000MA5R',
+      creditLimit: 300000,
+      creditCurrencyCode: 'CNY',
+    })
+    const wrapper = mount(PartnersPage, { global: { stubs: { ...layoutStub, ...rowActionStubs, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+
+    const editItem = wrapper.findAll('button').find((b) => b.text().trim() === '编辑')
+    expect(editItem).toBeTruthy()
+    await editItem!.trigger('click')
+    await flushPromises()
+    await wrapper.find('#partner-credit-limit').setValue('')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const body = actionStub.update.mock.calls[0]![1] as { clearCreditLimit?: boolean }
+    expect(body.clearCreditLimit).toBe(true)
   })
 
   it('提交失败：弹错误 toast（人话）且不重置表单', async () => {

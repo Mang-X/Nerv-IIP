@@ -36,7 +36,9 @@ public sealed record MasterDataResourceItem(
     decimal? Offset = null,
     int? Precision = null,
     string? RoundingMode = null,
-    string? DeviceAssetId = null);
+    string? DeviceAssetId = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -190,7 +192,43 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.PartnerType) || x.PartnerType == request.PartnerType || x.PartnerRoles.Contains(request.PartnerType))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, x.PartnerType, x.PartnerRoles, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, x.TaxId));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"),
+                x.PartnerType,
+                x.PartnerRoles,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.Disabled ? "disabled" : "active",
+                null,
+                null,
+                null,
+                null,
+                x.TaxId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.CreditLimit,
+                x.CreditCurrencyCode));
     }
 
     private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, string resourceType)
@@ -386,7 +424,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         decimal? Offset = null,
         int? Precision = null,
         string? RoundingMode = null,
-        string? DeviceAssetId = null)
+        string? DeviceAssetId = null,
+        decimal? CreditLimit = null,
+        string? CreditCurrencyCode = null)
     {
         return new MasterDataResourceItem(
             resourceType,
@@ -422,7 +462,9 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Offset,
             Precision,
             RoundingMode,
-            DeviceAssetId);
+            DeviceAssetId,
+            CreditLimit,
+            CreditCurrencyCode);
     }
 
     private static string? NormalizeKeyword(string? keyword)
