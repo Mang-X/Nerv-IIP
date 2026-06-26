@@ -39,12 +39,34 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
     {
         var order = domainEvent.InboundOrder;
         var line = order.Lines.First();
+        var status = order.Status.ToString();
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.InboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
             $"wms:inbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.InboundOrderNo}",
-            new WmsIntegrationPayload(order.InboundOrderNo, line.LineNo, line.SkuCode, line.UomCode, order.SiteCode, line.StagingLocationCode, line.ReceivedQuantity, order.Status.ToString(), null, null));
+            new WmsIntegrationPayload(
+                order.InboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                order.SiteCode,
+                line.StagingLocationCode,
+                line.ReceivedQuantity,
+                status,
+                null,
+                null,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.StagingLocationCode,
+                        x.ReceivedQuantity,
+                        null))
+                    .ToArray()));
     }
 }
 
@@ -55,12 +77,34 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
     {
         var order = domainEvent.OutboundOrder;
         var line = order.Lines.First();
+        var status = order.Status.ToString();
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
             $"wms:outbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
-            new WmsIntegrationPayload(order.OutboundOrderNo, line.LineNo, line.SkuCode, line.UomCode, order.SiteCode, line.PickLocationCode, line.RequestedQuantity, order.Status.ToString(), null, null));
+            new WmsIntegrationPayload(
+                order.OutboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                order.SiteCode,
+                line.PickLocationCode,
+                line.RequestedQuantity,
+                status,
+                null,
+                null,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.PickLocationCode,
+                        x.RequestedQuantity,
+                        null))
+                    .ToArray()));
     }
 }
 

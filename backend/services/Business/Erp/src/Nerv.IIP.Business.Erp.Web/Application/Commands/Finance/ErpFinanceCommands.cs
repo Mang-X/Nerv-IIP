@@ -3,6 +3,8 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CostCandidateAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 
@@ -309,6 +311,42 @@ public sealed class PostJournalVoucherCommandHandler(ApplicationDbContext dbCont
 
 internal static class FinanceVoucherFactory
 {
+    public const string InventoryAccountCode = "1401";
+    public const string AccountsPayableAccountCode = "2202";
+    public const string DirectPayableExpenseAccountCode = "5001";
+    public const string GoodsReceiptInvoiceReceiptAccountCode = "GR-IR";
+
+    public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
+    {
+        return $"JV-GRIR-{purchaseReceiptNo}";
+    }
+
+    public static JournalVoucher ForGoodsReceiptIrAccrual(PurchaseReceipt receipt, decimal amount, string voucherNo)
+    {
+        return JournalVoucher.Post(
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            voucherNo,
+            DateOnly.FromDateTime(receipt.RecordedAtUtc),
+            [
+                new JournalVoucherLineDraft(InventoryAccountCode, amount, 0m, $"Goods receipt {receipt.PurchaseReceiptNo}"),
+                new JournalVoucherLineDraft(GoodsReceiptInvoiceReceiptAccountCode, 0m, amount, $"GR/IR accrual {receipt.PurchaseReceiptNo}"),
+            ]);
+    }
+
+    public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable)
+    {
+        return JournalVoucher.Post(
+            invoice.OrganizationId,
+            invoice.EnvironmentId,
+            $"JV-AP-{payable.PayableNo}",
+            invoice.InvoiceDate,
+            [
+                new JournalVoucherLineDraft(GoodsReceiptInvoiceReceiptAccountCode, invoice.TotalAmount, 0m, $"Clear GR/IR for receipt {invoice.PurchaseReceiptNo}"),
+                new JournalVoucherLineDraft(AccountsPayableAccountCode, 0m, invoice.TotalAmount, $"AP {payable.PayableNo}"),
+            ]);
+    }
+
     public static JournalVoucher ForAccountPayable(AccountPayable payable)
     {
         return JournalVoucher.Post(
@@ -317,8 +355,8 @@ internal static class FinanceVoucherFactory
             $"JV-AP-{payable.PayableNo}",
             payable.InvoiceDate,
             [
-                new JournalVoucherLineDraft("1401", payable.Amount, 0m, $"AP matched invoice {payable.SourceDocumentNo}"),
-                new JournalVoucherLineDraft("2202", 0m, payable.Amount, $"AP {payable.PayableNo}"),
+                new JournalVoucherLineDraft(DirectPayableExpenseAccountCode, payable.Amount, 0m, $"Direct AP expense {payable.SourceDocumentNo}"),
+                new JournalVoucherLineDraft(AccountsPayableAccountCode, 0m, payable.Amount, $"AP {payable.PayableNo}"),
             ]);
     }
 
@@ -356,7 +394,7 @@ internal static class FinanceVoucherFactory
             voucherNo,
             paymentDate,
             [
-                new JournalVoucherLineDraft("2202", amount, 0m, $"Pay AP {payable.PayableNo}"),
+                new JournalVoucherLineDraft(AccountsPayableAccountCode, amount, 0m, $"Pay AP {payable.PayableNo}"),
                 new JournalVoucherLineDraft(cashAccountCode, 0m, amount, $"Cash payment for {payable.PayableNo}"),
             ]);
     }

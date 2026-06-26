@@ -41,7 +41,7 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
         QualityStatus = StockQualityStatus.Normalize(qualityStatus);
-        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         ExpectedLedgerVersion = expectedLedgerVersion;
         Status = "open";

@@ -54,6 +54,7 @@ public sealed class ReserveStockCommandHandler(ApplicationDbContext dbContext)
     public async Task<ReserveStockResult> Handle(ReserveStockCommand request, CancellationToken cancellationToken)
     {
         var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
         var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -64,7 +65,7 @@ public sealed class ReserveStockCommandHandler(ApplicationDbContext dbContext)
                 && x.LotNo == request.LotNo
                 && x.SerialNo == request.SerialNo
                 && x.QualityStatus == qualityStatus
-                && x.OwnerType == request.OwnerType.ToLower()
+                && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId,
             cancellationToken)
             ?? throw new KnownException("Stock ledger does not exist for the requested reservation scope.");

@@ -174,7 +174,9 @@ DemandPlanning.PlannedPurchaseSuggestion
   -> ERP.RFQ / SupplierQuotation (SRM-lite)
   -> ERP.PurchaseOrder
   -> ERP.PurchaseReceipt
+  -> ERP.GRIRAccrual
   -> ERP.SupplierInvoice (three-way match)
+  -> ERP.GRIRClearing
   -> Quality.InspectionPlan
   -> WMS.InboundOrder
   -> Inventory.StockMovement
@@ -182,7 +184,7 @@ DemandPlanning.PlannedPurchaseSuggestion
   -> ERP.SubledgerVoucher
 ```
 
-SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。采购订单创建后通过 BusinessApproval 公共 API/事件审批门禁释放，未批准前不能收货；采购收货会通过公开 Inventory movement request 事件请求库存入账；供应商发票按 PO、收货和发票行三单匹配，通过后生成 AP 和最小应付子分类账凭证，超出容差或累计已开票数量超过收货数量时进入 `PaymentHeld`，不创建 AP/凭证。held 发票可人工释放生成 AP/凭证，或作废并从后续累计开票量中排除。
+SRM-lite 首批只处理供应商、询价、报价和采购协同最小流程，不做完整供应商门户。采购订单创建后通过 BusinessApproval 公共 API/事件审批门禁释放，未批准前不能收货；采购收货会通过公开 Inventory movement request 事件请求库存入账，同时在 ERP Finance 内生成借库存、贷 GR/IR 的收货暂估凭证，不创建 AP。供应商发票按 PO、收货和发票行三单匹配，通过后冲 GR/IR 并转 AP，生成借 GR/IR、贷 AP 的最小应付子分类账凭证；超出容差或累计已开票数量超过收货数量时进入 `PaymentHeld`，不创建 AP/凭证。held 发票可人工释放后执行同样的 GR/IR clearing + AP 生成，或作废并从后续累计开票量中排除。
 
 ### 订单到交付到应收
 

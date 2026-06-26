@@ -27,6 +27,44 @@ public sealed class WmsIntegrationEventTests
     }
 
     [Fact]
+    public void Inbound_completed_event_contains_all_completed_lines()
+    {
+        var inbound = DomainWmsFactory.MultiLineInboundOrder();
+        inbound.Complete("idem-in-001");
+
+        var integrationEvent = new InboundOrderCompletedIntegrationEventConverter().Convert(new InboundOrderCompletedDomainEvent(inbound));
+        Assert.NotNull(integrationEvent.Payload.Lines);
+        var lines = integrationEvent.Payload.Lines!
+            .OrderBy(x => x.LineReference, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(2, lines.Length);
+        Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
+        Assert.Equal([5m, 3m], lines.Select(x => x.Quantity).ToArray());
+        Assert.All(lines, x => Assert.Null(x.Status));
+    }
+
+    [Fact]
+    public void Outbound_completed_event_contains_all_completed_lines()
+    {
+        var outbound = DomainWmsFactory.MultiLineOutboundOrder();
+        outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+
+        var integrationEvent = new OutboundOrderCompletedIntegrationEventConverter().Convert(new OutboundOrderCompletedDomainEvent(outbound));
+        Assert.NotNull(integrationEvent.Payload.Lines);
+        var lines = integrationEvent.Payload.Lines!
+            .OrderBy(x => x.LineReference, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(2, lines.Length);
+        Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
+        Assert.Equal([4m, 2m], lines.Select(x => x.Quantity).ToArray());
+        Assert.All(lines, x => Assert.Null(x.Status));
+    }
+
+    [Fact]
     public void Outbound_count_and_wcs_events_use_required_event_types()
     {
         var outbound = DomainWmsFactory.OutboundOrder();

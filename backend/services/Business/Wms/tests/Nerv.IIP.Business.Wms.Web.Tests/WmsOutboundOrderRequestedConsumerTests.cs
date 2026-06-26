@@ -41,6 +41,27 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
     }
 
     [Fact]
+    public async Task Outbound_order_requested_consumer_preserves_all_erp_delivery_lines()
+    {
+        var databaseName = $"wms-outbound-order-requested-{Guid.NewGuid():N}";
+        var handler = new WmsOutboundOrderRequestedIntegrationEventHandler(
+            new CommandExecutingSender(databaseName),
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreateRequestedEvent(lineCount: 2), CancellationToken.None);
+
+        await using var assertionContext = CreateContext(databaseName);
+        var order = await assertionContext.OutboundOrders
+            .Include(x => x.Lines)
+            .SingleAsync(CancellationToken.None);
+        var lines = order.Lines.OrderBy(x => x.LineNo).ToArray();
+        Assert.Equal(2, lines.Length);
+        Assert.Equal(["SO-LINE-001", "SO-LINE-002"], lines.Select(x => x.LineNo).ToArray());
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
+        Assert.Equal([4m, 2m], lines.Select(x => x.RequestedQuantity).ToArray());
+    }
+
+    [Fact]
     public async Task Outbound_order_requested_consumer_ignores_non_erp_sources()
     {
         var databaseName = $"wms-outbound-order-requested-{Guid.NewGuid():N}";
@@ -54,8 +75,31 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
         Assert.False(await assertionContext.OutboundOrders.AnyAsync(CancellationToken.None));
     }
 
-    private static WmsOutboundOrderRequestedIntegrationEvent CreateRequestedEvent(string sourceService = WmsIntegrationEventSources.BusinessErp)
+    private static WmsOutboundOrderRequestedIntegrationEvent CreateRequestedEvent(
+        string sourceService = WmsIntegrationEventSources.BusinessErp,
+        int lineCount = 1)
     {
+        var lines = new List<WmsOutboundOrderRequestedLine>
+        {
+            new(
+                "SO-LINE-001",
+                "SKU-FG-1000",
+                "kg",
+                "LOC-A-01",
+                "LOT-001",
+                4m),
+        };
+        if (lineCount > 1)
+        {
+            lines.Add(new WmsOutboundOrderRequestedLine(
+                "SO-LINE-002",
+                "SKU-RM-2000",
+                "kg",
+                "LOC-A-02",
+                "LOT-002",
+                2m));
+        }
+
         return new WmsOutboundOrderRequestedIntegrationEvent(
             "evt-outbound-requested-001",
             WmsIntegrationEventTypes.OutboundOrderRequested,
@@ -73,15 +117,7 @@ public sealed class WmsOutboundOrderRequestedConsumerTests
                 "SO-001",
                 "customer-001",
                 "SITE-01",
-                [
-                    new WmsOutboundOrderRequestedLine(
-                        "SO-LINE-001",
-                        "SKU-FG-1000",
-                        "kg",
-                        "LOC-A-01",
-                        "LOT-001",
-                        4m)
-                ]));
+                lines));
     }
 
     private static ApplicationDbContext CreateContext(string databaseName)

@@ -40,7 +40,43 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("inbound", movementRequest.MovementType);
         Assert.Equal("idem-in-001", movementRequest.IdempotencyKey);
+        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal("SKU-FG-1000", movementRequest.SkuCode);
+    }
+
+    [Fact]
+    public async Task Complete_inbound_creates_pending_inventory_movement_request_for_each_line()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 3m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "idem-in-001"),
+            CancellationToken.None);
+
+        Assert.Null(result.InventoryMovementId);
+        var movementRequests = dbContext.InventoryMovementRequests.Local
+            .OrderBy(x => x.SourceDocumentLineId)
+            .ToArray();
+        Assert.Equal(2, movementRequests.Length);
+        Assert.Equal(new string?[] { "LINE-001", "LINE-002" }, movementRequests.Select(x => x.SourceDocumentLineId).ToArray());
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], movementRequests.Select(x => x.SkuCode).ToArray());
+        Assert.Equal([5m, 3m], movementRequests.Select(x => x.Quantity).ToArray());
+        Assert.Equal(movementRequests[0].Id, result.RequestId);
+        Assert.All(movementRequests, x => Assert.StartsWith("idem-in-001:", x.IdempotencyKey, StringComparison.Ordinal));
+        Assert.Equal(2, movementRequests.Select(x => x.IdempotencyKey).Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -95,7 +131,43 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("outbound", movementRequest.MovementType);
         Assert.Equal("idem-out-001", movementRequest.IdempotencyKey);
+        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_creates_pending_inventory_movement_request_for_each_line()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [
+                new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
+            CancellationToken.None);
+
+        Assert.Null(result.InventoryMovementId);
+        var movementRequests = dbContext.InventoryMovementRequests.Local
+            .OrderBy(x => x.SourceDocumentLineId)
+            .ToArray();
+        Assert.Equal(2, movementRequests.Length);
+        Assert.Equal(new string?[] { "LINE-001", "LINE-002" }, movementRequests.Select(x => x.SourceDocumentLineId).ToArray());
+        Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], movementRequests.Select(x => x.SkuCode).ToArray());
+        Assert.Equal([4m, 2m], movementRequests.Select(x => x.Quantity).ToArray());
+        Assert.Equal(movementRequests[0].Id, result.RequestId);
+        Assert.All(movementRequests, x => Assert.StartsWith("idem-out-001:", x.IdempotencyKey, StringComparison.Ordinal));
+        Assert.Equal(2, movementRequests.Select(x => x.IdempotencyKey).Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
