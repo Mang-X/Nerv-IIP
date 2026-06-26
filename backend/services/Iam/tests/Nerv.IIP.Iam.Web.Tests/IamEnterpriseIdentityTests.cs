@@ -290,7 +290,6 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:Jwt:SigningKey", "0123456789abcdef0123456789abcdef");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
-                builder.UseSetting("Iam:EnterpriseIdentity:Mfa:DevelopmentCode", "654321");
             });
     }
 
