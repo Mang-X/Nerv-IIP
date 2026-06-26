@@ -545,6 +545,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 x.SourceAlarmId,
                 x.Status,
                 x.AssetUnavailableFromUtc!.Value,
+                x.AlarmClearedAtUtc,
                 x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
 
@@ -586,7 +587,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
         foreach (var workOrder in workOrders)
         {
             var endUtc = workOrder.Status == MaintenanceWorkOrderStatus.Open
-                ? contract.WindowEndUtc
+                ? workOrder.AlarmClearedAtUtc ?? contract.WindowEndUtc
                 : workOrder.CompletedAtUtc!.Value;
             AddWindow(
                 windows,
@@ -736,6 +737,7 @@ internal sealed record MaintenanceWorkOrderAvailabilityProjection(
     string? SourceAlarmId,
     MaintenanceWorkOrderStatus Status,
     DateTimeOffset AssetUnavailableFromUtc,
+    DateTimeOffset? AlarmClearedAtUtc,
     DateTimeOffset? CompletedAtUtc);
 
 internal sealed record MaintenancePlanAvailabilityProjection(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);

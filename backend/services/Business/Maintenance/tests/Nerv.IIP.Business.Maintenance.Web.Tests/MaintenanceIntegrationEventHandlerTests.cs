@@ -4,6 +4,8 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Messaging.CAP;
 
@@ -91,6 +93,53 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     }
 
     [Fact]
+    public async Task Stable_rule_alarm_events_open_one_work_order_and_clear_runtime_window()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var sender = new CommandOnlySender(dbContext);
+        var raisedHandler = new OpenWorkOrderWhenAlarmRaisedHandler(sender, dbContext, deadLetterStore);
+        var clearedHandler = new MarkWorkOrderAlarmClearedHandler(sender, dbContext, deadLetterStore);
+        var raisedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var clearedAtUtc = raisedAtUtc.AddHours(1);
+
+        await raisedHandler.HandleAsync(CreateAlarmRaisedEvent("evt-alarm-537-1", "TEMP_RULE", raisedAtUtc), CancellationToken.None);
+        await raisedHandler.HandleAsync(CreateAlarmRaisedEvent("evt-alarm-537-2", "TEMP_RULE", raisedAtUtc.AddMinutes(1)), CancellationToken.None);
+        await clearedHandler.HandleAsync(CreateAlarmClearedEvent("evt-alarm-clear-537", "TEMP_RULE", raisedAtUtc, clearedAtUtc), CancellationToken.None);
+
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal("TEMP_RULE", workOrder.SourceAlarmId);
+        Assert.True(workOrder.AssetUnavailable);
+        Assert.True(workOrder.AlarmCleared);
+        Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);
+        dbContext.Entry(workOrder).Property(x => x.AssetUnavailableFromUtc).CurrentValue = raisedAtUtc;
+        await dbContext.SaveChangesAsync();
+
+        var availability = await new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext).Handle(
+            new QueryMaintenanceAvailabilityWindowsQuery(new EquipmentRuntimeAvailabilityRequest(
+                "org-001",
+                "env-dev",
+                raisedAtUtc,
+                raisedAtUtc.AddHours(4),
+                ["DEV-CNC-01"],
+                null)),
+            CancellationToken.None);
+        var activeAlarm = Assert.Single(availability.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm);
+        Assert.Equal(raisedAtUtc, activeAlarm.StartUtc);
+        Assert.Equal(clearedAtUtc, activeAlarm.EndUtc);
+
+        var runtime = await new MaintenanceUnavailableWindowRuntimeHoursProvider(sender).CalculateFallbackAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            raisedAtUtc,
+            raisedAtUtc.AddHours(4),
+            CancellationToken.None);
+        Assert.Equal(3m, runtime.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Fallback, runtime.RuntimeSource);
+    }
+
+    [Fact]
     public async Task Alarm_clear_command_marks_all_matching_open_work_orders_when_duplicate_alarm_facts_exist()
     {
         await using var dbContext = CreateDbContext();
@@ -123,32 +172,51 @@ public sealed class MaintenanceIntegrationEventHandlerTests
 
     private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(int eventVersion = 1)
     {
+        return CreateAlarmRaisedEvent("evt-alarm-001", "alarm-001", DateTimeOffset.UtcNow, eventVersion);
+    }
+
+    private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(
+        string eventId,
+        string externalAlarmId,
+        DateTimeOffset raisedAtUtc,
+        int eventVersion = 1)
+    {
         return new AlarmRaisedIntegrationEvent(
-            "evt-alarm-001",
+            eventId,
             "industrialTelemetry.AlarmRaised",
             eventVersion,
-            DateTimeOffset.UtcNow,
+            raisedAtUtc,
             "industrialTelemetry",
             "corr-alarm-001",
             "alarm-event-001",
             "org-001",
             "env-dev",
             "system:industrial-telemetry",
-            "industrialTelemetry:alarm-raised:org-001:env-dev:alarm-001",
+            $"industrialTelemetry:alarm-raised:org-001:env-dev:DEV-CNC-01:OVER_TEMP:{externalAlarmId}:{eventId}",
             new AlarmRaisedPayload(
                 "alarm-event-001",
                 "DEV-CNC-01",
                 "OVER_TEMP",
                 "critical",
-                DateTimeOffset.UtcNow,
-                "alarm-001"));
+                raisedAtUtc,
+                externalAlarmId));
     }
 
     private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(DateTimeOffset clearedAtUtc, int eventVersion = 1)
     {
         var raisedAtUtc = clearedAtUtc.AddHours(-1);
+        return CreateAlarmClearedEvent("evt-alarm-clear-001", "alarm-001", raisedAtUtc, clearedAtUtc, eventVersion);
+    }
+
+    private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(
+        string eventId,
+        string externalAlarmId,
+        DateTimeOffset raisedAtUtc,
+        DateTimeOffset clearedAtUtc,
+        int eventVersion = 1)
+    {
         return new AlarmClearedIntegrationEvent(
-            "evt-alarm-clear-001",
+            eventId,
             "industrialTelemetry.AlarmCleared",
             eventVersion,
             clearedAtUtc,
@@ -158,7 +226,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
             "org-001",
             "env-dev",
             "system:industrial-telemetry",
-            "industrialTelemetry:alarm-cleared:org-001:env-dev:alarm-001",
+            $"industrialTelemetry:alarm-cleared:org-001:env-dev:DEV-CNC-01:OVER_TEMP:{externalAlarmId}:{eventId}",
             new AlarmClearedPayload(
                 "alarm-event-001",
                 "DEV-CNC-01",
@@ -166,7 +234,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
                 "critical",
                 raisedAtUtc,
                 clearedAtUtc,
-                "alarm-001"));
+                externalAlarmId));
     }
 
     private sealed class CommandOnlySender(ApplicationDbContext dbContext) : ISender
@@ -183,6 +251,13 @@ public sealed class MaintenanceIntegrationEventHandlerTests
                 var id = await handler.Handle(command, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)id;
+            }
+
+            if (request is QueryMaintenanceAvailabilityWindowsQuery query)
+            {
+                var handler = new QueryMaintenanceAvailabilityWindowsQueryHandler(dbContext);
+                var response = await handler.Handle(query, cancellationToken);
+                return (TResponse)(object)response;
             }
 
             throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");

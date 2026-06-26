@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
@@ -269,57 +268,90 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .OrderBy(x => x.RuleCode)
             .ToListAsync(cancellationToken);
 
-        var matchedRules = rules
-            .Where(rule => rule.Evaluate(request.AverageValue, request.MaxValue))
-            .Select(rule => new MatchedAlarmRule(rule, CreateRuleBucketExternalAlarmId(rule, request.BucketEndUtc)))
-            .ToArray();
-        if (matchedRules.Length == 0)
+        if (rules.Count == 0)
         {
             return;
         }
 
-        var externalAlarmIds = matchedRules.Select(x => x.ExternalAlarmId).ToArray();
-        var existingExternalAlarmIds = await dbContext.AlarmEvents
+        var matchedRules = rules
+            .Where(rule => rule.Evaluate(request.AverageValue, request.MaxValue))
+            .ToArray();
+
+        var ruleCodes = rules.Select(x => x.RuleCode).ToArray();
+        var activePersistedAlarms = await dbContext.AlarmEvents
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
-                && externalAlarmIds.Contains(x.ExternalAlarmId))
-            .Select(x => x.ExternalAlarmId)
+                && x.Status == "raised")
             .ToListAsync(cancellationToken);
-        var existingExternalAlarmIdSet = existingExternalAlarmIds
+        var activeAlarms = activePersistedAlarms
             .Concat(dbContext.AlarmEvents.Local
                 .Where(x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.DeviceAssetId == request.DeviceAssetId
-                    && externalAlarmIds.Contains(x.ExternalAlarmId))
-                .Select(x => x.ExternalAlarmId))
+                    && x.Status == "raised"))
+            .DistinctBy(x => x.Id)
+            .Where(alarm => ruleCodes.Any(ruleCode => IsAlarmForRule(alarm, ruleCode)))
+            .ToArray();
+        var matchedRuleCodes = matchedRules
+            .Select(x => x.RuleCode)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var matchedRule in matchedRules)
+        foreach (var rule in rules)
         {
-            if (existingExternalAlarmIdSet.Contains(matchedRule.ExternalAlarmId))
+            var ruleActiveAlarms = activeAlarms
+                .Where(alarm => IsAlarmForRule(alarm, rule.RuleCode))
+                .OrderBy(alarm => alarm.RaisedAtUtc)
+                .ToArray();
+            if (matchedRuleCodes.Contains(rule.RuleCode))
             {
+                if (ruleActiveAlarms.Length == 0)
+                {
+                    dbContext.AlarmEvents.Add(AlarmEvent.Raise(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.DeviceAssetId,
+                        rule.AlarmCode,
+                        rule.Severity,
+                        request.BucketEndUtc,
+                        CreateRuleExternalAlarmId(rule)));
+                }
+
+                foreach (var duplicate in ruleActiveAlarms.Skip(1))
+                {
+                    TryClearRuleAlarm(duplicate, request.BucketEndUtc, "duplicate-rule-alarm-suppressed");
+                }
+
                 continue;
             }
 
-            dbContext.AlarmEvents.Add(AlarmEvent.Raise(
-                request.OrganizationId,
-                request.EnvironmentId,
-                request.DeviceAssetId,
-                matchedRule.Rule.AlarmCode,
-                matchedRule.Rule.Severity,
-                request.BucketEndUtc,
-                matchedRule.ExternalAlarmId));
-            existingExternalAlarmIdSet.Add(matchedRule.ExternalAlarmId);
+            foreach (var activeAlarm in ruleActiveAlarms)
+            {
+                TryClearRuleAlarm(activeAlarm, request.BucketEndUtc, "return-to-normal");
+            }
         }
     }
 
-    private static string CreateRuleBucketExternalAlarmId(AlarmRule rule, DateTimeOffset bucketEndUtc)
+    private static string CreateRuleExternalAlarmId(AlarmRule rule)
     {
-        return $"{rule.RuleCode}:{bucketEndUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)}";
+        return rule.RuleCode;
     }
 
-    private sealed record MatchedAlarmRule(AlarmRule Rule, string ExternalAlarmId);
+    private static bool IsAlarmForRule(AlarmEvent alarm, string ruleCode)
+    {
+        return string.Equals(alarm.ExternalAlarmId, ruleCode, StringComparison.Ordinal)
+            || alarm.ExternalAlarmId.StartsWith($"{ruleCode}:", StringComparison.Ordinal);
+    }
+
+    private static void TryClearRuleAlarm(AlarmEvent alarm, DateTimeOffset clearedAtUtc, string clearReason)
+    {
+        if (clearedAtUtc < alarm.RaisedAtUtc)
+        {
+            return;
+        }
+
+        alarm.Clear(clearedAtUtc, "system:industrial-telemetry", clearReason);
+    }
 }
 
 public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TResponse>(ApplicationDbContext dbContext)
