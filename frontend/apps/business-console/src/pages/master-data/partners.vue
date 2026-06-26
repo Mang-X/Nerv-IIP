@@ -56,6 +56,8 @@ const createShowErrors = ref(false)
 // 编辑态：null=新建，否则=正在编辑的伙伴编码（编码不可改）。
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
+const originalCreditLimitValue = shallowRef('')
+const originalCreditCurrencyValue = shallowRef('')
 
 const keyword = ref('')
 const roleFilter = ref('all')
@@ -135,12 +137,20 @@ const hasCustomerRole = computed(() =>
 )
 const creditLimitValue = computed(() => String(createForm.creditLimit ?? '').trim())
 const creditCurrencyValue = computed(() => String(createForm.creditCurrencyCode ?? '').trim().toUpperCase())
+const hasOriginalCreditProfile = computed(() => Boolean(originalCreditLimitValue.value))
+const shouldShowCreditFields = computed(() => hasCustomerRole.value || hasOriginalCreditProfile.value)
 const creditLimitValidationMessage = computed(() => {
   if (!hasCustomerRole.value || !creditLimitValue.value) return ''
   const amount = Number(creditLimitValue.value)
   if (!Number.isFinite(amount) || amount < 0) return '信用额度必须为不小于 0 的数字。'
   if (!creditCurrencyValue.value) return '填写信用额度时必须填写币种。'
   return ''
+})
+const creditLimitDescription = computed(() => {
+  if (!editingCode.value) return '销售订单信用检查使用的客户额度。'
+  if (!hasCustomerRole.value && hasOriginalCreditProfile.value) return '移除客户角色后保存会同步清空信用额度。'
+  if (hasOriginalCreditProfile.value && !creditLimitValue.value) return '留空保存会清空已有信用额度。'
+  return '销售订单信用检查使用的客户额度。'
 })
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
@@ -187,6 +197,8 @@ function rowKey(row: BusinessConsoleResourceItem) {
 }
 function resetCreateForm() {
   Object.assign(createForm, { ...PARTNER_FORM_DEFAULTS })
+  originalCreditLimitValue.value = ''
+  originalCreditCurrencyValue.value = ''
   for (const key of Object.keys(extraRoleState)) extraRoleState[key] = false
 }
 function openCreate() {
@@ -206,13 +218,15 @@ async function openEdit(row: BusinessConsoleResourceItem) {
   try {
     const d = await partnerActions.fetchDetail(row.code)
     const type = d?.partnerType ?? row.partnerType ?? PARTNER_FORM_DEFAULTS.partnerType
+    originalCreditLimitValue.value = d?.creditLimit?.toString() ?? row.creditLimit?.toString() ?? ''
+    originalCreditCurrencyValue.value = d?.creditCurrencyCode ?? row.creditCurrencyCode ?? ''
     Object.assign(createForm, {
       code: row.code,
       name: d?.name ?? row.displayName ?? '',
       partnerType: type,
       taxId: d?.taxId ?? row.taxId ?? '',
-      creditLimit: d?.creditLimit?.toString() ?? row.creditLimit?.toString() ?? '',
-      creditCurrencyCode: d?.creditCurrencyCode ?? row.creditCurrencyCode ?? 'CNY',
+      creditLimit: originalCreditLimitValue.value,
+      creditCurrencyCode: originalCreditCurrencyValue.value || 'CNY',
     })
     const extras = new Set((d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean))
     for (const o of PARTNER_TYPE_OPTIONS) {
@@ -276,6 +290,10 @@ function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
 function customerCreditPatch() {
+  if (editingCode.value && hasOriginalCreditProfile.value && (!hasCustomerRole.value || !creditLimitValue.value)) {
+    return { clearCreditLimit: true }
+  }
+
   if (!hasCustomerRole.value || !creditLimitValue.value) {
     return {}
   }
@@ -339,12 +357,12 @@ function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' 
                   <Input id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
                   <FieldDescription>用于开票与对账，可后续补录。</FieldDescription>
                 </Field>
-                <Field v-if="hasCustomerRole" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
                   <FieldLabel for="partner-credit-limit">信用额度</FieldLabel>
                   <Input id="partner-credit-limit" v-model="createForm.creditLimit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="可留空" />
-                  <FieldDescription>{{ creditLimitValidationMessage || '销售订单信用检查使用的客户额度。' }}</FieldDescription>
+                  <FieldDescription>{{ creditLimitValidationMessage || creditLimitDescription }}</FieldDescription>
                 </Field>
-                <Field v-if="hasCustomerRole" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
                   <FieldLabel for="partner-credit-currency">信用币种</FieldLabel>
                   <Input id="partner-credit-currency" v-model="createForm.creditCurrencyCode" autocomplete="off" maxlength="10" />
                   <FieldDescription>填写信用额度时使用，默认 CNY。</FieldDescription>

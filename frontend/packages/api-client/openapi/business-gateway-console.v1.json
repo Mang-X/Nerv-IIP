@@ -27366,6 +27366,9 @@
             "maxLength": 10,
             "minLength": 0,
             "nullable": true
+          },
+          "clearCreditLimit": {
+            "type": "boolean"
           }
         }
       },

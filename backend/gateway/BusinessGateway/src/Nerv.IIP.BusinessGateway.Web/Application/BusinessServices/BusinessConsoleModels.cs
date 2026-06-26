@@ -545,7 +545,8 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     decimal? Offset = null,
     DateOnly? EffectiveFrom = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    bool ClearCreditLimit = false);
 
 public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string OrganizationId,

@@ -497,6 +497,7 @@ public sealed class BusinessConsoleCreateBusinessPartnerRequestValidator : Valid
         RuleFor(x => x.PartnerType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0m).When(x => x.CreditLimit.HasValue);
+        RuleFor(x => x.CreditCurrencyCode).NotEmpty().When(x => x.CreditLimit.HasValue);
         RuleFor(x => x.CreditCurrencyCode).MaximumLength(10);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
@@ -829,6 +830,9 @@ public sealed class BusinessConsoleUpdateMasterDataResourceRequestValidator : Va
             .When(x => x.MinimumCapacity.HasValue && x.MaximumCapacity.HasValue);
         RuleFor(x => x.Precision).GreaterThanOrEqualTo(0).When(x => x.Precision.HasValue);
         RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0m).When(x => x.CreditLimit.HasValue);
+        RuleFor(x => x.CreditLimit).Null().When(x => x.ClearCreditLimit);
+        RuleFor(x => x.CreditCurrencyCode).NotEmpty().When(x => x.CreditLimit.HasValue && !x.ClearCreditLimit);
+        RuleFor(x => x.CreditCurrencyCode).Empty().When(x => x.ClearCreditLimit);
         RuleFor(x => x.CreditCurrencyCode).MaximumLength(10);
     }
 }

@@ -2699,6 +2699,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     effectiveFrom?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
+    clearCreditLimit?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSetMasterDataResourceEnabledRequest = {

@@ -466,7 +466,7 @@ public sealed class MasterDataApiContractTests
             "ean13",
             true,
             []));
-        dbContext.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create("org-001", "env-dev", "SUP-001", "supplier", "Supplier A", ["supplier", "customer"], "TAX-001"));
+        dbContext.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create("org-001", "env-dev", "SUP-001", "supplier", "Supplier A", ["supplier", "customer"], "TAX-001", creditLimit: 250000m, creditCurrencyCode: "CNY"));
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
@@ -491,6 +491,8 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("supplier", partner.PartnerType);
         Assert.Equal(["supplier", "customer"], partner.PartnerRoles);
         Assert.Equal("TAX-001", partner.TaxId);
+        Assert.Equal(250000m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
 
         var line = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "production-line"), CancellationToken.None)).Resources);
         Assert.Equal("SITE-001", line.SiteCode);
@@ -652,6 +654,41 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("Wang Min", updated.PrimaryContactName);
         Assert.Equal("wang.min@example.com", updated.PrimaryContactEmail);
         Assert.Equal("+86-10-0000", updated.PrimaryContactPhone);
+    }
+
+    [Fact]
+    public async Task Business_partner_update_can_clear_credit_limit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand(
+                "org-001",
+                "env-dev",
+                "CUST-CREDIT",
+                "customer",
+                "Credit Customer",
+                ["customer"],
+                null,
+                CreditLimit: 1000m,
+                CreditCurrencyCode: "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updated = await new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext)).Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "business-partner",
+                "CUST-CREDIT",
+                ClearCreditLimit: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.CreditLimit);
+        Assert.Null(updated.CreditCurrencyCode);
     }
 
     [Fact]

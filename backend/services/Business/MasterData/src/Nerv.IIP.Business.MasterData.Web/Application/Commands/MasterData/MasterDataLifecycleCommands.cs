@@ -113,7 +113,8 @@ public sealed record UpdateMasterDataResourceCommand(
     string? HolidayCalendarCode = null,
     int? BreakMinutes = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null) : ICommand<MasterDataResourceDetail>;
+    string? CreditCurrencyCode = null,
+    bool ClearCreditLimit = false) : ICommand<MasterDataResourceDetail>;
 
 public sealed record SetMasterDataResourceEnabledCommand(
     string OrganizationId,
@@ -223,8 +224,8 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                 var primaryContactName = request.PrimaryContactName ?? partner.PrimaryContactName;
                 var primaryContactEmail = request.PrimaryContactEmail ?? partner.PrimaryContactEmail;
                 var primaryContactPhone = request.PrimaryContactPhone ?? partner.PrimaryContactPhone;
-                var creditLimit = request.CreditLimit ?? partner.CreditLimit;
-                var creditCurrencyCode = request.CreditCurrencyCode ?? partner.CreditCurrencyCode;
+                var creditLimit = request.ClearCreditLimit ? null : request.CreditLimit ?? partner.CreditLimit;
+                var creditCurrencyCode = request.ClearCreditLimit ? null : request.CreditCurrencyCode ?? partner.CreditCurrencyCode;
                 if (request.PartnerRoles is null && request.PartnerType is not null)
                 {
                     partner.ChangePrimaryRole(

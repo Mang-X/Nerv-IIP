@@ -2101,6 +2101,84 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Create_business_partner_rejects_credit_limit_without_currency()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/master-data/business-partners", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            partnerType = "customer",
+            name = "Hengjing Precision Manufacturing",
+            partnerRoles = new[] { "customer" },
+            creditLimit = 500000m,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, masterData.CreateResourceCallCount);
+    }
+
+    [Fact]
+    public async Task Update_business_partner_forwards_credit_limit_clear_to_master_data()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PatchAsJsonAsync("/api/business-console/v1/master-data/resources/business-partner/CUST-HENGJING", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resourceType = "business-partner",
+            code = "CUST-HENGJING",
+            clearCreditLimit = true,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(masterData.LastUpdateRequest!.ClearCreditLimit);
+        Assert.Null(masterData.LastUpdateRequest.CreditLimit);
+        Assert.Null(masterData.LastUpdateRequest.CreditCurrencyCode);
+    }
+
+    [Fact]
+    public async Task Update_business_partner_rejects_credit_limit_without_currency()
+    {
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PatchAsJsonAsync("/api/business-console/v1/master-data/resources/business-partner/CUST-HENGJING", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            resourceType = "business-partner",
+            code = "CUST-HENGJING",
+            creditLimit = 500000m,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(masterData.LastUpdateRequest);
+    }
+
+    [Fact]
     public async Task Count_adjustment_rejects_zero_counted_quantity()
     {
         var inventory = new RecordingInventoryClient();
