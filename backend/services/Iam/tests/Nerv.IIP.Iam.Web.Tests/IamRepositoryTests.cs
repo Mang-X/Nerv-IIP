@@ -76,7 +76,8 @@ public sealed class IamRepositoryTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            new TestWebHostEnvironment());
 
         var response = await authService.LoginAsync("session-v7", "Password123!", null, null, CancellationToken.None);
 

@@ -81,7 +81,8 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            new TestWebHostEnvironment());
 
         var principalAaa = await service.GetCurrentPrincipalAsync(
             CreateHttpContext(tokenService.CreateAccessToken(user, session, "org-aaa", "env-dev")),
@@ -211,7 +212,8 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            new TestWebHostEnvironment());
     }
 
     private static HttpContext CreateHttpContext(string accessToken)
