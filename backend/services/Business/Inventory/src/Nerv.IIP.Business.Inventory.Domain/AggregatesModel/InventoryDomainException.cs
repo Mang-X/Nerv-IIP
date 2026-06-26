@@ -2,13 +2,14 @@ namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 
 public enum InventoryDomainFailureReason
 {
+    // Default fallback for structured domain failures that do not need a more specific public failure code.
     PostingRejected,
     NegativeOnHand,
     IdempotencyConflict,
     DimensionMismatch,
     LedgerFrozen,
     ReservationAllocationRejected,
-    ReservedStockProtection,
+    CommittedStockProtection,
 }
 
 public sealed class InventoryDomainException(InventoryDomainFailureReason reason, string message)

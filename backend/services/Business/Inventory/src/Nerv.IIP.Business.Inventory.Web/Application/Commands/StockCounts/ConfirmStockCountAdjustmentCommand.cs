@@ -86,6 +86,6 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
 
     private static bool IsReservedStockGuard(InventoryDomainException exception)
     {
-        return exception.Reason == InventoryDomainFailureReason.ReservedStockProtection;
+        return exception.Reason == InventoryDomainFailureReason.CommittedStockProtection;
     }
 }

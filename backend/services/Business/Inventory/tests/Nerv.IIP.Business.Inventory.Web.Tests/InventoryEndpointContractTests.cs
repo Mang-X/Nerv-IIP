@@ -707,16 +707,6 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
-    public void Inventory_posting_rejection_does_not_convert_untyped_invalid_operation_even_when_message_mentions_reserved_stock()
-    {
-        var exception = new InvalidOperationException("reserved cache state was not initialized.");
-
-        var thrown = Assert.Throws<InvalidOperationException>(() => InventoryPostingRejectedException.FromDomain(exception));
-
-        Assert.Same(exception, thrown);
-    }
-
-    [Fact]
     public async Task Post_movement_command_maps_reserved_stock_guard_without_message_substring()
     {
         await using var provider = CreateInMemoryProvider();

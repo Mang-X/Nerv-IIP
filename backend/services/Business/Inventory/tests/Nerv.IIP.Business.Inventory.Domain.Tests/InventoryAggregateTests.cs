@@ -140,6 +140,35 @@ public sealed class InventoryAggregateTests
         Assert.Equal("partially-allocated", reservation.Status);
     }
 
+    [Theory]
+    [InlineData("allocate")]
+    [InlineData("release")]
+    public void Reservation_operation_with_inconsistent_ledger_reserved_quantity_reports_structured_failure(string operation)
+    {
+        var ledger = NewLedger();
+        ledger.ApplyMovement(NewMovement("inbound", 10m, "idem-in-001"));
+        var reservation = StockReservation.Reserve(
+            ledger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            4m);
+
+        var exception = Assert.Throws<InventoryDomainException>(() =>
+        {
+            if (operation == "allocate")
+            {
+                ledger.AllocateReservation(reservation, 1m);
+                return;
+            }
+
+            ledger.ReleaseReservation(reservation, 1m);
+        });
+
+        Assert.Equal(InventoryDomainFailureReason.ReservationAllocationRejected, exception.Reason);
+    }
+
     [Fact]
     public void Unreserved_outbound_cannot_reduce_on_hand_below_reserved_quantity()
     {
@@ -157,7 +186,7 @@ public sealed class InventoryAggregateTests
         var exception = Assert.Throws<InventoryDomainException>(() =>
             ledger.ApplyMovement(NewMovement("outbound", -3m, "idem-out-001")));
 
-        Assert.Equal(InventoryDomainFailureReason.ReservedStockProtection, exception.Reason);
+        Assert.Equal(InventoryDomainFailureReason.CommittedStockProtection, exception.Reason);
         Assert.Equal(10m, ledger.OnHandQuantity);
         Assert.Equal(8m, ledger.ReservedQuantity);
         Assert.Equal(2m, ledger.AvailableQuantity);
@@ -336,7 +365,7 @@ public sealed class InventoryAggregateTests
         var exception = Assert.Throws<InventoryDomainException>(() =>
             task.ConfirmAdjustment(ledger, countedQuantity: 7m, "idem-count-001"));
 
-        Assert.Equal(InventoryDomainFailureReason.ReservedStockProtection, exception.Reason);
+        Assert.Equal(InventoryDomainFailureReason.CommittedStockProtection, exception.Reason);
         Assert.Equal(10m, ledger.OnHandQuantity);
         Assert.Equal(8m, ledger.ReservedQuantity);
         Assert.Equal(2m, ledger.AvailableQuantity);

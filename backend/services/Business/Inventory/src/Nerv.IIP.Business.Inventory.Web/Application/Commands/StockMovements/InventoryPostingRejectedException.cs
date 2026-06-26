@@ -34,14 +34,9 @@ public sealed class InventoryPostingRejectedException : KnownException
 
     public string FailureMessage { get; }
 
-    public static InventoryPostingRejectedException FromDomain(InvalidOperationException exception)
+    public static InventoryPostingRejectedException FromDomain(InventoryDomainException exception)
     {
-        if (exception is not InventoryDomainException domainException)
-        {
-            throw exception;
-        }
-
-        return new InventoryPostingRejectedException(ResolveDomainFailureCode(domainException.Reason), exception.Message, exception);
+        return new InventoryPostingRejectedException(ResolveDomainFailureCode(exception.Reason), exception.Message, exception);
     }
 
     private static string NormalizeFailureCode(string failureCode)
@@ -60,7 +55,7 @@ public sealed class InventoryPostingRejectedException : KnownException
             InventoryDomainFailureReason.DimensionMismatch => InventoryPostingFailureCodes.DimensionMismatch,
             InventoryDomainFailureReason.LedgerFrozen => InventoryPostingFailureCodes.LedgerFrozen,
             InventoryDomainFailureReason.ReservationAllocationRejected => InventoryPostingFailureCodes.ReservationAllocationRejected,
-            InventoryDomainFailureReason.ReservedStockProtection => InventoryPostingFailureCodes.ReservationAllocationRejected,
+            InventoryDomainFailureReason.CommittedStockProtection => InventoryPostingFailureCodes.ReservationAllocationRejected,
             _ => InventoryPostingFailureCodes.PostingRejected,
         };
     }

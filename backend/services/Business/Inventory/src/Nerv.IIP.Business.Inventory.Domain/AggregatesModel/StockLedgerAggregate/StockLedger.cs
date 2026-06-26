@@ -122,7 +122,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         if (movement.Quantity < 0 && nextOnHand < ReservedQuantity)
         {
             throw new InventoryDomainException(
-                InventoryDomainFailureReason.ReservedStockProtection,
+                InventoryDomainFailureReason.CommittedStockProtection,
                 "Stock movement would breach committed stock protection.");
         }
 
@@ -179,7 +179,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         ReservedQuantity -= quantity;
         if (ReservedQuantity < 0)
         {
-            throw new InvalidOperationException("Reserved quantity cannot be negative.");
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Ledger committed quantity cannot be negative.");
         }
 
         LedgerVersion++;
@@ -195,7 +197,9 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         ReservedQuantity -= quantity;
         if (ReservedQuantity < 0)
         {
-            throw new InvalidOperationException("Reserved quantity cannot be negative.");
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Ledger committed quantity cannot be negative.");
         }
 
         LedgerVersion++;
