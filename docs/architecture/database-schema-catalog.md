@@ -605,7 +605,7 @@ Source:
 Known gaps:
 
 1. Gateway-wide permission enforcement 已覆盖现有 Console API；Gateway 转发 bearer token 与 permission/context 到 IAM internal authorization check endpoint，不直接读取 IAM schema。
-2. ExternalClient 当前首批覆盖 seed 驱动的 `client_credentials` 发 token 与 AuthorizationGrant 权限检查闭环；P2 已补资源范围 ABAC grant enforcement。IAM 另提供外部 OIDC callback/MFA hook 作为企业身份入口，但不包含完整 OAuth/OIDC 授权码服务器、动态客户端注册 UI 或 consent 流程。
+2. ExternalClient 当前首批覆盖 seed 驱动的 `client_credentials` 发 token 与 AuthorizationGrant 权限检查闭环；P2 已补资源范围 ABAC grant enforcement。IAM 另保留 Development-only 外部 OIDC callback/MFA hook 作为企业身份联调入口，非 Development 环境不接受明文 OIDC body 身份、callback secret 或静态 MFA development code 换发用户会话；当前不包含完整 OAuth/OIDC 授权码服务器、生产 IdP 验签、生产 MFA、动态客户端注册 UI 或 consent 流程。
 3. 客户发布 seed input 与 migration bundle 仍属于后续 release work。
 
 ## FileStorage Schema
