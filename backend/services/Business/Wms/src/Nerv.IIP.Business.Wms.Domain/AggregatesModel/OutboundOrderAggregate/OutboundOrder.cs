@@ -134,7 +134,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
     }
 
-    public InventoryMovementRequest CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
@@ -143,31 +143,32 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Outbound order cannot complete when pack review failed.");
         }
 
-        var line = lines[0];
         PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
         PackReviewPassed = true;
         Status = OutboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
-        var request = InventoryMovementRequest.Create(
-            OrganizationId,
-            EnvironmentId,
-            "outbound",
-            OutboundOrderNo,
-            line.LineNo,
-            idempotencyKey,
-            line.SkuCode,
-            line.UomCode,
-            SiteCode,
-            line.PickLocationCode,
-            line.LotNo,
-            line.SerialNo,
-            line.QualityStatus,
-            line.OwnerType,
-            line.OwnerId,
-            line.RequestedQuantity,
-            line.InventoryReservationId);
+        var singleLine = lines.Count == 1;
+        var requests = lines.Select(line => InventoryMovementRequest.Create(
+                OrganizationId,
+                EnvironmentId,
+                "outbound",
+                OutboundOrderNo,
+                line.LineNo,
+                singleLine ? idempotencyKey : BuildLineIdempotencyKey(idempotencyKey, line.LineNo),
+                line.SkuCode,
+                line.UomCode,
+                SiteCode,
+                line.PickLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                line.RequestedQuantity,
+                line.InventoryReservationId))
+            .ToArray();
         this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
-        return request;
+        return requests;
     }
 
     public void MarkInventoryPostingFailed()
@@ -197,6 +198,19 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         {
             throw new InvalidOperationException("Completed or failed outbound orders are immutable.");
         }
+    }
+
+    private static string BuildLineIdempotencyKey(string idempotencyKey, string lineNo)
+    {
+        var candidate = $"{idempotencyKey}:{lineNo}";
+        if (candidate.Length <= 128)
+        {
+            return candidate;
+        }
+
+        var raw = $"{idempotencyKey}:{lineNo}";
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
+        return $"wms-line:{hash}";
     }
 }
 

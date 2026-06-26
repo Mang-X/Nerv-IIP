@@ -16,7 +16,7 @@ public sealed class WmsExecutionAggregateTests
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
 
         var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" "));
-        var request = inbound.Complete("idem-in-001");
+        var request = Assert.Single(inbound.Complete("idem-in-001"));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
@@ -56,7 +56,7 @@ public sealed class WmsExecutionAggregateTests
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m);
 
         var exception = Assert.Throws<ArgumentException>(() => outbound.CompletePackReview("PACK-001", true, " "));
-        var request = outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(OutboundOrderStatus.Completed, outbound.Status);
@@ -71,7 +71,7 @@ public sealed class WmsExecutionAggregateTests
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
 
-        var request = outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
         Assert.Equal("res-001", request.InventoryReservationId);
     }
