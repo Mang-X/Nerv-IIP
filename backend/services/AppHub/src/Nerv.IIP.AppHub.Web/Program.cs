@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using FastEndpoints;
 using Nerv.IIP.AppHub.Infrastructure;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Caching;
@@ -24,6 +25,8 @@ if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 
 builder.Services.AddFastEndpoints();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IConnectorIngestionTokenService, ConnectorIngestionTokenService>();
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);

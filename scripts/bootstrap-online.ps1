@@ -314,6 +314,7 @@ function Initialize-LocalAppHostSecrets {
         'Parameters:minio-root-password' = New-SecretValue -Bytes 24
         'Parameters:iam-seed-admin-password' = $adminPassword
         'Parameters:iam-seed-connector-host-secret' = New-SecretValue -Bytes 32
+        'Parameters:connector-ingestion-token-signing-key' = New-SecretValue -Bytes 48
     }
 
     foreach ($entry in $secretMap.GetEnumerator()) {
