@@ -56,6 +56,8 @@ const createShowErrors = ref(false)
 // 编辑态：null=新建，否则=正在编辑的伙伴编码（编码不可改）。
 const editingCode = shallowRef<string | null>(null)
 const editLoading = shallowRef(false)
+const originalCreditLimitValue = shallowRef('')
+const originalCreditCurrencyValue = shallowRef('')
 
 const keyword = ref('')
 const roleFilter = ref('all')
@@ -109,6 +111,8 @@ const PARTNER_FORM_DEFAULTS = {
   name: '',
   partnerType: 'customer',
   taxId: '',
+  creditLimit: '',
+  creditCurrencyCode: 'CNY',
 }
 const createForm = reactive({
   organizationId: filters.organizationId,
@@ -126,14 +130,35 @@ function selectedExtraRoles() {
     .filter((value) => extraRoleState[value] && value !== createForm.partnerType)
 }
 const canCreatePartner = computed(() =>
-  [createForm.name, createForm.partnerType].every(isNonEmpty),
+  [createForm.name, createForm.partnerType].every(isNonEmpty) && !creditLimitValidationMessage.value,
 )
+const hasCustomerRole = computed(() =>
+  createForm.partnerType === 'customer' || selectedExtraRoles().includes('customer'),
+)
+const creditLimitValue = computed(() => String(createForm.creditLimit ?? '').trim())
+const creditCurrencyValue = computed(() => String(createForm.creditCurrencyCode ?? '').trim().toUpperCase())
+const hasOriginalCreditProfile = computed(() => Boolean(originalCreditLimitValue.value))
+const shouldShowCreditFields = computed(() => hasCustomerRole.value || hasOriginalCreditProfile.value)
+const creditLimitValidationMessage = computed(() => {
+  if (!hasCustomerRole.value || !creditLimitValue.value) return ''
+  const amount = Number(creditLimitValue.value)
+  if (!Number.isFinite(amount) || amount < 0) return '信用额度必须为不小于 0 的数字。'
+  if (!creditCurrencyValue.value) return '填写信用额度时必须填写币种。'
+  return ''
+})
+const creditLimitDescription = computed(() => {
+  if (!editingCode.value) return '销售订单信用检查使用的客户额度。'
+  if (!hasCustomerRole.value && hasOriginalCreditProfile.value) return '移除客户角色后保存会同步清空信用额度。'
+  if (hasOriginalCreditProfile.value && !creditLimitValue.value) return '留空保存会清空已有信用额度。'
+  return '销售订单信用检查使用的客户额度。'
+})
 
 const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
   { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
+  { key: 'creditLimit', header: '信用额度', width: 'w-36', accessor: (r) => formatCreditLimit(r) },
   { key: 'active', header: '状态', width: 'w-24' },
   { key: 'snapshotVersion', header: '更新时间', width: 'w-40', accessor: (r) => formatDateTime(r.snapshotVersion) },
   { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
@@ -145,6 +170,7 @@ function partnerDetailFields(row: BusinessConsoleResourceItem) {
     { label: '名称', value: row.displayName ?? '' },
     { label: '角色', value: rolesLabel(row) },
     { label: '统一社会信用代码', value: row.taxId ?? '' },
+    { label: '信用额度', value: formatCreditLimit(row) },
   ]
 }
 
@@ -171,6 +197,8 @@ function rowKey(row: BusinessConsoleResourceItem) {
 }
 function resetCreateForm() {
   Object.assign(createForm, { ...PARTNER_FORM_DEFAULTS })
+  originalCreditLimitValue.value = ''
+  originalCreditCurrencyValue.value = ''
   for (const key of Object.keys(extraRoleState)) extraRoleState[key] = false
 }
 function openCreate() {
@@ -190,11 +218,15 @@ async function openEdit(row: BusinessConsoleResourceItem) {
   try {
     const d = await partnerActions.fetchDetail(row.code)
     const type = d?.partnerType ?? row.partnerType ?? PARTNER_FORM_DEFAULTS.partnerType
+    originalCreditLimitValue.value = d?.creditLimit?.toString() ?? row.creditLimit?.toString() ?? ''
+    originalCreditCurrencyValue.value = d?.creditCurrencyCode ?? row.creditCurrencyCode ?? ''
     Object.assign(createForm, {
       code: row.code,
       name: d?.name ?? row.displayName ?? '',
       partnerType: type,
       taxId: d?.taxId ?? row.taxId ?? '',
+      creditLimit: originalCreditLimitValue.value,
+      creditCurrencyCode: originalCreditCurrencyValue.value || 'CNY',
     })
     const extras = new Set((d?.partnerRoles ?? row.partnerRoles ?? []).map((r) => (r ?? '').trim()).filter(Boolean))
     for (const o of PARTNER_TYPE_OPTIONS) {
@@ -212,6 +244,7 @@ async function submitPartner() {
   }
   const roles = selectedExtraRoles()
   const taxId = createForm.taxId.trim()
+  const creditPatch = customerCreditPatch()
   try {
     if (editingCode.value) {
       await partnerActions.update(editingCode.value, {
@@ -219,6 +252,7 @@ async function submitPartner() {
         partnerType: createForm.partnerType.trim(),
         partnerRoles: roles,
         taxId: taxId || null,
+        ...creditPatch,
       })
       notifySuccess(`业务伙伴「${createForm.name.trim()}」已更新。`)
     }
@@ -230,6 +264,7 @@ async function submitPartner() {
         partnerType: createForm.partnerType.trim(),
         ...(roles.length ? { partnerRoles: roles } : {}),
         ...(taxId ? { taxId } : {}),
+        ...creditPatch,
       }
       await createPartner(body)
       notifySuccess(`业务伙伴「${body.name}」已创建。`)
@@ -253,6 +288,24 @@ function formatError(error: unknown) {
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
+}
+function customerCreditPatch() {
+  if (editingCode.value && hasOriginalCreditProfile.value && (!hasCustomerRole.value || !creditLimitValue.value)) {
+    return { clearCreditLimit: true }
+  }
+
+  if (!hasCustomerRole.value || !creditLimitValue.value) {
+    return {}
+  }
+
+  return {
+    creditLimit: Number(creditLimitValue.value),
+    creditCurrencyCode: creditCurrencyValue.value,
+  }
+}
+function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' | 'creditCurrencyCode'>) {
+  if (row.creditLimit === undefined || row.creditLimit === null) return '无'
+  return `${row.creditCurrencyCode ?? ''} ${row.creditLimit}`.trim()
 }
 </script>
 
@@ -303,6 +356,16 @@ function isNonEmpty(value: string) {
                   <FieldLabel for="partner-tax">统一社会信用代码</FieldLabel>
                   <Input id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
                   <FieldDescription>用于开票与对账，可后续补录。</FieldDescription>
+                </Field>
+                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                  <FieldLabel for="partner-credit-limit">信用额度</FieldLabel>
+                  <Input id="partner-credit-limit" v-model="createForm.creditLimit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="可留空" />
+                  <FieldDescription>{{ creditLimitValidationMessage || creditLimitDescription }}</FieldDescription>
+                </Field>
+                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                  <FieldLabel for="partner-credit-currency">信用币种</FieldLabel>
+                  <Input id="partner-credit-currency" v-model="createForm.creditCurrencyCode" autocomplete="off" maxlength="10" />
+                  <FieldDescription>填写信用额度时使用，默认 CNY。</FieldDescription>
                 </Field>
               </FieldGroup>
 

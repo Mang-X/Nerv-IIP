@@ -717,6 +717,24 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse("rule-001"));
     }
 
+    public Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordTelemetrySampleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleRecordTelemetrySampleResponse("summary-001", "state-001"));
+    }
+
+    public Task<BusinessConsolePostTelemetryAlarmResponse> PostAlarmAsync(
+        string internalBearerToken,
+        BusinessConsolePostTelemetryAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsolePostTelemetryAlarmResponse("alarm-001"));
+    }
+
     public Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
         string internalBearerToken,
         string deviceAssetId,

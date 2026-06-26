@@ -35,7 +35,10 @@ public sealed record MasterDataResourceItem(
     decimal? Factor = null,
     decimal? Offset = null,
     int? Precision = null,
-    string? RoundingMode = null);
+    string? RoundingMode = null,
+    string? DeviceAssetId = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record ListMasterDataResourcesResponse(
     IReadOnlyCollection<MasterDataResourceItem> Resources,
@@ -189,7 +192,43 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.PartnerType) || x.PartnerType == request.PartnerType || x.PartnerRoles.Contains(request.PartnerType))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, x.PartnerType, x.PartnerRoles, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, x.TaxId));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"),
+                x.PartnerType,
+                x.PartnerRoles,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.Disabled ? "disabled" : "active",
+                null,
+                null,
+                null,
+                null,
+                x.TaxId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                x.CreditLimit,
+                x.CreditCurrencyCode));
     }
 
     private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, string resourceType)
@@ -284,7 +323,18 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, x.LineCode, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active"));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Model,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                LineCode = x.LineCode,
+                WorkCenterCode = x.WorkCenterCode,
+                Status = x.Disabled ? "disabled" : "active",
+                DeviceAssetId = x.Id.ToString(),
+            });
     }
 
     private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, string resourceType)
@@ -373,7 +423,10 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
         decimal? Factor = null,
         decimal? Offset = null,
         int? Precision = null,
-        string? RoundingMode = null)
+        string? RoundingMode = null,
+        string? DeviceAssetId = null,
+        decimal? CreditLimit = null,
+        string? CreditCurrencyCode = null)
     {
         return new MasterDataResourceItem(
             resourceType,
@@ -408,7 +461,10 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Factor,
             Offset,
             Precision,
-            RoundingMode);
+            RoundingMode,
+            DeviceAssetId,
+            CreditLimit,
+            CreditCurrencyCode);
     }
 
     private static string? NormalizeKeyword(string? keyword)

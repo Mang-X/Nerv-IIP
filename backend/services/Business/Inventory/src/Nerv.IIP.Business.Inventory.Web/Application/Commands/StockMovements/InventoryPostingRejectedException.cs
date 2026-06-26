@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
+
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
 public static class InventoryPostingFailureCodes
@@ -32,9 +34,9 @@ public sealed class InventoryPostingRejectedException : KnownException
 
     public string FailureMessage { get; }
 
-    public static InventoryPostingRejectedException FromDomain(InvalidOperationException exception)
+    public static InventoryPostingRejectedException FromDomain(InventoryDomainException exception)
     {
-        return new InventoryPostingRejectedException(ResolveDomainFailureCode(exception.Message), exception.Message, exception);
+        return new InventoryPostingRejectedException(ResolveDomainFailureCode(exception.Reason), exception.Message, exception);
     }
 
     private static string NormalizeFailureCode(string failureCode)
@@ -44,35 +46,17 @@ public sealed class InventoryPostingRejectedException : KnownException
             : failureCode;
     }
 
-    private static string ResolveDomainFailureCode(string message)
+    private static string ResolveDomainFailureCode(InventoryDomainFailureReason reason)
     {
-        if (message.Contains("negative", StringComparison.OrdinalIgnoreCase))
+        return reason switch
         {
-            return InventoryPostingFailureCodes.NegativeOnHand;
-        }
-
-        if (message.Contains("idempotency", StringComparison.OrdinalIgnoreCase))
-        {
-            return InventoryPostingFailureCodes.IdempotencyConflict;
-        }
-
-        if (message.Contains("dimension", StringComparison.OrdinalIgnoreCase))
-        {
-            return InventoryPostingFailureCodes.DimensionMismatch;
-        }
-
-        if (message.Contains("frozen", StringComparison.OrdinalIgnoreCase))
-        {
-            return InventoryPostingFailureCodes.LedgerFrozen;
-        }
-
-        if (message.Contains("allocate", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("reservation", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("reserved", StringComparison.OrdinalIgnoreCase))
-        {
-            return InventoryPostingFailureCodes.ReservationAllocationRejected;
-        }
-
-        return InventoryPostingFailureCodes.PostingRejected;
+            InventoryDomainFailureReason.NegativeOnHand => InventoryPostingFailureCodes.NegativeOnHand,
+            InventoryDomainFailureReason.IdempotencyConflict => InventoryPostingFailureCodes.IdempotencyConflict,
+            InventoryDomainFailureReason.DimensionMismatch => InventoryPostingFailureCodes.DimensionMismatch,
+            InventoryDomainFailureReason.LedgerFrozen => InventoryPostingFailureCodes.LedgerFrozen,
+            InventoryDomainFailureReason.ReservationAllocationRejected => InventoryPostingFailureCodes.ReservationAllocationRejected,
+            InventoryDomainFailureReason.CommittedStockProtection => InventoryPostingFailureCodes.ReservationAllocationRejected,
+            _ => InventoryPostingFailureCodes.PostingRejected,
+        };
     }
 }

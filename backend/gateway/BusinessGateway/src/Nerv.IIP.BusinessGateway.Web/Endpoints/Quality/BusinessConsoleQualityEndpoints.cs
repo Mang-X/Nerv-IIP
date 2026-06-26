@@ -119,6 +119,18 @@ public sealed class BusinessConsoleArchiveQualityReasonRequestValidator : Valida
     }
 }
 
+public sealed class BusinessConsoleOpenNcrFromInspectionRequestValidator
+    : Validator<BusinessConsoleOpenNcrFromInspectionRequest>
+{
+    public BusinessConsoleOpenNcrFromInspectionRequestValidator()
+    {
+        RuleFor(x => x.InspectionRecordId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DefectReason).NotEmpty().MaximumLength(200);
+    }
+}
+
 [Tags("Business Console Quality")]
 [HttpGet("/api/business-console/v1/quality/inspection-plans")]
 [BusinessGatewayOperationId("listBusinessConsoleQualityInspectionPlans")]
@@ -161,6 +173,62 @@ public sealed class CreateBusinessConsoleQualityInspectionRecordEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         quality.CreateInspectionRecordAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpGet("/api/business-console/v1/quality/inspection-records")]
+[BusinessGatewayOperationId("listBusinessConsoleQualityInspectionRecords")]
+public sealed class ListBusinessConsoleQualityInspectionRecordsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQualityListRequest, BusinessConsoleQualityListResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityInspectionRecordsRead)
+{
+    protected override string OrganizationId(BusinessConsoleQualityListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQualityListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleQualityListResponse> ForwardAsync(
+        BusinessConsoleQualityListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.ListInspectionRecordsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr")]
+[BusinessGatewayOperationId("openBusinessConsoleQualityNcrFromInspection")]
+public sealed class OpenBusinessConsoleQualityNcrFromInspectionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleOpenNcrFromInspectionRequest, BusinessConsoleOpenNcrFromInspectionResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrManage)
+{
+    protected override string OrganizationId(BusinessConsoleOpenNcrFromInspectionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleOpenNcrFromInspectionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleOpenNcrFromInspectionRequest request) => "inspection-record";
+
+    protected override string? ResourceId(BusinessConsoleOpenNcrFromInspectionRequest request) =>
+        Route<string>("inspectionRecordId") ?? request.InspectionRecordId;
+
+    protected override Task<BusinessConsoleOpenNcrFromInspectionResponse> ForwardAsync(
+        BusinessConsoleOpenNcrFromInspectionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var inspectionRecordId = Route<string>("inspectionRecordId") ?? request.InspectionRecordId;
+        return quality.OpenNcrFromInspectionAsync(
+            tokenProvider.BearerToken,
+            inspectionRecordId,
+            request with { InspectionRecordId = inspectionRecordId },
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console Quality")]
