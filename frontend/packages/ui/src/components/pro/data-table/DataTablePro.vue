@@ -61,10 +61,15 @@ const props = withDefaults(
     manual?: boolean
     /** Controlled current page (1-based) — manual mode (`v-model:page`). */
     page?: number
-    /** External total row count — manual mode. */
-    total?: number
+    /** External total row count — manual mode（对应调用点的 `:total-items`）。 */
+    totalItems?: number
     /** Initial (client mode) or controlled (manual mode) page size. */
     pageSize?: number | string
+    /** Controlled sort state (`v-model:sort`); uncontrolled (internal) when omitted. */
+    sort?: DataTableProSort | null
+    /** Sort rows client-side. Turn off (`:client-sort="false"`) when the parent sorts
+     *  (server-side / page-controlled) and feeds already-sorted rows. */
+    clientSort?: boolean
     pageSizeOptions?: number[]
     /** Initial density. */
     density?: DataTableProDensity
@@ -92,6 +97,7 @@ const props = withDefaults(
     columnSettings: true,
     pagination: true,
     manual: false,
+    clientSort: true,
     pageSize: 10,
     pageSizeOptions: () => [10, 20, 50, 100],
     density: 'comfortable',
@@ -105,6 +111,7 @@ const emit = defineEmits<{
   'update:selected': [value: (string | number)[]]
   'update:page': [value: number]
   'update:pageSize': [value: number]
+  'update:sort': [value: DataTableProSort | null]
   'row-click': [row: T]
   refresh: []
 }>()
@@ -286,23 +293,28 @@ const filterChips = computed<FilterChip[]>(() =>
 )
 
 // ── Sorting (client-side) ──
-const sort = ref<DataTableProSort | null>(null)
+const innerSort = ref<DataTableProSort | null>(null)
+// Controlled when the parent passes `sort` (including null); otherwise internal.
+const currentSort = computed(() => (props.sort !== undefined ? props.sort : innerSort.value))
 function cycleSort(col: DataTableProColumn<T>) {
   if (!col.sortable) return
-  const cur = sort.value
-  if (!cur || cur.key !== col.key) sort.value = { key: col.key, direction: 'asc' }
-  else if (cur.direction === 'asc') sort.value = { key: col.key, direction: 'desc' }
-  else sort.value = null
+  const cur = currentSort.value
+  let next: DataTableProSort | null
+  if (!cur || cur.key !== col.key) next = { key: col.key, direction: 'asc' }
+  else if (cur.direction === 'asc') next = { key: col.key, direction: 'desc' }
+  else next = null
+  emit('update:sort', next)
+  if (props.sort === undefined) innerSort.value = next
 }
 function sortStateOf(key: string): false | 'asc' | 'desc' {
-  return sort.value?.key === key ? sort.value.direction : false
+  return currentSort.value?.key === key ? currentSort.value.direction : false
 }
 
 // ── Data pipeline: filter → search → sort ──
 const processed = computed(() => {
   let out = props.rows.filter((r) => matchesSearch(r) && matchesFilters(r))
-  if (sort.value) {
-    const { key, direction } = sort.value
+  if (props.clientSort && currentSort.value) {
+    const { key, direction } = currentSort.value
     const col = props.columns.find((c) => c.key === key)
     const sign = direction === 'desc' ? -1 : 1
     out = [...out].sort((a, b) => {
@@ -327,7 +339,7 @@ const innerPageSize = ref(Number(props.pageSize) || 10)
 // Manual (server-driven) mode: parent owns page / size / total. Otherwise paginate client-side.
 const currentPage = computed(() => (props.manual ? (props.page ?? 1) : innerPage.value))
 const currentPageSize = computed(() => (props.manual ? (Number(props.pageSize) || 10) : innerPageSize.value))
-const totalItems = computed(() => (props.manual ? (props.total ?? processed.value.length) : processed.value.length))
+const resolvedTotal = computed(() => (props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length))
 const pagedRows = computed(() => {
   // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
   if (props.manual || !props.pagination) return processed.value
@@ -410,7 +422,7 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
       surface="plain"
       :title="title"
       :description="description"
-      :count="title != null ? totalItems : undefined"
+      :count="title != null ? resolvedTotal : undefined"
       :tabs="tabsWithCount"
       :searchable="searchable"
       :search-placeholder="searchPlaceholder"
@@ -716,13 +728,13 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     </div>
 
     <!-- ░░ Footer / pagination ░░ -->
-    <template v-if="pagination && !loading && totalItems > 0">
+    <template v-if="pagination && !loading && resolvedTotal > 0">
       <Separator />
       <DataTablePaginationPro
         class="px-3 py-3 sm:px-4"
         :page="currentPage"
         :page-size="currentPageSize"
-        :total-items="totalItems"
+        :total-items="resolvedTotal"
         :page-size-options="pageSizeOptions"
         show-jump
         @update:page="setPage"
