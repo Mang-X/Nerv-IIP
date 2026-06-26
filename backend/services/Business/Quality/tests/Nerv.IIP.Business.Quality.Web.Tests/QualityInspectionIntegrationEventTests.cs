@@ -220,33 +220,10 @@ public sealed class QualityInspectionIntegrationEventTests
 
     private static InspectionRecord NewConditionalReleaseRecordWithStockRelease()
     {
-        var plan = InspectionPlan.Create(
+        return InspectionRecord.Create(
             "org-001",
             "env-dev",
-            "IQP-001",
-            "receiving",
-            "SKU-RM-1000",
-            "supplier-001",
             null,
-            null,
-            "purchase-receipt");
-        plan.AddCharacteristic(
-            "appearance",
-            "Appearance",
-            "visual",
-            "major",
-            required: true,
-            samplingRule: "aql-general-ii",
-            characteristicType: InspectionCharacteristicTypes.Attribute,
-            nominalValue: null,
-            lowerSpecLimit: null,
-            upperSpecLimit: null,
-            unitCode: null,
-            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 5, acceptanceNumber: 1, rejectionNumber: 3));
-        plan.Activate();
-
-        return InspectionRecord.CreateFromPlan(
-            plan,
             "receiving",
             "purchase-receipt",
             "RCV-002",
@@ -254,10 +231,10 @@ public sealed class QualityInspectionIntegrationEventTests
             5m,
             "BATCH-002",
             null,
-            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
-            [InspectionResultLineInput.Attribute("appearance", "two defects", "scratch", 2m, [])],
+            [InspectionResultLineInput.ConditionalRelease("appearance", "two defects", "scratch", 2m, [])],
             "MRB conditional release review required",
-            []);
+            [],
+            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null));
     }
 
     private sealed class StubQualityIntegrationEventContextAccessor(QualityIntegrationEventContext? context = null)
