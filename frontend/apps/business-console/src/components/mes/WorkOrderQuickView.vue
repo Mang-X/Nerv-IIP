@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { describeMesReadinessReason, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
 import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  ButtonPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
 } from '@nerv-iip/ui'
 import { ExternalLinkIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
@@ -46,12 +46,12 @@ function openFull() {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent class="sm:max-w-lg">
-      <DialogHeader>
-        <DialogTitle>工单速览</DialogTitle>
-        <DialogDescription>{{ workOrderId }}</DialogDescription>
-      </DialogHeader>
+  <DialogPro v-model:open="open">
+    <DialogProContent class="sm:max-w-lg">
+      <DialogProHeader>
+        <DialogProTitle>工单速览</DialogProTitle>
+        <DialogProDescription>{{ workOrderId }}</DialogProDescription>
+      </DialogProHeader>
 
       <div v-if="detailPending" class="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Spinner aria-hidden="true" />
@@ -65,11 +65,11 @@ function openFull() {
         <div class="grid gap-2 text-sm">
           <div class="flex items-center justify-between gap-3">
             <span class="text-muted-foreground">状态</span>
-            <StatusBadge :value="detail.status" />
+            <StatusBadgePro :value="detail.status" />
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-muted-foreground">就绪</span>
-            <StatusBadge :value="detail.readinessStatus" />
+            <StatusBadgePro :value="detail.readinessStatus" />
           </div>
           <div class="flex justify-between gap-3">
             <span class="text-muted-foreground">数量</span>
@@ -98,7 +98,7 @@ function openFull() {
               class="flex items-center justify-between gap-3 border-b px-3 py-2 text-sm last:border-b-0"
             >
               <span class="font-medium">工序 {{ op.operationSequence ?? '—' }}</span>
-              <StatusBadge :value="op.status" />
+              <StatusBadgePro :value="op.status" />
             </div>
           </div>
           <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">该工单暂无工序。</p>
@@ -106,13 +106,13 @@ function openFull() {
       </div>
       <p v-else class="py-6 text-sm text-muted-foreground">未找到工单概要。</p>
 
-      <DialogFooter>
-        <Button type="button" variant="outline" @click="workOrderId = null">关闭</Button>
-        <Button type="button" :disabled="!detail" @click="openFull">
+      <DialogProFooter>
+        <ButtonPro type="button" variant="outline" @click="workOrderId = null">关闭</ButtonPro>
+        <ButtonPro type="button" :disabled="!detail" @click="openFull">
           <ExternalLinkIcon aria-hidden="true" />
           打开完整详情
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+        </ButtonPro>
+      </DialogProFooter>
+    </DialogProContent>
+  </DialogPro>
 </template>

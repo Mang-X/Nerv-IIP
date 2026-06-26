@@ -1,35 +1,34 @@
 <script setup lang="ts">
 import type { BusinessConsoleCreateBusinessPartnerRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useBusinessPartners, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import { PARTNER_TYPE_OPTIONS } from '@/data/masterDataReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -153,7 +152,7 @@ const creditLimitDescription = computed(() => {
   return '销售订单信用检查使用的客户额度。'
 })
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
@@ -313,130 +312,136 @@ function formatCreditLimit(row: Pick<BusinessConsoleResourceItem, 'creditLimit' 
   <BusinessLayout>
     <PageHeader title="业务伙伴" :breadcrumbs="[{ label: '基础数据' }]" :count="`${partnersTotal} 个伙伴`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="partnersPending" @click="refreshPartners">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="partnersPending" @click="refreshPartners">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="createOpen" @update:open="syncContextFromFilters">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建伙伴
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴' }}</DialogTitle>
-              <DialogDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogDescription>
-            </DialogHeader>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? `编辑业务伙伴 · ${editingCode}` : '新建业务伙伴' }}</DialogProTitle>
+              <DialogProDescription>{{ editingCode ? '修改伙伴档案（编码不可修改）。一个伙伴可兼具多个角色。带 * 为必填项。' : '客户、供应商、承运商统一建档。一个伙伴可兼具多个角色。带 * 为必填项。' }}</DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-4" @submit.prevent="submitPartner">
               <p v-if="createShowErrors && !canCreatePartner" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field v-if="editingCode">
-                  <FieldLabel for="partner-code">编码</FieldLabel>
-                  <Input id="partner-code" :model-value="createForm.code" disabled />
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                  <FieldDescription v-if="!editingCode">编码由系统自动生成。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
-                  <FieldLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.partnerType">
-                    <SelectTrigger id="partner-type"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>该伙伴的主要业务角色。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="partner-tax">统一社会信用代码</FieldLabel>
-                  <Input id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
-                  <FieldDescription>用于开票与对账，可后续补录。</FieldDescription>
-                </Field>
-                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
-                  <FieldLabel for="partner-credit-limit">信用额度</FieldLabel>
-                  <Input id="partner-credit-limit" v-model="createForm.creditLimit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="可留空" />
-                  <FieldDescription>{{ creditLimitValidationMessage || creditLimitDescription }}</FieldDescription>
-                </Field>
-                <Field v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
-                  <FieldLabel for="partner-credit-currency">信用币种</FieldLabel>
-                  <Input id="partner-credit-currency" v-model="createForm.creditCurrencyCode" autocomplete="off" maxlength="10" />
-                  <FieldDescription>填写信用额度时使用，默认 CNY。</FieldDescription>
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel for="partner-code">编码</FieldProLabel>
+                  <InputPro id="partner-code" :model-value="createForm.code" disabled />
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <FieldProLabel for="partner-name">名称 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="partner-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                  <FieldProDescription v-if="!editingCode">编码由系统自动生成。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.partnerType)">
+                  <FieldProLabel for="partner-type">主角色 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.partnerType">
+                    <SelectProTrigger id="partner-type"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>该伙伴的主要业务角色。</FieldProDescription>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel for="partner-tax">统一社会信用代码</FieldProLabel>
+                  <InputPro id="partner-tax" v-model="createForm.taxId" autocomplete="off" placeholder="可留空" />
+                  <FieldProDescription>用于开票与对账，可后续补录。</FieldProDescription>
+                </FieldPro>
+                <FieldPro v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                  <FieldProLabel for="partner-credit-limit">信用额度</FieldProLabel>
+                  <InputPro id="partner-credit-limit" v-model="createForm.creditLimit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="可留空" />
+                  <FieldProDescription>{{ creditLimitValidationMessage || creditLimitDescription }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro v-if="shouldShowCreditFields" :data-invalid="createShowErrors && Boolean(creditLimitValidationMessage)">
+                  <FieldProLabel for="partner-credit-currency">信用币种</FieldProLabel>
+                  <InputPro id="partner-credit-currency" v-model="createForm.creditCurrencyCode" autocomplete="off" maxlength="10" />
+                  <FieldProDescription>填写信用额度时使用，默认 CNY。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
-              <Field>
-                <FieldLabel>附加角色</FieldLabel>
+              <FieldPro>
+                <FieldProLabel>附加角色</FieldProLabel>
                 <div class="flex flex-wrap gap-4">
                   <label
                     v-for="o in extraRoleOptions"
                     :key="o.value"
                     class="flex items-center gap-2 text-sm"
                   >
-                    <Checkbox v-model:checked="extraRoleState[o.value]" :aria-label="o.label" />
+                    <CheckboxPro v-model:checked="extraRoleState[o.value]" :aria-label="o.label" />
                     {{ o.label }}
                   </label>
                 </div>
-                <FieldDescription>除主角色外，该伙伴还承担的角色，可不选。</FieldDescription>
-              </Field>
+                <FieldProDescription>除主角色外，该伙伴还承担的角色，可不选。</FieldProDescription>
+              </FieldPro>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPartnerPending || partnerActions.updatePending.value || editLoading">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPartnerPending || partnerActions.updatePending.value || editLoading">
                   <Spinner v-if="createPartnerPending || partnerActions.updatePending.value" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存伙伴' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
       <template #filters>
-        <Select v-model="roleFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="伙伴角色"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部角色</SelectItem>
-            <SelectItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="roleFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="伙伴角色"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部角色</SelectProItem>
+            <SelectProItem v-for="o in PARTNER_TYPE_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
       <template #actions>
-        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="partnersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedRows"
       :row-key="rowKey"
       :client-sort="false"
       :loading="partnersPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="未找到业务伙伴。可清空筛选或新建伙伴。"
     >
       <template #cell-roles="{ row }">
         <span class="inline-flex flex-wrap gap-1">
-          <StatusBadge v-for="r in partnerRoles(row)" :key="r" :label="roleLabel(r)" tone="neutral" />
+          <StatusBadgePro v-for="r in partnerRoles(row)" :key="r" :label="roleLabel(r)" tone="neutral" />
           <span v-if="!partnerRoles(row).length" class="text-muted-foreground">未分配</span>
         </span>
       </template>
       <template #cell-active="{ row }">
-        <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+        <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-actions="{ row }">
         <MasterDataRowActions :row="row" entity-label="伙伴" :detail-fields="partnerDetailFields(row)" :actions="partnerActions" @edit="openEdit" />
       </template>
-    </DataTable>
-
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="partnersTotal" />
+    </DataTablePro>
   </BusinessLayout>
 </template>

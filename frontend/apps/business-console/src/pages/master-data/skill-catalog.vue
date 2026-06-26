@@ -3,38 +3,37 @@ import type {
   CreateSkillCatalogRequest,
   SkillCatalogItem,
 } from '@/composables/usePromotedCatalogs'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -76,7 +75,7 @@ const listErrorMessage = computed(() =>
   skillsError.value instanceof Error ? skillsError.value.message : '',
 )
 
-const columns: DataTableColumn<SkillCatalogItem>[] = [
+const columns: DataTableProColumn<SkillCatalogItem>[] = [
   { key: 'skillCode', header: '编码', width: 'w-32' },
   { key: 'skillName', header: '技能', cellClass: 'font-medium' },
   { key: 'groupName', header: '技能组' },
@@ -209,80 +208,80 @@ async function confirmArchive() {
       :count="`${skillsTotal} 项技能`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="skillsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="skillsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建技能
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? '编辑技能' : '新建技能' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? '编辑技能' : '新建技能' }}</DialogProTitle>
+              <DialogProDescription>
                 技能目录维护技能定义（技能组 + 证书有效期），是可复用的基础数据；与「人员技能」矩阵（人员-技能登记）是两件事。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请填写技能名与技能组，并确保证书有效期为非负数（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !nameValid">
-                  <FieldLabel for="skill-name">技能名 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="skill-name" v-model="form.skillName" placeholder="例如：CNC 编程" />
-                </Field>
-                <Field v-if="editingCode">
-                  <FieldLabel>编码</FieldLabel>
-                  <Input :model-value="editingCode" readonly disabled />
-                  <FieldDescription>编码由系统自动生成。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !groupValid">
-                  <FieldLabel for="skill-group">技能组 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !nameValid">
+                  <FieldProLabel for="skill-name">技能名 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="skill-name" v-model="form.skillName" placeholder="例如：CNC 编程" />
+                </FieldPro>
+                <FieldPro v-if="editingCode">
+                  <FieldProLabel>编码</FieldProLabel>
+                  <InputPro :model-value="editingCode" readonly disabled />
+                  <FieldProDescription>编码由系统自动生成。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !groupValid">
+                  <FieldProLabel for="skill-group">技能组 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="skill-group" v-model="form.groupName" placeholder="例如：机加工" />
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>证书</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field class="self-start">
-                  <FieldLabel>需要证书</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro class="self-start">
+                  <FieldProLabel>需要证书</FieldProLabel>
                   <label for="skill-cert" class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm">
                     <span>该技能需持证上岗</span>
-                    <Checkbox id="skill-cert" v-model:checked="form.requiresCertification" />
+                    <CheckboxPro id="skill-cert" v-model:checked="form.requiresCertification" />
                   </label>
-                </Field>
-                <Field :data-invalid="showErrors && !validityValid">
-                  <FieldLabel for="skill-validity">证书有效期（月）</FieldLabel>
-                  <Input id="skill-validity" v-model="form.validityMonths" type="number" min="0" placeholder="0" />
-                  <FieldDescription>需证书时填写；到期需复评。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !validityValid">
+                  <FieldProLabel for="skill-validity">证书有效期（月）</FieldProLabel>
+                  <InputPro id="skill-validity" v-model="form.validityMonths" type="number" min="0" placeholder="0" />
+                  <FieldProDescription>需证书时填写；到期需复评。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>其它</FormSectionTitle>
-              <FieldGroup class="grid gap-3">
-                <Field>
-                  <FieldLabel for="skill-desc">说明</FieldLabel>
-                  <Input id="skill-desc" v-model="form.description" placeholder="可选，技能用途或评定标准" />
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3">
+                <FieldPro>
+                  <FieldProLabel for="skill-desc">说明</FieldProLabel>
+                  <InputPro id="skill-desc" v-model="form.description" placeholder="可选，技能用途或评定标准" />
+                </FieldPro>
+              </FieldProGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建技能' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -290,18 +289,26 @@ async function confirmArchive() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="skillsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="skills"
       row-key="skillCode"
       :loading="skillsPending"
       empty-message="技能目录为空。在此维护技能定义（技能组 + 证书有效期），人员技能登记即可选用。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-groupName="{ row }">
         <span>{{ row.groupName || '—' }}</span>
       </template>
       <template #cell-cert="{ row }">
-        <StatusBadge
+        <StatusBadgePro
           v-if="row.requiresCertification"
           :label="row.validityMonths != null ? `需证书 · ${row.validityMonths}个月` : '需证书'"
           tone="warning"
@@ -309,37 +316,36 @@ async function confirmArchive() {
         <span v-else class="text-muted-foreground">免证</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge
+        <StatusBadgePro
           :label="row.enabled === false ? '停用' : '启用'"
           :tone="row.enabled === false ? 'neutral' : 'success'"
         />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <Button type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</Button>
-          <Button type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openEdit(row)">编辑</ButtonPro>
+          <ButtonPro type="button" variant="ghost" size="sm" :disabled="row.enabled === false" @click="openArchive(row)">停用</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="skillsTotal" />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>停用技能</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>停用技能</AlertDialogProTitle>
+          <AlertDialogProDescription>
             停用后技能「{{ archiveTarget?.skillName }}」将不可在人员技能登记中选用，已登记记录不受影响。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认停用
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

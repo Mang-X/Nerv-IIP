@@ -8,53 +8,52 @@ import type {
   BusinessConsoleWorkCalendarWorkingTime,
   SystemDayOfWeek,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-  Button,
-  DataTable,
-  DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  AlertDialogProTrigger,
+  ButtonPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
   Toolbar,
 } from '@nerv-iip/ui'
 import { CalendarCogIcon, CalendarRangeIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -69,7 +68,7 @@ const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest
 const shiftActions = useMasterDataResourceActions('shift')
 const calActions = useMasterDataResourceActions('work-calendar')
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'active', header: '状态', width: 'w-24' },
@@ -677,116 +676,121 @@ const sortedExceptions = computed(() =>
   <BusinessLayout>
     <PageHeader title="排班与日历" :breadcrumbs="[{ label: '基础数据' }]" :count="`${shifts.total.value} 个班次`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="shifts.pending.value" @click="refreshAll">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="shifts.pending.value" @click="refreshAll">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
 
-    <Tabs default-value="shift">
-      <TabsList>
-        <TabsTrigger value="shift">班次 ({{ shifts.total.value }})</TabsTrigger>
-        <TabsTrigger value="work-calendar">工作日历 ({{ calendars.total.value }})</TabsTrigger>
-      </TabsList>
+    <TabsPro default-value="shift">
+      <TabsProList>
+        <TabsProTrigger value="shift">班次 ({{ shifts.total.value }})</TabsProTrigger>
+        <TabsProTrigger value="work-calendar">工作日历 ({{ calendars.total.value }})</TabsProTrigger>
+      </TabsProList>
 
       <!-- 班次 -->
-      <TabsContent value="shift" class="grid gap-3">
+      <TabsProContent value="shift" class="grid gap-3">
         <Toolbar v-model:search="shiftKeyword" search-placeholder="在当前页内筛选班次编码、名称">
           <template #actions>
-            <Dialog v-model:open="shiftOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateShift"><PlusIcon aria-hidden="true" />新建班次</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次' }}</DialogTitle>
-                  <DialogDescription>{{ shiftEditingCode ? '可修改名称、起止时间与计薪时长（编码不可修改）。带 * 为必填项。' : '定义一个排班时段及计薪时长。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
+            <DialogPro v-model:open="shiftOpen">
+              <DialogProTrigger as-child>
+                <ButtonPro size="sm" type="button" @click="openCreateShift"><PlusIcon aria-hidden="true" />新建班次</ButtonPro>
+              </DialogProTrigger>
+              <DialogProContent class="sm:max-w-lg">
+                <DialogProHeader>
+                  <DialogProTitle>{{ shiftEditingCode ? `编辑班次 · ${shiftEditingCode}` : '新建班次' }}</DialogProTitle>
+                  <DialogProDescription>{{ shiftEditingCode ? '可修改名称、起止时间与计薪时长（编码不可修改）。带 * 为必填项。' : '定义一个排班时段及计薪时长。带 * 为必填项。' }}</DialogProDescription>
+                </DialogProHeader>
                 <form class="grid gap-4" @submit.prevent="submitShift">
                   <p v-if="shiftShowErrors && !shiftFormValid" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field v-if="shiftEditingCode">
-                      <FieldLabel for="shift-code">班次编码</FieldLabel>
-                      <Input id="shift-code" :model-value="shiftForm.code" disabled />
-                    </Field>
-                    <Field :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
-                      <FieldLabel for="shift-name">班次名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-name" v-model="shiftForm.name" autocomplete="off" required />
-                      <FieldDescription v-if="!shiftEditingCode">编码由系统自动生成。</FieldDescription>
-                    </Field>
-                    <Field>
-                      <FieldLabel for="shift-start">开始时间</FieldLabel>
-                      <Input id="shift-start" v-model="shiftForm.startsAt" type="time" />
-                    </Field>
-                    <Field>
-                      <FieldLabel for="shift-end">结束时间</FieldLabel>
-                      <Input id="shift-end" v-model="shiftForm.endsAt" type="time" />
-                      <FieldDescription v-if="shiftCrossesMidnight">结束早于开始，按跨天班次处理。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="shiftShowErrors && !shiftPaidValid">
-                      <FieldLabel for="shift-paid">计薪时长（分钟） <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="shift-paid" v-model="shiftForm.paidMinutes" type="number" min="1" inputmode="numeric" />
-                      <FieldDescription>扣除休息后的有效计薪分钟数，默认 480（8 小时）。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="shiftOpen = false">取消</Button>
-                    <Button type="submit" :disabled="shifts.createPending.value || shiftActions.updatePending.value || shiftEditLoading">
+                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                    <FieldPro v-if="shiftEditingCode">
+                      <FieldProLabel for="shift-code">班次编码</FieldProLabel>
+                      <InputPro id="shift-code" :model-value="shiftForm.code" disabled />
+                    </FieldPro>
+                    <FieldPro :data-invalid="shiftShowErrors && !isNonEmpty(shiftForm.name)">
+                      <FieldProLabel for="shift-name">班次名称 <span class="text-destructive">*</span></FieldProLabel>
+                      <InputPro id="shift-name" v-model="shiftForm.name" autocomplete="off" required />
+                      <FieldProDescription v-if="!shiftEditingCode">编码由系统自动生成。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro>
+                      <FieldProLabel for="shift-start">开始时间</FieldProLabel>
+                      <InputPro id="shift-start" v-model="shiftForm.startsAt" type="time" />
+                    </FieldPro>
+                    <FieldPro>
+                      <FieldProLabel for="shift-end">结束时间</FieldProLabel>
+                      <InputPro id="shift-end" v-model="shiftForm.endsAt" type="time" />
+                      <FieldProDescription v-if="shiftCrossesMidnight">结束早于开始，按跨天班次处理。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="shiftShowErrors && !shiftPaidValid">
+                      <FieldProLabel for="shift-paid">计薪时长（分钟） <span class="text-destructive">*</span></FieldProLabel>
+                      <InputPro id="shift-paid" v-model="shiftForm.paidMinutes" type="number" min="1" inputmode="numeric" />
+                      <FieldProDescription>扣除休息后的有效计薪分钟数，默认 480（8 小时）。</FieldProDescription>
+                    </FieldPro>
+                  </FieldProGroup>
+                  <DialogProFooter>
+                    <ButtonPro type="button" variant="outline" @click="shiftOpen = false">取消</ButtonPro>
+                    <ButtonPro type="submit" :disabled="shifts.createPending.value || shiftActions.updatePending.value || shiftEditLoading">
                       <Spinner v-if="shifts.createPending.value || shiftActions.updatePending.value" aria-hidden="true" />{{ shiftEditingCode ? '保存修改' : '保存班次' }}
-                    </Button>
-                  </DialogFooter>
+                    </ButtonPro>
+                  </DialogProFooter>
                 </form>
-              </DialogContent>
-            </Dialog>
+              </DialogProContent>
+            </DialogPro>
           </template>
         </Toolbar>
         <p v-if="shiftListError" class="text-sm text-destructive" role="alert">{{ shiftListError }}</p>
-        <DataTable :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
-          <template #cell-active="{ row }"><StatusBadge :value="row.active === false ? 'disabled' : 'active'" /></template>
+        <DataTablePro
+      manual
+      :page="shiftPage"
+      :page-size="shiftPageSize"
+      :total-items="shifts.total.value"
+      @update:page="shiftPage = $event"
+      @update:page-size="(v) => (shiftPageSize = String(v))" :searchable="false" :column-settings="false" :columns="columns" :rows="shiftRows" :row-key="rowKey" :loading="shifts.pending.value" empty-message="暂无班次。可清空筛选或新建班次。">
+          <template #cell-active="{ row }"><StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" /></template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions :row="row" entity-label="班次" :detail-fields="baseDetailFields(row, '班次编码', '班次名称')" :actions="shiftActions" @edit="openEditShift" />
           </template>
-        </DataTable>
-        <DataTablePagination v-model:page="shiftPage" v-model:page-size="shiftPageSize" :total-items="shifts.total.value" />
-      </TabsContent>
+        </DataTablePro>
+      </TabsProContent>
 
       <!-- 工作日历 -->
-      <TabsContent value="work-calendar" class="grid gap-3">
+      <TabsProContent value="work-calendar" class="grid gap-3">
         <Toolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
           <template #actions>
-            <Dialog v-model:open="calOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateCal"><PlusIcon aria-hidden="true" />新建工作日历</Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>{{ calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历' }}</DialogTitle>
-                  <DialogDescription>{{ calEditingCode ? '修改日历名称（编码不可修改）。工作日 / 节假日在下方月历里维护。带 * 为必填项。' : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
+            <DialogPro v-model:open="calOpen">
+              <DialogProTrigger as-child>
+                <ButtonPro size="sm" type="button" @click="openCreateCal"><PlusIcon aria-hidden="true" />新建工作日历</ButtonPro>
+              </DialogProTrigger>
+              <DialogProContent class="sm:max-w-lg">
+                <DialogProHeader>
+                  <DialogProTitle>{{ calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历' }}</DialogProTitle>
+                  <DialogProDescription>{{ calEditingCode ? '修改日历名称（编码不可修改）。工作日 / 节假日在下方月历里维护。带 * 为必填项。' : '登记一个工作日历，供工作中心与排程引用。带 * 为必填项。' }}</DialogProDescription>
+                </DialogProHeader>
                 <form class="grid gap-4" @submit.prevent="submitCal">
                   <p v-if="calShowErrors && !canCreateCal" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field v-if="calEditingCode">
-                      <FieldLabel for="cal-code">日历编码</FieldLabel>
-                      <Input id="cal-code" :model-value="calForm.code" disabled />
-                    </Field>
-                    <Field :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
-                      <FieldLabel for="cal-name">日历名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="cal-name" v-model="calForm.name" autocomplete="off" required />
-                      <FieldDescription v-if="!calEditingCode">编码由系统自动生成。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="calOpen = false">取消</Button>
-                    <Button type="submit" :disabled="calendars.createPending.value || calActions.updatePending.value || calEditLoading">
+                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                    <FieldPro v-if="calEditingCode">
+                      <FieldProLabel for="cal-code">日历编码</FieldProLabel>
+                      <InputPro id="cal-code" :model-value="calForm.code" disabled />
+                    </FieldPro>
+                    <FieldPro :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
+                      <FieldProLabel for="cal-name">日历名称 <span class="text-destructive">*</span></FieldProLabel>
+                      <InputPro id="cal-name" v-model="calForm.name" autocomplete="off" required />
+                      <FieldProDescription v-if="!calEditingCode">编码由系统自动生成。</FieldProDescription>
+                    </FieldPro>
+                  </FieldProGroup>
+                  <DialogProFooter>
+                    <ButtonPro type="button" variant="outline" @click="calOpen = false">取消</ButtonPro>
+                    <ButtonPro type="submit" :disabled="calendars.createPending.value || calActions.updatePending.value || calEditLoading">
                       <Spinner v-if="calendars.createPending.value || calActions.updatePending.value" aria-hidden="true" />{{ calEditingCode ? '保存修改' : '保存日历' }}
-                    </Button>
-                  </DialogFooter>
+                    </ButtonPro>
+                  </DialogProFooter>
                 </form>
-              </DialogContent>
-            </Dialog>
+              </DialogProContent>
+            </DialogPro>
           </template>
         </Toolbar>
         <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
@@ -814,7 +818,7 @@ const sortedExceptions = computed(() =>
                   @click="selectCalendar(row)"
                 >
                   <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ row.displayName ?? '无' }}</span>
-                  <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+                  <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
                 </button>
                 <!-- 行尾「⋯」操作菜单：编辑 / 停用。绝对定位避免按钮嵌套。 -->
                 <div class="absolute inset-y-0 right-1 flex items-center">
@@ -840,10 +844,10 @@ const sortedExceptions = computed(() =>
                   <span v-if="calBoardSaving" class="inline-flex items-center gap-1 text-xs text-muted-foreground"><Spinner aria-hidden="true" />保存中</span>
                 </div>
                 <div class="flex items-center gap-1">
-                  <Button size="icon" variant="outline" type="button" aria-label="上个月" @click="prevMonth"><ChevronLeftIcon aria-hidden="true" /></Button>
+                  <ButtonPro size="icon" variant="outline" type="button" aria-label="上个月" @click="prevMonth"><ChevronLeftIcon aria-hidden="true" /></ButtonPro>
                   <span class="min-w-20 text-center text-sm font-medium tabular-nums">{{ monthLabel }}</span>
-                  <Button size="icon" variant="outline" type="button" aria-label="下个月" @click="nextMonth"><ChevronRightIcon aria-hidden="true" /></Button>
-                  <Button size="sm" variant="outline" type="button" @click="goToday">今天</Button>
+                  <ButtonPro size="icon" variant="outline" type="button" aria-label="下个月" @click="nextMonth"><ChevronRightIcon aria-hidden="true" /></ButtonPro>
+                  <ButtonPro size="sm" variant="outline" type="button" @click="goToday">今天</ButtonPro>
                 </div>
               </div>
 
@@ -856,12 +860,12 @@ const sortedExceptions = computed(() =>
                 <div class="grid gap-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <p class="text-sm font-medium">每周工作模式</p>
-                    <Button size="sm" variant="outline" type="button" @click="openManageSheet()">
+                    <ButtonPro size="sm" variant="outline" type="button" @click="openManageSheet()">
                       <CalendarCogIcon aria-hidden="true" />管理节假日 / 例外日
-                    </Button>
+                    </ButtonPro>
                   </div>
                   <div class="flex flex-wrap gap-1.5">
-                    <Button
+                    <ButtonPro
                       v-for="wd in WEEK_DAYS"
                       :key="wd.key"
                       size="sm"
@@ -872,7 +876,7 @@ const sortedExceptions = computed(() =>
                       @click="toggleWeekday(wd.key)"
                     >
                       {{ wd.label }}
-                    </Button>
+                    </ButtonPro>
                   </div>
                   <p class="text-xs text-muted-foreground">点亮的星期为工作日；点击切换，立即保存。每天的作息时段由「班次」定义，日历只决定哪几天开工。</p>
                 </div>
@@ -915,12 +919,12 @@ const sortedExceptions = computed(() =>
         </div>
 
         <!-- 节假日 / 例外日管理抽屉（右侧滑出） -->
-        <Sheet v-model:open="manageSheetOpen">
-          <SheetContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
-            <SheetHeader>
-              <SheetTitle>节假日 / 例外日 · {{ selectedCalName }}</SheetTitle>
-              <SheetDescription>增删后立即保存到该日历，月历会同步刷新。</SheetDescription>
-            </SheetHeader>
+        <SheetPro v-model:open="manageSheetOpen">
+          <SheetProContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
+            <SheetProHeader>
+              <SheetProTitle>节假日 / 例外日 · {{ selectedCalName }}</SheetProTitle>
+              <SheetProDescription>增删后立即保存到该日历，月历会同步刷新。</SheetProDescription>
+            </SheetProHeader>
 
             <div class="grid gap-6 px-4 pb-6">
               <!-- 节假日 -->
@@ -929,33 +933,33 @@ const sortedExceptions = computed(() =>
                 <form class="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-end" @submit.prevent="addHoliday">
                   <div class="grid gap-1">
                     <label class="text-xs text-muted-foreground">日期</label>
-                    <DatePicker v-model="holidayDateModel" placeholder="选择日期" class="w-40" />
+                    <DatePickerPro v-model="holidayDateModel" placeholder="选择日期" class="w-40" />
                   </div>
                   <div class="grid gap-1">
                     <label for="holiday-name" class="text-xs text-muted-foreground">名称（可选）</label>
-                    <Input id="holiday-name" v-model="holidayDraft.name" placeholder="如 端午节" />
+                    <InputPro id="holiday-name" v-model="holidayDraft.name" placeholder="如 端午节" />
                   </div>
-                  <Button size="sm" type="submit" :disabled="!holidayDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
+                  <ButtonPro size="sm" type="submit" :disabled="!holidayDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</ButtonPro>
                 </form>
                 <p v-if="!sortedHolidays.length" class="text-xs text-muted-foreground">暂无节假日。</p>
                 <ul v-else class="grid gap-1">
                   <li v-for="h in sortedHolidays" :key="h.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
                     <span><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span> <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span>
-                    <AlertDialog>
-                      <AlertDialogTrigger as-child>
-                        <Button size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>确定删除节假日 {{ formatDate(h.date) }}{{ h.name ? ` ${h.name}` : '' }}？</AlertDialogTitle>
-                          <AlertDialogDescription>此操作立即生效，该日将不再标记为节假日。</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction :disabled="calBoardSaving" @click="removeHoliday(h.date!)">确认删除</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <AlertDialogPro>
+                      <AlertDialogProTrigger as-child>
+                        <ButtonPro size="icon" variant="ghost" type="button" aria-label="删除节假日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></ButtonPro>
+                      </AlertDialogProTrigger>
+                      <AlertDialogProContent>
+                        <AlertDialogProHeader>
+                          <AlertDialogProTitle>确定删除节假日 {{ formatDate(h.date) }}{{ h.name ? ` ${h.name}` : '' }}？</AlertDialogProTitle>
+                          <AlertDialogProDescription>此操作立即生效，该日将不再标记为节假日。</AlertDialogProDescription>
+                        </AlertDialogProHeader>
+                        <AlertDialogProFooter>
+                          <AlertDialogProCancel>取消</AlertDialogProCancel>
+                          <AlertDialogProAction :disabled="calBoardSaving" @click="removeHoliday(h.date!)">确认删除</AlertDialogProAction>
+                        </AlertDialogProFooter>
+                      </AlertDialogProContent>
+                    </AlertDialogPro>
                   </li>
                 </ul>
               </section>
@@ -968,67 +972,67 @@ const sortedExceptions = computed(() =>
                   <div class="grid gap-2 sm:grid-cols-2">
                     <div class="grid gap-1">
                       <label class="text-xs text-muted-foreground">日期</label>
-                      <DatePicker v-model="exceptionDateModel" placeholder="选择日期" class="w-40" />
+                      <DatePickerPro v-model="exceptionDateModel" placeholder="选择日期" class="w-40" />
                     </div>
                     <div class="grid gap-1">
                       <label for="exception-kind" class="text-xs text-muted-foreground">类型</label>
-                      <Select v-model="exceptionDraft.isWorkingDay">
-                        <SelectTrigger id="exception-kind" class="w-40"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="true">当日上班</SelectItem>
-                          <SelectItem value="false">当日休息</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SelectPro v-model="exceptionDraft.isWorkingDay">
+                        <SelectProTrigger id="exception-kind" class="w-40"><SelectProValue /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem value="true">当日上班</SelectProItem>
+                          <SelectProItem value="false">当日休息</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
                     </div>
                   </div>
                   <div class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
                     <div class="grid gap-1">
                       <label for="exception-reason" class="text-xs text-muted-foreground">原因（可选）</label>
-                      <Input id="exception-reason" v-model="exceptionDraft.reason" placeholder="如 调休" />
+                      <InputPro id="exception-reason" v-model="exceptionDraft.reason" placeholder="如 调休" />
                     </div>
-                    <Button size="sm" type="submit" :disabled="!exceptionDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</Button>
+                    <ButtonPro size="sm" type="submit" :disabled="!exceptionDraft.date || calBoardSaving"><PlusIcon aria-hidden="true" />添加</ButtonPro>
                   </div>
                 </form>
                 <p v-if="!sortedExceptions.length" class="text-xs text-muted-foreground">暂无例外日。</p>
                 <ul v-else class="grid gap-1">
                   <li v-for="e in sortedExceptions" :key="e.date" class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm">
                     <span><span class="font-medium tabular-nums">{{ formatDate(e.date) }}</span> <span class="text-muted-foreground">{{ e.isWorkingDay ? '当日上班' : '当日休息' }}{{ e.reason ? ` · ${e.reason}` : '' }}</span></span>
-                    <AlertDialog>
-                      <AlertDialogTrigger as-child>
-                        <Button size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>确定删除例外日 {{ formatDate(e.date) }}（{{ e.isWorkingDay ? '当日上班' : '当日休息' }}）？</AlertDialogTitle>
-                          <AlertDialogDescription>此操作立即生效，该日将恢复按每周工作模式判定。</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction :disabled="calBoardSaving" @click="removeException(e.date!)">确认删除</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    <AlertDialogPro>
+                      <AlertDialogProTrigger as-child>
+                        <ButtonPro size="icon" variant="ghost" type="button" aria-label="删除例外日" :disabled="calBoardSaving"><Trash2Icon aria-hidden="true" /></ButtonPro>
+                      </AlertDialogProTrigger>
+                      <AlertDialogProContent>
+                        <AlertDialogProHeader>
+                          <AlertDialogProTitle>确定删除例外日 {{ formatDate(e.date) }}（{{ e.isWorkingDay ? '当日上班' : '当日休息' }}）？</AlertDialogProTitle>
+                          <AlertDialogProDescription>此操作立即生效，该日将恢复按每周工作模式判定。</AlertDialogProDescription>
+                        </AlertDialogProHeader>
+                        <AlertDialogProFooter>
+                          <AlertDialogProCancel>取消</AlertDialogProCancel>
+                          <AlertDialogProAction :disabled="calBoardSaving" @click="removeException(e.date!)">确认删除</AlertDialogProAction>
+                        </AlertDialogProFooter>
+                      </AlertDialogProContent>
+                    </AlertDialogPro>
                   </li>
                 </ul>
               </section>
             </div>
-          </SheetContent>
-        </Sheet>
+          </SheetProContent>
+        </SheetPro>
 
         <!-- 节假日 / 例外日互斥冲突确认（受控） -->
-        <AlertDialog v-model:open="conflict.open">
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{{ conflictTitle }}</AlertDialogTitle>
-              <AlertDialogDescription>{{ conflictDescription }}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel @click="cancelConflict">取消</AlertDialogCancel>
-              <AlertDialogAction :disabled="calBoardSaving" @click="resolveConflict">确认替换</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </TabsContent>
-    </Tabs>
+        <AlertDialogPro v-model:open="conflict.open">
+          <AlertDialogProContent>
+            <AlertDialogProHeader>
+              <AlertDialogProTitle>{{ conflictTitle }}</AlertDialogProTitle>
+              <AlertDialogProDescription>{{ conflictDescription }}</AlertDialogProDescription>
+            </AlertDialogProHeader>
+            <AlertDialogProFooter>
+              <AlertDialogProCancel @click="cancelConflict">取消</AlertDialogProCancel>
+              <AlertDialogProAction :disabled="calBoardSaving" @click="resolveConflict">确认替换</AlertDialogProAction>
+            </AlertDialogProFooter>
+          </AlertDialogProContent>
+        </AlertDialogPro>
+      </TabsProContent>
+    </TabsPro>
   </BusinessLayout>
 </template>

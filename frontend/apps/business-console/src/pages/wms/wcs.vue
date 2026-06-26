@@ -1,30 +1,30 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -151,7 +151,7 @@ async function submitComplete() {
 const failedCount = computed(() => wcsTasks.value.filter((t) => !!t.failedAtUtc || (t.status ?? '').toLowerCase() === 'failed').length)
 
 type WcsRow = BusinessConsoleWmsWcsTaskItem
-const columns: DataTableColumn<WcsRow>[] = [
+const columns: DataTableProColumn<WcsRow>[] = [
   { key: 'externalTaskId', header: '外部任务号', cellClass: 'font-medium', accessor: (r) => r.externalTaskId ?? '无' },
   { key: 'adapterType', header: '适配器', accessor: (r) => r.adapterType ?? '无' },
   { key: 'warehouseTaskId', header: '仓库任务', cellClass: 'text-muted-foreground', accessor: (r) => r.warehouseTaskId ?? '无' },
@@ -179,10 +179,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="WCS 任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${wcsTasksTotal} 个任务`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="wcsTasksPending" @click="refreshWcsTasks">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="wcsTasksPending" @click="refreshWcsTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -193,22 +193,30 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.externalTaskId" class="h-9 w-40" placeholder="外部任务号" aria-label="外部任务号" />
-        <Input v-model="filters.warehouseTaskId" class="h-9 w-40" placeholder="仓库任务" aria-label="仓库任务" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="任务状态" />
+        <InputPro v-model="filters.externalTaskId" class="h-9 w-40" placeholder="外部任务号" aria-label="外部任务号" />
+        <InputPro v-model="filters.warehouseTaskId" class="h-9 w-40" placeholder="仓库任务" aria-label="仓库任务" />
+        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="任务状态" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="wcsTasksTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="wcsTasks"
       :row-key="rowKey"
       :loading="wcsTasksPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无 WCS 任务。派发到设备控制系统的任务会出现在这里。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-failure="{ row }">
         <div v-if="row.failureCode || row.failureMessage" class="flex flex-col gap-0.5">
           <span class="text-sm text-destructive">{{ row.failureCode ?? '失败' }}</span>
@@ -218,97 +226,105 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`WCS 任务操作 ${row.externalTaskId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
+          <DropdownMenuProItem :disabled="!row.warehouseTaskId" @click="openDialog('dispatch', row)">
             <SendIcon aria-hidden="true" />
             重新派发
-          </DropdownMenuItem>
-          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem :disabled="!row.externalTaskId" @click="openDialog('fail', row)">
             <XCircleIcon aria-hidden="true" />
             标记失败
-          </DropdownMenuItem>
-          <DropdownMenuItem :disabled="!row.externalTaskId" @click="openDialog('complete', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem :disabled="!row.externalTaskId" @click="openDialog('complete', row)">
             <CheckCircle2Icon aria-hidden="true" />
             标记完成
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="wcsTasksTotal" />
 
-    <Dialog :open="openAction === 'dispatch'" @update:open="(v) => { if (!v) openAction = '' }">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>重新派发 WCS 任务</DialogTitle>
-          <DialogDescription>将仓库任务派发到设备控制系统（WCS）适配器。</DialogDescription>
-        </DialogHeader>
+    <DialogPro :open="openAction === 'dispatch'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>重新派发 WCS 任务</DialogProTitle>
+          <DialogProDescription>将仓库任务派发到设备控制系统（WCS）适配器。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitDispatch">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-adapter">适配器</FieldLabel>
-              <Input id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-external">外部任务号</FieldLabel>
-              <Input id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-payload">派发载荷（JSON）</FieldLabel>
-              <Input id="wcs-payload" v-model="dispatchForm.payloadJson" class="font-mono" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="actionPending">派发</Button>
-          </DialogFooter>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-adapter">适配器</FieldProLabel>
+              <InputPro id="wcs-adapter" v-model="dispatchForm.adapterType" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-external">外部任务号</FieldProLabel>
+              <InputPro id="wcs-external" v-model="dispatchForm.externalTaskId" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-payload">派发载荷（JSON）</FieldProLabel>
+              <InputPro id="wcs-payload" v-model="dispatchForm.payloadJson" class="font-mono" autocomplete="off" />
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="actionPending">派发</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog :open="openAction === 'fail'" @update:open="(v) => { if (!v) openAction = '' }">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>标记 WCS 任务失败</DialogTitle>
-          <DialogDescription>记录 {{ pendingTask?.externalTaskId ?? '' }} 的失败代码与说明，便于后续重试。</DialogDescription>
-        </DialogHeader>
+    <DialogPro :open="openAction === 'fail'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>标记 WCS 任务失败</DialogProTitle>
+          <DialogProDescription>记录 {{ pendingTask?.externalTaskId ?? '' }} 的失败代码与说明，便于后续重试。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitFail">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-failure-code">失败代码</FieldLabel>
-              <Input id="wcs-failure-code" v-model="failForm.failureCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wcs-failure-message">失败说明</FieldLabel>
-              <Input id="wcs-failure-message" v-model="failForm.failureMessage" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
-          <DialogFooter show-close-button>
-            <Button type="submit" variant="destructive" :disabled="actionPending">标记失败</Button>
-          </DialogFooter>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-failure-code">失败代码</FieldProLabel>
+              <InputPro id="wcs-failure-code" v-model="failForm.failureCode" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wcs-failure-message">失败说明</FieldProLabel>
+              <InputPro id="wcs-failure-message" v-model="failForm.failureMessage" autocomplete="off" />
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" variant="destructive" :disabled="actionPending">标记失败</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog :open="openAction === 'complete'" @update:open="(v) => { if (!v) openAction = '' }">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>标记 WCS 任务完成</DialogTitle>
-          <DialogDescription>提交 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。</DialogDescription>
-        </DialogHeader>
+    <DialogPro :open="openAction === 'complete'" @update:open="(v) => { if (!v) openAction = '' }">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>标记 WCS 任务完成</DialogProTitle>
+          <DialogProDescription>提交 {{ pendingTask?.externalTaskId ?? '' }} 的完成回执。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wcs-completion">完成回执（JSON）</FieldLabel>
-              <Input id="wcs-completion" v-model="completeForm.completionPayloadJson" class="font-mono" autocomplete="off" />
-            </Field>
-            <FieldError v-if="formError" :errors="[formError]" />
-          </FieldGroup>
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="actionPending">完成</Button>
-          </DialogFooter>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wcs-completion">完成回执（JSON）</FieldProLabel>
+              <InputPro id="wcs-completion" v-model="completeForm.completionPayloadJson" class="font-mono" autocomplete="off" />
+            </FieldPro>
+            <FieldProError v-if="formError" :errors="[formError]" />
+          </FieldProGroup>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="actionPending">完成</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

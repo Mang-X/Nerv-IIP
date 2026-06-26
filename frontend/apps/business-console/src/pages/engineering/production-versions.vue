@@ -3,7 +3,7 @@ import type {
   BusinessConsoleCreateProductionVersionRequest,
   BusinessConsoleProductionVersionItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 import {
@@ -14,45 +14,44 @@ import {
 } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  ButtonPro,
+  CardPro,
+  CardProContent,
+  CardProHeader,
+  CardProTitle,
+  CheckboxPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, SearchIcon } from 'lucide-vue-next'
@@ -161,7 +160,7 @@ function formatValidRange(from?: string | null, to?: string | null) {
   return `${formatDate(from)} 至 ${to ? formatDate(to) : '长期'}`
 }
 
-const columns: DataTableColumn<BusinessConsoleProductionVersionItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleProductionVersionItem>[] = [
   { key: 'skuCode', header: '物料', cellClass: 'font-medium' },
   { key: 'binding', header: 'MBOM / 工艺路线' },
   { key: 'valid', header: '有效期', width: 'w-52' },
@@ -371,24 +370,24 @@ function formatError(error: unknown) {
       :count="`${productionVersionsTotal} 个版本`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="productionVersionsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="productionVersionsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建生产版本
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingId ? '编辑生产版本' : '新建生产版本' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-2xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingId ? '编辑生产版本' : '新建生产版本' }}</DialogProTitle>
+              <DialogProDescription>
                 把物料绑定到一套已发布的 MBOM 与工艺路线，并约定有效期、批量区间和优先级。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保有效期起止、批量区间合法（已标红）。
@@ -402,86 +401,86 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>绑定对象</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !skuValid">
-                  <FieldLabel for="pv-sku">物料 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.skuCode" :disabled="!!editingId">
-                    <SelectTrigger id="pv-sku"><SelectValue placeholder="选择物料" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>来自基础数据 SKU。{{ editingId ? '编辑时物料不可更改。' : '缺少物料？去基础数据维护。' }}</FieldDescription>
-                </Field>
-                <Field class="self-start">
-                  <FieldLabel>设为默认</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !skuValid">
+                  <FieldProLabel for="pv-sku">物料 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.skuCode" :disabled="!!editingId">
+                    <SelectProTrigger id="pv-sku"><SelectProValue placeholder="选择物料" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>来自基础数据 SKU。{{ editingId ? '编辑时物料不可更改。' : '缺少物料？去基础数据维护。' }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro class="self-start">
+                  <FieldProLabel>设为默认</FieldProLabel>
                   <label
                     for="pv-default"
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>同一物料生效期内的默认版本</span>
-                    <Checkbox id="pv-default" v-model:checked="form.isDefault" />
+                    <CheckboxPro id="pv-default" v-model:checked="form.isDefault" />
                   </label>
-                </Field>
-                <Field :data-invalid="showErrors && !mbomValid">
-                  <FieldLabel for="pv-mbom">已发布 MBOM <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.mbomVersionId">
-                    <SelectTrigger id="pv-mbom"><SelectValue placeholder="选择已发布 MBOM" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in mbomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>仅可选择已发布的 MBOM。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !routingValid">
-                  <FieldLabel for="pv-routing">已发布工艺路线 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.routingVersionId">
-                    <SelectTrigger id="pv-routing"><SelectValue placeholder="选择已发布工艺路线" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in routingOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>仅可选择已发布的工艺路线。</FieldDescription>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !mbomValid">
+                  <FieldProLabel for="pv-mbom">已发布 MBOM <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.mbomVersionId">
+                    <SelectProTrigger id="pv-mbom"><SelectProValue placeholder="选择已发布 MBOM" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in mbomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>仅可选择已发布的 MBOM。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !routingValid">
+                  <FieldProLabel for="pv-routing">已发布工艺路线 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.routingVersionId">
+                    <SelectProTrigger id="pv-routing"><SelectProValue placeholder="选择已发布工艺路线" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in routingOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>仅可选择已发布的工艺路线。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>有效期与适用范围</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && (!validFromValid || !validRangeValid)">
-                  <FieldLabel>生效起 <span class="text-destructive">*</span></FieldLabel>
-                  <DatePicker v-model="form.validFrom" placeholder="选择生效起日" class="w-full" />
-                </Field>
-                <Field :data-invalid="showErrors && !validRangeValid">
-                  <FieldLabel>生效止</FieldLabel>
-                  <DatePicker v-model="form.validTo" placeholder="留空表示长期有效" class="w-full" />
-                  <FieldDescription>留空表示长期有效；填写时须不早于生效起日。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !lotRangeValid">
-                  <FieldLabel for="pv-lot-min">批量下限</FieldLabel>
-                  <Input id="pv-lot-min" v-model="form.lotSizeMin" type="number" min="0" placeholder="不限" />
-                </Field>
-                <Field :data-invalid="showErrors && !lotRangeValid">
-                  <FieldLabel for="pv-lot-max">批量上限</FieldLabel>
-                  <Input id="pv-lot-max" v-model="form.lotSizeMax" type="number" min="0" placeholder="不限" />
-                  <FieldDescription>下限须不大于上限；两者皆可留空表示不限。</FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel for="pv-priority">优先级</FieldLabel>
-                  <Input id="pv-priority" v-model="form.priority" type="number" min="0" />
-                  <FieldDescription>命中多个版本时数值越大越优先。</FieldDescription>
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && (!validFromValid || !validRangeValid)">
+                  <FieldProLabel>生效起 <span class="text-destructive">*</span></FieldProLabel>
+                  <DatePickerPro v-model="form.validFrom" placeholder="选择生效起日" class="w-full" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !validRangeValid">
+                  <FieldProLabel>生效止</FieldProLabel>
+                  <DatePickerPro v-model="form.validTo" placeholder="留空表示长期有效" class="w-full" />
+                  <FieldProDescription>留空表示长期有效；填写时须不早于生效起日。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !lotRangeValid">
+                  <FieldProLabel for="pv-lot-min">批量下限</FieldProLabel>
+                  <InputPro id="pv-lot-min" v-model="form.lotSizeMin" type="number" min="0" placeholder="不限" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !lotRangeValid">
+                  <FieldProLabel for="pv-lot-max">批量上限</FieldProLabel>
+                  <InputPro id="pv-lot-max" v-model="form.lotSizeMax" type="number" min="0" placeholder="不限" />
+                  <FieldProDescription>下限须不大于上限；两者皆可留空表示不限。</FieldProDescription>
+                </FieldPro>
+                <FieldPro>
+                  <FieldProLabel for="pv-priority">优先级</FieldProLabel>
+                  <InputPro id="pv-priority" v-model="form.priority" type="number" min="0" />
+                  <FieldProDescription>命中多个版本时数值越大越优先。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="createPending || updatePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createPending || updatePending">
                   <Spinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingId ? '保存修改' : '创建版本' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -490,36 +489,36 @@ function formatError(error: unknown) {
       <SectionCard description="默认版本" :value="defaultCount" hint="一料多版时默认采用的版本" />
     </SectionCards>
 
-    <Card>
-      <CardHeader>
-        <CardTitle class="text-base">版本解析</CardTitle>
+    <CardPro>
+      <CardProHeader>
+        <CardProTitle class="text-base">版本解析</CardProTitle>
         <p class="text-sm text-muted-foreground">选物料、生效日和批量，查此时投产该用哪个版本。</p>
-      </CardHeader>
-      <CardContent class="grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-        <Field>
-          <FieldLabel for="resolve-sku">物料</FieldLabel>
-          <Select v-model="resolveForm.skuCode">
-            <SelectTrigger id="resolve-sku"><SelectValue placeholder="选择物料" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel>生效日</FieldLabel>
-          <DatePicker v-model="resolveForm.effectiveDate" placeholder="选择生效日" class="w-full" />
-        </Field>
-        <Field>
-          <FieldLabel for="resolve-lot">批量</FieldLabel>
-          <Input id="resolve-lot" v-model="resolveForm.lotSize" type="number" min="0" />
-        </Field>
+      </CardProHeader>
+      <CardProContent class="grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+        <FieldPro>
+          <FieldProLabel for="resolve-sku">物料</FieldProLabel>
+          <SelectPro v-model="resolveForm.skuCode">
+            <SelectProTrigger id="resolve-sku"><SelectProValue placeholder="选择物料" /></SelectProTrigger>
+            <SelectProContent>
+              <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+            </SelectProContent>
+          </SelectPro>
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel>生效日</FieldProLabel>
+          <DatePickerPro v-model="resolveForm.effectiveDate" placeholder="选择生效日" class="w-full" />
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="resolve-lot">批量</FieldProLabel>
+          <InputPro id="resolve-lot" v-model="resolveForm.lotSize" type="number" min="0" />
+        </FieldPro>
         <div class="flex items-end gap-2">
-          <Button type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
+          <ButtonPro type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
             <Spinner v-if="resolvePending" aria-hidden="true" />
             <SearchIcon v-else aria-hidden="true" />
             解析
-          </Button>
-          <Button v-if="resolvedOnce" type="button" variant="ghost" @click="clearResolve">清除</Button>
+          </ButtonPro>
+          <ButtonPro v-if="resolvedOnce" type="button" variant="ghost" @click="clearResolve">清除</ButtonPro>
         </div>
         <div v-if="resolvedOnce" class="grid gap-2 rounded-md border bg-muted/30 p-3 text-sm lg:col-span-full">
           <template v-if="resolved">
@@ -537,35 +536,43 @@ function formatError(error: unknown) {
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadge :label="statusLabel(resolved.status)" :tone="statusTone(resolved.status)" />
+              <StatusBadgePro :label="statusLabel(resolved.status)" :tone="statusTone(resolved.status)" />
             </div>
           </template>
           <p v-else class="text-muted-foreground">
             该物料在所选生效日与批量下没有命中任何生产版本。可调整条件，或新建覆盖此区间的版本。
           </p>
         </div>
-      </CardContent>
-    </Card>
+      </CardProContent>
+    </CardPro>
 
     <Toolbar v-model:search="skuSearch" search-placeholder="按物料编码筛选生产版本">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="productionVersionsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="productionVersions"
       row-key="productionVersionId"
       :loading="productionVersionsPending"
       empty-message="当前范围没有生产版本。可新建版本把物料绑定到已发布的 MBOM 与工艺路线。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-skuCode="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -585,15 +592,15 @@ function formatError(error: unknown) {
       <template #cell-lotSize="{ row }">{{ formatLotRange(row.lotSizeMin, row.lotSizeMax) }}</template>
       <template #cell-priority="{ row }"><span class="tabular-nums">{{ row.priority ?? 0 }}</span></template>
       <template #cell-isDefault="{ row }">
-        <StatusBadge v-if="row.isDefault" label="默认" tone="info" />
+        <StatusBadgePro v-if="row.isDefault" label="默认" tone="info" />
         <span v-else class="text-muted-foreground">—</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
+        <StatusBadgePro :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-1">
-          <Button
+          <ButtonPro
             type="button"
             variant="ghost"
             size="sm"
@@ -601,8 +608,8 @@ function formatError(error: unknown) {
             @click="openEdit(row)"
           >
             编辑
-          </Button>
-          <Button
+          </ButtonPro>
+          <ButtonPro
             type="button"
             variant="ghost"
             size="sm"
@@ -610,34 +617,33 @@ function formatError(error: unknown) {
             @click="openArchive(row)"
           >
             归档
-          </Button>
+          </ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionVersionsTotal" />
 
-    <AlertDialog v-model:open="archiveOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>归档生产版本</AlertDialogTitle>
-          <AlertDialogDescription>
+    <AlertDialogPro v-model:open="archiveOpen">
+      <AlertDialogProContent>
+        <AlertDialogProHeader>
+          <AlertDialogProTitle>归档生产版本</AlertDialogProTitle>
+          <AlertDialogProDescription>
             归档后该版本不可再编辑，也不会被新工单引用。物料「{{ skuLabel(archiveTarget?.skuCode) }}」的此版本将被归档。
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <Field class="px-1">
-          <FieldLabel for="archive-reason">归档原因</FieldLabel>
-          <Input id="archive-reason" v-model="archiveReason" placeholder="例如：工艺变更，已切换到新版本" />
-          <FieldDescription>留空将记录默认原因「不再用于排产」。</FieldDescription>
-        </Field>
-        <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction :disabled="archivePending" @click="confirmArchive">
+          </AlertDialogProDescription>
+        </AlertDialogProHeader>
+        <FieldPro class="px-1">
+          <FieldProLabel for="archive-reason">归档原因</FieldProLabel>
+          <InputPro id="archive-reason" v-model="archiveReason" placeholder="例如：工艺变更，已切换到新版本" />
+          <FieldProDescription>留空将记录默认原因「不再用于排产」。</FieldProDescription>
+        </FieldPro>
+        <AlertDialogProFooter>
+          <AlertDialogProCancel>取消</AlertDialogProCancel>
+          <AlertDialogProAction :disabled="archivePending" @click="confirmArchive">
             <Spinner v-if="archivePending" aria-hidden="true" />
             确认归档
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </AlertDialogProAction>
+        </AlertDialogProFooter>
+      </AlertDialogProContent>
+    </AlertDialogPro>
   </BusinessLayout>
 </template>

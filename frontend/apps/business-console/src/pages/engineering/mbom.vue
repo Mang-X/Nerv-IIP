@@ -3,43 +3,42 @@ import type {
   BusinessConsoleManufacturingBomItem,
   BusinessConsoleReleaseManufacturingBomRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
 import { useEngineeringMboms, usePublishedEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -138,7 +137,7 @@ const draftCount = computed(() => mboms.value.filter((b) => (b.status ?? '').toL
 
 const listErrorMessage = computed(() => formatError(mbomsError.value))
 
-const columns: DataTableColumn<BusinessConsoleManufacturingBomItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleManufacturingBomItem>[] = [
   { key: 'bomCode', header: 'BOM 编号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'skuCode', header: '产出物料' },
@@ -355,24 +354,24 @@ function uomLabel(code?: string | null) {
       :count="`${mbomsTotal} 个版本`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="mbomsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="mbomsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               发布新版本
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>发布制造 BOM 新版本</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-3xl">
+            <DialogProHeader>
+              <DialogProTitle>发布制造 BOM 新版本</DialogProTitle>
+              <DialogProDescription>
                 制造 BOM 须引用一份已发布的设计 BOM。一经发布即不可变，修改请填新物料行 + 新修订号再发布。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && selfReferenceMaterial" class="text-sm text-destructive" role="alert">
                 物料不能与产出物料「{{ skuLabel(selfReferenceMaterial) }}」相同——产出物料不能把自己当原料，请改选别的物料。
@@ -392,43 +391,43 @@ function uomLabel(code?: string | null) {
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="showErrors && !ebomValid">
-                  <FieldLabel for="mbom-ebom">引用设计 BOM <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.ebomKey">
-                    <SelectTrigger id="mbom-ebom"><SelectValue placeholder="选择已发布 EBOM" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in ebomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>仅可选择已发布的设计 BOM。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !skuValid">
-                  <FieldLabel for="mbom-sku">产出物料 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.skuCode">
-                    <SelectTrigger id="mbom-sku"><SelectValue placeholder="选择产出物料" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>来自基础数据物料。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="mbom-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="mbom-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </Field>
-                <Field :data-invalid="showErrors && !effectiveValid">
-                  <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
-                  <DatePicker v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="showErrors && !ebomValid">
+                  <FieldProLabel for="mbom-ebom">引用设计 BOM <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.ebomKey">
+                    <SelectProTrigger id="mbom-ebom"><SelectProValue placeholder="选择已发布 EBOM" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in ebomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>仅可选择已发布的设计 BOM。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !skuValid">
+                  <FieldProLabel for="mbom-sku">产出物料 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.skuCode">
+                    <SelectProTrigger id="mbom-sku"><SelectProValue placeholder="选择产出物料" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>来自基础数据物料。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="mbom-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="mbom-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !effectiveValid">
+                  <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
+                  <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
+                </FieldPro>
+              </FieldProGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>物料行</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" @click="addMaterialLine">
+                <ButtonPro type="button" variant="outline" size="sm" @click="addMaterialLine">
                   <PlusIcon aria-hidden="true" />
                   增加物料
-                </Button>
+                </ButtonPro>
               </div>
               <div class="grid gap-2">
                 <div
@@ -436,33 +435,33 @@ function uomLabel(code?: string | null) {
                   :key="index"
                   class="grid grid-cols-[1fr_5rem_7rem_6rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !line.skuCode.trim()">
-                    <FieldLabel :for="`mbom-mat-${index}`">物料 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.skuCode" @update:model-value="(v) => applyMaterialUom(line, String(v ?? ''))">
-                      <SelectTrigger :id="`mbom-mat-${index}`"><SelectValue placeholder="选择物料" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
-                    <FieldLabel :for="`mbom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`mbom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
-                    <FieldLabel :for="`mbom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="line.unitOfMeasureCode">
-                      <SelectTrigger :id="`mbom-uom-${index}`"><SelectValue placeholder="单位" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field>
-                    <FieldLabel :for="`mbom-scrap-${index}`">损耗率</FieldLabel>
-                    <Input :id="`mbom-scrap-${index}`" v-model="line.scrapRate" type="number" min="0" max="1" step="any" placeholder="0~1" />
-                  </Field>
-                  <Button
+                  <FieldPro :data-invalid="showErrors && !line.skuCode.trim()">
+                    <FieldProLabel :for="`mbom-mat-${index}`">物料 <span class="text-destructive">*</span></FieldProLabel>
+                    <SelectPro v-model="line.skuCode" @update:model-value="(v) => applyMaterialUom(line, String(v ?? ''))">
+                      <SelectProTrigger :id="`mbom-mat-${index}`"><SelectProValue placeholder="选择物料" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
+                    <FieldProLabel :for="`mbom-qty-${index}`">数量 <span class="text-destructive">*</span></FieldProLabel>
+                    <InputPro :id="`mbom-qty-${index}`" v-model="line.quantity" type="number" min="0" step="any" />
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
+                    <FieldProLabel :for="`mbom-uom-${index}`">单位 <span class="text-destructive">*</span></FieldProLabel>
+                    <SelectPro v-model="line.unitOfMeasureCode">
+                      <SelectProTrigger :id="`mbom-uom-${index}`"><SelectProValue placeholder="单位" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
+                  </FieldPro>
+                  <FieldPro>
+                    <FieldProLabel :for="`mbom-scrap-${index}`">损耗率</FieldProLabel>
+                    <InputPro :id="`mbom-scrap-${index}`" v-model="line.scrapRate" type="number" min="0" max="1" step="any" placeholder="0~1" />
+                  </FieldPro>
+                  <ButtonPro
                     type="button"
                     variant="ghost"
                     size="icon"
@@ -471,16 +470,16 @@ function uomLabel(code?: string | null) {
                     @click="removeMaterialLine(index)"
                   >
                     <Trash2Icon aria-hidden="true" />
-                  </Button>
+                  </ButtonPro>
                 </div>
               </div>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>配方行（可选）</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" @click="addRecipeLine">
+                <ButtonPro type="button" variant="outline" size="sm" @click="addRecipeLine">
                   <PlusIcon aria-hidden="true" />
                   增加配方
-                </Button>
+                </ButtonPro>
               </div>
               <p class="text-xs text-muted-foreground">
                 配方参数（如温度、压力、时长）按需登记。发布后可在「查看物料」里查看配方行。
@@ -491,34 +490,34 @@ function uomLabel(code?: string | null) {
                   :key="index"
                   class="grid grid-cols-[1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !line.parameterCode.trim()">
-                    <FieldLabel :for="`mbom-param-${index}`">参数 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`mbom-param-${index}`" v-model="line.parameterCode" placeholder="如 温度" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !line.targetValue.trim()">
-                    <FieldLabel :for="`mbom-target-${index}`">目标值 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`mbom-target-${index}`" v-model="line.targetValue" placeholder="如 180" />
-                  </Field>
-                  <Field>
-                    <FieldLabel :for="`mbom-runit-${index}`">单位</FieldLabel>
-                    <Input :id="`mbom-runit-${index}`" v-model="line.unitOfMeasureCode" placeholder="如 ℃" />
-                  </Field>
-                  <Button type="button" variant="ghost" size="icon" aria-label="删除该配方行" @click="removeRecipeLine(index)">
+                  <FieldPro :data-invalid="showErrors && !line.parameterCode.trim()">
+                    <FieldProLabel :for="`mbom-param-${index}`">参数 <span class="text-destructive">*</span></FieldProLabel>
+                    <InputPro :id="`mbom-param-${index}`" v-model="line.parameterCode" placeholder="如 温度" />
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !line.targetValue.trim()">
+                    <FieldProLabel :for="`mbom-target-${index}`">目标值 <span class="text-destructive">*</span></FieldProLabel>
+                    <InputPro :id="`mbom-target-${index}`" v-model="line.targetValue" placeholder="如 180" />
+                  </FieldPro>
+                  <FieldPro>
+                    <FieldProLabel :for="`mbom-runit-${index}`">单位</FieldProLabel>
+                    <InputPro :id="`mbom-runit-${index}`" v-model="line.unitOfMeasureCode" placeholder="如 ℃" />
+                  </FieldPro>
+                  <ButtonPro type="button" variant="ghost" size="icon" aria-label="删除该配方行" @click="removeRecipeLine(index)">
                     <Trash2Icon aria-hidden="true" />
-                  </Button>
+                  </ButtonPro>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -529,20 +528,28 @@ function uomLabel(code?: string | null) {
 
     <Toolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="mbomsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="mboms"
+      :searchable="false"
+      :column-settings="false"
       :row-key="(r) => `${r.bomCode}:${r.revision}`"
       :loading="mbomsPending"
       empty-message="当前范围没有制造 BOM。可发布新版本，引用已发布的设计 BOM 并登记物料行。"
@@ -557,26 +564,25 @@ function uomLabel(code?: string | null) {
         <span class="tabular-nums">{{ row.materialLines?.length ?? 0 }}</span>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
+        <StatusBadgePro :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
       </template>
       <template #cell-effectiveDate="{ row }">{{ row.effectiveDate ? formatDate(row.effectiveDate) : '长期' }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看物料</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看物料</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="mbomsTotal" />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>制造 BOM · 物料行</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-lg">
+        <SheetProHeader>
+          <SheetProTitle>制造 BOM · 物料行</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.bomCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.skuCode)}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-4 px-4 py-2">
           <section class="grid gap-2">
             <h3 class="text-sm font-medium text-muted-foreground">物料行</h3>
@@ -642,7 +648,7 @@ function uomLabel(code?: string | null) {
             </p>
           </section>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

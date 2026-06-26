@@ -4,7 +4,7 @@ import type {
   BusinessConsoleCreateUomConversionRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import {
   useBusinessMasterDataResources,
@@ -14,33 +14,32 @@ import {
 } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
   Toolbar,
 } from '@nerv-iip/ui'
 import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from 'lucide-vue-next'
@@ -156,7 +155,7 @@ const conversionForm = reactive({
   roundingMode: UOM_DEFAULTS.roundingMode,
 })
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'dimensionType', header: '量纲', width: 'w-28', accessor: (r) => labelOf(dimensionOptions.value, asUom(r).dimensionType) || '无' },
@@ -194,7 +193,7 @@ function conversionFormula(row: BusinessConsoleResourceItem): string {
   return c.offset != null && c.offset !== 0 ? `${base} ${c.offset > 0 ? '+' : '-'} ${Math.abs(c.offset)}` : base
 }
 
-const conversionColumns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const conversionColumns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'formula', header: '换算关系', cellClass: 'font-medium', accessor: (r) => conversionFormula(r) },
   { key: 'fromUom', header: '源单位', width: 'w-28', accessor: (r) => uomName(asConversion(r).fromUomCode) || '无' },
   { key: 'toUom', header: '目标单位', width: 'w-28', accessor: (r) => uomName(asConversion(r).toUomCode) || '无' },
@@ -441,204 +440,216 @@ async function submitConversion() {
   <BusinessLayout>
     <PageHeader title="计量单位" :breadcrumbs="[{ label: '基础数据' }]" :count="`${uomsTotal} 个单位`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="uomsPending || conversionsPending" @click="refreshAll">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="uomsPending || conversionsPending" @click="refreshAll">
           <RulerIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <p class="text-sm text-muted-foreground">计量单位是物料基本单位与单位换算的取值来源；物料表单的「基本单位」实时取自这里，换算关系定义单位间的折算系数。</p>
 
-    <Tabs default-value="units">
-      <TabsList>
-        <TabsTrigger value="units">计量单位 ({{ uomsTotal }})</TabsTrigger>
-        <TabsTrigger value="conversions">换算关系 ({{ conversionsTotal }})</TabsTrigger>
-      </TabsList>
+    <TabsPro default-value="units">
+      <TabsProList>
+        <TabsProTrigger value="units">计量单位 ({{ uomsTotal }})</TabsProTrigger>
+        <TabsProTrigger value="conversions">换算关系 ({{ conversionsTotal }})</TabsProTrigger>
+      </TabsProList>
 
       <!-- 计量单位 -->
-      <TabsContent value="units" class="grid gap-3">
+      <TabsProContent value="units" class="grid gap-3">
         <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称">
           <template #actions>
-            <Dialog v-model:open="createOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreate">
+            <DialogPro v-model:open="createOpen">
+              <DialogProTrigger as-child>
+                <ButtonPro size="sm" type="button" @click="openCreate">
                   <PlusIcon aria-hidden="true" />
                   新建计量单位
-                </Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>{{ editingCode ? `编辑计量单位 · ${editingCode}` : '新建计量单位' }}</DialogTitle>
-                  <DialogDescription>{{ editingCode ? '修改计量单位（编码不可修改）。带 * 为必填项。' : '为库存、核算与单位换算建立统一的计量单位。带 * 为必填项。' }}</DialogDescription>
-                </DialogHeader>
+                </ButtonPro>
+              </DialogProTrigger>
+              <DialogProContent class="sm:max-w-2xl">
+                <DialogProHeader>
+                  <DialogProTitle>{{ editingCode ? `编辑计量单位 · ${editingCode}` : '新建计量单位' }}</DialogProTitle>
+                  <DialogProDescription>{{ editingCode ? '修改计量单位（编码不可修改）。带 * 为必填项。' : '为库存、核算与单位换算建立统一的计量单位。带 * 为必填项。' }}</DialogProDescription>
+                </DialogProHeader>
                 <form class="grid gap-4" @submit.prevent="submitUom">
                   <p v-if="createShowErrors && !canCreateUom" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field v-if="editingCode">
-                      <FieldLabel for="uom-code">编码</FieldLabel>
-                      <Input id="uom-code" :model-value="createForm.code" disabled />
-                      <FieldDescription>系统分配，不可修改。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                      <FieldLabel for="uom-name">名称 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="uom-name" v-model="createForm.name" autocomplete="off" required />
-                      <FieldDescription v-if="!editingCode">编码由系统自动生成（如 EA、pcs、kg）。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="createShowErrors && !inOptions(dimensionOptions, createForm.dimensionType)">
-                      <FieldLabel for="uom-dimension">量纲 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="createForm.dimensionType">
-                        <SelectTrigger id="uom-dimension"><SelectValue placeholder="请选择量纲" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="o in dimensionOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>同一量纲内的单位才可互相换算。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="createShowErrors && !inOptions(ROUNDING_OPTIONS, createForm.roundingMode)">
-                      <FieldLabel for="uom-rounding">取整方式 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="createForm.roundingMode">
-                        <SelectTrigger id="uom-rounding"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field :data-invalid="createShowErrors && !isPrecisionValid(createForm.precision)">
-                      <FieldLabel for="uom-precision">小数精度</FieldLabel>
-                      <Input id="uom-precision" v-model="createForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
-                      <FieldDescription>保留的小数位数，可留空。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                    <Button type="submit" :disabled="createUomPending || uomActions.updatePending.value || editLoading">
+                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                    <FieldPro v-if="editingCode">
+                      <FieldProLabel for="uom-code">编码</FieldProLabel>
+                      <InputPro id="uom-code" :model-value="createForm.code" disabled />
+                      <FieldProDescription>系统分配，不可修改。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                      <FieldProLabel for="uom-name">名称 <span class="text-destructive">*</span></FieldProLabel>
+                      <InputPro id="uom-name" v-model="createForm.name" autocomplete="off" required />
+                      <FieldProDescription v-if="!editingCode">编码由系统自动生成（如 EA、pcs、kg）。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="createShowErrors && !inOptions(dimensionOptions, createForm.dimensionType)">
+                      <FieldProLabel for="uom-dimension">量纲 <span class="text-destructive">*</span></FieldProLabel>
+                      <SelectPro v-model="createForm.dimensionType">
+                        <SelectProTrigger id="uom-dimension"><SelectProValue placeholder="请选择量纲" /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem v-for="o in dimensionOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
+                      <FieldProDescription>同一量纲内的单位才可互相换算。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="createShowErrors && !inOptions(ROUNDING_OPTIONS, createForm.roundingMode)">
+                      <FieldProLabel for="uom-rounding">取整方式 <span class="text-destructive">*</span></FieldProLabel>
+                      <SelectPro v-model="createForm.roundingMode">
+                        <SelectProTrigger id="uom-rounding"><SelectProValue /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
+                    </FieldPro>
+                    <FieldPro :data-invalid="createShowErrors && !isPrecisionValid(createForm.precision)">
+                      <FieldProLabel for="uom-precision">小数精度</FieldProLabel>
+                      <InputPro id="uom-precision" v-model="createForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
+                      <FieldProDescription>保留的小数位数，可留空。</FieldProDescription>
+                    </FieldPro>
+                  </FieldProGroup>
+                  <DialogProFooter>
+                    <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
+                    <ButtonPro type="submit" :disabled="createUomPending || uomActions.updatePending.value || editLoading">
                       <Spinner v-if="createUomPending || uomActions.updatePending.value" aria-hidden="true" />
                       {{ editingCode ? '保存修改' : '保存计量单位' }}
-                    </Button>
-                  </DialogFooter>
+                    </ButtonPro>
+                  </DialogProFooter>
                 </form>
-              </DialogContent>
-            </Dialog>
+              </DialogProContent>
+            </DialogPro>
           </template>
         </Toolbar>
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTable
+        <DataTablePro
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="uomsTotal"
+          @update:page="page = $event"
+          @update:page-size="(v) => (pageSize = String(v))"
           :columns="columns"
           :rows="listRows"
           :row-key="rowKey"
           :loading="uomsPending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="还没有计量单位，点击「新建计量单位」创建第一条。"
         >
           <template #cell-active="{ row }">
-            <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions :row="row" entity-label="计量单位" :detail-fields="uomDetailFields(row)" :actions="uomActions" @edit="openEdit" />
           </template>
-        </DataTable>
-
-        <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="uomsTotal" />
-      </TabsContent>
+        </DataTablePro>
+      </TabsProContent>
 
       <!-- 换算关系 -->
-      <TabsContent value="conversions" class="grid gap-3">
+      <TabsProContent value="conversions" class="grid gap-3">
         <p class="text-sm text-muted-foreground">换算关系定义两个单位间的折算：1 源单位 = 系数 × 目标单位（可带偏移量）。源单位与目标单位显示其单位名称。</p>
         <Toolbar v-model:search="conversionKeyword" search-placeholder="在当前页内筛选源 / 目标单位">
           <template #actions>
-            <Dialog v-model:open="conversionOpen">
-              <DialogTrigger as-child>
-                <Button size="sm" type="button" @click="openCreateConversion">
+            <DialogPro v-model:open="conversionOpen">
+              <DialogProTrigger as-child>
+                <ButtonPro size="sm" type="button" @click="openCreateConversion">
                   <ArrowRightLeftIcon aria-hidden="true" />
                   新建换算关系
-                </Button>
-              </DialogTrigger>
-              <DialogContent class="sm:max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>新建换算关系</DialogTitle>
-                  <DialogDescription>定义一组单位换算：1 源单位 = 系数 × 目标单位（可带偏移量）。带 * 为必填项。</DialogDescription>
-                </DialogHeader>
+                </ButtonPro>
+              </DialogProTrigger>
+              <DialogProContent class="sm:max-w-2xl">
+                <DialogProHeader>
+                  <DialogProTitle>新建换算关系</DialogProTitle>
+                  <DialogProDescription>定义一组单位换算：1 源单位 = 系数 × 目标单位（可带偏移量）。带 * 为必填项。</DialogProDescription>
+                </DialogProHeader>
                 <form class="grid gap-4" @submit.prevent="submitConversion">
                   <p v-if="conversionShowErrors && !canCreateConversion" class="text-sm text-destructive" role="alert">请检查带 * 的必填项：源单位与目标单位不能相同，换算系数须大于 0（已标红）。</p>
-                  <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <Field :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.fromUom) || conversionForm.fromUom === conversionForm.toUom)">
-                      <FieldLabel for="conv-from">源单位 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="conversionForm.fromUom">
-                        <SelectTrigger id="conv-from"><SelectValue placeholder="请选择源单位" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.toUom) || conversionForm.fromUom === conversionForm.toUom)">
-                      <FieldLabel for="conv-to">目标单位 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="conversionForm.toUom">
-                        <SelectTrigger id="conv-to"><SelectValue placeholder="请选择目标单位" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>目标单位需与源单位不同。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)">
-                      <FieldLabel for="conv-factor">换算系数 <span class="text-destructive">*</span></FieldLabel>
-                      <Input id="conv-factor" v-model="conversionForm.factor" type="number" min="0" step="any" autocomplete="off" placeholder="如 1000" />
-                      <FieldDescription>1 源单位等于多少目标单位，须大于 0。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)">
-                      <FieldLabel for="conv-offset">偏移量</FieldLabel>
-                      <Input id="conv-offset" v-model="conversionForm.offset" type="number" step="any" autocomplete="off" placeholder="可留空" />
-                      <FieldDescription>线性换算的常数项（如温标换算），可留空。</FieldDescription>
-                    </Field>
-                    <Field :data-invalid="conversionShowErrors && !inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)">
-                      <FieldLabel for="conv-rounding">取整方式 <span class="text-destructive">*</span></FieldLabel>
-                      <Select v-model="conversionForm.roundingMode">
-                        <SelectTrigger id="conv-rounding"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field :data-invalid="conversionShowErrors && !isPrecisionValid(conversionForm.precision)">
-                      <FieldLabel for="conv-precision">小数精度</FieldLabel>
-                      <Input id="conv-precision" v-model="conversionForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
-                      <FieldDescription>换算结果保留的小数位数，可留空。</FieldDescription>
-                    </Field>
-                  </FieldGroup>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" @click="conversionOpen = false">取消</Button>
-                    <Button type="submit" :disabled="createUomConversionPending">
+                  <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                    <FieldPro :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.fromUom) || conversionForm.fromUom === conversionForm.toUom)">
+                      <FieldProLabel for="conv-from">源单位 <span class="text-destructive">*</span></FieldProLabel>
+                      <SelectPro v-model="conversionForm.fromUom">
+                        <SelectProTrigger id="conv-from"><SelectProValue placeholder="请选择源单位" /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
+                    </FieldPro>
+                    <FieldPro :data-invalid="conversionShowErrors && (!inOptions(uomSelectOptions, conversionForm.toUom) || conversionForm.fromUom === conversionForm.toUom)">
+                      <FieldProLabel for="conv-to">目标单位 <span class="text-destructive">*</span></FieldProLabel>
+                      <SelectPro v-model="conversionForm.toUom">
+                        <SelectProTrigger id="conv-to"><SelectProValue placeholder="请选择目标单位" /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem v-for="o in uomSelectOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
+                      <FieldProDescription>目标单位需与源单位不同。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)">
+                      <FieldProLabel for="conv-factor">换算系数 <span class="text-destructive">*</span></FieldProLabel>
+                      <InputPro id="conv-factor" v-model="conversionForm.factor" type="number" min="0" step="any" autocomplete="off" placeholder="如 1000" />
+                      <FieldProDescription>1 源单位等于多少目标单位，须大于 0。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)">
+                      <FieldProLabel for="conv-offset">偏移量</FieldProLabel>
+                      <InputPro id="conv-offset" v-model="conversionForm.offset" type="number" step="any" autocomplete="off" placeholder="可留空" />
+                      <FieldProDescription>线性换算的常数项（如温标换算），可留空。</FieldProDescription>
+                    </FieldPro>
+                    <FieldPro :data-invalid="conversionShowErrors && !inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)">
+                      <FieldProLabel for="conv-rounding">取整方式 <span class="text-destructive">*</span></FieldProLabel>
+                      <SelectPro v-model="conversionForm.roundingMode">
+                        <SelectProTrigger id="conv-rounding"><SelectProValue /></SelectProTrigger>
+                        <SelectProContent>
+                          <SelectProItem v-for="o in ROUNDING_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                        </SelectProContent>
+                      </SelectPro>
+                    </FieldPro>
+                    <FieldPro :data-invalid="conversionShowErrors && !isPrecisionValid(conversionForm.precision)">
+                      <FieldProLabel for="conv-precision">小数精度</FieldProLabel>
+                      <InputPro id="conv-precision" v-model="conversionForm.precision" type="number" min="0" step="1" autocomplete="off" placeholder="可留空" />
+                      <FieldProDescription>换算结果保留的小数位数，可留空。</FieldProDescription>
+                    </FieldPro>
+                  </FieldProGroup>
+                  <DialogProFooter>
+                    <ButtonPro type="button" variant="outline" @click="conversionOpen = false">取消</ButtonPro>
+                    <ButtonPro type="submit" :disabled="createUomConversionPending">
                       <Spinner v-if="createUomConversionPending" aria-hidden="true" />
                       保存换算关系
-                    </Button>
-                  </DialogFooter>
+                    </ButtonPro>
+                  </DialogProFooter>
                 </form>
-              </DialogContent>
-            </Dialog>
+              </DialogProContent>
+            </DialogPro>
           </template>
         </Toolbar>
 
         <p v-if="conversionListError" class="text-sm text-destructive" role="alert">{{ conversionListError }}</p>
 
-        <DataTable
+        <DataTablePro
+          manual
+          :page="conversionPage"
+          :page-size="conversionPageSize"
+          :total-items="conversionsTotal"
+          @update:page="conversionPage = $event"
+          @update:page-size="(v) => (conversionPageSize = String(v))"
           :columns="conversionColumns"
           :rows="conversionRows"
           :row-key="rowKey"
           :loading="conversionsPending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="还没有换算关系，点击「新建换算关系」创建第一条。"
         >
           <template #cell-active="{ row }">
-            <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+            <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
           </template>
           <template #cell-actions="{ row }">
             <MasterDataRowActions :row="row" entity-label="换算关系" :detail-fields="conversionDetailFields(row)" :actions="conversionActions" />
           </template>
-        </DataTable>
-
-        <DataTablePagination v-model:page="conversionPage" v-model:page-size="conversionPageSize" :total-items="conversionsTotal" />
-      </TabsContent>
-    </Tabs>
+        </DataTablePro>
+      </TabsProContent>
+    </TabsPro>
   </BusinessLayout>
 </template>

@@ -79,30 +79,46 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 对话框就地渲染（不 teleport），便于断言表单内容。
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  DialogProTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  // 行操作里的 AlertDialogPro（reka portal/Teleport 在 jsdom 下卸载会崩）就地渲染，避免渲染崩溃。
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // RowActions 的 Pro 下拉就地渲染，避免 reka DropdownMenu portal 在 jsdom 卸载崩。
+  DropdownMenuProContent: { template: '<div><slot /></div>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // RowActions 下拉就地渲染，让「编辑」可点。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 async function openAndFillValid(wrapper: ReturnType<typeof mount>) {

@@ -1,26 +1,26 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -94,7 +94,7 @@ async function submitCreate() {
 const errorMessage = computed(() => formatError(putawayTasksError.value ?? createPutawayError.value))
 
 type PutawayRow = BusinessConsoleWmsWarehouseTaskItem
-const columns: DataTableColumn<PutawayRow>[] = [
+const columns: DataTableProColumn<PutawayRow>[] = [
   { key: 'taskNo', header: '任务号', cellClass: 'font-medium', accessor: (r) => r.taskNo ?? r.warehouseTaskId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
@@ -124,80 +124,90 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="上架任务" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${putawayTasksTotal} 个上架任务`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="putawayTasksPending" @click="refreshPutawayTasks">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="putawayTasksPending" @click="refreshPutawayTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建上架任务
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.keyword" class="h-9 w-40" placeholder="任务号/物料" aria-label="关键字" />
-        <Input v-model="filters.locationCode" class="h-9 w-28" placeholder="库位" aria-label="库位" />
-        <Input v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="上架任务状态" />
+        <InputPro v-model="filters.keyword" class="h-9 w-40" placeholder="任务号/物料" aria-label="关键字" />
+        <InputPro v-model="filters.locationCode" class="h-9 w-28" placeholder="库位" aria-label="库位" />
+        <InputPro v-model="filters.status" class="h-9 w-28" placeholder="状态（可选）" aria-label="上架任务状态" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="putawayTasksTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="putawayTasks"
       :row-key="rowKey"
       :loading="putawayTasksPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-    </DataTable>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="putawayTasksTotal" />
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建上架任务</DialogTitle>
-          <DialogDescription>将收货入库单的暂存库存移入目标库位，完成上架增量。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建上架任务</DialogProTitle>
+          <DialogProDescription>将收货入库单的暂存库存移入目标库位，完成上架增量。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel for="wms-putaway-inbound">入库单</FieldLabel>
-              <Input id="wms-putaway-inbound" v-model="createForm.inboundOrderId" autocomplete="off" placeholder="入库单标识" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-no">任务号</FieldLabel>
-              <Input id="wms-putaway-no" v-model="createForm.taskNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-line">行号</FieldLabel>
-              <Input id="wms-putaway-line" v-model="createForm.lineNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-from">来源库位</FieldLabel>
-              <Input id="wms-putaway-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="暂存库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-to">目标库位</FieldLabel>
-              <Input id="wms-putaway-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="货架库位" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-putaway-qty">上架数量</FieldLabel>
-              <Input id="wms-putaway-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="wms-putaway-inbound">入库单</FieldProLabel>
+              <InputPro id="wms-putaway-inbound" v-model="createForm.inboundOrderId" autocomplete="off" placeholder="入库单标识" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-no">任务号</FieldProLabel>
+              <InputPro id="wms-putaway-no" v-model="createForm.taskNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-line">行号</FieldProLabel>
+              <InputPro id="wms-putaway-line" v-model="createForm.lineNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-from">来源库位</FieldProLabel>
+              <InputPro id="wms-putaway-from" v-model="createForm.fromLocationCode" autocomplete="off" placeholder="暂存库位" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-to">目标库位</FieldProLabel>
+              <InputPro id="wms-putaway-to" v-model="createForm.toLocationCode" autocomplete="off" placeholder="货架库位" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-putaway-qty">上架数量</FieldProLabel>
+              <InputPro id="wms-putaway-qty" v-model="createForm.quantity" type="number" min="0" step="any" autocomplete="off" placeholder="可选" />
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createPutawayPending">创建上架任务</Button>
-          </DialogFooter>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createPutawayPending">创建上架任务</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>
