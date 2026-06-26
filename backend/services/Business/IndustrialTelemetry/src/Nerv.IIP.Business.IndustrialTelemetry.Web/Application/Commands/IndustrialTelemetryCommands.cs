@@ -339,6 +339,7 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
         }
         catch (DbUpdateException ex) when (IsIdempotentIngestionUniqueConflict(ex, dbContext))
         {
+            // These ingestion commands own the scoped DbContext writes; clear failed Added entities before retrying.
             dbContext.ChangeTracker.Clear();
             return await next(cancellationToken);
         }
@@ -351,6 +352,7 @@ public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TRe
 
     private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
     {
+        // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
         return exception.Entries.Any(entry => entry.Entity is TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
             EnumerateExceptions(exception).Any(inner =>
                 IsPostgreSqlUniqueConflict(inner) ||

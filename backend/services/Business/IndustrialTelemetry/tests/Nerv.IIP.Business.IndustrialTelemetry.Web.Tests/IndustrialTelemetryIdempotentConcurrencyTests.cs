@@ -1,10 +1,14 @@
 using MediatR;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Tests;
 
@@ -109,6 +113,85 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
 
         await using var assertionContext = database.CreateContext();
         Assert.Equal(1, await assertionContext.AlarmEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Duplicate_alarm_save_conflict_with_different_payload_still_raises_known_conflict_after_retry()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var winningContext = database.CreateContext();
+        await using var racingContext = database.CreateContext();
+        var winningCommand = new RaiseAlarmCommand(
+            "org-001",
+            "env-dev",
+            "DEV-RACE-03",
+            "TEMP_HIGH",
+            "critical",
+            new DateTimeOffset(2026, 6, 1, 12, 30, 0, TimeSpan.Zero),
+            "race-alarm-conflict-001");
+        var racingCommand = winningCommand with
+        {
+            Severity = "warning"
+        };
+        await new RaiseAlarmCommandHandler(winningContext).Handle(winningCommand, CancellationToken.None);
+        var racingHandler = new RaiseAlarmCommandHandler(racingContext);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<RaiseAlarmCommand, AlarmEventId>(racingContext);
+        var attempts = 0;
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => behavior.Handle(
+            racingCommand,
+            async ct =>
+            {
+                attempts++;
+                var alarmId = await racingHandler.Handle(racingCommand, ct);
+                if (attempts == 1)
+                {
+                    await winningContext.SaveChangesAsync(ct);
+                }
+
+                await racingContext.SaveChangesAsync(ct);
+                return alarmId;
+            },
+            CancellationToken.None));
+
+        Assert.Equal(2, attempts);
+        Assert.Contains("conflicting payload", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var assertionContext = database.CreateContext();
+        Assert.Equal(1, await assertionContext.AlarmEvents.CountAsync());
+    }
+
+    [Fact]
+    public void Idempotent_ingestion_behavior_wraps_unit_of_work_save_in_real_mediatr_pipeline()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            });
+        using var scope = factory.Services.CreateScope();
+
+        var behaviorTypes = scope.ServiceProvider
+            .GetServices<IPipelineBehavior<RaiseAlarmCommand, AlarmEventId>>()
+            .Select(behavior => behavior.GetType())
+            .ToArray();
+        var idempotentBehaviorIndex = Array.FindIndex(behaviorTypes, IsIdempotentIngestionBehavior);
+        var unitOfWorkBehaviorIndex = Array.FindIndex(
+            behaviorTypes,
+            type => type.FullName?.Contains("UnitOfWorkBehavior", StringComparison.Ordinal) is true);
+
+        Assert.True(idempotentBehaviorIndex >= 0, "IndustrialTelemetry idempotent ingestion behavior must be registered.");
+        Assert.True(unitOfWorkBehaviorIndex >= 0, "Unit of work behavior must be registered.");
+        Assert.True(
+            idempotentBehaviorIndex < unitOfWorkBehaviorIndex,
+            "IndustrialTelemetry idempotent ingestion behavior must wrap unit of work save to catch DbUpdateException.");
+    }
+
+    private static bool IsIdempotentIngestionBehavior(Type type)
+    {
+        return type.IsGenericType &&
+            type.GetGenericTypeDefinition() == typeof(IndustrialTelemetryIdempotentIngestionBehavior<,>);
     }
 
     private sealed class IndustrialTelemetrySqliteDatabase : IAsyncDisposable

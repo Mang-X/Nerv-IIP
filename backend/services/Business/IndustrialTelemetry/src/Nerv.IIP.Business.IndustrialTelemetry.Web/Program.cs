@@ -91,6 +91,7 @@ try
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
             .AddCommandLockBehavior()
             .AddKnownExceptionValidationBehavior()
+            // Must wrap unit-of-work save so save-time ingestion unique conflicts can retry through idempotent lookups.
             .AddOpenBehavior(typeof(IndustrialTelemetryIdempotentIngestionBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = IndustrialTelemetryFacts.ServiceName)
