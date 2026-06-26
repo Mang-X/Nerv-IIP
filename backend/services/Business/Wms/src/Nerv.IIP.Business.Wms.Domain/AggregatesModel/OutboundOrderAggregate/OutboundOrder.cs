@@ -13,6 +13,7 @@ public enum OutboundOrderStatus
     Open = 0,
     Completed = 1,
     InventoryPostingFailed = 2,
+    Cancelled = 3,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -187,6 +188,66 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         Status = OutboundOrderStatus.InventoryPostingFailed;
     }
 
+    public void Cancel()
+    {
+        EnsureOpen();
+        foreach (var line in lines)
+        {
+            line.ClearInventoryReservation();
+        }
+
+        Status = OutboundOrderStatus.Cancelled;
+    }
+
+    public void MarkInventoryReservationReleased(string inventoryReservationId)
+    {
+        var reservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
+        foreach (var line in lines.Where(x => x.InventoryReservationId == reservationId))
+        {
+            line.ClearInventoryReservation();
+        }
+    }
+
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string?> inventoryReservationIds)
+    {
+        if (Status != OutboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new InvalidOperationException("Only outbound orders with failed Inventory posting can be retried.");
+        }
+
+        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureHasLines();
+        Status = OutboundOrderStatus.Completed;
+        var singleLine = lines.Count == 1;
+        var requests = lines.Select(line =>
+            {
+                inventoryReservationIds.TryGetValue(line.LineNo, out var inventoryReservationId);
+                line.MarkInventoryReserved(inventoryReservationId);
+                return InventoryMovementRequest.Create(
+                    OrganizationId,
+                    EnvironmentId,
+                    "outbound",
+                    OutboundOrderNo,
+                    line.LineNo,
+                    singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                    line.SkuCode,
+                    line.UomCode,
+                    SiteCode,
+                    line.PickLocationCode,
+                    line.LotNo,
+                    line.SerialNo,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    line.RequestedQuantity,
+                    line.InventoryReservationId);
+            })
+            .ToArray();
+        return requests;
+    }
+
     private OutboundOrderLine FindLine(string lineNo)
     {
         return lines.SingleOrDefault(x => x.LineNo == lineNo)
@@ -261,5 +322,10 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         }
 
         InventoryReservationId = normalizedReservationId;
+    }
+
+    public void ClearInventoryReservation()
+    {
+        InventoryReservationId = null;
     }
 }

@@ -107,6 +107,21 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     }
 }
 
+public sealed record RetryInboundInventoryPostingCommand(InboundOrderId InboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
+
+public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RetryInboundInventoryPostingCommand, CompleteWmsMovementResult>
+{
+    public async Task<CompleteWmsMovementResult> Handle(RetryInboundInventoryPostingCommand request, CancellationToken cancellationToken)
+    {
+        var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
+            ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+        var movementRequests = inbound.RetryInventoryPosting(request.IdempotencyKey);
+        dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        return new CompleteWmsMovementResult(movementRequests.First().Id, null);
+    }
+}
+
 public sealed record CreateOutboundOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -178,7 +193,7 @@ public sealed class CreatePickingTaskCommandHandler(
                     "wms",
                     outbound.OutboundOrderNo,
                     line.LineNo,
-                    BuildPickingReservationIdempotencyKey(outbound, line.LineNo),
+                    WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo),
                     line.SkuCode,
                     line.UomCode,
                     outbound.SiteCode,
@@ -199,13 +214,6 @@ public sealed class CreatePickingTaskCommandHandler(
             inventoryReservationId);
         dbContext.WarehouseTasks.Add(task);
         return task.Id;
-    }
-
-    private static string BuildPickingReservationIdempotencyKey(OutboundOrder outbound, string lineNo)
-    {
-        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}";
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
-        return $"wms-pick-res:{hash}";
     }
 }
 
@@ -245,6 +253,99 @@ public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbC
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey);
+        dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        return new CompleteWmsMovementResult(movementRequests.First().Id, null);
+    }
+}
+
+public sealed record CancelOutboundOrderCommand(OutboundOrderId OutboundOrderId, string Reason) : ICommand;
+
+public sealed class CancelOutboundOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
+    : ICommandHandler<CancelOutboundOrderCommand>
+{
+    public async Task Handle(CancelOutboundOrderCommand request, CancellationToken cancellationToken)
+    {
+        _ = WmsText.Required(request.Reason, nameof(request.Reason));
+        var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
+            ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        var openPickingTasks = await dbContext.WarehouseTasks
+            .Where(x => x.OrganizationId == outbound.OrganizationId
+                && x.EnvironmentId == outbound.EnvironmentId
+                && x.TaskType == WarehouseTaskType.Picking
+                && x.SourceOrderNo == outbound.OutboundOrderNo
+                && x.Status == WarehouseTaskStatus.Open)
+            .ToArrayAsync(cancellationToken);
+        var openPickingTaskIds = openPickingTasks.Select(x => x.Id).ToArray();
+        var cancellableWcsTasks = await dbContext.WcsTasks
+            .Where(x => openPickingTaskIds.Contains(x.WarehouseTaskId) && x.Status != WcsTaskStatus.Completed)
+            .ToArrayAsync(cancellationToken);
+        foreach (var line in outbound.Lines.Where(x => x.InventoryReservationId is not null))
+        {
+            if (inventoryReservationClient is not null)
+            {
+                await inventoryReservationClient.ReleaseAsync(
+                    new WmsInventoryReservationReleaseRequest(line.InventoryReservationId!, line.RequestedQuantity),
+                    cancellationToken);
+            }
+        }
+
+        outbound.Cancel();
+        foreach (var task in openPickingTasks)
+        {
+            task.Cancel();
+        }
+
+        foreach (var task in cancellableWcsTasks)
+        {
+            task.Cancel();
+        }
+    }
+}
+
+public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
+
+public sealed class RetryOutboundInventoryPostingCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
+    : ICommandHandler<RetryOutboundInventoryPostingCommand, CompleteWmsMovementResult>
+{
+    public async Task<CompleteWmsMovementResult> Handle(RetryOutboundInventoryPostingCommand request, CancellationToken cancellationToken)
+    {
+        var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
+            ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        var reservationIds = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var line in outbound.Lines.OrderBy(x => x.LineNo, StringComparer.Ordinal))
+        {
+            string? reservationId = null;
+            if (inventoryReservationClient is not null)
+            {
+                reservationId = (await inventoryReservationClient.ReserveAsync(
+                    new WmsInventoryReservationRequest(
+                        outbound.OrganizationId,
+                        outbound.EnvironmentId,
+                        "wms",
+                        outbound.OutboundOrderNo,
+                        line.LineNo,
+                        WmsInventoryReservationIdempotencyKeys.ForOutboundRetry(outbound, line.LineNo, request.IdempotencyKey),
+                        line.SkuCode,
+                        line.UomCode,
+                        outbound.SiteCode,
+                        line.PickLocationCode,
+                        line.LotNo,
+                        line.SerialNo,
+                        line.QualityStatus,
+                        line.OwnerType,
+                        line.OwnerId,
+                        line.RequestedQuantity),
+                    cancellationToken)).ReservationId;
+            }
+
+            reservationIds[line.LineNo] = reservationId;
+        }
+
+        var movementRequests = outbound.RetryInventoryPosting(request.IdempotencyKey, reservationIds);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
         return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
@@ -339,7 +440,9 @@ public sealed record MarkInventoryMovementRequestFailedCommand(
     string FailureCode,
     string FailureMessage) : ICommand;
 
-public sealed class MarkInventoryMovementRequestFailedCommandHandler(ApplicationDbContext dbContext)
+public sealed class MarkInventoryMovementRequestFailedCommandHandler(
+    ApplicationDbContext dbContext,
+    IWmsInventoryReservationClient? inventoryReservationClient = null)
     : ICommandHandler<MarkInventoryMovementRequestFailedCommand>
 {
     public async Task Handle(MarkInventoryMovementRequestFailedCommand request, CancellationToken cancellationToken)
@@ -357,6 +460,13 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(Application
             return;
         }
 
+        if (request.MovementType == "outbound" && movementRequest.InventoryReservationId is not null && inventoryReservationClient is not null)
+        {
+            await inventoryReservationClient.ReleaseAsync(
+                new WmsInventoryReservationReleaseRequest(movementRequest.InventoryReservationId, Math.Abs(movementRequest.Quantity)),
+                cancellationToken);
+        }
+
         movementRequest.MarkFailed(request.FailureCode, request.FailureMessage);
         if (request.MovementType == "inbound")
         {
@@ -369,13 +479,38 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(Application
         }
         else if (request.MovementType == "outbound")
         {
-            var outbound = await dbContext.OutboundOrders.SingleOrDefaultAsync(
+            var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(
                 x => x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId
                     && x.OutboundOrderNo == request.SourceDocumentId,
                 cancellationToken);
+            if (movementRequest.InventoryReservationId is not null)
+            {
+                outbound?.MarkInventoryReservationReleased(movementRequest.InventoryReservationId);
+            }
+
             outbound?.MarkInventoryPostingFailed();
         }
+    }
+}
+
+internal static class WmsInventoryReservationIdempotencyKeys
+{
+    public static string ForPickingTask(OutboundOrder outbound, string lineNo)
+    {
+        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}";
+        return $"wms-pick-res:{StableHash(raw)}";
+    }
+
+    public static string ForOutboundRetry(OutboundOrder outbound, string lineNo, string retryIdempotencyKey)
+    {
+        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{retryIdempotencyKey}";
+        return $"wms-retry-res:{StableHash(raw)}";
+    }
+
+    private static string StableHash(string raw)
+    {
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw)))[..32].ToLowerInvariant();
     }
 }
 

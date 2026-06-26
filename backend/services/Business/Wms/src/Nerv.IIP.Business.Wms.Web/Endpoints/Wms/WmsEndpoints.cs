@@ -53,11 +53,14 @@ public sealed record RecordWarehouseTaskProgressRequest(WarehouseTaskId Warehous
 public sealed record CompleteWarehouseTaskRequest(WarehouseTaskId WarehouseTaskId);
 public sealed record CompleteInboundOrderRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CompleteMovementResponse(InventoryMovementRequestId RequestId, string? InventoryMovementId);
+public sealed record RetryInboundInventoryPostingRequest(InboundOrderId InboundOrderId, string IdempotencyKey);
 public sealed record CreateOutboundOrderRequest(string OrganizationId, string EnvironmentId, string OutboundOrderNo, string SourceDocumentType, string SourceDocumentId, string SiteCode, IReadOnlyCollection<WmsOutboundLineInput> Lines);
 public sealed record CreateOutboundOrderResponse(OutboundOrderId OutboundOrderId);
 public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? Status = null, string? Keyword = null);
 public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
 public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
+public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
+public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
 public sealed record CreateCountExecutionRequest(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
 public sealed record ListCountExecutionsRequest(
@@ -134,6 +137,16 @@ public sealed class CompleteInboundOrderEndpoint(ISender sender) : WmsEndpoint<C
     }
 }
 
+public sealed class RetryInboundInventoryPostingEndpoint(ISender sender) : WmsEndpoint<RetryInboundInventoryPostingRequest, ResponseData<CompleteMovementResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RetryInboundInventoryPostingEndpoint>());
+    public override async Task HandleAsync(RetryInboundInventoryPostingRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RetryInboundInventoryPostingCommand(req.InboundOrderId, req.IdempotencyKey), ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class CreateOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CreateOutboundOrderRequest, ResponseData<CreateOutboundOrderResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CreateOutboundOrderEndpoint>());
@@ -200,6 +213,26 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
     public override async Task HandleAsync(CompleteOutboundOrderRequest req, CancellationToken ct)
     {
         var result = await sender.Send(new CompleteOutboundOrderCommand(req.OutboundOrderId, req.PackReviewNo, req.Passed, req.IdempotencyKey), ct);
+        await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CancelOutboundOrderRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CancelOutboundOrderEndpoint>());
+    public override async Task HandleAsync(CancelOutboundOrderRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CancelOutboundOrderCommand(req.OutboundOrderId, req.Reason), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RetryOutboundInventoryPostingEndpoint(ISender sender) : WmsEndpoint<RetryOutboundInventoryPostingRequest, ResponseData<CompleteMovementResponse>>
+{
+    public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<RetryOutboundInventoryPostingEndpoint>());
+    public override async Task HandleAsync(RetryOutboundInventoryPostingRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RetryOutboundInventoryPostingCommand(req.OutboundOrderId, req.IdempotencyKey), ct);
         await Send.OkAsync(new CompleteMovementResponse(result.RequestId, result.InventoryMovementId).AsResponseData(), cancellation: ct);
     }
 }
@@ -285,6 +318,7 @@ public static class WmsEndpointContracts
         new(typeof(CreatePutawayTaskEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPutawayTask"),
         new(typeof(ListPutawayTasksEndpoint), "GET", "/api/business/v1/wms/putaway-tasks", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsPutawayTasks"),
         new(typeof(CompleteInboundOrderEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsInboundOrder"),
+        new(typeof(RetryInboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsInboundInventoryPosting"),
         new(typeof(CreateOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsOutboundOrder"),
         new(typeof(ListOutboundOrdersEndpoint), "GET", "/api/business/v1/wms/outbound-orders", WmsPermissionCodes.ShipmentsRead, InternalServiceAuthorizationPolicy.Name, "listWmsOutboundOrders"),
         new(typeof(CreatePickingTaskEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/picking-tasks", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "createWmsPickingTask"),
@@ -292,6 +326,8 @@ public static class WmsEndpointContracts
         new(typeof(RecordWarehouseTaskProgressEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/progress", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "recordWmsWarehouseTaskProgress"),
         new(typeof(CompleteWarehouseTaskEndpoint), "POST", "/api/business/v1/wms/warehouse-tasks/{warehouseTaskId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsWarehouseTask"),
         new(typeof(CompleteOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/complete", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsOutboundOrder"),
+        new(typeof(CancelOutboundOrderEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/cancel", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "cancelWmsOutboundOrder"),
+        new(typeof(RetryOutboundInventoryPostingEndpoint), "POST", "/api/business/v1/wms/outbound-orders/{outboundOrderId}/inventory-posting/retry", WmsPermissionCodes.ShipmentsManage, InternalServiceAuthorizationPolicy.Name, "retryWmsOutboundInventoryPosting"),
         new(typeof(CreateCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "createWmsCountExecution"),
         new(typeof(ListCountExecutionsEndpoint), "GET", "/api/business/v1/wms/count-executions", WmsPermissionCodes.ReceiptsRead, InternalServiceAuthorizationPolicy.Name, "listWmsCountExecutions"),
         new(typeof(CompleteCountExecutionEndpoint), "POST", "/api/business/v1/wms/count-executions/{countExecutionId}/complete", WmsPermissionCodes.ReceiptsManage, InternalServiceAuthorizationPolicy.Name, "completeWmsCountExecution"),
