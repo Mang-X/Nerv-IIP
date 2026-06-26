@@ -370,6 +370,76 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Production_report_only_rolls_work_order_progress_from_output_operation()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var reportedAt = DateTimeOffset.Parse("2026-05-24T09:00:00Z");
+        var workOrder = Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-OUTPUT",
+            "SKU-FG-1000",
+            "PV-001",
+            100m,
+            1,
+            reportedAt.AddHours(8));
+        var tasks = workOrder.Release(
+            reportedAt.AddHours(-1),
+            [
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-10",
+                    10,
+                    "WC-MIX-01",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-20",
+                    20,
+                    "WC-INSPECT-01",
+                    [],
+                    TimeSpan.FromMinutes(20)),
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-30",
+                    30,
+                    "WC-PACK-01",
+                    [],
+                    TimeSpan.FromMinutes(25)),
+            ]);
+        workOrder.Start(reportedAt.AddMinutes(-20));
+        tasks.Single(x => x.OperationTaskId == "OP-10").Start(reportedAt.AddMinutes(-15));
+        tasks.Single(x => x.OperationTaskId == "OP-30").Start(reportedAt.AddMinutes(25));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new RecordProductionReportCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-10", 100m, 0m, true, reportedAt),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(0m, workOrder.CompletedQuantity);
+        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
+        Assert.Equal(
+            Domain.AggregatesModel.OperationTaskAggregate.OperationTaskLifecycleStatus.Completed,
+            tasks.Single(x => x.OperationTaskId == "OP-10").Status);
+
+        await handler.Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-30", 40m, 0m, false, reportedAt.AddMinutes(30)),
+            CancellationToken.None);
+        await handler.Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-30", 60m, 1m, true, reportedAt.AddMinutes(45)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(100m, workOrder.CompletedQuantity);
+        Assert.Equal(1m, workOrder.ScrapQuantity);
+        Assert.Equal(WorkOrder.CompletedStatus, workOrder.Status);
+    }
+
+    [Fact]
     public void Operation_task_status_filters_do_not_depend_on_enum_ToString_provider_translation()
     {
         var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
