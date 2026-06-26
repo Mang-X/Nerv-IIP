@@ -515,9 +515,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     bucketStartUtc?: string;
     bucketEndUtc?: string;
     sampleCount?: number;
-    minValue?: number | null;
-    maxValue?: number | null;
-    averageValue?: number | null;
+    minValue?: number;
+    maxValue?: number;
+    averageValue?: number;
     sourceSequence: string;
     sourceSystem: string;
     sourceConnector: string;
@@ -543,6 +543,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     externalAlarmId: string;
     clearedAtUtc?: string | null;
     clearedBy?: string | null;
+    clearReason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryAlarmEventListResponse = NetCorePalExtensionsDtoResponseData & {

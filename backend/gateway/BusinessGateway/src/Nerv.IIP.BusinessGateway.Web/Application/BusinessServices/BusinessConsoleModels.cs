@@ -1557,9 +1557,9 @@ public sealed record BusinessConsoleRecordTelemetrySampleRequest(
     DateTimeOffset BucketStartUtc,
     DateTimeOffset BucketEndUtc,
     int SampleCount,
-    decimal? MinValue,
-    decimal? MaxValue,
-    decimal? AverageValue,
+    decimal MinValue,
+    decimal MaxValue,
+    decimal AverageValue,
     string SourceSequence,
     string SourceSystem,
     string SourceConnector,
@@ -1579,7 +1579,8 @@ public sealed record BusinessConsolePostTelemetryAlarmRequest(
     DateTimeOffset RaisedAtUtc,
     string ExternalAlarmId,
     DateTimeOffset? ClearedAtUtc = null,
-    string? ClearedBy = null);
+    string? ClearedBy = null,
+    string? ClearReason = null);
 
 public sealed record BusinessConsolePostTelemetryAlarmResponse(string AlarmEventId);
 

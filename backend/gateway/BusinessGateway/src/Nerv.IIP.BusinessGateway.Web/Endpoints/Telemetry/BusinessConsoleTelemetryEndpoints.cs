@@ -361,6 +361,7 @@ public sealed class BusinessConsolePostTelemetryAlarmRequestValidator
         RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
         RuleFor(x => x.ExternalAlarmId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ClearedBy).MaximumLength(150);
+        RuleFor(x => x.ClearReason).MaximumLength(300);
     }
 }
 

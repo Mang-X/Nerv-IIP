@@ -2434,9 +2434,7 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string SourceType,
         string SourceDocumentId,
         string SkuCode,
-        decimal InspectedQuantity,
         string Result,
-        DateTimeOffset RecordedAtUtc,
         string? BatchNo,
         string? SerialNo,
         string? DispositionReason);
@@ -2939,14 +2937,13 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         BusinessConsolePlanningDemandCancelRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await SendAsync<string>(
+        await SendAsync<string>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/planning/demands/{Uri.EscapeDataString(demandSourceId)}/cancel?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
             null,
             cancellationToken);
-        return new BusinessConsoleAcceptedResponse(
-            string.Equals(result, "cancelled", StringComparison.OrdinalIgnoreCase));
+        return new BusinessConsoleAcceptedResponse(true);
     }
 
     public async Task<BusinessConsoleRunMrpResponse> RunMrpAsync(

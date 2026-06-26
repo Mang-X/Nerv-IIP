@@ -19713,18 +19713,15 @@
           },
           "minValue": {
             "type": "number",
-            "format": "decimal",
-            "nullable": true
+            "format": "decimal"
           },
           "maxValue": {
             "type": "number",
-            "format": "decimal",
-            "nullable": true
+            "format": "decimal"
           },
           "averageValue": {
             "type": "number",
-            "format": "decimal",
-            "nullable": true
+            "format": "decimal"
           },
           "sourceSequence": {
             "type": "string",
@@ -19847,6 +19844,12 @@
           "clearedBy": {
             "type": "string",
             "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          },
+          "clearReason": {
+            "type": "string",
+            "maxLength": 300,
             "minLength": 0,
             "nullable": true
           }

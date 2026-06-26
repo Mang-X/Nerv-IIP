@@ -285,7 +285,18 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, x.LineCode, null, null, x.WorkCenterCode, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, x.Id.ToString()));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Model,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                LineCode = x.LineCode,
+                WorkCenterCode = x.WorkCenterCode,
+                Status = x.Disabled ? "disabled" : "active",
+                DeviceAssetId = x.Id.ToString(),
+            });
     }
 
     private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, string resourceType)
