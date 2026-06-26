@@ -3,6 +3,7 @@ using FastEndpoints;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
 
@@ -81,6 +82,21 @@ public sealed class CreateSchedulePlanEndpoint(ISender sender)
     public override async Task HandleAsync(CreateSchedulePlanRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new CreateSchedulePlanCommand(req.Problem), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AssembleSchedulingProblemEndpoint(ISender sender)
+    : SchedulingEndpoint<AssembleSchedulingProblemRequest, ResponseData<SchedulingProblemContract>>
+{
+    public override void Configure()
+    {
+        ConfigureSchedulingContract(SchedulingEndpointContracts.Get<AssembleSchedulingProblemEndpoint>());
+    }
+
+    public override async Task HandleAsync(AssembleSchedulingProblemRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new AssembleSchedulingProblemCommand(req), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -211,6 +227,7 @@ public static class SchedulingEndpointContracts
     [
         new(typeof(PreviewSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans/preview", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "previewSchedulingPlan"),
         new(typeof(CreateSchedulePlanEndpoint), "POST", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createSchedulingPlan"),
+        new(typeof(AssembleSchedulingProblemEndpoint), "POST", "/api/business/v1/scheduling/problems/assemble", SchedulingPermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "assembleSchedulingProblem"),
         new(typeof(ListSchedulePlansEndpoint), "GET", "/api/business/v1/scheduling/plans", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listSchedulingPlans"),
         new(typeof(GetSchedulePlanEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlan"),
         new(typeof(GetSchedulePlanGanttEndpoint), "GET", "/api/business/v1/scheduling/plans/{planId}/gantt", SchedulingPermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "getSchedulingPlanGantt"),
