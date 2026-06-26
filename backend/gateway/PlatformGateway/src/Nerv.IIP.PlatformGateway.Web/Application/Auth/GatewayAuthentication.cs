@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -11,7 +10,9 @@ public static class GatewayPolicies
 
 public static class GatewayAuthentication
 {
-    private const string DevelopmentSigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
+    private const string DevelopmentPublicJwksJson = """
+{"keys":[{"kty":"RSA","use":"sig","kid":"dev-rsa-2026-01","alg":"RS256","n":"tEYU0967vfBIQVtsmO87GsJUC_9PXED2hplI9VMnrKWW_5UO38OloycNOcVKFDUekblpr6YZ10SpdrkoyM9nENLoi8WYL5__VUCo96Dbd5oo7kanAi5m0FzvnY9a0Ax39TFTsUyBZ2G8alWMOkw1-BYJFtm8-z6j_kTlz93xe3griVcGyXTlNWi09pgvAC8Lj1ON42fovXiLjygnvCA5ZJeviMFZe43kftxjF0-fu0I6By6j-DyiIPGdHAIaSWn3cSl0Il2uBRmkW-aCs9GULHTs0Z3XpXklpQCc5dcn_UsFPGY5gIW-TbqqfBebZCZBROdgSnVrSNnIsdWRgplR9Q","e":"AQAB"}]}
+""";
     private const string DefaultIssuer = "nerv-iip-iam";
     private const string DefaultAudience = "nerv-iip-api";
 
@@ -100,6 +101,7 @@ public static class GatewayAuthentication
         IConfiguration configuration,
         IHostEnvironment environment)
     {
+        var signingKeys = CreateSigningKeys(configuration, environment);
         return new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -107,27 +109,32 @@ public static class GatewayAuthentication
             ValidateAudience = true,
             ValidAudience = configuration["Iam:Jwt:Audience"] ?? DefaultAudience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = CreateSigningKey(configuration, environment),
+            RequireSignedTokens = true,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            IssuerSigningKeyResolver = (_, _, kid, _) => signingKeys
+                .Where(key => string.Equals(key.KeyId, kid, StringComparison.Ordinal)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
     }
 
-    private static SymmetricSecurityKey CreateSigningKey(
+    private static IReadOnlyList<JsonWebKey> CreateSigningKeys(
         IConfiguration configuration,
         IHostEnvironment environment)
     {
-        var signingKey = configuration["Iam:Jwt:SigningKey"];
-        if (string.IsNullOrWhiteSpace(signingKey))
+        var jwksJson = configuration["Iam:Jwt:JwksJson"];
+        if (string.IsNullOrWhiteSpace(jwksJson))
         {
             if (!environment.IsDevelopment())
             {
-                throw new InvalidOperationException("Iam:Jwt:SigningKey is required for Gateway JWT validation outside Development.");
+                throw new InvalidOperationException("Iam:Jwt:JwksJson is required for Gateway JWT validation outside Development.");
             }
 
-            signingKey = DevelopmentSigningKey;
+            jwksJson = DevelopmentPublicJwksJson;
         }
 
-        return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+        return new JsonWebKeySet(jwksJson).Keys
+            .Where(key => string.Equals(key.Kty, JsonWebAlgorithmsKeyTypes.RSA, StringComparison.Ordinal))
+            .ToArray();
     }
 }

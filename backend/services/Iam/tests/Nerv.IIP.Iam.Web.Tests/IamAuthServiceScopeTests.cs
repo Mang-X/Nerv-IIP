@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -81,7 +82,8 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            NullLogger<PostgreSqlIamAuthService>.Instance);
 
         var principalAaa = await service.GetCurrentPrincipalAsync(
             CreateHttpContext(tokenService.CreateAccessToken(user, session, "org-aaa", "env-dev")),
@@ -211,7 +213,8 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            NullLogger<PostgreSqlIamAuthService>.Instance);
     }
 
     private static HttpContext CreateHttpContext(string accessToken)

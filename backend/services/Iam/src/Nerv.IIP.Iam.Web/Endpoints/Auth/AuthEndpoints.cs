@@ -75,6 +75,17 @@ public sealed class ClientCredentialsTokenEndpoint(IIamAuthService auth) : Endpo
     }
 }
 
+[HttpGet("/api/iam/v1/auth/jwks")]
+[AllowAnonymous]
+public sealed class JwksEndpoint(IamTokenService tokenService) : EndpointWithoutRequest
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        HttpContext.Response.ContentType = "application/json";
+        await HttpContext.Response.WriteAsync(tokenService.GetJwksJson(), ct);
+    }
+}
+
 [HttpPost("/api/iam/v1/auth/oidc/callback")]
 [AllowAnonymous]
 public sealed class OidcLoginCallbackEndpoint(IMediator mediator) : Endpoint<OidcLoginCallbackRequest, ResponseData<EnterpriseAuthResponse>>

@@ -702,14 +702,16 @@ public sealed class IamPostgresProfileTests
             "Persistence__Provider",
             "Persistence__AutoMigrate",
             "ConnectionStrings__IamDb",
-            "Iam__Jwt__SigningKey");
+            "Iam__Jwt__SigningKeys__0__Kid",
+            "Iam__Jwt__SigningKeys__0__PrivateKeyPem");
 
         try
         {
             Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
             Environment.SetEnvironmentVariable("Persistence__AutoMigrate", "true");
             Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", "Host=localhost;Database=nerv_iip_iam_guard;Username=nerv;Password=nerv");
-            Environment.SetEnvironmentVariable("Iam__Jwt__SigningKey", "production-test-signing-key-that-is-long-enough");
+            Environment.SetEnvironmentVariable("Iam__Jwt__SigningKeys__0__Kid", IamJwtTestKeys.Kid);
+            Environment.SetEnvironmentVariable("Iam__Jwt__SigningKeys__0__PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
 
             using var factory = new WebApplicationFactory<Program>()
                 .WithWebHostBuilder(builder => builder.UseEnvironment("Production"));

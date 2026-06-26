@@ -208,7 +208,6 @@ try {
       $env:Iam__Seed__Enabled = "true"
       $env:Iam__Seed__AdminPassword = "Admin123!"
       $env:Iam__Seed__ConnectorHostSecret = "local-connector-secret"
-      $env:Iam__Jwt__SigningKey = "verify-signing-key-that-is-long-enough-for-local-tests"
     }
     dotnet run --project $project --no-build --no-launch-profile
   } -ArgumentList $iamProject, $iamUrl, $UsePostgres.IsPresent, $iamPostgresConnectionString

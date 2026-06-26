@@ -22,7 +22,8 @@ public sealed class PostgreSqlIamAuthService(
     IamTokenService tokenService,
     IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
-    IMfaChallengeStore mfaChallenges)
+    IMfaChallengeStore mfaChallenges,
+    ILogger<PostgreSqlIamAuthService> logger)
     : IIamAuthService
 {
     public async Task<AuthResponse> LoginAsync(
@@ -73,6 +74,22 @@ public sealed class PostgreSqlIamAuthService(
             cancellationToken);
         if (session is null)
         {
+            var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(refreshTokenHash, cancellationToken);
+            if (replayedSession is not null && replayedSession.RevokedAtUtc is not null)
+            {
+                var revokedCount = await userSessionRepository.RevokeFamilyAsync(
+                    replayedSession.TokenFamilyId,
+                    now,
+                    "refresh-reuse-detected",
+                    cancellationToken);
+                logger.LogWarning(
+                    "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
+                    replayedSession.UserId.Id,
+                    replayedSession.TokenFamilyId,
+                    replayedSession.Id.Id,
+                    revokedCount);
+            }
+
             throw Unauthorized();
         }
 
@@ -82,7 +99,7 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
-        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
+        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken, previousSession: session);
     }
 
     public async Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
@@ -387,7 +404,8 @@ public sealed class PostgreSqlIamAuthService(
         string authenticationMethod = "password",
         string? externalProvider = null,
         string? externalSubject = null,
-        DateTimeOffset? mfaVerifiedAtUtc = null)
+        DateTimeOffset? mfaVerifiedAtUtc = null,
+        UserSession? previousSession = null)
     {
         var refreshToken = tokenService.CreateRefreshToken();
         var now = DateTimeOffset.UtcNow;
@@ -417,7 +435,9 @@ public sealed class PostgreSqlIamAuthService(
             authenticationMethod,
             externalProvider,
             externalSubject,
-            mfaVerifiedAtUtc);
+            mfaVerifiedAtUtc,
+            previousSession?.TokenFamilyId,
+            previousSession?.Id.Id);
 
         await userSessionRepository.AddAsync(session, cancellationToken);
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
