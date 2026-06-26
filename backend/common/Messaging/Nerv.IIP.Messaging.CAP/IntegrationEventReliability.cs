@@ -48,6 +48,8 @@ public sealed record IntegrationEventEnvelopeValidationResult(
 
 public sealed class IntegrationEventEnvelopeValidator
 {
+    public const string UnexpectedEventTypeFailureCode = "unexpected-event-type";
+
     public IntegrationEventEnvelopeValidationResult Validate<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         IntegrationEventConsumerOptions options)
@@ -89,7 +91,7 @@ public sealed class IntegrationEventEnvelopeValidator
         if (!options.SupportedEventTypes.Contains(integrationEvent.EventType, StringComparer.Ordinal))
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "unexpected-event-type",
+                UnexpectedEventTypeFailureCode,
                 $"Integration event type '{integrationEvent.EventType}' is not supported by consumer '{options.ConsumerName}'.");
         }
 
@@ -140,6 +142,14 @@ public sealed class IntegrationEventConsumerGuard<TIntegrationEvent>(
         var validation = validator.Validate(integrationEvent, options);
         if (!validation.IsValid)
         {
+            if (string.Equals(
+                validation.FailureCode,
+                IntegrationEventEnvelopeValidator.UnexpectedEventTypeFailureCode,
+                StringComparison.Ordinal))
+            {
+                return;
+            }
+
             await deadLetterStore.AddAsync(
                 IntegrationEventDeadLetterMessage.Create(
                     options.ConsumerName,
