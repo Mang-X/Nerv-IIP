@@ -8,20 +8,19 @@ import type { DataTableProColumn } from './types'
 // 未知 prop 会作为 DOM 属性透传，vue-tsc / 打桩单测都抓不到，只有挂真实组件才暴露。
 
 interface Row { id: string, name: string }
-const columns: DataTableProColumn<Row>[] = [
+// 列按 `object` 行类型标注：mount() 对泛型 SFC 默认 T=object，标 <Row> 会因 accessor 逆变而 TS2322。
+const columns: DataTableProColumn<object>[] = [
   { key: 'id', header: 'ID', sortable: true },
   { key: 'name', header: '名称' },
 ]
-const base = { columns, rowKey: 'id', searchable: false, columnSettings: false } as const
+const base = { columns, rowKey: 'id', searchable: false, columnSettings: false }
 
 describe('DataTablePro 服务端分页 + 受控排序（公共契约回归）', () => {
   // P1#1：调用点统一传 `:total-items`，故公共 prop 必须叫 `totalItems`。manual 下页脚用外部总数，
   // 不得回退到当前页行数——否则服务端多页时总数/页数全错、第 2 页会被夹回第 1 页。
   it('manual：页脚总数取外部 `totalItems`，而非当前页行数', async () => {
     const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({ id: `R${i + 1}`, name: `行 ${i + 1}` }))
-    const wrapper = mount(DataTablePro, {
-      props: { ...base, rows, manual: true, totalItems: 95, pageSize: 10 },
-    })
+    const wrapper = mount(DataTablePro, { props: { ...base, rows, manual: true, totalItems: 95, pageSize: 10 } })
     await nextTick()
     expect(wrapper.text()).toContain('95') // “显示 1–10 / 95 条”
     expect(wrapper.text()).not.toContain('/ 10 条') // 若 totalItems 未绑定 → 回退 rows.length=10
@@ -35,9 +34,7 @@ describe('DataTablePro 服务端分页 + 受控排序（公共契约回归）', 
       { id: 'A', name: 'a' },
       { id: 'C', name: 'c' },
     ]
-    const wrapper = mount(DataTablePro, {
-      props: { ...base, rows, pagination: false, clientSort: false, sort: null },
-    })
+    const wrapper = mount(DataTablePro, { props: { ...base, rows, pagination: false, clientSort: false, sort: null } })
     await nextTick()
     const firstCell = () => wrapper.findAll('tbody td')[0]?.text()
     const before = firstCell() // 原始顺序首行 = 'B'
