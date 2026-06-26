@@ -108,7 +108,7 @@ Capability scope 和 permission code 不是同一种事实：
 
 第二阶段低风险动作闭环中的 `X-Connector-Host-Id`、`X-Connector-Secret`、`X-Organization-Id` 和 `X-Environment-Id` 是本地纵切验证机制，迁移策略如下：
 
-当前 AppHub ingestion hardening 已先把注册后的心跳与状态同步从共享 header-secret 切到注册返回的 per-instance `X-Connector-Ingestion-Token`。该 token 由 AppHub 签发并绑定 registrationId、organizationId、environmentId、connectorHostId 和 instanceKey，用于阻断跨实例或跨租户伪造上报；它不是终态 IAM access token，也不替代下方 bearer token 迁移目标。非 Development 环境必须配置 `ConnectorIngestionToken:SigningKey`，不得依赖本地 fallback。
+当前 AppHub ingestion hardening 已先把注册后的心跳与状态同步从共享 header-secret 切到注册返回的 per-instance `X-Connector-Ingestion-Token`。注册阶段必须校验 header-secret 携带的 organizationId、environmentId、connectorHostId 与注册 body 一致，并在 AppHub 配置了 `ConnectorHostCredential:*` 范围时同时绑定到服务端配置，避免只靠 body 自证租户/环境。该 token 由 AppHub 签发并绑定 registrationId、organizationId、environmentId、connectorHostId、instanceKey、issuedAtUtc 和 expiresAtUtc，用于阻断跨实例或跨租户伪造上报；它不是终态 IAM access token，也不替代下方 bearer token 迁移目标。非 Development 环境必须配置 `ConnectorIngestionToken:SigningKey`，不得依赖本地 fallback；`ConnectorIngestionToken:LifetimeMinutes` 默认 10 分钟，过期后 Connector Host 通过重新注册刷新本实例 token。
 
 1. 当前阶段：保留 header-secret 入口用于本地验证脚本和旧 Connector Host，新增 bearer token 链路和 SDK token provider。
 2. 兼容阶段：AppHub/Ops 同时接受 bearer token 与 header-secret，但生产 profile 默认要求 bearer token；header-secret 命中时必须输出 structured warning，并在响应中返回 deprecation signal。

@@ -25,6 +25,7 @@ if (usePostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 
 builder.Services.AddFastEndpoints();
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IConnectorIngestionTokenService, ConnectorIngestionTokenService>();
 builder.Services.AddMediatR(configuration =>
 {

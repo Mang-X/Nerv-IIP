@@ -20,6 +20,9 @@ var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
 var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
 var connectorIngestionTokenSigningKey = builder.Configuration["ConnectorIngestionToken:SigningKey"];
+var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? "connector-host-001";
+var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
+var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -84,6 +87,9 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("ConnectorHostCredential__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHostCredential__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHostCredential__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
@@ -533,6 +539,9 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
 
 var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
+    .WithEnvironment("ConnectorHost__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHost__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHost__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Platform__AppHubBaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Platform__OpsBaseUrl", ops.GetEndpoint("http"))

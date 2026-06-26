@@ -10,7 +10,9 @@ public sealed record ConnectorIngestionIdentity(
     string OrganizationId,
     string EnvironmentId,
     string ConnectorHostId,
-    string InstanceKey)
+    string InstanceKey,
+    DateTimeOffset IssuedAtUtc,
+    DateTimeOffset ExpiresAtUtc)
 {
     public ConnectorRequestContext Bind(ConnectorRequestContext context) =>
         context with
@@ -39,8 +41,10 @@ public sealed class ConnectorIngestionTokenService : IConnectorIngestionTokenSer
     private const string DevelopmentSigningKey = "local-apphub-connector-ingestion-token-signing-key";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly byte[] _signingKey;
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _tokenLifetime;
 
-    public ConnectorIngestionTokenService(IConfiguration configuration, IHostEnvironment environment)
+    public ConnectorIngestionTokenService(IConfiguration configuration, IHostEnvironment environment, TimeProvider timeProvider)
     {
         var signingKey = configuration["ConnectorIngestionToken:SigningKey"];
         if (string.IsNullOrWhiteSpace(signingKey))
@@ -59,16 +63,27 @@ public sealed class ConnectorIngestionTokenService : IConnectorIngestionTokenSer
         }
 
         _signingKey = Encoding.UTF8.GetBytes(signingKey);
+        _timeProvider = timeProvider;
+        var lifetimeMinutes = configuration.GetValue("ConnectorIngestionToken:LifetimeMinutes", 10d);
+        if (lifetimeMinutes <= 0)
+        {
+            throw new InvalidOperationException("ConnectorIngestionToken:LifetimeMinutes must be greater than zero.");
+        }
+
+        _tokenLifetime = TimeSpan.FromMinutes(lifetimeMinutes);
     }
 
     public string CreateToken(ApplicationRegistration registration, string registrationId)
     {
+        var issuedAt = _timeProvider.GetUtcNow();
         var identity = new ConnectorIngestionIdentity(
             registrationId,
             registration.Context.OrganizationId,
             registration.Context.EnvironmentId,
             registration.Context.ConnectorHostId,
-            registration.InstanceKey);
+            registration.InstanceKey,
+            issuedAt,
+            issuedAt.Add(_tokenLifetime));
         var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(identity, SerializerOptions);
         var payload = Base64UrlEncode(payloadBytes);
         var signature = Base64UrlEncode(Sign(Encoding.UTF8.GetBytes($"{Version}.{payload}")));
@@ -116,11 +131,14 @@ public sealed class ConnectorIngestionTokenService : IConnectorIngestionTokenSer
             return false;
         }
 
+        var now = _timeProvider.GetUtcNow();
         return !string.IsNullOrWhiteSpace(identity.RegistrationId)
             && !string.IsNullOrWhiteSpace(identity.OrganizationId)
             && !string.IsNullOrWhiteSpace(identity.EnvironmentId)
             && !string.IsNullOrWhiteSpace(identity.ConnectorHostId)
-            && !string.IsNullOrWhiteSpace(identity.InstanceKey);
+            && !string.IsNullOrWhiteSpace(identity.InstanceKey)
+            && identity.IssuedAtUtc <= now
+            && identity.ExpiresAtUtc > now;
     }
 
     private byte[] Sign(byte[] data)

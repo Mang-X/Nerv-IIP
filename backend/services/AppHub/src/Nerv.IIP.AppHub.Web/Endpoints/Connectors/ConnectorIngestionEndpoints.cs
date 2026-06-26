@@ -16,7 +16,7 @@ public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<A
 {
     public override async Task HandleAsync(ApplicationRegistration req, CancellationToken ct)
     {
-        if (!ConnectorEndpointResults.ConnectorHostRegistrationAuthorized(HttpContext, req.Context.ConnectorHostId))
+        if (!ConnectorEndpointResults.ConnectorHostRegistrationAuthorized(HttpContext, req.Context))
         {
             await ConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
@@ -67,16 +67,27 @@ internal static class ConnectorEndpointResults
 {
     private const string DevelopmentConnectorSecret = "local-connector-secret";
 
-    public static bool ConnectorHostRegistrationAuthorized(HttpContext context, string connectorHostId)
+    public static bool ConnectorHostRegistrationAuthorized(HttpContext context, ConnectorRequestContext requestContext)
     {
         if (!context.Request.Headers.TryGetValue("X-Connector-Host-Id", out var hostId)
             || !context.Request.Headers.TryGetValue("X-Connector-Secret", out var secret)
-            || !string.Equals(hostId.ToString(), connectorHostId, StringComparison.Ordinal))
+            || !context.Request.Headers.TryGetValue("X-Organization-Id", out var organizationId)
+            || !context.Request.Headers.TryGetValue("X-Environment-Id", out var environmentId)
+            || !string.Equals(hostId.ToString(), requestContext.ConnectorHostId, StringComparison.Ordinal)
+            || !string.Equals(organizationId.ToString(), requestContext.OrganizationId, StringComparison.Ordinal)
+            || !string.Equals(environmentId.ToString(), requestContext.EnvironmentId, StringComparison.Ordinal))
         {
             return false;
         }
 
         var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
+        if (!ConfiguredValueMatches(configuration["ConnectorHostCredential:ConnectorHostId"], requestContext.ConnectorHostId)
+            || !ConfiguredValueMatches(configuration["ConnectorHostCredential:OrganizationId"], requestContext.OrganizationId)
+            || !ConfiguredValueMatches(configuration["ConnectorHostCredential:EnvironmentId"], requestContext.EnvironmentId))
+        {
+            return false;
+        }
+
         var environment = context.RequestServices.GetRequiredService<IHostEnvironment>();
         var expectedSecret = configuration["ConnectorHostCredential:Secret"];
         if (string.IsNullOrWhiteSpace(expectedSecret))
@@ -125,4 +136,8 @@ internal static class ConnectorEndpointResults
         return actualBytes.Length == expectedBytes.Length
             && CryptographicOperations.FixedTimeEquals(actualBytes, expectedBytes);
     }
+
+    private static bool ConfiguredValueMatches(string? expected, string actual) =>
+        string.IsNullOrWhiteSpace(expected)
+        || string.Equals(expected, actual, StringComparison.Ordinal);
 }

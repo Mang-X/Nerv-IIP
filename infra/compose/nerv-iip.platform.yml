@@ -47,7 +47,11 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__AppHubDb: Host=postgres;Port=5432;Database=nerv_iip_apphub;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      ConnectorHostCredential__ConnectorHostId: ${NERV_IIP_CONNECTOR_HOST_ID:?set NERV_IIP_CONNECTOR_HOST_ID}
+      ConnectorHostCredential__OrganizationId: ${NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID:?set NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID}
+      ConnectorHostCredential__EnvironmentId: ${NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID:?set NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID}
       ConnectorHostCredential__Secret: ${NERV_IIP_CONNECTOR_HOST_SECRET:?set NERV_IIP_CONNECTOR_HOST_SECRET}
+      ConnectorIngestionToken__SigningKey: ${NERV_IIP_CONNECTOR_INGESTION_TOKEN_SIGNING_KEY:?set NERV_IIP_CONNECTOR_INGESTION_TOKEN_SIGNING_KEY}
     ports:
       - "${NERV_IIP_APPHUB_PORT:-5101}:8080"
 
@@ -355,6 +359,9 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:-Production}
       ConnectorHost__CycleSeconds: ${NERV_IIP_CONNECTOR_HOST_CYCLE_SECONDS:-5}
+      ConnectorHost__ConnectorHostId: ${NERV_IIP_CONNECTOR_HOST_ID:?set NERV_IIP_CONNECTOR_HOST_ID}
+      ConnectorHost__OrganizationId: ${NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID:?set NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID}
+      ConnectorHost__EnvironmentId: ${NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID:?set NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID}
       ConnectorHost__ConnectorSecret: ${NERV_IIP_CONNECTOR_HOST_SECRET:?set NERV_IIP_CONNECTOR_HOST_SECRET}
       Platform__AppHubBaseUrl: http://apphub:8080
       Platform__OpsBaseUrl: http://ops:8080

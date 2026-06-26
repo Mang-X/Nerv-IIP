@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Nerv.IIP.Contracts.ConnectorProtocol;
@@ -7,14 +8,25 @@ namespace Nerv.IIP.Sdk.ConnectorProtocol;
 
 public interface IConnectorProtocolClient
 {
+    /// <summary>
+    /// Registers an application instance and caches the returned ingestion token in this client instance.
+    /// </summary>
     Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a heartbeat using the token cached by a prior successful registration for the same instance in this client instance.
+    /// </summary>
     Task SendHeartbeatAsync(ApplicationHeartbeat heartbeat, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends a state snapshot using the token cached by a prior successful registration for the same instance in this client instance.
+    /// </summary>
     Task SendStateSnapshotAsync(InstanceStateSnapshot snapshot, CancellationToken cancellationToken = default);
 }
 
 public sealed class HttpConnectorProtocolClient(HttpClient httpClient, ConnectorHostCredential credential) : IConnectorProtocolClient
 {
-    private readonly Dictionary<string, string> _ingestionTokens = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _ingestionTokens = new(StringComparer.Ordinal);
 
     public async Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
     {
