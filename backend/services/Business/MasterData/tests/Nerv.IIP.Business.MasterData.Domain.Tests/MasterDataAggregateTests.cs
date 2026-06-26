@@ -251,6 +251,84 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Sku_rejects_invalid_abc_classification()
+    {
+        Assert.Throws<ArgumentException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-ABC",
+            "Bad ABC",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            abcClass: "Z"));
+    }
+
+    [Fact]
+    public void Sku_obsolete_status_is_terminal_and_disables_business_usage()
+    {
+        var sku = Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-OBSOLETE",
+            "Obsolete Finished Good",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            lifecycleStatus: "active",
+            purchasingEnabled: true,
+            manufacturingEnabled: true,
+            salesEnabled: true);
+
+        sku.UpdateIndustrial(
+            sku.Name,
+            sku.BaseUomCode,
+            sku.Category,
+            sku.MaterialType,
+            sku.BatchTrackingPolicy,
+            sku.SerialTrackingPolicy,
+            sku.ShelfLifePolicyCode,
+            sku.StorageConditionCode,
+            sku.DefaultBarcodeRuleCode,
+            sku.QualityRequired,
+            lifecycleStatus: "obsolete",
+            purchasingEnabled: true,
+            manufacturingEnabled: true,
+            salesEnabled: true);
+
+        Assert.Equal("obsolete", sku.LifecycleStatus);
+        Assert.False(sku.PurchasingEnabled);
+        Assert.False(sku.ManufacturingEnabled);
+        Assert.False(sku.SalesEnabled);
+        Assert.Throws<InvalidOperationException>(() => sku.UpdateIndustrial(
+            "Revived Finished Good",
+            sku.BaseUomCode,
+            sku.Category,
+            sku.MaterialType,
+            sku.BatchTrackingPolicy,
+            sku.SerialTrackingPolicy,
+            sku.ShelfLifePolicyCode,
+            sku.StorageConditionCode,
+            sku.DefaultBarcodeRuleCode,
+            sku.QualityRequired,
+            lifecycleStatus: "active"));
+    }
+
+    [Fact]
     public void Business_partner_update_changes_primary_role_and_commercial_defaults()
     {
         var partner = BusinessPartner.Create(

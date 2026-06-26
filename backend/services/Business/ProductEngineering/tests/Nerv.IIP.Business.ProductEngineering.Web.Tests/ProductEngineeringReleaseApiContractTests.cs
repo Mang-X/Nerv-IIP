@@ -77,6 +77,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             .Select(contract => (contract.EndpointType, contract.Route))
             .Concat(ProductionVersionEndpointContracts.All.Select(contract => (contract.EndpointType, contract.Route)))
             .Concat(StandardOperationEndpointContracts.All.Select(contract => (contract.EndpointType, contract.Route)))
+            .Append((EndpointType: typeof(GetMasterDataWorkCenterUsageEndpoint), Route: "/api/business/v1/engineering/internal/master-data/work-centers/{workCenterCode}/usage"))
             .ToArray();
 
         var failures = contracts
@@ -106,6 +107,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(ListEngineeringBomsEndpoint))]
     [InlineData(typeof(ListManufacturingBomsEndpoint))]
     [InlineData(typeof(ListRoutingsEndpoint))]
+    [InlineData(typeof(GetMasterDataWorkCenterUsageEndpoint))]
     public void Product_engineering_release_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -817,6 +819,40 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
         Assert.Contains("published", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ROUTE-OVERLAP", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MasterData_work_center_usage_query_reports_active_standard_operation_and_routing_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(StandardOperation.Create(
+            "org-001",
+            "env-dev",
+            "mixing",
+            "Mixing",
+            "WC-MIX-01",
+            5,
+            30,
+            "INHOUSE",
+            true,
+            false,
+            false,
+            null));
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-MIX", "A", "SKU-FG-1000")
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mixing", 30);
+        routing.Release(new DateOnly(2026, 6, 1));
+        dbContext.Routings.Add(routing);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var usage = await new GetMasterDataWorkCenterUsageQueryHandler(dbContext).Handle(
+            new GetMasterDataWorkCenterUsageQuery("org-001", "env-dev", "WC-MIX-01"),
+            CancellationToken.None);
+
+        Assert.True(usage.HasActiveReference);
+        Assert.Contains("standard-operation:mixing", usage.References);
+        Assert.Contains("routing:ROUTE-MIX:A", usage.References);
     }
 
     [Fact]

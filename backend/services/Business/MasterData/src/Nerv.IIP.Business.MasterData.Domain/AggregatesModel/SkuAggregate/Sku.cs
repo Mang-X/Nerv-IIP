@@ -79,10 +79,10 @@ public class Sku : Entity<SkuId>, IAggregateRoot
             inHouseProductionTimeDays,
             goodsReceiptProcessingTimeDays,
             abcClass);
-        LifecycleStatus = NormalizeLifecycleStatus(lifecycleStatus);
         PurchasingEnabled = purchasingEnabled;
         ManufacturingEnabled = manufacturingEnabled;
         SalesEnabled = salesEnabled;
+        ApplyLifecycleStatus(NormalizeLifecycleStatus(lifecycleStatus));
         this.complianceTags.AddRange(complianceTags.Select(Required).Distinct(StringComparer.OrdinalIgnoreCase));
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
@@ -211,6 +211,7 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     {
         var validName = Required(name);
         EnsureEnabled();
+        EnsureLifecycleMutable();
         Name = validName;
         Touch();
     }
@@ -248,6 +249,8 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         bool? salesEnabled = null)
     {
         EnsureEnabled();
+        EnsureLifecycleMutable();
+        var nextLifecycleStatus = lifecycleStatus is null ? LifecycleStatus : NormalizeLifecycleStatus(lifecycleStatus);
         Name = Required(name);
         Unit = Required(baseUomCode);
         BaseUomCode = Unit;
@@ -276,14 +279,10 @@ public class Sku : Entity<SkuId>, IAggregateRoot
             inHouseProductionTimeDays,
             goodsReceiptProcessingTimeDays,
             abcClass);
-        if (lifecycleStatus is not null)
-        {
-            LifecycleStatus = NormalizeLifecycleStatus(lifecycleStatus);
-        }
-
         PurchasingEnabled = purchasingEnabled ?? PurchasingEnabled;
         ManufacturingEnabled = manufacturingEnabled ?? ManufacturingEnabled;
         SalesEnabled = salesEnabled ?? SalesEnabled;
+        ApplyLifecycleStatus(nextLifecycleStatus);
         Touch();
     }
 
@@ -321,6 +320,14 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         if (Disabled)
         {
             throw new InvalidOperationException("Disabled SKU cannot be changed.");
+        }
+    }
+
+    private void EnsureLifecycleMutable()
+    {
+        if (string.Equals(LifecycleStatus, "obsolete", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Obsolete SKU cannot be changed.");
         }
     }
 
@@ -377,17 +384,45 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         PlannedDeliveryTimeDays = plannedDeliveryTimeDays;
         InHouseProductionTimeDays = inHouseProductionTimeDays;
         GoodsReceiptProcessingTimeDays = goodsReceiptProcessingTimeDays;
-        AbcClass = Optional(abcClass);
+        AbcClass = NormalizeAbcClass(abcClass);
     }
 
     private static string NormalizeLifecycleStatus(string? lifecycleStatus)
     {
-        var value = string.IsNullOrWhiteSpace(lifecycleStatus) ? "active" : lifecycleStatus.Trim();
-        return value.ToLowerInvariant() switch
+        var value = string.IsNullOrWhiteSpace(lifecycleStatus) ? "active" : lifecycleStatus.Trim().ToLowerInvariant();
+        return value switch
         {
             "draft" or "active" or "blocked" or "obsolete" => value,
             _ => throw new ArgumentException("Unsupported SKU lifecycle status.", nameof(lifecycleStatus)),
         };
+    }
+
+    private static string NormalizeAbcClass(string? abcClass)
+    {
+        if (string.IsNullOrWhiteSpace(abcClass))
+        {
+            return string.Empty;
+        }
+
+        var value = abcClass.Trim().ToUpperInvariant();
+        return value switch
+        {
+            "A" or "B" or "C" => value,
+            _ => throw new ArgumentException("Unsupported SKU ABC classification.", nameof(abcClass)),
+        };
+    }
+
+    private void ApplyLifecycleStatus(string lifecycleStatus)
+    {
+        LifecycleStatus = lifecycleStatus;
+        if (!string.Equals(LifecycleStatus, "obsolete", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PurchasingEnabled = false;
+        ManufacturingEnabled = false;
+        SalesEnabled = false;
     }
 
     private static void ValidateNonNegative(decimal? value, string parameterName)

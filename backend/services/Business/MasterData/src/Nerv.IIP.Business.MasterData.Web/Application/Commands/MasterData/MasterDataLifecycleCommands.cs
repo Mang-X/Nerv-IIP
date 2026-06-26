@@ -592,9 +592,13 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("personnel-skill", $"{x.UserId}:{x.SkillCode}", x.Level, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Status: x.Disabled ? "disabled" : "active", EffectiveFrom: x.EffectiveFrom, EffectiveTo: x.EffectiveTo, UserId: x.UserId, SkillCode: x.SkillCode, SkillLevel: x.Level);
 }
 
-public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbContext dbContext)
+public sealed class SetMasterDataResourceEnabledCommandHandler(
+    ApplicationDbContext dbContext,
+    IMasterDataDownstreamReferenceChecker? downstreamReferenceChecker = null)
     : ICommandHandler<SetMasterDataResourceEnabledCommand, MasterDataResourceDetail>
 {
+    private readonly IMasterDataDownstreamReferenceChecker downstreamReferenceChecker = downstreamReferenceChecker ?? NullMasterDataDownstreamReferenceChecker.Instance;
+
     public async Task<MasterDataResourceDetail> Handle(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
     {
         var reason = request.Reason;
@@ -611,6 +615,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbCont
                 return UpdateMasterDataResourceCommandHandler.Detail(sku);
             case "unit-of-measure":
                 var uom = await FindAsync(dbContext.UnitsOfMeasure, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureUnitOfMeasureIsNotReferencedAsync(request, cancellationToken);
+                }
                 if (request.Enabled) uom.Enable(reason); else uom.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(uom);
             case "uom-conversion":
@@ -651,6 +659,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbCont
                 return UpdateMasterDataResourceCommandHandler.Detail(line);
             case "work-center":
                 var workCenter = await FindAsync(dbContext.WorkCenters, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureWorkCenterIsNotReferencedAsync(request, cancellationToken);
+                }
                 if (request.Enabled) workCenter.Enable(reason); else workCenter.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
             case "device-asset":
@@ -702,5 +714,50 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(ApplicationDbCont
             .OrderByDescending(x => x.EffectiveFrom)
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw UpdateMasterDataResourceCommandHandler.NotFound(request.ResourceType, request.Code);
+    }
+
+    private async Task EnsureUnitOfMeasureIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    {
+        var referencedBySku = await dbContext.Skus.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            (x.BaseUomCode == request.Code ||
+                x.InventoryUomCode == request.Code ||
+                x.PurchaseUomCode == request.Code ||
+                x.SalesUomCode == request.Code ||
+                x.ManufacturingUomCode == request.Code),
+            cancellationToken);
+        if (referencedBySku)
+        {
+            throw new KnownException($"Unit of measure '{request.Code}' cannot be disabled because it is referenced by active SKU records.");
+        }
+    }
+
+    private async Task EnsureWorkCenterIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    {
+        var referencedByDevice = await dbContext.DeviceAssets.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            x.WorkCenterCode == request.Code,
+            cancellationToken);
+        if (referencedByDevice)
+        {
+            throw new KnownException($"Work center '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+        }
+
+        var downstreamUsage = await downstreamReferenceChecker.GetWorkCenterUsageAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Code,
+            cancellationToken);
+        if (downstreamUsage.HasActiveReference)
+        {
+            var references = downstreamUsage.References.Count == 0
+                ? "unknown ProductEngineering reference"
+                : string.Join(", ", downstreamUsage.References.Take(5));
+            throw new KnownException($"Work center '{request.Code}' cannot be disabled because ProductEngineering references it: {references}.");
+        }
     }
 }

@@ -376,6 +376,27 @@ public sealed class GetRoutingEndpoint(ISender sender)
     }
 }
 
+public sealed record GetMasterDataWorkCenterUsageRequest(string OrganizationId, string EnvironmentId, string WorkCenterCode);
+
+public sealed class GetMasterDataWorkCenterUsageEndpoint(ISender sender)
+    : Endpoint<GetMasterDataWorkCenterUsageRequest, ResponseData<MasterDataWorkCenterUsageResponse>>
+{
+    public override void Configure()
+    {
+        Get("/api/business/v1/engineering/internal/master-data/work-centers/{workCenterCode}/usage");
+        Tags("Business ProductEngineering");
+        Policies(InternalServiceAuthorizationPolicy.Name);
+    }
+
+    public override async Task HandleAsync(GetMasterDataWorkCenterUsageRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(
+            new GetMasterDataWorkCenterUsageQuery(req.OrganizationId, req.EnvironmentId, req.WorkCenterCode),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record ListEngineeringChangesRequest(string OrganizationId, string EnvironmentId, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListEngineeringChangesEndpoint(ISender sender)

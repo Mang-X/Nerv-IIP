@@ -131,6 +131,15 @@ try
     builder.Services.AddScoped<MasterDataCodingService>();
     builder.Services.AddScoped<CodeRuleVersionActivationService>();
     builder.Services.AddScoped<MasterDataSeedService>();
+    var productEngineeringBaseAddress = ResolveServiceBaseAddress(
+        builder.Configuration,
+        builder.Environment,
+        "ProductEngineering:BaseUrl",
+        "http://localhost:5108");
+    builder.Services.AddHttpClient<IMasterDataDownstreamReferenceChecker, HttpProductEngineeringReferenceUsageChecker>(client =>
+    {
+        client.BaseAddress = productEngineeringBaseAddress;
+    });
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
@@ -261,6 +270,26 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configured = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return new Uri(configured, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} must be configured outside Development.");
 }
 
 #pragma warning disable S1118

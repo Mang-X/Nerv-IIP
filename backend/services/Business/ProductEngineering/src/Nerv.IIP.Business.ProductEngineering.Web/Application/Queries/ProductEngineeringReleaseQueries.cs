@@ -420,6 +420,48 @@ public sealed class GetRoutingQueryHandler(ApplicationDbContext dbContext)
     }
 }
 
+public sealed record MasterDataWorkCenterUsageResponse(bool HasActiveReference, IReadOnlyCollection<string> References);
+
+public sealed record GetMasterDataWorkCenterUsageQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkCenterCode) : IQuery<MasterDataWorkCenterUsageResponse>;
+
+public sealed class GetMasterDataWorkCenterUsageQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetMasterDataWorkCenterUsageQuery, MasterDataWorkCenterUsageResponse>
+{
+    public async Task<MasterDataWorkCenterUsageResponse> Handle(GetMasterDataWorkCenterUsageQuery request, CancellationToken cancellationToken)
+    {
+        var workCenterCode = EngineeringQueryParameters.NormalizeOptionalText(request.WorkCenterCode)
+            ?? throw new KnownException("Work center code is required.");
+        var standardOperations = await dbContext.StandardOperations
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Enabled &&
+                x.DefaultWorkCenterCode == workCenterCode)
+            .OrderBy(x => x.OperationCode)
+            .Select(x => $"standard-operation:{x.OperationCode}")
+            .Take(10)
+            .ToArrayAsync(cancellationToken);
+        var routings = await dbContext.Routings
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status != EngineeringVersionStatus.Archived &&
+                x.Operations.Any(operation => operation.WorkCenterCode == workCenterCode))
+            .OrderBy(x => x.RoutingCode)
+            .ThenBy(x => x.Revision)
+            .Select(x => $"routing:{x.RoutingCode}:{x.Revision}")
+            .Take(10)
+            .ToArrayAsync(cancellationToken);
+        var references = standardOperations.Concat(routings).ToArray();
+        return new MasterDataWorkCenterUsageResponse(references.Length > 0, references);
+    }
+}
+
 public sealed record EngineeringDocumentItem(
     string DocumentNumber,
     string Revision,

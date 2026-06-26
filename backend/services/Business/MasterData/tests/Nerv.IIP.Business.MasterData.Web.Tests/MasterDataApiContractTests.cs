@@ -328,6 +328,48 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Product_category_archive_rejects_active_child_or_sku_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.AddRange(
+            ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null),
+            ProductCategory.Create("org-001", "env-dev", "CAT-PUMP", "Pump", "CAT-FG", null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ArchiveProductCategoryCommandHandler(dbContext);
+        var childReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
+            CancellationToken.None));
+        Assert.Contains("active child product category", childReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var child = await dbContext.ProductCategories.SingleAsync(x => x.CategoryCode == "CAT-PUMP", CancellationToken.None);
+        child.Disable("retired");
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-PUMP-001",
+            "Pump",
+            "ea",
+            "CAT-FG",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var skuReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
+            CancellationToken.None));
+        Assert.Contains("active SKU", skuReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Skill_catalog_commands_list_detail_update_and_archive_certification_rules()
     {
         await using var provider = CreateInMemoryProvider();
@@ -824,6 +866,65 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
         Assert.True(enabled.Active);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_uom_and_work_center_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-EA-001",
+            "Each Finished Good",
+            "ea",
+            "finished-good",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-ASSY", "Assembly", 480));
+        dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.Register("org-001", "env-dev", "DEV-ASSY", "Assembly Device", "LINE-1", "WC-ASSY"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var uomReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active SKU", uomReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var workCenterReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_product_engineering_work_center_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-MIX", "Mixing", 480));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(
+            dbContext,
+            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, ["routing:ROUTE-MIX:A"])));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, Reason: "retired"),
+            CancellationToken.None));
+
+        Assert.Contains("ProductEngineering", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("routing:ROUTE-MIX:A", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1766,6 +1867,18 @@ public sealed class MasterDataApiContractTests
             ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"),
             ReferenceDataCode.Create("org-001", "env-dev", "barcode-rule", "ean13", "EAN-13"),
             ReferenceDataCode.Create("org-001", "env-dev", "compliance-tag", "rohs", "RoHS"));
+    }
+
+    private sealed class FixedDownstreamReferenceChecker(MasterDataDownstreamReferenceUsage usage) : IMasterDataDownstreamReferenceChecker
+    {
+        public Task<MasterDataDownstreamReferenceUsage> GetWorkCenterUsageAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(usage);
+        }
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)
