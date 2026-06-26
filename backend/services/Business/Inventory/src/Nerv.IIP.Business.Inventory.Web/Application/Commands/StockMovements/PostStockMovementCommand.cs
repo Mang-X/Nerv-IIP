@@ -57,6 +57,14 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
 public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
+    private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "inbound",
+        "outbound",
+        "transfer",
+        "adjustment",
+    };
+
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
         var movement = CreateMovementOrReject(request);
@@ -168,12 +176,14 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     private static StockMovement CreateMovementOrReject(PostStockMovementCommand request)
     {
+        var movementType = NormalizeExternalMovementTypeOrReject(request.MovementType);
+        var ownerType = NormalizeOwnerTypeOrReject(request.OwnerType);
         try
         {
             return StockMovement.Post(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.MovementType,
+                movementType,
                 request.SourceService,
                 request.SourceDocumentId,
                 request.SourceDocumentLineId,
@@ -185,7 +195,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 request.LotNo,
                 request.SerialNo,
                 request.QualityStatus,
-                request.OwnerType,
+                ownerType,
                 request.OwnerId,
                 request.Quantity,
                 request.UnitCost);
@@ -197,6 +207,40 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 exception.Message,
                 exception);
         }
+    }
+
+    private static string NormalizeExternalMovementTypeOrReject(string movementType)
+    {
+        var normalized = NormalizeRequired(movementType, nameof(movementType));
+        return ExternalMovementTypes.Contains(normalized)
+            ? normalized
+            : throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                $"Movement type '{movementType}' cannot be posted through the external stock movement command.");
+    }
+
+    private static string NormalizeOwnerTypeOrReject(string ownerType)
+    {
+        try
+        {
+            return StockOwnerType.Normalize(ownerType);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                exception.Message,
+                exception);
+        }
+    }
+
+    private static string NormalizeRequired(string value, string parameterName)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                $"{parameterName} cannot be blank.")
+            : value.Trim().ToLowerInvariant();
     }
 
     private static bool IsUnsupportedMovementOrQuality(ArgumentException exception)

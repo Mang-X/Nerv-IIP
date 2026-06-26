@@ -44,6 +44,8 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
 {
     public async Task<CreateStockCountTaskResult> Handle(CreateStockCountTaskCommand request, CancellationToken cancellationToken)
     {
+        var qualityStatus = StockQualityStatus.Normalize(request.QualityStatus);
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
         var existing = await dbContext.StockCountTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -63,8 +65,8 @@ public sealed class CreateStockCountTaskCommandHandler(ApplicationDbContext dbCo
                 && x.LocationCode == request.LocationCode
                 && x.LotNo == request.LotNo
                 && x.SerialNo == request.SerialNo
-                && x.QualityStatus == StockQualityStatus.Normalize(request.QualityStatus)
-                && x.OwnerType == request.OwnerType.ToLower()
+                && x.QualityStatus == qualityStatus
+                && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId,
             cancellationToken)
             ?? throw new KnownException("Stock ledger does not exist for the requested count scope.");
