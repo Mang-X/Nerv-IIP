@@ -821,6 +821,132 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Empty(dbContext.StockMovements);
     }
 
+    [Theory]
+    [InlineData("count-adjustment", -2.5)]
+    [InlineData("status-transfer-out", -1)]
+    [InlineData("status-transfer-in", 1)]
+    public async Task Movement_requested_consumer_rejects_internal_movement_types_from_external_events(
+        string movementType,
+        decimal quantity)
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-SEED",
+            "LINE-001",
+            "idem-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            10m,
+            8m));
+        ledger.FreezeForCount("COUNT-001");
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await handler.HandleAsync(CreateRequestedEvent($"evt-internal-{movementType}") with
+        {
+            Payload = CreateRequestedEvent($"evt-internal-{movementType}").Payload with
+            {
+                MovementType = movementType,
+                SourceDocumentId = $"INTERNAL-{movementType}",
+                IdempotencyKey = $"idem-internal-{movementType}",
+                Quantity = quantity,
+                UnitCost = 8m,
+            },
+        }, CancellationToken.None);
+
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, failedEvent.Payload.FailureCode);
+        Assert.Equal(movementType, failedEvent.Payload.MovementType);
+        Assert.True(ledger.IsFrozenForCount);
+        Assert.Equal("COUNT-001", ledger.FrozenCountTaskCode);
+        Assert.Equal(10m, ledger.OnHandQuantity);
+        Assert.Equal(80m, ledger.InventoryValue);
+        Assert.DoesNotContain(dbContext.StockMovements, x => x.SourceDocumentId.StartsWith("INTERNAL-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_rejects_unknown_owner_type_from_external_events()
+    {
+        await using var dbContext = CreateContext();
+        var publisher = new RecordingIntegrationEventPublisher();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            publisher);
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-unknown-owner") with
+        {
+            Payload = CreateRequestedEvent("evt-unknown-owner").Payload with
+            {
+                OwnerType = "shadow-owner",
+                SourceDocumentId = "IN-UNKNOWN-OWNER",
+                IdempotencyKey = "idem-unknown-owner",
+            },
+        }, CancellationToken.None);
+
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, failedEvent.Payload.FailureCode);
+        Assert.Equal("shadow-owner", failedEvent.Payload.OwnerType);
+        Assert.Empty(dbContext.StockMovements);
+        Assert.Empty(dbContext.StockLedgers);
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_normalizes_owner_type_aliases_before_posting()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-owner-alias") with
+        {
+            Payload = CreateRequestedEvent("evt-owner-alias").Payload with
+            {
+                OwnerType = "internal",
+                SourceDocumentId = "IN-OWNER-ALIAS",
+                IdempotencyKey = "idem-owner-alias",
+            },
+        }, CancellationToken.None);
+
+        var ledger = Assert.Single(dbContext.StockLedgers);
+        var movement = Assert.Single(dbContext.StockMovements);
+        Assert.Equal("company", ledger.OwnerType);
+        Assert.Equal("company", movement.OwnerType);
+    }
+
     [Fact]
     public async Task Movement_requested_consumer_leaves_unexpected_invalid_operation_for_retry()
     {

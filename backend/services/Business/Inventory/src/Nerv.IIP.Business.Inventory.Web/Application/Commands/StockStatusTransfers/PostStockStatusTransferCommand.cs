@@ -88,6 +88,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             throw new KnownException("Status transfer quantity exceeds available stock on the source ledger.");
         }
 
+        var transferUnitCost = source.MovingAverageUnitCost;
         var outbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
@@ -153,7 +154,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.OwnerType,
             request.OwnerId,
             request.Quantity,
-            source.MovingAverageUnitCost);
+            transferUnitCost);
         try
         {
             target.ApplyMovement(inbound);

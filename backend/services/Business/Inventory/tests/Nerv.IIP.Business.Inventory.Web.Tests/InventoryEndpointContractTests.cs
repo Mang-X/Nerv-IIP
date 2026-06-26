@@ -258,6 +258,80 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Full_quantity_status_transfer_preserves_moving_average_cost_and_total_value()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var qualityLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001");
+        qualityLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-quality-full-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001",
+            5m,
+            12.34m));
+        dbContext.StockLedgers.Add(qualityLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "quality",
+                "unrestricted",
+                "quality",
+                "QI-001",
+                null,
+                "idem-status-full-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "company",
+                "owner-001",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "quality");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var inbound = dbContext.StockMovements.Single(x => x.MovementType == "status-transfer-in");
+        Assert.Equal(0m, result.SourceOnHandQuantity);
+        Assert.Equal(5m, result.TargetOnHandQuantity);
+        Assert.Equal(0m, source.InventoryValue);
+        Assert.Equal(12.34m, target.MovingAverageUnitCost);
+        Assert.Equal(61.70m, target.InventoryValue);
+        Assert.Equal(12.34m, inbound.UnitCost);
+        Assert.Equal(61.70m, inbound.MovementAmount);
+    }
+
+    [Fact]
     public async Task Status_transfer_rejects_quantity_that_exceeds_available_stock()
     {
         await using var provider = CreateInMemoryProvider();
