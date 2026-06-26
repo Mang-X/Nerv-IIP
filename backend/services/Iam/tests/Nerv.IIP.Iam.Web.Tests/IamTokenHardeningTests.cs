@@ -117,7 +117,8 @@ public sealed class IamTokenHardeningTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
-            NullLogger<PostgreSqlIamAuthService>.Instance);
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
     }
 
     private static async Task<User> SeedUserWithMembershipAsync(ApplicationDbContext db, IamPasswordService passwordService)

@@ -7,6 +7,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Domain;
 
@@ -23,7 +24,8 @@ public sealed class PostgreSqlIamAuthService(
     IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
     IMfaChallengeStore mfaChallenges,
-    ILogger<PostgreSqlIamAuthService> logger)
+    ILogger<PostgreSqlIamAuthService> logger,
+    IHostEnvironment environment)
     : IIamAuthService
 {
     public async Task<AuthResponse> LoginAsync(
@@ -313,6 +315,7 @@ public sealed class PostgreSqlIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var provider = GetEnabledProvider(request.Provider);
         EnsureCallbackSecret(request.CallbackSecret, provider);
         EnsureAllowedEmailDomain(request.Email, provider);
@@ -360,6 +363,7 @@ public sealed class PostgreSqlIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var context = mfaChallenges.Consume(
             challengeId,
             code,
@@ -498,6 +502,14 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         return options;
+    }
+
+    private void EnsureEnterpriseIdentityStubAllowed()
+    {
+        if (!environment.IsDevelopment())
+        {
+            throw Unauthorized();
+        }
     }
 
     private static void EnsureCallbackSecret(string callbackSecret, OidcProviderOptions provider)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesDispatchTasks } from '@/composables/useBusinessMes'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
@@ -7,30 +7,29 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DropdownMenuItem,
-  Field,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon, UserCheckIcon } from 'lucide-vue-next'
@@ -70,7 +69,7 @@ const workerOptions = computed(() =>
     .map((w) => ({ value: w.userId as string, label: w.employeeNo ? `${w.displayName ?? w.userId} · ${w.employeeNo}` : (w.displayName ?? w.userId as string) })),
 )
 
-const columns: DataTableColumn<DispatchRow>[] = [
+const columns: DataTableProColumn<DispatchRow>[] = [
   { key: 'operationTaskId', header: '工序任务', cellClass: 'font-medium', accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无' },
   { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
   { key: 'status', header: '状态', width: 'w-24' },
@@ -135,10 +134,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="派工看板" :breadcrumbs="[{ label: '制造执行' }]" :count="`${dispatchTasksTotal} 个待派工序`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="dispatchTasksPending" @click="refreshDispatchTasks">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="dispatchTasksPending" @click="refreshDispatchTasks">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -150,30 +149,38 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="派工状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="派工状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesOperationTaskStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="dispatchTasksTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="dispatchTasks"
       row-key="operationTaskId"
       :loading="dispatchTasksPending"
       empty-message="暂无待派工序。工单释放并排程后，待派工序会出现在这里。"
+      :searchable="false"
+      :column-settings="false"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-blockingReasons="{ row }">
         <div v-if="row.blockingReasons?.length" class="grid gap-2">
           <div v-for="reason in readinessList(row.blockingReasons)" :key="`${row.operationTaskId}-${reason.code}`" class="grid gap-0.5">
-            <StatusBadge :label="reason.label" tone="warning" />
+            <StatusBadgePro :label="reason.label" tone="warning" />
             <p class="text-xs text-muted-foreground">{{ reason.nextStep }}</p>
           </div>
         </div>
@@ -181,43 +188,42 @@ function formatError(error: unknown) {
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`派工操作 ${row.operationTaskId ?? ''}`">
-          <DropdownMenuItem :disabled="!canDispatch(row)" @click="openAssign(row)">
+          <DropdownMenuProItem :disabled="!canDispatch(row)" @click="openAssign(row)">
             <UserCheckIcon aria-hidden="true" />
             {{ canDispatch(row) ? '派工（指派操作员）' : '有阻塞，先处理' }}
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="dispatchTasksTotal" />
 
-    <Dialog v-model:open="assignOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>派工 · 指派操作员</DialogTitle>
-          <DialogDescription>
+    <DialogPro v-model:open="assignOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>派工 · 指派操作员</DialogProTitle>
+          <DialogProDescription>
             为工单 {{ assignTarget?.workOrderId ?? '' }} 的工序任务指派操作员；设备与班次沿用排程结果。
-          </DialogDescription>
-        </DialogHeader>
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="confirmAssign">
-          <Field>
-            <FieldLabel for="assign-operator">操作员 <span class="text-destructive">*</span></FieldLabel>
-            <Select v-model="assignedUserId">
-              <SelectTrigger id="assign-operator"><SelectValue placeholder="选择操作员" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="o in workerOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="assignOpen = false">取消</Button>
-            <Button type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">
+          <FieldPro>
+            <FieldProLabel for="assign-operator">操作员 <span class="text-destructive">*</span></FieldProLabel>
+            <SelectPro v-model="assignedUserId">
+              <SelectProTrigger id="assign-operator"><SelectProValue placeholder="选择操作员" /></SelectProTrigger>
+              <SelectProContent>
+                <SelectProItem v-for="o in workerOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+              </SelectProContent>
+            </SelectPro>
+          </FieldPro>
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="assignOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="assignDispatchTaskPending || !assignedUserId">
               <Spinner v-if="assignDispatchTaskPending" aria-hidden="true" />
               确认派工
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

@@ -33,6 +33,14 @@ param(
 
     [string] $ConnectorHostSecret,
 
+    [string] $ConnectorHostId,
+
+    [string] $ConnectorHostOrganizationId,
+
+    [string] $ConnectorHostEnvironmentId,
+
+    [string] $ConnectorIngestionTokenSigningKey,
+
     [string] $ExternalClientSecret,
 
     [string] $MinioRootUser,
@@ -72,6 +80,22 @@ if ($EnvironmentName -ne "Development") {
 
     if ([string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
         throw "-ConnectorHostSecret is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostId)) {
+        throw "-ConnectorHostId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostOrganizationId)) {
+        throw "-ConnectorHostOrganizationId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostEnvironmentId)) {
+        throw "-ConnectorHostEnvironmentId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+        throw "-ConnectorIngestionTokenSigningKey is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
@@ -138,6 +162,26 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
     $environment["Iam__Seed__ConnectorHostSecret"] = $ConnectorHostSecret
     $environment["ConnectorHostCredential__Secret"] = $ConnectorHostSecret
     $environment["Parameters__iam-seed-connector-host-secret"] = $ConnectorHostSecret
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostId)) {
+    $environment["ConnectorHost__ConnectorHostId"] = $ConnectorHostId
+    $environment["ConnectorHostCredential__ConnectorHostId"] = $ConnectorHostId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostOrganizationId)) {
+    $environment["ConnectorHost__OrganizationId"] = $ConnectorHostOrganizationId
+    $environment["ConnectorHostCredential__OrganizationId"] = $ConnectorHostOrganizationId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostEnvironmentId)) {
+    $environment["ConnectorHost__EnvironmentId"] = $ConnectorHostEnvironmentId
+    $environment["ConnectorHostCredential__EnvironmentId"] = $ConnectorHostEnvironmentId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+    $environment["ConnectorIngestionToken__SigningKey"] = $ConnectorIngestionTokenSigningKey
+    $environment["Parameters__connector-ingestion-token-signing-key"] = $ConnectorIngestionTokenSigningKey
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ExternalClientSecret)) {

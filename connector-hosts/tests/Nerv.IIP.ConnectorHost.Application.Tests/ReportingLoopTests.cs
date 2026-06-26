@@ -48,7 +48,7 @@ public sealed class ReportingLoopTests
         public bool FailFirstRegistration { get; init; }
         public List<string> Calls { get; } = [];
 
-        public Task SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
+        public Task<ApplicationRegistrationResult> SendRegistrationAsync(ApplicationRegistration registration, CancellationToken cancellationToken = default)
         {
             Calls.Add($"registration:{registration.InstanceKey}");
             if (FailFirstRegistration && !_failed)
@@ -57,7 +57,7 @@ public sealed class ReportingLoopTests
                 throw new HttpRequestException("AppHub unavailable");
             }
 
-            return Task.CompletedTask;
+            return Task.FromResult(new ApplicationRegistrationResult($"reg-{registration.InstanceKey}", registration.InstanceKey, $"token-{registration.InstanceKey}"));
         }
 
         public Task SendHeartbeatAsync(ApplicationHeartbeat heartbeat, CancellationToken cancellationToken = default)

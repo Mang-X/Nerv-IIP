@@ -3,34 +3,33 @@ import type {
   BusinessConsoleEngineeringDocumentItem,
   BusinessConsoleRegisterEngineeringDocumentRequest,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringDocuments } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
   Toolbar,
 } from '@nerv-iip/ui'
@@ -76,7 +75,7 @@ const linkedCount = computed(() => documents.value.filter((d) => d.itemCode).len
 
 const listErrorMessage = computed(() => formatError(documentsError.value))
 
-const columns: DataTableColumn<BusinessConsoleEngineeringDocumentItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleEngineeringDocumentItem>[] = [
   { key: 'documentNumber', header: '文档号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'documentType', header: '类型', width: 'w-28' },
@@ -197,81 +196,81 @@ function formatError(error: unknown) {
       :count="`${documentsTotal} 个文档`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="documentsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="documentsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               登记文档
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-xl">
-            <DialogHeader>
-              <DialogTitle>登记工程文档</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-xl">
+            <DialogProHeader>
+              <DialogProTitle>登记工程文档</DialogProTitle>
+              <DialogProDescription>
                 按文档号 + 修订登记一份工程文档及其文件引用。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项。
               </p>
 
               <FormSectionTitle>文档标识</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-3">
-                <Field :data-invalid="showErrors && !documentNumberValid">
-                  <FieldLabel for="doc-number">文档号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-number" v-model="form.documentNumber" placeholder="如 DOC-0001" />
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="doc-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-rev" v-model="form.revision" placeholder="如 A、B" />
-                </Field>
-                <Field :data-invalid="showErrors && !documentTypeValid">
-                  <FieldLabel for="doc-type">文档类型 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-type" v-model="form.documentType" placeholder="如 图纸、规格书" />
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
+                <FieldPro :data-invalid="showErrors && !documentNumberValid">
+                  <FieldProLabel for="doc-number">文档号 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-number" v-model="form.documentNumber" placeholder="如 DOC-0001" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="doc-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-rev" v-model="form.revision" placeholder="如 A、B" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !documentTypeValid">
+                  <FieldProLabel for="doc-type">文档类型 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-type" v-model="form.documentType" placeholder="如 图纸、规格书" />
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>文件引用</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
-                  <FieldLabel for="doc-file-id">文件引用 ID <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-file-id" v-model="form.fileId" placeholder="填写文件存储引用 ID" />
-                  <FieldDescription>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro class="sm:col-span-2" :data-invalid="showErrors && !fileIdValid">
+                  <FieldProLabel for="doc-file-id">文件引用 ID <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-file-id" v-model="form.fileId" placeholder="填写文件存储引用 ID" />
+                  <FieldProDescription>
                     文件上传待接入，先填已存在的文件引用 ID（不在此页直接上传文件）。
-                  </FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !fileNameValid">
-                  <FieldLabel for="doc-file-name">文件名 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-file-name" v-model="form.fileName" placeholder="如 drawing.pdf" />
-                </Field>
-                <Field :data-invalid="showErrors && !contentTypeValid">
-                  <FieldLabel for="doc-content-type">内容类型 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="doc-content-type" v-model="form.contentType" placeholder="如 application/pdf" />
-                </Field>
-              </FieldGroup>
+                  </FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !fileNameValid">
+                  <FieldProLabel for="doc-file-name">文件名 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-file-name" v-model="form.fileName" placeholder="如 drawing.pdf" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !contentTypeValid">
+                  <FieldProLabel for="doc-content-type">内容类型 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="doc-content-type" v-model="form.contentType" placeholder="如 application/pdf" />
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>关联（可选）</FormSectionTitle>
-              <Field>
-                <FieldLabel for="doc-item-code">关联物料编码</FieldLabel>
-                <Input id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
-                <FieldDescription>如该文档对应某工程物料，填其编码以便追溯。</FieldDescription>
-              </Field>
+              <FieldPro>
+                <FieldProLabel for="doc-item-code">关联物料编码</FieldProLabel>
+                <InputPro id="doc-item-code" v-model="form.itemCode" placeholder="可留空" />
+                <FieldProDescription>如该文档对应某工程物料，填其编码以便追溯。</FieldProDescription>
+              </FieldPro>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="registerPending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="registerPending">
                   <Spinner v-if="registerPending" aria-hidden="true" />
                   登记文档
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -282,38 +281,45 @@ function formatError(error: unknown) {
 
     <Toolbar v-model:search="itemSearch" search-placeholder="按关联物料编码筛选">
       <template #filters>
-        <Input v-model="documentTypeSearch" class="h-9 w-40" placeholder="按文档类型筛选" aria-label="文档类型筛选" />
+        <InputPro v-model="documentTypeSearch" class="h-9 w-40" placeholder="按文档类型筛选" aria-label="文档类型筛选" />
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="documentsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="documents"
       :row-key="(r) => `${r.documentNumber}:${r.revision}`"
       :loading="documentsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前范围没有工程文档。可登记文档号 + 修订，并填写文件引用 ID 与类型。"
     >
       <template #cell-itemCode="{ row }">{{ row.itemCode || '—' }}</template>
       <template #cell-registeredAtUtc="{ row }">{{ formatDateTime(row.registeredAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="documentsTotal" />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-md">
-        <SheetHeader>
-          <SheetTitle>工程文档 · 明细</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-md">
+        <SheetProHeader>
+          <SheetProTitle>工程文档 · 明细</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.documentNumber} · 修订 ${viewTarget.revision}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div v-if="detailPending" class="flex items-center gap-2 py-4 text-sm text-muted-foreground">
             <Spinner aria-hidden="true" />
@@ -353,7 +359,7 @@ function formatError(error: unknown) {
             </p>
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

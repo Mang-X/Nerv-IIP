@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
@@ -54,11 +57,16 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
         client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+        client.DefaultRequestHeaders.Add("X-Organization-Id", scenario.OrganizationId);
+        client.DefaultRequestHeaders.Add("X-Environment-Id", scenario.EnvironmentId);
         client.DefaultRequestHeaders.Add("X-Correlation-Id", "corr-apphub-web-test");
 
         using var registration = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
         Assert.Equal(HttpStatusCode.OK, registration.StatusCode);
+        var ingestionToken = await ReadRegistrationIngestionTokenAsync(registration);
 
+        client.DefaultRequestHeaders.Remove("X-Connector-Secret");
+        client.DefaultRequestHeaders.Add("X-Connector-Ingestion-Token", ingestionToken);
         using var heartbeat = await client.PostAsJsonAsync("/api/connectors/v1/heartbeats", CreateHeartbeat(scenario));
         Assert.Equal(HttpStatusCode.NoContent, heartbeat.StatusCode);
 
@@ -66,7 +74,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(HttpStatusCode.NoContent, snapshot.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
-        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, "instanceName", "asc", null);
+        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 1, 20, "instanceName", "asc", scenario.InstanceKey);
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
@@ -86,7 +94,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal("node-001", item.NodeKey);
         Assert.Equal("local-docker", item.NodeName);
         Assert.Equal(scenario.InstanceKey, item.InstanceKey);
-        Assert.Equal("demo-api", item.InstanceName);
+        Assert.Equal(scenario.InstanceKey, item.InstanceName);
         Assert.Equal("running", item.ReportedStatus);
         Assert.Equal("healthy", item.HealthStatus);
         Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:05Z"), item.LastHeartbeatAtUtc);
@@ -104,12 +112,14 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
         client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+        client.DefaultRequestHeaders.Add("X-Organization-Id", scenario.OrganizationId);
+        client.DefaultRequestHeaders.Add("X-Environment-Id", scenario.EnvironmentId);
 
         using var registration = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
         Assert.Equal(HttpStatusCode.OK, registration.StatusCode);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
-        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 0, 0, "instanceName", "asc", null);
+        var query = new InstanceListQuery(scenario.OrganizationId, scenario.EnvironmentId, 0, 0, "instanceName", "asc", scenario.InstanceKey);
         using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
         Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
@@ -122,6 +132,130 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     }
 
     [Fact]
+    public async Task Connector_ingestion_token_is_bound_to_registered_instance_identity()
+    {
+        var scenarioA = CreateScenario("bound-token-a");
+        var scenarioB = CreateScenario("bound-token-b");
+        var client = factory.CreateClient();
+
+        var tokenA = await RegisterAndReadIngestionTokenAsync(client, scenarioA);
+        var tokenB = await RegisterAndReadIngestionTokenAsync(client, scenarioB);
+
+        using var spoofedHeartbeat = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(scenarioB), tokenA);
+        using var spoofedSnapshot = await PostIngestionAsync(client, "/api/connectors/v1/state-snapshots", CreateSnapshot(scenarioB), tokenA);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, spoofedHeartbeat.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, spoofedSnapshot.StatusCode);
+
+        using var allowedHeartbeat = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(scenarioB), tokenB);
+        using var allowedSnapshot = await PostIngestionAsync(client, "/api/connectors/v1/state-snapshots", CreateSnapshot(scenarioB), tokenB);
+
+        Assert.Equal(HttpStatusCode.NoContent, allowedHeartbeat.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, allowedSnapshot.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        var query = new InstanceListQuery(scenarioB.OrganizationId, scenarioB.EnvironmentId, 1, 20, "instanceName", "asc", scenarioB.InstanceKey);
+        using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
+
+        var item = Assert.Single(listBody.Items);
+        Assert.Equal(scenarioB.InstanceKey, item.InstanceKey);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:05Z"), item.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:10Z"), item.LastStateObservedAtUtc);
+        Assert.Equal("running", item.ReportedStatus);
+        Assert.Equal("healthy", item.HealthStatus);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_token_rejects_body_scope_mismatch()
+    {
+        var registered = CreateScenario("scope-token");
+        var forged = registered with
+        {
+            OrganizationId = $"org-forged-{Guid.NewGuid():N}",
+            EnvironmentId = $"env-forged-{Guid.NewGuid():N}"
+        };
+        var client = factory.CreateClient();
+        var token = await RegisterAndReadIngestionTokenAsync(client, registered);
+
+        using var response = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(forged), token);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_registration_rejects_scope_mismatch_between_credential_and_body()
+    {
+        var authorized = CreateScenario("registration-scope-authorized");
+        var forged = authorized with
+        {
+            OrganizationId = $"org-forged-{Guid.NewGuid():N}",
+            EnvironmentId = $"env-forged-{Guid.NewGuid():N}"
+        };
+        var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/connectors/v1/registrations")
+        {
+            Content = JsonContent.Create(CreateRegistration(forged))
+        };
+        request.Headers.Add("X-Connector-Host-Id", authorized.ConnectorHostId);
+        request.Headers.Add("X-Connector-Secret", "local-connector-secret");
+        request.Headers.Add("X-Organization-Id", authorized.OrganizationId);
+        request.Headers.Add("X-Environment-Id", authorized.EnvironmentId);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_registration_rejects_unconfigured_scope_even_when_headers_match_body()
+    {
+        var authorized = CreateScenario("registration-configured-scope");
+        var forged = authorized with
+        {
+            OrganizationId = $"org-forged-{Guid.NewGuid():N}",
+            EnvironmentId = $"env-forged-{Guid.NewGuid():N}"
+        };
+        var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/connectors/v1/registrations")
+        {
+            Content = JsonContent.Create(CreateRegistration(forged))
+        };
+        request.Headers.Add("X-Connector-Host-Id", forged.ConnectorHostId);
+        request.Headers.Add("X-Connector-Secret", "local-connector-secret");
+        request.Headers.Add("X-Organization-Id", forged.OrganizationId);
+        request.Headers.Add("X-Environment-Id", forged.EnvironmentId);
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_token_rejects_expired_token()
+    {
+        var clock = new MutableTimeProvider(DateTimeOffset.Parse("2026-05-15T00:00:00Z"));
+        var scenario = CreateScenario("expired-token");
+        var client = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectorIngestionToken:LifetimeMinutes", "5");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(clock);
+            });
+        }).CreateClient();
+
+        var token = await RegisterAndReadIngestionTokenAsync(client, scenario);
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        using var response = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(scenario), token);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Connector_ingestion_uses_configured_connector_secret()
     {
         var scenario = CreateScenario("configured-secret");
@@ -131,6 +265,8 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         }).CreateClient();
         client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
         client.DefaultRequestHeaders.Add("X-Connector-Secret", "configured-connector-secret");
+        client.DefaultRequestHeaders.Add("X-Organization-Id", scenario.OrganizationId);
+        client.DefaultRequestHeaders.Add("X-Environment-Id", scenario.EnvironmentId);
 
         using var response = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
 
@@ -147,6 +283,8 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         }).CreateClient();
         client.DefaultRequestHeaders.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
         client.DefaultRequestHeaders.Add("X-Connector-Secret", "local-connector-secret");
+        client.DefaultRequestHeaders.Add("X-Organization-Id", scenario.OrganizationId);
+        client.DefaultRequestHeaders.Add("X-Environment-Id", scenario.EnvironmentId);
 
         using var response = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
 
@@ -157,9 +295,9 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
     {
         var suffix = Guid.NewGuid().ToString("N");
         return new TestScenario(
-            $"org-{label}-{suffix}",
-            $"env-{label}-{suffix}",
-            $"connector-host-{label}-{suffix}",
+            "org-001",
+            "env-dev",
+            "connector-host-001",
             $"demo-api-{label}-{suffix}",
             $"web-test-{label}-{suffix}");
     }
@@ -177,7 +315,7 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
             "Demo API",
             "1.0.0",
             scenario.InstanceKey,
-            "demo-api",
+            scenario.InstanceKey,
             [new CapabilityDescriptor("lifecycle.restart", "1.0", "lifecycle", ["restart"], new Dictionary<string, string>())],
             new Dictionary<string, string> { ["containerId"] = "local-demo-001" });
 
@@ -189,6 +327,53 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
     private sealed record TestScenario(string OrganizationId, string EnvironmentId, string ConnectorHostId, string InstanceKey, string IdempotencyKey);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta)
+        {
+            _utcNow = _utcNow.Add(delta);
+        }
+    }
+
+    private static async Task<string> RegisterAndReadIngestionTokenAsync(HttpClient client, TestScenario scenario)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/connectors/v1/registrations")
+        {
+            Content = JsonContent.Create(CreateRegistration(scenario))
+        };
+        request.Headers.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        request.Headers.Add("X-Connector-Secret", "local-connector-secret");
+        request.Headers.Add("X-Organization-Id", scenario.OrganizationId);
+        request.Headers.Add("X-Environment-Id", scenario.EnvironmentId);
+
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await ReadRegistrationIngestionTokenAsync(response);
+    }
+
+    private static async Task<HttpResponseMessage> PostIngestionAsync<T>(HttpClient client, string path, T payload, string ingestionToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        request.Headers.Add("X-Connector-Ingestion-Token", ingestionToken);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<string> ReadRegistrationIngestionTokenAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.NotNull(body);
+        var token = body["data"]?["ingestionToken"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(token), "Registration response must include a per-instance ingestion token.");
+        return token;
+    }
 
     private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
     {

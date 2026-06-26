@@ -14,6 +14,7 @@ var minioRootPassword = builder.AddParameter("minio-root-password", secret: true
 var redisPassword = builder.AddParameter("redis-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
+var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
 var useRedisMessaging = string.Equals(messagingProvider, "Redis", StringComparison.OrdinalIgnoreCase);
@@ -21,6 +22,9 @@ var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollecto
 var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
 var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
+var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? "connector-host-001";
+var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
+var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -85,12 +89,17 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("ConnectorHostCredential__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHostCredential__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHostCredential__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
+    .WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
     .WaitFor(appHubDatabase)
     .WaitFor(redis);
+
 if (rabbitmq is not null)
 {
     apphub = apphub
@@ -530,6 +539,9 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
 
 var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
+    .WithEnvironment("ConnectorHost__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHost__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHost__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Platform__AppHubBaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Platform__OpsBaseUrl", ops.GetEndpoint("http"))

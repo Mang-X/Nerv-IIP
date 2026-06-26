@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import {
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  InputPro,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 
@@ -56,13 +56,13 @@ watch(options, (list) => {
 </script>
 
 <template>
-  <Select v-model="model">
-    <SelectTrigger :id="id">
-      <SelectValue :placeholder="placeholder ?? '请选择工人'" />
-    </SelectTrigger>
-    <SelectContent>
+  <SelectPro v-model="model">
+    <SelectProTrigger :id="id">
+      <SelectProValue :placeholder="placeholder ?? '请选择工人'" />
+    </SelectProTrigger>
+    <SelectProContent>
       <div class="p-2">
-        <Input
+        <InputPro
           v-model="keyword"
           autocomplete="off"
           placeholder="搜索姓名 / 工号 / 部门"
@@ -71,9 +71,9 @@ watch(options, (list) => {
       </div>
       <p v-if="workersPending" class="px-3 py-2 text-sm text-muted-foreground">加载工人中…</p>
       <p v-else-if="options.length === 0" class="px-3 py-2 text-sm text-muted-foreground">未找到工人，可调整搜索词。</p>
-      <SelectItem v-for="option in options" :key="option.value" :value="option.value">
+      <SelectProItem v-for="option in options" :key="option.value" :value="option.value">
         {{ option.label }}
-      </SelectItem>
-    </SelectContent>
-  </Select>
+      </SelectProItem>
+    </SelectProContent>
+  </SelectPro>
 </template>

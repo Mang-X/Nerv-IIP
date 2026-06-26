@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
@@ -11,7 +12,8 @@ public sealed class InMemoryIamAuthService(
     IamTokenService tokenService,
     IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
-    IMfaChallengeStore mfaChallenges) : IIamAuthService
+    IMfaChallengeStore mfaChallenges,
+    IHostEnvironment environment) : IIamAuthService
 {
     public Task<AuthResponse> LoginAsync(
         string loginName,
@@ -161,6 +163,7 @@ public sealed class InMemoryIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var provider = GetEnabledProvider(request.Provider);
         EnsureCallbackSecret(request.CallbackSecret, provider);
         EnsureAllowedEmailDomain(request.Email, provider);
@@ -200,6 +203,7 @@ public sealed class InMemoryIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var context = mfaChallenges.Consume(
             challengeId,
             code,
@@ -266,6 +270,14 @@ public sealed class InMemoryIamAuthService(
         }
 
         return options;
+    }
+
+    private void EnsureEnterpriseIdentityStubAllowed()
+    {
+        if (!environment.IsDevelopment())
+        {
+            throw new UnauthorizedAccessException("Unauthorized.");
+        }
     }
 
     private static void EnsureCallbackSecret(string callbackSecret, OidcProviderOptions provider)

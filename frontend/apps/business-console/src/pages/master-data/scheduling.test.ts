@@ -72,35 +72,55 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 班次行操作：保留 RowActions 内的下拉项（编辑/停用）以便点击「编辑」。
+// 下拉项已迁到 Pro（DropdownMenuProItem 是真 .vue 包装，stub 按 Pro 名）。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 工作日历左列：压平行尾「⋯」菜单 + StatusBadge，让整行按钮的可见文本就是日历名。
 const calRowActionStubs = {
   MasterDataRowActions: { template: '<span data-testid="row-actions" />' },
-  StatusBadge: { template: '<span />' },
+  StatusBadgePro: { template: '<span />' },
 }
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  DialogProTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  // 班次表行操作里 RowActions 的下拉内容已迁到 Pro（DropdownMenuProContent 含 reka portal/Teleport，
+  // jsdom 卸载会崩）就地渲染；下拉项 DropdownMenuProItem 也一并桩，避免脱离 MenuContent 上下文报错。
+  DropdownMenuProContent: { template: '<div><slot /></div>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // 班次表行操作里的 AlertDialog 已迁到 Pro（AlertDialogProContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 抽屉照 dialog 风格内联展开，使其内容在挂载后即可断言。
+// Sheet 已迁到 Pro：SheetPro/SheetProTrigger/SheetProClose 是 reka-ui 原语再导出（组件名仍是
+// DialogRoot/DialogTrigger/DialogClose），SheetProContent 等是真 .vue 包装（含 Teleport，就地渲染）。
 const sheetStubs = {
-  Sheet: { template: '<div><slot /></div>' },
-  SheetContent: { template: '<div><slot /></div>' },
-  SheetHeader: { template: '<div><slot /></div>' },
-  SheetTitle: { template: '<h2><slot /></h2>' },
-  SheetDescription: { template: '<p><slot /></p>' },
+  SheetPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  SheetProContent: { template: '<div><slot /></div>' },
+  SheetProHeader: { template: '<div><slot /></div>' },
+  SheetProTitle: { template: '<h2><slot /></h2>' },
+  SheetProDescription: { template: '<p><slot /></p>' },
 }
 // DatePicker 暴露一个原生 date input，让测试可 setValue 完成日期录入。
 const datePickerStub = {
-  DatePicker: {
+  DatePickerPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
@@ -108,32 +128,46 @@ const datePickerStub = {
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
 const formSelectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
-// AlertDialog 内联展开：Trigger 渲染其插槽（即垃圾桶按钮），Action 渲染为可点击按钮，
-// 让测试能断言「点删 → 出现确认 → 确认后才调 remove」。
+// AlertDialog 内联展开（已迁到 Pro）：Trigger 渲染其插槽（即垃圾桶按钮），Action 渲染为可点击按钮，
+// 让测试能断言「点删 → 出现确认 → 确认后才调 remove」。data-testid（confirm / confirm-delete）保留不变，仅换组件名。
 const alertDialogStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogTrigger: { template: '<div><slot /></div>' },
-  AlertDialogContent: { template: '<div data-testid="confirm"><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div data-testid="confirm"><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-delete" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 
-const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }
+// 班次 / 工作日历的新建对话框（已迁到 Pro）。TabsProContent 对未激活页签 force-mount，
+// 故在工作日历用例下「班次」页签里的 DialogProContent 仍会挂载；其 reka Teleport 在 jsdom 卸载会崩，
+// 全部就地渲染避免崩溃（DialogPro/DialogProTrigger 是 reka 再导出，根 DialogRoot/DialogTrigger 同样桩）。
+const dialogContentStubs = {
+  DialogProTrigger: { template: '<div><slot /></div>' },
+  DialogTrigger: { template: '<div><slot /></div>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+}
+
+const calStubs = { ...layoutStub, ...calRowActionStubs, ...sheetStubs, ...dialogContentStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }
 
 async function switchTab(wrapper: ReturnType<typeof mount>, label: string) {
   const tab = wrapper.findAll('[role="tab"]').find((t) => t.text().includes(label))!
