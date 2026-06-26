@@ -3,7 +3,7 @@ using System.Text;
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
-using Nerv.IIP.AppHub.Domain;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using NetCorePal.Extensions.Dto;
@@ -12,11 +12,11 @@ namespace Nerv.IIP.AppHub.Web.Endpoints.Connectors;
 
 [HttpPost("/api/connectors/v1/registrations")]
 [AllowAnonymous]
-public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<ApplicationRegistration, ResponseData<RegistrationResult>>
+public sealed class RegisterApplicationEndpoint(IMediator mediator) : Endpoint<ApplicationRegistration, ResponseData<ApplicationRegistrationResult>>
 {
     public override async Task HandleAsync(ApplicationRegistration req, CancellationToken ct)
     {
-        if (!ConnectorEndpointResults.ConnectorHostAuthorized(HttpContext, req.Context.ConnectorHostId))
+        if (!ConnectorEndpointResults.ConnectorHostRegistrationAuthorized(HttpContext, req.Context.ConnectorHostId))
         {
             await ConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
@@ -33,13 +33,14 @@ public sealed class RecordHeartbeatEndpoint(IMediator mediator) : Endpoint<Appli
 {
     public override async Task HandleAsync(ApplicationHeartbeat req, CancellationToken ct)
     {
-        if (!ConnectorEndpointResults.ConnectorHostAuthorized(HttpContext, req.Context.ConnectorHostId))
+        if (!ConnectorEndpointResults.ConnectorIngestionAuthorized(HttpContext, req.Context, req.InstanceKey, out var identity))
         {
             await ConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
         }
 
-        await mediator.Send(new RecordApplicationHeartbeatCommand(req), ct);
+        var trusted = req with { Context = identity.Bind(req.Context), InstanceKey = identity.InstanceKey };
+        await mediator.Send(new RecordApplicationHeartbeatCommand(trusted), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }
@@ -50,13 +51,14 @@ public sealed class RecordStateSnapshotEndpoint(IMediator mediator) : Endpoint<I
 {
     public override async Task HandleAsync(InstanceStateSnapshot req, CancellationToken ct)
     {
-        if (!ConnectorEndpointResults.ConnectorHostAuthorized(HttpContext, req.Context.ConnectorHostId))
+        if (!ConnectorEndpointResults.ConnectorIngestionAuthorized(HttpContext, req.Context, req.InstanceKey, out var identity))
         {
             await ConnectorEndpointResults.WriteUnauthorizedAsync(HttpContext, ct);
             return;
         }
 
-        await mediator.Send(new RecordInstanceStateSnapshotCommand(req), ct);
+        var trusted = req with { Context = identity.Bind(req.Context), InstanceKey = identity.InstanceKey };
+        await mediator.Send(new RecordInstanceStateSnapshotCommand(trusted), ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }
@@ -65,7 +67,7 @@ internal static class ConnectorEndpointResults
 {
     private const string DevelopmentConnectorSecret = "local-connector-secret";
 
-    public static bool ConnectorHostAuthorized(HttpContext context, string connectorHostId)
+    public static bool ConnectorHostRegistrationAuthorized(HttpContext context, string connectorHostId)
     {
         if (!context.Request.Headers.TryGetValue("X-Connector-Host-Id", out var hostId)
             || !context.Request.Headers.TryGetValue("X-Connector-Secret", out var secret)
@@ -88,6 +90,23 @@ internal static class ConnectorEndpointResults
         }
 
         return SecretEquals(secret.ToString(), expectedSecret);
+    }
+
+    public static bool ConnectorIngestionAuthorized(
+        HttpContext context,
+        ConnectorRequestContext requestContext,
+        string instanceKey,
+        out ConnectorIngestionIdentity identity)
+    {
+        identity = null!;
+        if (!context.Request.Headers.TryGetValue("X-Connector-Ingestion-Token", out var token))
+        {
+            return false;
+        }
+
+        var tokenService = context.RequestServices.GetRequiredService<IConnectorIngestionTokenService>();
+        return tokenService.TryValidateToken(token.ToString(), out identity)
+            && identity.Matches(requestContext, instanceKey);
     }
 
     public static async Task WriteUnauthorizedAsync(HttpContext context, CancellationToken cancellationToken)

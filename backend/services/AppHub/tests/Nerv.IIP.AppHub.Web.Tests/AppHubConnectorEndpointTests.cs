@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Nerv.IIP.Contracts.AppHubQueries;
@@ -58,7 +59,10 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
         using var registration = await client.PostAsJsonAsync("/api/connectors/v1/registrations", CreateRegistration(scenario));
         Assert.Equal(HttpStatusCode.OK, registration.StatusCode);
+        var ingestionToken = await ReadRegistrationIngestionTokenAsync(registration);
 
+        client.DefaultRequestHeaders.Remove("X-Connector-Secret");
+        client.DefaultRequestHeaders.Add("X-Connector-Ingestion-Token", ingestionToken);
         using var heartbeat = await client.PostAsJsonAsync("/api/connectors/v1/heartbeats", CreateHeartbeat(scenario));
         Assert.Equal(HttpStatusCode.NoContent, heartbeat.StatusCode);
 
@@ -119,6 +123,59 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
         Assert.Equal(1, listBody.PageSize);
         Assert.Equal(1, listBody.TotalCount);
         Assert.Single(listBody.Items);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_token_is_bound_to_registered_instance_identity()
+    {
+        var scenarioA = CreateScenario("bound-token-a");
+        var scenarioB = CreateScenario("bound-token-b");
+        var client = factory.CreateClient();
+
+        var tokenA = await RegisterAndReadIngestionTokenAsync(client, scenarioA);
+        var tokenB = await RegisterAndReadIngestionTokenAsync(client, scenarioB);
+
+        using var spoofedHeartbeat = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(scenarioB), tokenA);
+        using var spoofedSnapshot = await PostIngestionAsync(client, "/api/connectors/v1/state-snapshots", CreateSnapshot(scenarioB), tokenA);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, spoofedHeartbeat.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, spoofedSnapshot.StatusCode);
+
+        using var allowedHeartbeat = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(scenarioB), tokenB);
+        using var allowedSnapshot = await PostIngestionAsync(client, "/api/connectors/v1/state-snapshots", CreateSnapshot(scenarioB), tokenB);
+
+        Assert.Equal(HttpStatusCode.NoContent, allowedHeartbeat.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, allowedSnapshot.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", InternalServiceBearerToken);
+        var query = new InstanceListQuery(scenarioB.OrganizationId, scenarioB.EnvironmentId, 1, 20, "instanceName", "asc", null);
+        using var list = await client.PostAsJsonAsync("/internal/apphub/v1/instances/query", query);
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        var listBody = await ReadResponseDataAsync<InstanceListResponse>(list);
+
+        var item = Assert.Single(listBody.Items);
+        Assert.Equal(scenarioB.InstanceKey, item.InstanceKey);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:05Z"), item.LastHeartbeatAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-05-15T00:00:10Z"), item.LastStateObservedAtUtc);
+        Assert.Equal("running", item.ReportedStatus);
+        Assert.Equal("healthy", item.HealthStatus);
+    }
+
+    [Fact]
+    public async Task Connector_ingestion_token_rejects_body_scope_mismatch()
+    {
+        var registered = CreateScenario("scope-token");
+        var forged = registered with
+        {
+            OrganizationId = $"org-forged-{Guid.NewGuid():N}",
+            EnvironmentId = $"env-forged-{Guid.NewGuid():N}"
+        };
+        var client = factory.CreateClient();
+        var token = await RegisterAndReadIngestionTokenAsync(client, registered);
+
+        using var response = await PostIngestionAsync(client, "/api/connectors/v1/heartbeats", CreateHeartbeat(forged), token);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -189,6 +246,39 @@ public sealed class AppHubConnectorEndpointTests(WebApplicationFactory<Program> 
 
     private sealed record TestScenario(string OrganizationId, string EnvironmentId, string ConnectorHostId, string InstanceKey, string IdempotencyKey);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private static async Task<string> RegisterAndReadIngestionTokenAsync(HttpClient client, TestScenario scenario)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/connectors/v1/registrations")
+        {
+            Content = JsonContent.Create(CreateRegistration(scenario))
+        };
+        request.Headers.Add("X-Connector-Host-Id", scenario.ConnectorHostId);
+        request.Headers.Add("X-Connector-Secret", "local-connector-secret");
+
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await ReadRegistrationIngestionTokenAsync(response);
+    }
+
+    private static async Task<HttpResponseMessage> PostIngestionAsync<T>(HttpClient client, string path, T payload, string ingestionToken)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(payload)
+        };
+        request.Headers.Add("X-Connector-Ingestion-Token", ingestionToken);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<string> ReadRegistrationIngestionTokenAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.NotNull(body);
+        var token = body["data"]?["ingestionToken"]?.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(token), "Registration response must include a per-instance ingestion token.");
+        return token;
+    }
 
     private static async Task<T> ReadResponseDataAsync<T>(HttpResponseMessage response)
     {

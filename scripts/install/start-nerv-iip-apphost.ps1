@@ -29,6 +29,8 @@ param(
 
     [string] $ConnectorHostSecret,
 
+    [string] $ConnectorIngestionTokenSigningKey,
+
     [string] $ExternalClientSecret,
 
     [string] $MinioRootUser,
@@ -60,6 +62,10 @@ if ($EnvironmentName -ne "Development") {
 
     if ([string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
         throw "-ConnectorHostSecret is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+        throw "-ConnectorIngestionTokenSigningKey is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
@@ -116,6 +122,10 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
     $environment["Iam__Seed__ConnectorHostSecret"] = $ConnectorHostSecret
     $environment["ConnectorHostCredential__Secret"] = $ConnectorHostSecret
     $environment["Parameters__iam-seed-connector-host-secret"] = $ConnectorHostSecret
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+    $environment["ConnectorIngestionToken__SigningKey"] = $ConnectorIngestionTokenSigningKey
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ExternalClientSecret)) {

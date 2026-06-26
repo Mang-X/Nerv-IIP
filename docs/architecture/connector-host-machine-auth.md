@@ -108,6 +108,8 @@ Capability scope 和 permission code 不是同一种事实：
 
 第二阶段低风险动作闭环中的 `X-Connector-Host-Id`、`X-Connector-Secret`、`X-Organization-Id` 和 `X-Environment-Id` 是本地纵切验证机制，迁移策略如下：
 
+当前 AppHub ingestion hardening 已先把注册后的心跳与状态同步从共享 header-secret 切到注册返回的 per-instance `X-Connector-Ingestion-Token`。该 token 由 AppHub 签发并绑定 registrationId、organizationId、environmentId、connectorHostId 和 instanceKey，用于阻断跨实例或跨租户伪造上报；它不是终态 IAM access token，也不替代下方 bearer token 迁移目标。非 Development 环境必须配置 `ConnectorIngestionToken:SigningKey`，不得依赖本地 fallback。
+
 1. 当前阶段：保留 header-secret 入口用于本地验证脚本和旧 Connector Host，新增 bearer token 链路和 SDK token provider。
 2. 兼容阶段：AppHub/Ops 同时接受 bearer token 与 header-secret，但生产 profile 默认要求 bearer token；header-secret 命中时必须输出 structured warning，并在响应中返回 deprecation signal。
 3. 下线阶段：当 Connector Host SDK、验证脚本、AppHost/Compose 配置和 Ops/AppHub 测试全部切到 bearer token 后，在下一个 minor release 移除生产 profile 的 header-secret 支持，只允许显式 `Development` profile 或一次性迁移工具使用。

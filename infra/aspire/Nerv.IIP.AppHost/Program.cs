@@ -19,6 +19,7 @@ var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollecto
 var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
 var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
+var connectorIngestionTokenSigningKey = builder.Configuration["ConnectorIngestionToken:SigningKey"];
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -89,6 +90,11 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithReference(redis)
     .WaitFor(appHubDatabase)
     .WaitFor(redis);
+if (!string.IsNullOrWhiteSpace(connectorIngestionTokenSigningKey))
+{
+    apphub = apphub.WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey);
+}
+
 if (rabbitmq is not null)
 {
     apphub = apphub

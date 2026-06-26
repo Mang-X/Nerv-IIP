@@ -30,12 +30,15 @@ Connector Host 机器身份认证、短期 access token、capability scope 到 p
 
 1. POST /api/connectors/v1/registrations
 作用：创建或更新 Application、ApplicationVersion、ManagedNode、ApplicationInstance 的基础事实。
+响应：返回 `registrationId`、`instanceKey` 和绑定该注册实例的 `ingestionToken`。`ingestionToken` 只用于后续同一 organization/environment/connectorHostId/instanceKey 的心跳与状态同步。
 
 2. POST /api/connectors/v1/heartbeats
 作用：仅更新实例存活投影与最近一次可达时间，不直接改写 reported state。
+认证：必须携带 `X-Connector-Ingestion-Token`。AppHub 从 token 派生 registrationId、organizationId、environmentId、connectorHostId 和 instanceKey，并拒绝 body 与 token 不一致的上报。
 
 3. POST /api/connectors/v1/state-snapshots
 作用：更新 ApplicationInstance.reportedStatus、状态详情和状态历史；只有状态变化时才发布状态变化事件。
+认证：必须携带 `X-Connector-Ingestion-Token`，身份派生和 body 一致性要求与 heartbeats 相同。
 
 ### PlatformGateway.Web
 
@@ -110,6 +113,18 @@ Connector Host 机器身份认证、短期 access token、capability scope 到 p
 - ManagedNode
 - ApplicationInstance
 - CapabilityManifest
+
+注册响应最小字段：
+
+- registrationId
+- instanceKey
+- ingestionToken
+
+约束：
+
+1. `ingestionToken` 由 AppHub 签发并绑定 registrationId、organizationId、environmentId、connectorHostId 和 instanceKey。
+2. 心跳与状态同步不得再依赖请求 body 自证租户或实例身份；服务端必须校验 token 中的身份与 body 完全一致后才写入实例事实。
+3. 非 Development 环境必须显式配置 `ConnectorIngestionToken:SigningKey`，不得使用仓库内本地 fallback。
 
 ### CapabilityDescriptor
 
