@@ -21,7 +21,11 @@ param(
     [ValidateSet("InMemory", "RabbitMQ")]
     [string] $MessagingProvider = "InMemory",
 
-    [string] $IamJwtSigningKey,
+    [string] $IamJwtSigningKeyId,
+
+    [string] $IamJwtPrivateKeyPem,
+
+    [string] $IamJwtJwksJson,
 
     [string] $IamSeedAdminPassword,
 
@@ -58,8 +62,16 @@ Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
 if ($EnvironmentName -ne "Development") {
-    if ([string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
-        throw "-IamJwtSigningKey is required outside Development."
+    if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
+        throw "-IamJwtSigningKeyId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamJwtPrivateKeyPem)) {
+        throw "-IamJwtPrivateKeyPem is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
+        throw "-IamJwtJwksJson is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
@@ -121,9 +133,19 @@ if ($AutoMigrate) {
     $environment["Persistence__AutoMigrate"] = "true"
 }
 
-if (-not [string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
-    $environment["Iam__Jwt__SigningKey"] = $IamJwtSigningKey
-    $environment["Parameters__iam-jwt-signing-key"] = $IamJwtSigningKey
+if (-not [string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
+    $environment["Iam__Jwt__SigningKeys__0__Kid"] = $IamJwtSigningKeyId
+    $environment["Parameters__iam-jwt-signing-key-id"] = $IamJwtSigningKeyId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamJwtPrivateKeyPem)) {
+    $environment["Iam__Jwt__SigningKeys__0__PrivateKeyPem"] = $IamJwtPrivateKeyPem
+    $environment["Parameters__iam-jwt-private-key-pem"] = $IamJwtPrivateKeyPem
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
+    $environment["Iam__Jwt__JwksJson"] = $IamJwtJwksJson
+    $environment["Parameters__iam-jwt-jwks-json"] = $IamJwtJwksJson
 }
 
 if (-not [string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {

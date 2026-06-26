@@ -276,8 +276,16 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
         string refreshTokenHash,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+    Task<UserSession?> GetByRefreshTokenHashAsync(
+        string refreshTokenHash,
+        CancellationToken cancellationToken = default);
     Task<UserSession?> ConsumeActiveRefreshTokenAsync(
         string refreshTokenHash,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default);
+    Task<int> RevokeFamilyAsync(
+        string tokenFamilyId,
         DateTimeOffset now,
         string revokedReason,
         CancellationToken cancellationToken = default);
@@ -321,6 +329,14 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
                 cancellationToken);
     }
 
+    public async Task<UserSession?> GetByRefreshTokenHashAsync(
+        string refreshTokenHash,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .SingleOrDefaultAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+    }
+
     public async Task<UserSession?> ConsumeActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
@@ -356,6 +372,21 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         }
 
         return session;
+    }
+
+    public async Task<int> RevokeFamilyAsync(
+        string tokenFamilyId,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .Where(x => x.TokenFamilyId == tokenFamilyId && x.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.RevokedAtUtc, now)
+                    .SetProperty(x => x.RevokedReason, revokedReason),
+                cancellationToken);
     }
 
     public async Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default)

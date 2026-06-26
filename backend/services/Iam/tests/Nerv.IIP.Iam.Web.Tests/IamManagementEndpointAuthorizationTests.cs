@@ -29,14 +29,12 @@ public sealed class IamManagementEndpointAuthorizationTests
     {
         var environment = PreserveEnvironment(
             "Persistence__Provider",
-            "ConnectionStrings__IamDb",
-            "Iam__Jwt__SigningKey");
+            "ConnectionStrings__IamDb");
 
         try
         {
             Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
             Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", "Host=localhost;Port=1;Database=nerv_iip_iam_unreachable;Username=nerv;Password=nerv");
-            Environment.SetEnvironmentVariable("Iam__Jwt__SigningKey", "test-signing-key-that-is-long-enough-for-local-tests");
 
             await using var factory = new WebApplicationFactory<Program>();
             var client = factory.CreateClient();

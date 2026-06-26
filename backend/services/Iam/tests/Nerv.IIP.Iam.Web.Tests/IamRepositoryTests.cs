@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
@@ -77,6 +78,7 @@ public sealed class IamRepositoryTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
 
         var response = await authService.LoginAsync("session-v7", "Password123!", null, null, CancellationToken.None);

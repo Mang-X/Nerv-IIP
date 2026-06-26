@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -102,18 +101,28 @@ public static class BusinessGatewayAuthentication
             ValidateAudience = true,
             ValidAudience = settings.Audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),
+            RequireSignedTokens = true,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            IssuerSigningKeyResolver = (_, _, kid, _) => settings.SigningKeys
+                .Where(key => string.Equals(key.KeyId, kid, StringComparison.Ordinal)),
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(1)
         };
 
-    private sealed record BusinessGatewayJwtSettings(string SigningKey, string Issuer, string Audience)
+    private sealed record BusinessGatewayJwtSettings(IReadOnlyList<JsonWebKey> SigningKeys, string Issuer, string Audience)
     {
         public static BusinessGatewayJwtSettings FromConfiguration(IConfiguration configuration) =>
             new(
-                Require(configuration, "Iam:Jwt:SigningKey"),
+                ParseJwks(Require(configuration, "Iam:Jwt:JwksJson")),
                 Require(configuration, "Iam:Jwt:Issuer"),
                 Require(configuration, "Iam:Jwt:Audience"));
+
+        private static IReadOnlyList<JsonWebKey> ParseJwks(string jwksJson)
+        {
+            return new JsonWebKeySet(jwksJson).Keys
+                .Where(key => string.Equals(key.Kty, JsonWebAlgorithmsKeyTypes.RSA, StringComparison.Ordinal))
+                .ToArray();
+        }
 
         private static string Require(IConfiguration configuration, string key)
         {

@@ -70,7 +70,8 @@ services:
       Iam__Seed__AdminPassword: ${NERV_IIP_IAM_SEED_ADMIN_PASSWORD:-}
       Iam__Seed__ConnectorHostSecret: ${NERV_IIP_CONNECTOR_HOST_SECRET:?set NERV_IIP_CONNECTOR_HOST_SECRET}
       Iam__Seed__ExternalClientSecret: ${NERV_IIP_EXTERNAL_CLIENT_SECRET:-}
-      Iam__Jwt__SigningKey: ${NERV_IIP_IAM_JWT_SIGNING_KEY:?set NERV_IIP_IAM_JWT_SIGNING_KEY}
+      Iam__Jwt__SigningKeys__0__Kid: ${NERV_IIP_IAM_JWT_SIGNING_KEY_ID:?set NERV_IIP_IAM_JWT_SIGNING_KEY_ID}
+      Iam__Jwt__SigningKeys__0__PrivateKeyPem: ${NERV_IIP_IAM_JWT_PRIVATE_KEY_PEM:?set NERV_IIP_IAM_JWT_PRIVATE_KEY_PEM}
       Iam__Jwt__AccessTokenMinutes: ${NERV_IIP_IAM_ACCESS_TOKEN_MINUTES:-15}
     ports:
       - "${NERV_IIP_IAM_PORT:-5102}:8080"
@@ -314,7 +315,7 @@ services:
       <<: *dotnet-env
       AppHub__BaseUrl: http://apphub:8080
       Iam__BaseUrl: http://iam:8080
-      Iam__Jwt__SigningKey: ${NERV_IIP_IAM_JWT_SIGNING_KEY:?set NERV_IIP_IAM_JWT_SIGNING_KEY}
+      Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
       Ops__BaseUrl: http://ops:8080
       Notification__BaseUrl: http://notification:8080
       ProductEngineering__BaseUrl: http://business-product-engineering:8080
@@ -334,7 +335,7 @@ services:
     environment:
       <<: *dotnet-env
       Iam__BaseUrl: http://iam:8080
-      Iam__Jwt__SigningKey: ${NERV_IIP_IAM_JWT_SIGNING_KEY:?set NERV_IIP_IAM_JWT_SIGNING_KEY}
+      Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
       Iam__Jwt__Issuer: nerv-iip-iam
       Iam__Jwt__Audience: nerv-iip-api
       MasterData__BaseUrl: http://business-master-data:8080

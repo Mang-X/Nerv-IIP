@@ -26,11 +26,15 @@ public class UserSession : Entity<UserSessionId>, IAggregateRoot
         string authenticationMethod = "password",
         string? externalProvider = null,
         string? externalSubject = null,
-        DateTimeOffset? mfaVerifiedAtUtc = null)
+        DateTimeOffset? mfaVerifiedAtUtc = null,
+        string? tokenFamilyId = null,
+        string? previousSessionId = null)
     {
         Id = id;
         UserId = userId;
         RefreshTokenHash = refreshTokenHash;
+        TokenFamilyId = string.IsNullOrWhiteSpace(tokenFamilyId) ? id.Id : tokenFamilyId;
+        PreviousSessionId = previousSessionId;
         IssuedAtUtc = issuedAtUtc;
         ExpiresAtUtc = expiresAtUtc;
         PermissionVersion = permissionVersion;
@@ -45,6 +49,8 @@ public class UserSession : Entity<UserSessionId>, IAggregateRoot
 
     public UserId UserId { get; private set; }
     public string RefreshTokenHash { get; private set; } = string.Empty;
+    public string TokenFamilyId { get; private set; } = string.Empty;
+    public string? PreviousSessionId { get; private set; }
     public DateTimeOffset IssuedAtUtc { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
     public DateTimeOffset? RevokedAtUtc { get; private set; }

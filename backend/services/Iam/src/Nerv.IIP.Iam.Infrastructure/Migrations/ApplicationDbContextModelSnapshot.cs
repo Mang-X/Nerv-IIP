@@ -628,6 +628,11 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasComment("Permission version captured when the session was issued.");
 
+                    b.Property<string>("PreviousSessionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Previous session identifier in the refresh token rotation lineage.");
+
                     b.Property<string>("RefreshTokenHash")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -643,6 +648,12 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasComment("Reason the session was revoked.");
 
+                    b.Property<string>("TokenFamilyId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Refresh token family identifier used to detect replay and revoke the full lineage.");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -651,8 +662,12 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PreviousSessionId");
+
                     b.HasIndex("RefreshTokenHash")
                         .IsUnique();
+
+                    b.HasIndex("TokenFamilyId");
 
                     b.HasIndex("ExternalProvider", "ExternalSubject");
 

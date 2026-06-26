@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -82,6 +83,7 @@ public sealed class IamAuthServiceScopeTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
 
         var principalAaa = await service.GetCurrentPrincipalAsync(
@@ -251,6 +253,7 @@ public sealed class IamAuthServiceScopeTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             mfaChallenges ?? new InMemoryMfaChallengeStore(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
             environment ?? new TestWebHostEnvironment());
     }
 
