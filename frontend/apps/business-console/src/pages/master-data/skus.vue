@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleCreateSkuRequest, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import {
@@ -11,30 +11,29 @@ import {
 import { useProductCategories } from '@/composables/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -241,7 +240,7 @@ const canCreateSku = computed(() =>
   && inOptions(barcodeRuleOptions.value, createForm.defaultBarcodeRuleCode),
 )
 
-const columns: DataTableColumn<BusinessConsoleResourceItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '物料编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
   { key: 'displayName', header: '物料名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'category', header: '产品分类', width: 'w-28', accessor: (r) => labelOf(productCategoryOptions.value, r.category) || '无' },
@@ -403,177 +402,183 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="物料与产品" :breadcrumbs="[{ label: '基础数据' }]" :count="`${totalItems} 个物料`">
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="skusPending" @click="refreshSkus">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="createOpen" @update:open="syncContextFromFilters">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="createOpen" @update:open="syncContextFromFilters">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               新建物料
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>{{ editingCode ? `编辑物料 · ${editingCode}` : '新建物料' }}</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-3xl">
+            <DialogProHeader>
+              <DialogProTitle>{{ editingCode ? `编辑物料 · ${editingCode}` : '新建物料' }}</DialogProTitle>
+              <DialogProDescription>
                 {{ editingCode ? '修改物料档案（编码不可修改）。带 * 为必填项。' : '为采购、生产、库存和销售建立统一的物料档案。带 * 为必填项。' }}
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitSku">
               <p v-if="createShowErrors && !canCreateSku" class="text-sm text-destructive" role="alert">请完整填写带 * 的必填项（已标红）。</p>
 
               <FormSectionTitle>基础信息</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel>物料编号</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro>
+                  <FieldProLabel>物料编号</FieldProLabel>
                   <div
                     class="rounded-md border bg-muted/40 px-3 py-2 text-sm"
                     :class="editingCode ? 'font-medium text-foreground' : 'text-muted-foreground'"
                   >
                     {{ editingCode || '保存后由系统分配' }}
                   </div>
-                  <FieldDescription>{{ editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。' }}</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
-                  <FieldLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(productCategoryOptions, createForm.category)">
-                  <FieldLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.category">
-                    <SelectTrigger id="sku-category"><SelectValue placeholder="请选择分类" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in productCategoryOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldDescription>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(materialTypeOptions, createForm.materialType)">
-                  <FieldLabel>物料类型 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.materialType">
-                    <SelectTrigger aria-label="物料类型"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in materialTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </FieldGroup>
+                  <FieldProDescription>{{ editingCode ? '编码由系统分配，不可修改。' : '无需手填，系统自动编号。' }}</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !isNonEmpty(createForm.name)">
+                  <FieldProLabel for="sku-name">物料名称 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="sku-name" v-model="createForm.name" autocomplete="off" aria-required="true" required />
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(productCategoryOptions, createForm.category)">
+                  <FieldProLabel for="sku-category">产品分类 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.category">
+                    <SelectProTrigger id="sku-category"><SelectProValue placeholder="请选择分类" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in productCategoryOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>来自数据字典 · 产品分类。缺少分类？去数据字典维护。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(materialTypeOptions, createForm.materialType)">
+                  <FieldProLabel>物料类型 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.materialType">
+                    <SelectProTrigger aria-label="物料类型"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in materialTypeOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>单位与追踪</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
-                  <FieldLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.baseUomCode">
-                    <SelectTrigger id="sku-uom"><SelectValue placeholder="请选择单位" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in baseUomOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>库存与核算的最小计量单位，取自「计量单位」维护页。</FieldDescription>
-                </Field>
-                <Field class="self-start">
-                  <FieldLabel>质检要求</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="createShowErrors && !inOptions(baseUomOptions, createForm.baseUomCode)">
+                  <FieldProLabel for="sku-uom">基本单位 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.baseUomCode">
+                    <SelectProTrigger id="sku-uom"><SelectProValue placeholder="请选择单位" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in baseUomOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>库存与核算的最小计量单位，取自「计量单位」维护页。</FieldProDescription>
+                </FieldPro>
+                <FieldPro class="self-start">
+                  <FieldProLabel>质检要求</FieldProLabel>
                   <label
                     for="sku-quality"
                     class="flex h-9 cursor-pointer select-none items-center justify-between rounded-md border bg-background px-3 text-sm"
                   >
                     <span>投产前需质检</span>
-                    <Checkbox id="sku-quality" v-model:checked="createForm.qualityRequired" />
+                    <CheckboxPro id="sku-quality" v-model:checked="createForm.qualityRequired" />
                   </label>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(batchPolicyOptions, createForm.batchTrackingPolicy)">
-                  <FieldLabel>批次追踪 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.batchTrackingPolicy">
-                    <SelectTrigger aria-label="批次追踪"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in batchPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(serialPolicyOptions, createForm.serialTrackingPolicy)">
-                  <FieldLabel>序列号追踪 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.serialTrackingPolicy">
-                    <SelectTrigger aria-label="序列号追踪"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in serialPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </FieldGroup>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(batchPolicyOptions, createForm.batchTrackingPolicy)">
+                  <FieldProLabel>批次追踪 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.batchTrackingPolicy">
+                    <SelectProTrigger aria-label="批次追踪"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in batchPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(serialPolicyOptions, createForm.serialTrackingPolicy)">
+                  <FieldProLabel>序列号追踪 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.serialTrackingPolicy">
+                    <SelectProTrigger aria-label="序列号追踪"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in serialPolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+              </FieldProGroup>
 
               <FormSectionTitle>存储与条码</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-2">
-                <Field :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
-                  <FieldLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.shelfLifePolicyCode">
-                    <SelectTrigger id="sku-shelf"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in shelfLifePolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(storageConditionOptions, createForm.storageConditionCode)">
-                  <FieldLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.storageConditionCode">
-                    <SelectTrigger id="sku-storage"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in storageConditionOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field :data-invalid="createShowErrors && !inOptions(barcodeRuleOptions, createForm.defaultBarcodeRuleCode)">
-                  <FieldLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="createForm.defaultBarcodeRuleCode">
-                    <SelectTrigger id="sku-barcode"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="option in barcodeRuleOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field class="sm:col-span-2">
-                  <FieldLabel>质量/合规标签</FieldLabel>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+                <FieldPro :data-invalid="createShowErrors && !inOptions(shelfLifePolicyOptions, createForm.shelfLifePolicyCode)">
+                  <FieldProLabel for="sku-shelf">保质期管理 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.shelfLifePolicyCode">
+                    <SelectProTrigger id="sku-shelf"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in shelfLifePolicyOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(storageConditionOptions, createForm.storageConditionCode)">
+                  <FieldProLabel for="sku-storage">存储条件 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.storageConditionCode">
+                    <SelectProTrigger id="sku-storage"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in storageConditionOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+                <FieldPro :data-invalid="createShowErrors && !inOptions(barcodeRuleOptions, createForm.defaultBarcodeRuleCode)">
+                  <FieldProLabel for="sku-barcode">默认条码规则 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="createForm.defaultBarcodeRuleCode">
+                    <SelectProTrigger id="sku-barcode"><SelectProValue /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="option in barcodeRuleOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                </FieldPro>
+                <FieldPro class="sm:col-span-2">
+                  <FieldProLabel>质量/合规标签</FieldProLabel>
                   <div class="grid gap-2 rounded-md border p-3 sm:grid-cols-3">
                     <label v-for="option in complianceTagOptions" :key="option.value" class="flex items-center gap-2 text-sm">
-                      <Checkbox
+                      <CheckboxPro
                         :checked="createForm.complianceTags.includes(option.value)"
                         @update:checked="setComplianceTag(option.value, $event === true)"
                       />
                       {{ option.label }}
                     </label>
                   </div>
-                  <FieldDescription>来自数据字典 · 合规标签，可多选、可留空。</FieldDescription>
-                </Field>
-              </FieldGroup>
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="createOpen = false">取消</Button>
-                <Button type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading || dictionaryPending || !canCreateSku">
+                  <FieldProDescription>来自数据字典 · 合规标签，可多选、可留空。</FieldProDescription>
+                </FieldPro>
+              </FieldProGroup>
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="createOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="createSkuPending || skuActions.updatePending.value || editLoading || dictionaryPending || !canCreateSku">
                   <Spinner v-if="createSkuPending || skuActions.updatePending.value || dictionaryPending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '保存物料' }}
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
     <Toolbar v-model:search="keyword" search-placeholder="在当前页内筛选物料编码、名称">
       <template #filters>
         <label class="flex items-center gap-2 text-sm text-muted-foreground">
-          <Checkbox v-model:checked="includeDisabled" />
+          <CheckboxPro v-model:checked="includeDisabled" />
           包含停用
         </label>
       </template>
       <template #actions>
-        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="totalItems"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedRows"
@@ -581,9 +586,11 @@ function isNonEmpty(value: string) {
       :client-sort="false"
       :loading="skusPending"
       empty-message="未找到物料。可清空筛选或新建物料。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-active="{ row }">
-        <StatusBadge :value="row.active === false ? 'disabled' : 'active'" />
+        <StatusBadgePro :value="row.active === false ? 'disabled' : 'active'" />
       </template>
       <template #cell-snapshotVersion="{ row }">
         <span class="tabular-nums text-muted-foreground">{{ formatDateTime(row.snapshotVersion) }}</span>
@@ -591,8 +598,7 @@ function isNonEmpty(value: string) {
       <template #cell-actions="{ row }">
         <MasterDataRowActions :row="row" entity-label="物料" :detail-fields="skuDetailFields(row)" :actions="skuActions" @edit="openEdit" />
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="totalItems" />
   </BusinessLayout>
 </template>

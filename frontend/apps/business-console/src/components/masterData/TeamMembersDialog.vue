@@ -2,26 +2,26 @@
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import { useBusinessWorkers, useTeamMembers } from '@/composables/useBusinessMasterData'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  Checkbox,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldLabel,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  ButtonPro,
+  CheckboxPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProLabel,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   toast,
 } from '@nerv-iip/ui'
 import { Trash2Icon } from 'lucide-vue-next'
@@ -108,27 +108,27 @@ async function confirmRemove() {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent class="sm:max-w-2xl">
-      <DialogHeader>
-        <DialogTitle>{{ teamName }} · 成员维护</DialogTitle>
-        <DialogDescription>登记班组成员与组长，移除时仅解除归属、不影响人员档案。</DialogDescription>
-      </DialogHeader>
+  <DialogPro v-model:open="open">
+    <DialogProContent class="sm:max-w-2xl">
+      <DialogProHeader>
+        <DialogProTitle>{{ teamName }} · 成员维护</DialogProTitle>
+        <DialogProDescription>登记班组成员与组长，移除时仅解除归属、不影响人员档案。</DialogProDescription>
+      </DialogProHeader>
 
       <p v-if="errorText" class="text-sm text-destructive" role="alert">{{ errorText }}</p>
 
       <form class="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end" @submit.prevent="submitAdd">
-        <Field :data-invalid="showErrors && !canAdd">
-          <FieldLabel for="member-worker">工人 <span class="text-destructive">*</span></FieldLabel>
+        <FieldPro :data-invalid="showErrors && !canAdd">
+          <FieldProLabel for="member-worker">工人 <span class="text-destructive">*</span></FieldProLabel>
           <WorkerSelect id="member-worker" v-model="selectedUserId" placeholder="搜索并选择工人" />
-        </Field>
-        <Field class="flex flex-row items-center gap-2">
-          <Checkbox id="member-leader" v-model="isLeader" />
-          <FieldLabel for="member-leader" class="mb-0">设为组长</FieldLabel>
-        </Field>
-        <Button type="submit" size="sm" :disabled="addPending">
+        </FieldPro>
+        <FieldPro class="flex flex-row items-center gap-2">
+          <CheckboxPro id="member-leader" v-model="isLeader" />
+          <FieldProLabel for="member-leader" class="mb-0">设为组长</FieldProLabel>
+        </FieldPro>
+        <ButtonPro type="submit" size="sm" :disabled="addPending">
           <Spinner v-if="addPending" aria-hidden="true" />添加成员
-        </Button>
+        </ButtonPro>
       </form>
 
       <div class="rounded-md border">
@@ -143,10 +143,10 @@ async function confirmRemove() {
           >
             <div class="flex items-center gap-2">
               <span class="text-sm">{{ memberLabel(member.userId) }}</span>
-              <StatusBadge v-if="member.isLeader" value="active" />
+              <StatusBadgePro v-if="member.isLeader" value="active" />
               <span v-if="member.isLeader" class="text-xs text-muted-foreground">组长</span>
             </div>
-            <Button
+            <ButtonPro
               type="button"
               variant="ghost"
               size="sm"
@@ -155,27 +155,27 @@ async function confirmRemove() {
               @click="removeTarget = member.userId ?? null"
             >
               <Trash2Icon aria-hidden="true" />移除
-            </Button>
+            </ButtonPro>
           </li>
         </ul>
       </div>
 
-      <DialogFooter>
-        <Button type="button" variant="outline" @click="open = false">关闭</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+      <DialogProFooter>
+        <ButtonPro type="button" variant="outline" @click="open = false">关闭</ButtonPro>
+      </DialogProFooter>
+    </DialogProContent>
+  </DialogPro>
 
-  <AlertDialog :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>确认移除该成员？</AlertDialogTitle>
-        <AlertDialogDescription>移除后该工人将不再归属本班组，可随时重新添加。</AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>取消</AlertDialogCancel>
-        <AlertDialogAction :disabled="removePending" @click="confirmRemove">确认移除</AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
+  <AlertDialogPro :open="removeTarget !== null" @update:open="(value) => { if (!value) removeTarget = null }">
+    <AlertDialogProContent>
+      <AlertDialogProHeader>
+        <AlertDialogProTitle>确认移除该成员？</AlertDialogProTitle>
+        <AlertDialogProDescription>移除后该工人将不再归属本班组，可随时重新添加。</AlertDialogProDescription>
+      </AlertDialogProHeader>
+      <AlertDialogProFooter>
+        <AlertDialogProCancel>取消</AlertDialogProCancel>
+        <AlertDialogProAction :disabled="removePending" @click="confirmRemove">确认移除</AlertDialogProAction>
+      </AlertDialogProFooter>
+    </AlertDialogProContent>
+  </AlertDialogPro>
 </template>

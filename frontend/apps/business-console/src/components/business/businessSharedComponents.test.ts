@@ -24,11 +24,11 @@ vi.mock('@nerv-iip/ui', () => {
     })
 
   return {
-    Badge: defineComponent({
-      name: 'Badge',
+    BadgePro: defineComponent({
+      name: 'BadgePro',
       props: {
         variant: {
-          default: 'secondary',
+          default: 'neutral',
           type: String,
         },
       },
@@ -36,8 +36,8 @@ vi.mock('@nerv-iip/ui', () => {
         return () => h('span', { ...attrs, 'data-variant': props.variant }, slots.default?.())
       },
     }),
-    Button: defineComponent({
-      name: 'Button',
+    ButtonPro: defineComponent({
+      name: 'ButtonPro',
       props: {
         disabled: Boolean,
         type: String,
@@ -47,9 +47,10 @@ vi.mock('@nerv-iip/ui', () => {
           h('button', { ...attrs, disabled: props.disabled, type: props.type }, slots.default?.())
       },
     }),
-    DropdownMenu: passthrough('DropdownMenu'),
-    DropdownMenuContent: passthrough('DropdownMenuContent'),
-    DropdownMenuTrigger: passthrough('DropdownMenuTrigger'),
+    // BusinessRowActions 已迁到 Pro 下拉，整模块 mock 按 Pro 导出名打桩。
+    DropdownMenuPro: passthrough('DropdownMenuPro'),
+    DropdownMenuProContent: passthrough('DropdownMenuProContent'),
+    DropdownMenuProTrigger: passthrough('DropdownMenuProTrigger'),
     Pagination: defineComponent({
       name: 'Pagination',
       props: {
@@ -64,17 +65,17 @@ vi.mock('@nerv-iip/ui', () => {
     PaginationContent: passthrough('PaginationContent'),
     PaginationNext: passthrough('PaginationNext'),
     PaginationPrevious: passthrough('PaginationPrevious'),
-    Select: defineComponent({
-      name: 'Select',
+    SelectPro: defineComponent({
+      name: 'SelectPro',
       emits: ['update:modelValue'],
       setup(_props, { emit, slots }) {
         return () =>
           h('div', { 'data-test': 'page-size-select', onClick: () => emit('update:modelValue', '50') }, slots.default?.())
       },
     }),
-    SelectContent: passthrough('SelectContent'),
-    SelectItem: defineComponent({
-      name: 'SelectItem',
+    SelectProContent: passthrough('SelectProContent'),
+    SelectProItem: defineComponent({
+      name: 'SelectProItem',
       props: {
         value: String,
       },
@@ -82,8 +83,8 @@ vi.mock('@nerv-iip/ui', () => {
         return () => h('div', { 'data-value': props.value }, slots.default?.())
       },
     }),
-    SelectTrigger: passthrough('SelectTrigger'),
-    SelectValue: passthrough('SelectValue'),
+    SelectProTrigger: passthrough('SelectProTrigger'),
+    SelectProValue: passthrough('SelectProValue'),
   }
 })
 
@@ -145,10 +146,10 @@ describe('business shared components', () => {
     const unknown = mount(BusinessStatusBadge, { props: { value: 'NeedsReview' } })
 
     expect(ready.get('[data-variant="success"]').text()).toBe('可开工')
-    expect(running.get('[data-variant="default"]').text()).toBe('执行中')
+    expect(running.get('[data-variant="neutral"]').text()).toBe('执行中')
     expect(warning.get('[data-variant="warning"]').text()).toBe('条件放行')
-    expect(blocked.get('[data-variant="destructive"]').text()).toBe('不可用')
-    expect(unknown.get('[data-variant="secondary"]').text()).toBe('NeedsReview')
+    expect(blocked.get('[data-variant="danger"]').text()).toBe('不可用')
+    expect(unknown.get('[data-variant="neutral"]').text()).toBe('NeedsReview')
   })
 
   it('keeps row actions accessible and supports disabled action menus', () => {

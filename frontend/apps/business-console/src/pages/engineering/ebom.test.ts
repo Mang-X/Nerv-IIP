@@ -55,38 +55,38 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  Sheet: { template: '<div><slot /></div>' },
-  SheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
-  SheetHeader: { template: '<div><slot /></div>' },
-  SheetTitle: { template: '<h2><slot /></h2>' },
-  SheetDescription: { template: '<p><slot /></p>' },
+  // SheetPro 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  SheetProContent: { template: '<div data-testid="sheet"><slot /></div>' },
+  SheetProHeader: { template: '<div><slot /></div>' },
+  SheetProTitle: { template: '<h2><slot /></h2>' },
+  SheetProDescription: { template: '<p><slot /></p>' },
 }
 const datePickerStub = {
-  DatePicker: {
+  DatePickerPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }

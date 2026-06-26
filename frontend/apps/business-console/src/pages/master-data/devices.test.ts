@@ -74,29 +74,48 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 让「编辑」菜单项可直接点击，从而断言行操作触发 @edit 后对话框进入编辑态。
 const rowActionStubs = {
   RowActions: { template: '<div><slot /></div>' },
-  DropdownMenuItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // RowActions 内的下拉项已迁到 Pro（DropdownMenuProItem 是真 .vue 包装，stub 按 Pro 名）。
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  // DialogPro/DialogProTrigger 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger。
+  DialogPro: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
+  DialogProTrigger: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  // 行操作里 RowActions 的下拉内容已迁到 Pro（DropdownMenuProContent 含 reka portal/Teleport，
+  // jsdom 卸载会崩）就地渲染，避免渲染崩溃。
+  DropdownMenuProContent: { template: '<div><slot /></div>' },
+  DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
+  // 行操作里的 AlertDialog 已迁到 Pro（AlertDialogProContent 含 reka portal/Teleport，jsdom 卸载会崩）就地渲染。
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProTrigger: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue 完成"填表→提交"。
 const selectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 打开「新建设备」并把默认空的必填项填成合法值（型号/厂商/SN/资产类为文本，产线/工作中心为 Select）。

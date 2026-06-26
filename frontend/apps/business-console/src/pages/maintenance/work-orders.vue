@@ -3,38 +3,37 @@ import type {
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMaintenanceWorkOrderItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DropdownMenuItem,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Toolbar,
+  StatusBadgePro,
   toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -110,7 +109,7 @@ const createErrorMessage = computed(() => createError.value || formatError(creat
 const completeErrorMessage = computed(() => completeError.value || formatError(completeWorkOrderError.value))
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
-const columns: DataTableColumn<WorkOrderRow>[] = [
+const columns: DataTableProColumn<WorkOrderRow>[] = [
   { key: 'workOrderNo', header: '工单号', cellClass: 'font-medium', accessor: (r) => workOrderNo(r) },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
   { key: 'priority', header: '优先级', width: 'w-20' },
@@ -219,14 +218,14 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="维护工单" :breadcrumbs="[{ label: '设备监控' }]" :count="`${workOrdersTotal} 张维护工单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建维护工单
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -237,123 +236,136 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="workOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="workOrders"
       :row-key="rowKey"
       :loading="workOrdersPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无维护工单。设备报警或巡检发现异常时在此开单。"
     >
-      <template #cell-priority="{ row }"><StatusBadge :value="priorityLabel(row.priority)" /></template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-priority="{ row }"><StatusBadgePro :value="priorityLabel(row.priority)" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`维护工单操作 ${workOrderNo(row)}`">
-          <DropdownMenuItem @click="openComplete(row)">
+          <DropdownMenuProItem @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成工单
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="workOrdersTotal" />
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>新建维护工单</DialogTitle>
-          <DialogDescription>对设备开具维护工单，可关联触发的设备报警。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>新建维护工单</DialogProTitle>
+          <DialogProDescription>对设备开具维护工单，可关联触发的设备报警。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="mwo-device">设备</FieldLabel>
-              <Input id="mwo-device" v-model="createForm.deviceAssetId" autocomplete="off" placeholder="如 DEV-SMT-01" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-priority">优先级</FieldLabel>
-              <Select v-model="createForm.priority">
-                <SelectTrigger id="mwo-priority" aria-label="优先级"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-opened-by">开单人</FieldLabel>
-              <Input id="mwo-opened-by" v-model="createForm.openedBy" autocomplete="off" placeholder="如 巡检员-张工" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-alarm">关联报警</FieldLabel>
-              <Input id="mwo-alarm" v-model="createForm.sourceAlarmId" autocomplete="off" placeholder="可选" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="mwo-device">设备</FieldProLabel>
+              <InputPro id="mwo-device" v-model="createForm.deviceAssetId" autocomplete="off" placeholder="如 DEV-SMT-01" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-priority">优先级</FieldProLabel>
+              <SelectPro v-model="createForm.priority">
+                <SelectProTrigger id="mwo-priority" aria-label="优先级"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-opened-by">开单人</FieldProLabel>
+              <InputPro id="mwo-opened-by" v-model="createForm.openedBy" autocomplete="off" placeholder="如 巡检员-张工" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-alarm">关联报警</FieldProLabel>
+              <InputPro id="mwo-alarm" v-model="createForm.sourceAlarmId" autocomplete="off" placeholder="可选" />
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
+          <FieldProError v-if="createErrorMessage" :errors="[createErrorMessage]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createWorkOrderPending">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createWorkOrderPending">
               <Spinner v-if="createWorkOrderPending" aria-hidden="true" />
               创建维护工单
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="completeOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>完成维护工单</DialogTitle>
-          <DialogDescription>
+    <DialogPro v-model:open="completeOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>完成维护工单</DialogProTitle>
+          <DialogProDescription>
             {{ completeTarget ? `${workOrderNo(completeTarget)} · ${completeTarget.deviceAssetId ?? ''}` : '登记维护结果与停机时长。' }}
-          </DialogDescription>
-        </DialogHeader>
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitComplete">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="mwo-result">维护结果</FieldLabel>
-              <Select v-model="completeForm.result">
-                <SelectTrigger id="mwo-result" aria-label="维护结果"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-reason">停机原因</FieldLabel>
-              <Select v-model="completeForm.downtimeReasonCode">
-                <SelectTrigger id="mwo-reason" aria-label="停机原因"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-minutes">停机时长（分钟）</FieldLabel>
-              <Input id="mwo-minutes" v-model="completeForm.downtimeMinutes" type="number" min="0" step="1" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-spare-sku">更换备件物料</FieldLabel>
-              <Input id="mwo-spare-sku" v-model="completeForm.sparePartSku" autocomplete="off" placeholder="如 主控芯片MCU" />
-            </Field>
-            <Field>
-              <FieldLabel for="mwo-spare-qty">备件数量</FieldLabel>
-              <Input id="mwo-spare-qty" v-model="completeForm.sparePartQuantity" type="number" min="1" step="1" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="mwo-result">维护结果</FieldProLabel>
+              <SelectPro v-model="completeForm.result">
+                <SelectProTrigger id="mwo-result" aria-label="维护结果"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in resultOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-reason">停机原因</FieldProLabel>
+              <SelectPro v-model="completeForm.downtimeReasonCode">
+                <SelectProTrigger id="mwo-reason" aria-label="停机原因"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in reasonOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-minutes">停机时长（分钟）</FieldProLabel>
+              <InputPro id="mwo-minutes" v-model="completeForm.downtimeMinutes" type="number" min="0" step="1" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-spare-sku">更换备件物料</FieldProLabel>
+              <InputPro id="mwo-spare-sku" v-model="completeForm.sparePartSku" autocomplete="off" placeholder="如 主控芯片MCU" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="mwo-spare-qty">备件数量</FieldProLabel>
+              <InputPro id="mwo-spare-qty" v-model="completeForm.sparePartQuantity" type="number" min="1" step="1" />
+            </FieldPro>
+          </FieldProGroup>
 
-          <FieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
+          <FieldProError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="completeWorkOrderPending">
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="completeWorkOrderPending">
               <Spinner v-if="completeWorkOrderPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               完成工单
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useBusinessErp } from '@/composables/useBusinessErp'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -72,7 +71,7 @@ const pendingArrivalCount = computed(() => rows.value.filter((r) => r.receiptRea
 const partiallyReceivedCount = computed(() => rows.value.filter((r) => r.receiptReadiness === 'partially-received').length)
 const openQuantity = computed(() => rows.value.reduce((total, r) => total + r.openQuantity, 0))
 
-const columns: DataTableColumn<ProcurementRow>[] = [
+const columns: DataTableProColumn<ProcurementRow>[] = [
   { key: 'purchaseOrderNo', header: '采购单', cellClass: 'font-medium' },
   { key: 'supplierCode', header: '供应商' },
   { key: 'skuCode', header: '物料' },
@@ -117,10 +116,10 @@ function rowKey(row: ProcurementRow) {
   <BusinessLayout>
     <PageHeader title="采购与供应" :breadcrumbs="[{ label: '经营管理' }]" :count="`${purchaseOrdersTotal} 张采购订单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="purchaseOrdersPending" @click="refreshPurchaseOrders">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="purchaseOrdersPending" @click="refreshPurchaseOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -132,34 +131,41 @@ function rowKey(row: ProcurementRow) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.keyword" class="h-9 w-56" placeholder="采购单 / 供应商 / 物料 / 工厂" aria-label="采购关键字" />
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="订单状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            <SelectItem value="Released">已下达</SelectItem>
-            <SelectItem value="Closed">已关闭</SelectItem>
-            <SelectItem value="Cancelled">已取消</SelectItem>
-          </SelectContent>
-        </Select>
+        <InputPro v-model="filters.keyword" class="h-9 w-56" placeholder="采购单 / 供应商 / 物料 / 工厂" aria-label="采购关键字" />
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="订单状态"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部状态</SelectProItem>
+            <SelectProItem value="Released">已下达</SelectProItem>
+            <SelectProItem value="Closed">已关闭</SelectProItem>
+            <SelectProItem value="Cancelled">已取消</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="purchaseOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="rows"
       :row-key="rowKey"
       :loading="purchaseOrdersPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="未找到采购供应明细。下达采购订单后会在这里跟进到货与收货。"
     >
       <template #cell-orderedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.orderedQuantity) }}</span></template>
       <template #cell-receivedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.receivedQuantity) }}</span></template>
       <template #cell-openQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.openQuantity) }}</span></template>
-      <template #cell-status="{ row }"><StatusBadge :value="statusLabel(row.status)" /></template>
-      <template #cell-receiptReadiness="{ row }"><StatusBadge :value="readinessLabel(row.receiptReadiness)" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="statusLabel(row.status)" /></template>
+      <template #cell-receiptReadiness="{ row }"><StatusBadgePro :value="readinessLabel(row.receiptReadiness)" /></template>
       <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount) }}</span></template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="purchaseOrdersTotal" />
   </BusinessLayout>
 </template>

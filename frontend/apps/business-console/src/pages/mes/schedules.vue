@@ -3,32 +3,31 @@ import type {
   BusinessConsoleRunScheduleRequest,
   BusinessConsoleScheduledOperation,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldGroup,
-  FieldLabel,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
 } from '@nerv-iip/ui'
 import { PlayIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -64,7 +63,7 @@ watch([pageSize, () => assignments.value.length], () => {
   page.value = 1
 })
 
-const columns: DataTableColumn<BusinessConsoleScheduledOperation>[] = [
+const columns: DataTableProColumn<BusinessConsoleScheduledOperation>[] = [
   { key: 'workOrderId', header: '工单', cellClass: 'font-medium', accessor: (r) => r.workOrderId ?? '无' },
   { key: 'operationTaskId', header: '工序', accessor: (r) => r.operationTaskId ?? '无' },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '无' },
@@ -113,10 +112,10 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="规则排程" :breadcrumbs="[{ label: '制造执行' }]" :count="`${assignments.length} 条分配`">
       <template #actions>
-        <Button size="sm" type="button" @click="scheduleSheetOpen = true">
+        <ButtonPro size="sm" type="button" @click="scheduleSheetOpen = true">
           <PlayIcon aria-hidden="true" />
           运行排程
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -135,61 +134,68 @@ function isNonEmpty(value: string) {
       <span class="text-sm text-muted-foreground">{{ formatDateTime(lastSchedule?.scheduledAtUtc) }}</span>
     </div>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="assignments.length"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="pagedAssignments"
       :row-key="rowKey"
       :loading="runSchedulePending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="尚无排程结果。运行排程后，这里会显示工序的工作中心与起止时间。"
     >
       <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="assignments.length" />
 
     <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>
       <div class="mt-3 flex flex-wrap gap-2">
-        <StatusBadge v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" :label="workOrderId" tone="neutral" />
+        <StatusBadgePro v-for="workOrderId in affectedWorkOrderIds" :key="workOrderId" :label="workOrderId" tone="neutral" />
       </div>
     </div>
 
-    <Dialog v-model:open="scheduleSheetOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>运行规则排程</DialogTitle>
-          <DialogDescription>规则排程会重新计算工序分配，运行前请确认触发来源。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="scheduleSheetOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>运行规则排程</DialogProTitle>
+          <DialogProDescription>规则排程会重新计算工序分配，运行前请确认触发来源。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
           <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
           <p v-if="runSuccess" class="text-sm text-success" role="status">{{ runSuccess }}</p>
 
-          <FieldGroup class="grid gap-3">
-            <Field>
-              <FieldLabel for="schedule-trigger">触发来源</FieldLabel>
-              <Select v-model="runForm.trigger">
-                <SelectTrigger id="schedule-trigger" aria-label="排程触发来源"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Manual">手动</SelectItem>
-                  <SelectItem value="RushOrder">急单</SelectItem>
-                  <SelectItem value="AssetUnavailable">设备不可用</SelectItem>
-                  <SelectItem value="AssetRestored">设备恢复</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3">
+            <FieldPro>
+              <FieldProLabel for="schedule-trigger">触发来源</FieldProLabel>
+              <SelectPro v-model="runForm.trigger">
+                <SelectProTrigger id="schedule-trigger" aria-label="排程触发来源"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem value="Manual">手动</SelectProItem>
+                  <SelectProItem value="RushOrder">急单</SelectProItem>
+                  <SelectProItem value="AssetUnavailable">设备不可用</SelectProItem>
+                  <SelectProItem value="AssetRestored">设备恢复</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+          </FieldProGroup>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="scheduleSheetOpen = false">取消</Button>
-            <Button type="submit" :disabled="runSchedulePending || !canRunSchedule">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="scheduleSheetOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="runSchedulePending || !canRunSchedule">
               <Spinner v-if="runSchedulePending" aria-hidden="true" />
               <PlayIcon v-else aria-hidden="true" />
               运行排程
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

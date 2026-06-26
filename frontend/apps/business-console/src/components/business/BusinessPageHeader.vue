@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge } from '@nerv-iip/ui'
+import { BadgePro } from '@nerv-iip/ui'
 
 withDefaults(
   defineProps<{
@@ -41,7 +41,7 @@ withDefaults(
       </p>
     </div>
     <div class="flex shrink-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
-      <Badge class="max-w-40 truncate rounded-sm" variant="secondary">{{ badge }}</Badge>
+      <BadgePro class="max-w-40 truncate rounded-sm" variant="neutral">{{ badge }}</BadgePro>
       <slot name="actions" />
     </div>
   </div>
