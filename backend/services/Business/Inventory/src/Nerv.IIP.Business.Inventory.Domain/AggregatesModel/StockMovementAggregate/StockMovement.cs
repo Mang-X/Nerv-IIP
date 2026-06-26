@@ -56,7 +56,7 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
         QualityStatus = StockQualityStatus.Normalize(qualityStatus);
-        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         Quantity = NonZero(quantity, nameof(quantity));
         UnitCost = unitCost is null ? null : NonNegative(unitCost.Value, nameof(unitCost));
