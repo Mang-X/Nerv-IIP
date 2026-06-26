@@ -143,6 +143,27 @@ public sealed class ProductionVersion : Entity<ProductionVersionId>, IAggregateR
         AddDomainEvent(new ProductionVersionArchivedDomainEvent(this));
     }
 
+    public void SupersedeWith(ProductionVersion successor, DateOnly effectiveDate, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(successor);
+        EnsureNotArchived();
+        if (successor.Status != ProductionVersionStatus.Active || !string.Equals(successor.SkuCode, SkuCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Successor production version must be active for the same SKU.");
+        }
+
+        if (effectiveDate <= ValidFrom)
+        {
+            throw new ArgumentException("Supersede effective date must be after the superseded production version ValidFrom.", nameof(effectiveDate));
+        }
+
+        ValidTo = effectiveDate.AddDays(-1);
+        successor.ValidFrom = effectiveDate;
+        successor.Touch();
+        successor.AddDomainEvent(new ProductionVersionUpdatedDomainEvent(successor));
+        Archive(reason);
+    }
+
     public bool IsResolvableFor(DateOnly effectiveDate, decimal lotSize)
     {
         return Status == ProductionVersionStatus.Active &&

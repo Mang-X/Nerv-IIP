@@ -167,6 +167,23 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
     }
 
+    public void BindProductionVersion(string productionVersionId)
+    {
+        var normalizedProductionVersionId = DomainGuard.Required(productionVersionId, nameof(productionVersionId));
+        if (Status != CreatedStatus)
+        {
+            throw new InvalidOperationException("Only created work orders can be rebound to a production version.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ProductionVersionId) &&
+            !string.Equals(ProductionVersionId, normalizedProductionVersionId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Work order is already bound to a different production version.");
+        }
+
+        ProductionVersionId = normalizedProductionVersionId;
+    }
+
     private void ThrowIfCannotRelease()
     {
         if (Status == ReleasedStatus)
