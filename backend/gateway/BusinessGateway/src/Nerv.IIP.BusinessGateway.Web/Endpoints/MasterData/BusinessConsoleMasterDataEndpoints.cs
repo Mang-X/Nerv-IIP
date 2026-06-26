@@ -30,6 +30,40 @@ public sealed class ListBusinessConsoleMasterDataResourcesEndpoint(
 }
 
 [Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/device-assets")]
+[BusinessGatewayOperationId("listBusinessConsoleDeviceAssets")]
+public sealed class ListBusinessConsoleDeviceAssetsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListDeviceAssetsRequest, BusinessConsoleResourceListResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsoleListDeviceAssetsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListDeviceAssetsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceListResponse> ForwardAsync(
+        BusinessConsoleListDeviceAssetsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListResourcesAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleListResourcesRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "device-asset",
+                request.IncludeDisabled,
+                request.Skip,
+                request.Take,
+                LineCode: request.LineCode,
+                WorkCenterCode: request.WorkCenterCode,
+                Keyword: request.Keyword),
+            cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/skus")]
 [BusinessGatewayOperationId("listBusinessConsoleSkus")]
 public sealed class ListBusinessConsoleSkusEndpoint(

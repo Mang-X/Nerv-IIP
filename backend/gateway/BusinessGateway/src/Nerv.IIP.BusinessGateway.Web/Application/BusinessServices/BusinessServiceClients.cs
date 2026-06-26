@@ -244,9 +244,20 @@ public interface IBusinessQualityClient
         BusinessConsoleQualityListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateInspectionRecordResponse> CreateInspectionRecordAsync(
         string internalBearerToken,
         BusinessConsoleCreateInspectionRecordRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleOpenNcrFromInspectionRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
@@ -464,6 +475,12 @@ public interface IBusinessPlanningClient
     Task<BusinessConsoleDemandSourceResponse> CreateOrUpdateDemandSourceAsync(
         string internalBearerToken,
         BusinessConsoleCreateOrUpdateDemandSourceRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAcceptedResponse> CancelDemandSourceAsync(
+        string internalBearerToken,
+        string demandSourceId,
+        BusinessConsolePlanningDemandCancelRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
@@ -732,6 +749,16 @@ public interface IBusinessIndustrialTelemetryClient
     Task<BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse> CreateOrUpdateAlarmRuleAsync(
         string internalBearerToken,
         BusinessConsoleCreateOrUpdateTelemetryAlarmRuleRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordTelemetrySampleRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsolePostTelemetryAlarmResponse> PostAlarmAsync(
+        string internalBearerToken,
+        BusinessConsolePostTelemetryAlarmRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
@@ -2098,6 +2125,48 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             ToDownstreamRequest(request),
             cancellationToken);
 
+    public async Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamInspectionRecordListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/quality/inspection-records?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("result", request.Status),
+                ("skuCode", request.Keyword),
+                ("skip", request.Skip),
+                ("take", request.Take)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleQualityListResponse(
+            response.Items.Select(ToQualityItem).ToArray(),
+            response.Total);
+    }
+
+    public async Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleOpenNcrFromInspectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamOpenNcrFromInspectionResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/quality/inspection-records/{Uri.EscapeDataString(inspectionRecordId)}/failures/ncr",
+            new DownstreamOpenNcrFromInspectionRequest(
+                inspectionRecordId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DefectReason,
+                request.AttachmentFileIds),
+            cancellationToken);
+        return new BusinessConsoleOpenNcrFromInspectionResponse(FormatJsonScalar(response.NcrId));
+    }
+
     public async Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
         BusinessConsoleQualityListRequest request,
@@ -2256,11 +2325,33 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
             item.BatchNo,
             item.SerialNo);
 
+    private static BusinessConsoleQualityItem ToQualityItem(DownstreamInspectionRecordItem item) =>
+        new(
+            item.InspectionRecordId,
+            item.InspectionRecordId,
+            item.Result,
+            null,
+            item.SkuCode,
+            null,
+            null,
+            null,
+            null,
+            item.SourceType,
+            item.SourceDocumentId,
+            null,
+            item.DispositionReason,
+            item.BatchNo,
+            item.SerialNo);
+
     private static string QualityReasonPath(string reasonCode) =>
         $"/api/business/v1/quality/reason-codes/{Uri.EscapeDataString(reasonCode)}";
 
     private sealed record DownstreamInspectionPlanListResponse(
         IReadOnlyCollection<DownstreamInspectionPlanItem> Items,
+        int Total);
+
+    private sealed record DownstreamInspectionRecordListResponse(
+        IReadOnlyCollection<DownstreamInspectionRecordItem> Items,
         int Total);
 
     private static DownstreamCreateInspectionRecordRequest ToDownstreamRequest(
@@ -2338,6 +2429,16 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         int Version,
         string Status);
 
+    private sealed record DownstreamInspectionRecordItem(
+        string InspectionRecordId,
+        string SourceType,
+        string SourceDocumentId,
+        string SkuCode,
+        string Result,
+        string? BatchNo,
+        string? SerialNo,
+        string? DispositionReason);
+
     private sealed record DownstreamNcrListResponse(
         IReadOnlyCollection<DownstreamNcrItem> Items,
         int Total);
@@ -2372,6 +2473,22 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
         string? ReworkWorkOrderId,
         string? ScrapMovementId,
         string? ReturnDocumentId);
+
+    private sealed record DownstreamOpenNcrFromInspectionRequest(
+        string InspectionRecordId,
+        string OrganizationId,
+        string EnvironmentId,
+        string DefectReason,
+        IReadOnlyCollection<string>? AttachmentFileIds);
+
+    private sealed record DownstreamOpenNcrFromInspectionResponse(JsonElement NcrId);
+
+    private static string FormatJsonScalar(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Number => value.GetRawText(),
+        _ => value.ToString(),
+    };
 }
 
 public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
@@ -2814,6 +2931,21 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             request.DueDate);
     }
 
+    public async Task<BusinessConsoleAcceptedResponse> CancelDemandSourceAsync(
+        string internalBearerToken,
+        string demandSourceId,
+        BusinessConsolePlanningDemandCancelRequest request,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync<string>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/planning/demands/{Uri.EscapeDataString(demandSourceId)}/cancel?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+        return new BusinessConsoleAcceptedResponse(true);
+    }
+
     public async Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
         string internalBearerToken,
         BusinessConsoleRunMrpRequest request,
@@ -3160,6 +3292,36 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         return new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse(FormatJsonScalar(response.AlarmRuleId));
     }
 
+    public async Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordTelemetrySampleRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamRecordTelemetrySampleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/samples",
+            request,
+            cancellationToken);
+        return new BusinessConsoleRecordTelemetrySampleResponse(
+            FormatOptionalJsonScalar(response.TelemetrySummaryId),
+            FormatOptionalJsonScalar(response.DeviceStateSnapshotId));
+    }
+
+    public async Task<BusinessConsolePostTelemetryAlarmResponse> PostAlarmAsync(
+        string internalBearerToken,
+        BusinessConsolePostTelemetryAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamPostTelemetryAlarmResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/iiot/alarms",
+            request,
+            cancellationToken);
+        return new BusinessConsolePostTelemetryAlarmResponse(FormatJsonScalar(response.AlarmEventId));
+    }
+
     public async Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(
         string internalBearerToken,
         BusinessConsoleTelemetryAlarmListRequest request,
@@ -3316,6 +3478,11 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         _ => value.ToString(),
     };
 
+    private static string? FormatOptionalJsonScalar(JsonElement? value) =>
+        value is null || value.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+            ? null
+            : FormatJsonScalar(value.Value);
+
     private sealed record DownstreamListResponse<T>(IReadOnlyCollection<T> Items, int Total);
 
     private sealed record DownstreamAlarmEventListItem(
@@ -3356,6 +3523,12 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         DateTimeOffset UpdatedAtUtc);
 
     private sealed record DownstreamCreateOrUpdateAlarmRuleResponse(JsonElement AlarmRuleId);
+
+    private sealed record DownstreamRecordTelemetrySampleResponse(
+        JsonElement? TelemetrySummaryId,
+        JsonElement? DeviceStateSnapshotId);
+
+    private sealed record DownstreamPostTelemetryAlarmResponse(JsonElement AlarmEventId);
 }
 
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)

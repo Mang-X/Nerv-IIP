@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
@@ -46,6 +47,11 @@ public sealed record CreateOrUpdateDemandSourceRequest(
 public sealed record CreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
 public sealed record ListDemandSourcesRequest(string OrganizationId, string EnvironmentId);
+
+public sealed record CancelDemandSourceRequest(
+    [property: RouteParam] DemandSourceId DemandSourceId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
@@ -105,6 +111,22 @@ public sealed class ListDemandSourcesEndpoint(ISender sender)
     {
         var response = await sender.Send(new ListDemandSourcesQuery(req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelDemandSourceEndpoint(ISender sender)
+    : DemandPlanningEndpoint<CancelDemandSourceRequest, ResponseData<string>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<CancelDemandSourceEndpoint>());
+    }
+
+    public override async Task HandleAsync(CancelDemandSourceRequest req, CancellationToken ct)
+    {
+        var demandSourceId = Route<DemandSourceId>("demandSourceId") ?? req.DemandSourceId;
+        await sender.Send(new CancelDemandSourceCommand(req.OrganizationId, req.EnvironmentId, demandSourceId), ct);
+        await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
     }
 }
 
@@ -206,6 +228,7 @@ public static class DemandPlanningEndpointContracts
     [
         new(typeof(CreateOrUpdateDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdatePlanningDemand"),
         new(typeof(ListDemandSourcesEndpoint), "GET", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsRead, InternalServiceAuthorizationPolicy.Name, "listPlanningDemands"),
+        new(typeof(CancelDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands/{demandSourceId}/cancel", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "cancelPlanningDemand"),
         new(typeof(RunMrpEndpoint), "POST", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRun, InternalServiceAuthorizationPolicy.Name, "runPlanningMrp"),
         new(typeof(ListMrpRunsEndpoint), "GET", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningMrpRuns"),
         new(typeof(ListMrpPeggingEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/pegging", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMrpPegging"),

@@ -97,6 +97,58 @@ public sealed class CreateOrUpdateBusinessConsoleTelemetryAlarmRuleEndpoint(
 }
 
 [Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/samples")]
+[BusinessGatewayOperationId("recordBusinessConsoleTelemetrySample")]
+public sealed class RecordBusinessConsoleTelemetrySampleEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordTelemetrySampleRequest, BusinessConsoleRecordTelemetrySampleResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryWrite)
+{
+    protected override string OrganizationId(BusinessConsoleRecordTelemetrySampleRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRecordTelemetrySampleRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleRecordTelemetrySampleRequest request) => "device-asset";
+
+    protected override string? ResourceId(BusinessConsoleRecordTelemetrySampleRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleRecordTelemetrySampleResponse> ForwardAsync(
+        BusinessConsoleRecordTelemetrySampleRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.RecordSampleAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/alarms")]
+[BusinessGatewayOperationId("postBusinessConsoleTelemetryAlarm")]
+public sealed class PostBusinessConsoleTelemetryAlarmEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePostTelemetryAlarmRequest, BusinessConsolePostTelemetryAlarmResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotAlarmsWrite)
+{
+    protected override string OrganizationId(BusinessConsolePostTelemetryAlarmRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePostTelemetryAlarmRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsolePostTelemetryAlarmRequest request) => "device-asset";
+
+    protected override string? ResourceId(BusinessConsolePostTelemetryAlarmRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsolePostTelemetryAlarmResponse> ForwardAsync(
+        BusinessConsolePostTelemetryAlarmRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.PostAlarmAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
 [HttpGet("/api/business-console/v1/telemetry/alarms")]
 [BusinessGatewayOperationId("listBusinessConsoleTelemetryAlarms")]
 public sealed class ListBusinessConsoleTelemetryAlarmsEndpoint(
@@ -276,6 +328,40 @@ public sealed class BusinessConsoleTelemetryHistoryRequestValidator : Validator<
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ToUtc).GreaterThan(x => x.FromUtc).When(x => x.FromUtc is not null && x.ToUtc is not null);
+    }
+}
+
+public sealed class BusinessConsoleRecordTelemetrySampleRequestValidator
+    : Validator<BusinessConsoleRecordTelemetrySampleRequest>
+{
+    public BusinessConsoleRecordTelemetrySampleRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.BucketEndUtc).GreaterThan(x => x.BucketStartUtc);
+        RuleFor(x => x.SampleCount).GreaterThan(0);
+        RuleFor(x => x.SourceSequence).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.SourceSystem).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SourceConnector).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceState).MaximumLength(50);
+    }
+}
+
+public sealed class BusinessConsolePostTelemetryAlarmRequestValidator
+    : Validator<BusinessConsolePostTelemetryAlarmRequest>
+{
+    public BusinessConsolePostTelemetryAlarmRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.AlarmCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ExternalAlarmId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ClearedBy).MaximumLength(150);
+        RuleFor(x => x.ClearReason).MaximumLength(300);
     }
 }
 

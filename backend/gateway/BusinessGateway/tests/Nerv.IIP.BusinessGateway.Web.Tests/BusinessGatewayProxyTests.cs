@@ -52,6 +52,38 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task List_device_assets_uses_internal_service_token_and_exposes_device_asset_id()
+    {
+        var masterData = new RecordingMasterDataClient
+        {
+            Resources =
+            [
+                new BusinessConsoleResourceItem("device-asset", "DEV-000", "Pump", true, "v0", LineCode: "LINE-001", WorkCenterCode: "WC-001", DeviceAssetId: "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df8"),
+                new BusinessConsoleResourceItem("device-asset", "DEV-001", "Mixer", true, "v1", LineCode: "LINE-001", WorkCenterCode: "WC-001", DeviceAssetId: "018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9"),
+            ],
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/master-data/device-assets?organizationId=org-001&environmentId=env-dev&includeDisabled=true&lineCode=LINE-001&workCenterCode=WC-001&skip=1&take=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", masterData.LastInternalToken);
+        Assert.Equal(new BusinessConsoleListResourcesRequest("org-001", "env-dev", "device-asset", true, 1, 25, LineCode: "LINE-001", WorkCenterCode: "WC-001"), masterData.LastListResourcesRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var device = document.RootElement.GetProperty("data").GetProperty("resources")[0];
+        Assert.Equal("DEV-001", device.GetProperty("code").GetString());
+        Assert.Equal("018f4b87-9a0c-7a6b-9a3a-5fd5825c2df9", device.GetProperty("deviceAssetId").GetString());
+    }
+
+    [Fact]
     public async Task List_skus_does_not_call_downstream_when_iam_denies_permission()
     {
         var masterData = new RecordingMasterDataClient();
@@ -430,6 +462,44 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", quality.LastInternalToken);
         Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "open", Skip: 5, Take: 20), quality.LastNcrListRequest);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_record_list_and_ncr_from_inspection_use_internal_service_token()
+    {
+        var quality = new RecordingQualityClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/quality/inspection-records?organizationId=org-001&environmentId=env-dev&status=rejected&keyword=SKU-RM-1000&skip=2&take=25");
+        var openNcr = await client.PostAsJsonAsync("/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", new
+        {
+            inspectionRecordId = "ignored",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            defectReason = "Supplier certificate mismatch",
+            attachmentFileIds = new[] { "file-photo-001" },
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, openNcr.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal(new BusinessConsoleQualityListRequest("org-001", "env-dev", "rejected", "SKU-RM-1000", 2, 25), quality.LastInspectionRecordListRequest);
+        Assert.Equal("inspection-001", quality.LastOpenNcrInspectionRecordId);
+        Assert.Equal("inspection-001", quality.LastOpenNcrFromInspectionRequest!.InspectionRecordId);
+        Assert.Equal("org-001", quality.LastOpenNcrFromInspectionRequest.OrganizationId);
+        Assert.Equal("env-dev", quality.LastOpenNcrFromInspectionRequest.EnvironmentId);
+        Assert.Equal("Supplier certificate mismatch", quality.LastOpenNcrFromInspectionRequest.DefectReason);
+        Assert.Equal(["file-photo-001"], quality.LastOpenNcrFromInspectionRequest.AttachmentFileIds);
+        using var document = JsonDocument.Parse(await openNcr.Content.ReadAsStringAsync());
+        Assert.Equal("ncr-from-inspection-001", document.RootElement.GetProperty("data").GetProperty("ncrId").GetString());
     }
 
     [Fact]
@@ -862,6 +932,32 @@ public sealed class BusinessGatewayProxyTests
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.True(item.GetProperty("hasInputDegradation").GetBoolean());
         Assert.Equal("scheduled-receipts", item.GetProperty("inputDegradationSources")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Planning_demand_cancel_uses_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/planning/demands/demand-001/cancel?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal("demand-001", planning.LastCancelledDemandSourceId);
+        Assert.Equal(new BusinessConsolePlanningDemandCancelRequest("demand-001", "org-001", "env-dev"), planning.LastCancelDemandRequest);
     }
 
     [Fact]
@@ -1562,6 +1658,59 @@ public sealed class BusinessGatewayProxyTests
         var oee = oeeDocument.RootElement.GetProperty("data");
         Assert.True(oee.GetProperty("performanceRateEstimated").GetBoolean());
         Assert.True(oee.GetProperty("qualityRateEstimated").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Industrial_telemetry_sample_and_alarm_write_facades_use_internal_service_token()
+    {
+        var industrialTelemetry = new RecordingIndustrialTelemetryClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var sample = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/samples", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            tagKey = "temperature",
+            bucketStartUtc = "2026-06-01T08:00:00Z",
+            bucketEndUtc = "2026-06-01T08:01:00Z",
+            sampleCount = 3,
+            minValue = 90m,
+            maxValue = 95m,
+            averageValue = 92m,
+            sourceSequence = "seq-001",
+            sourceSystem = "manual-seed",
+            sourceConnector = "business-console",
+            deviceState = "running",
+            stateOccurredAtUtc = "2026-06-01T08:00:00Z",
+        });
+        var alarm = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/alarms", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            raisedAtUtc = "2026-06-01T08:02:00Z",
+            externalAlarmId = "alarm-001",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, sample.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, alarm.StatusCode);
+        Assert.Equal("internal-test-token", industrialTelemetry.LastInternalToken);
+        Assert.Equal("DEV-OIL-01", industrialTelemetry.LastTelemetrySampleRequest!.DeviceAssetId);
+        Assert.Equal("running", industrialTelemetry.LastTelemetrySampleRequest.DeviceState);
+        Assert.Equal("OIL_TEMP_HIGH", industrialTelemetry.LastPostAlarmRequest!.AlarmCode);
+        using var document = JsonDocument.Parse(await alarm.Content.ReadAsStringAsync());
+        Assert.Equal("alarm-event-001", document.RootElement.GetProperty("data").GetProperty("alarmEventId").GetString());
     }
 
     [Fact]
@@ -4487,6 +4636,12 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
 
     public BusinessConsoleQualityListRequest? LastNcrListRequest { get; private set; }
 
+    public BusinessConsoleQualityListRequest? LastInspectionRecordListRequest { get; private set; }
+
+    public string? LastOpenNcrInspectionRecordId { get; private set; }
+
+    public BusinessConsoleOpenNcrFromInspectionRequest? LastOpenNcrFromInspectionRequest { get; private set; }
+
     public BusinessConsoleQualityReasonListRequest? LastQualityReasonListRequest { get; private set; }
 
     public BusinessConsoleQualityReasonRequest? LastQualityReasonRequest { get; private set; }
@@ -4510,6 +4665,47 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient
         BusinessConsoleCreateInspectionRecordRequest request,
         CancellationToken cancellationToken) =>
         Task.FromResult(new BusinessConsoleCreateInspectionRecordResponse("inspection-001"));
+
+    public Task<BusinessConsoleQualityListResponse> ListInspectionRecordsAsync(
+        string internalBearerToken,
+        BusinessConsoleQualityListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastInspectionRecordListRequest = request;
+        return Task.FromResult(new BusinessConsoleQualityListResponse(
+            [
+                new BusinessConsoleQualityItem(
+                    "inspection-001",
+                    "inspection-001",
+                    "rejected",
+                    null,
+                    "SKU-RM-1000",
+                    null,
+                    null,
+                    null,
+                    null,
+                    "work-order",
+                    "WO-001",
+                    null,
+                    "surface defect",
+                    "LOT-001",
+                    null),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleOpenNcrFromInspectionResponse> OpenNcrFromInspectionAsync(
+        string internalBearerToken,
+        string inspectionRecordId,
+        BusinessConsoleOpenNcrFromInspectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastOpenNcrInspectionRecordId = inspectionRecordId;
+        LastOpenNcrFromInspectionRequest = request;
+        return Task.FromResult(new BusinessConsoleOpenNcrFromInspectionResponse("ncr-from-inspection-001"));
+    }
 
     public Task<BusinessConsoleQualityListResponse> ListNcrsAsync(
         string internalBearerToken,
@@ -4974,6 +5170,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleRunMrpRequest? LastRunMrpRequest { get; private set; }
 
+    public string? LastCancelledDemandSourceId { get; private set; }
+
+    public BusinessConsolePlanningDemandCancelRequest? LastCancelDemandRequest { get; private set; }
+
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
         BusinessConsolePlanningContextRequest request,
@@ -4998,6 +5198,18 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
             request.SiteCode,
             request.Quantity,
             request.DueDate));
+    }
+
+    public Task<BusinessConsoleAcceptedResponse> CancelDemandSourceAsync(
+        string internalBearerToken,
+        string demandSourceId,
+        BusinessConsolePlanningDemandCancelRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCancelledDemandSourceId = demandSourceId;
+        LastCancelDemandRequest = request;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }
 
     public Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
@@ -5698,6 +5910,10 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
 
     public BusinessConsoleTelemetryOeeRequest? LastOeeRequest { get; private set; }
 
+    public BusinessConsoleRecordTelemetrySampleRequest? LastTelemetrySampleRequest { get; private set; }
+
+    public BusinessConsolePostTelemetryAlarmRequest? LastPostAlarmRequest { get; private set; }
+
     public EquipmentRuntimeAvailabilityResponse? RuntimeAvailabilityResponse { get; init; }
 
     public EquipmentRuntimeAvailabilityResponse? DeviceRuntimeAvailabilityResponse { get; init; }
@@ -5729,6 +5945,26 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         LastInternalToken = internalBearerToken;
         LastAlarmRuleUpsertRequest = request;
         return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryAlarmRuleResponse("rule-001"));
+    }
+
+    public Task<BusinessConsoleRecordTelemetrySampleResponse> RecordSampleAsync(
+        string internalBearerToken,
+        BusinessConsoleRecordTelemetrySampleRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastTelemetrySampleRequest = request;
+        return Task.FromResult(new BusinessConsoleRecordTelemetrySampleResponse("summary-001", "state-001"));
+    }
+
+    public Task<BusinessConsolePostTelemetryAlarmResponse> PostAlarmAsync(
+        string internalBearerToken,
+        BusinessConsolePostTelemetryAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPostAlarmRequest = request;
+        return Task.FromResult(new BusinessConsolePostTelemetryAlarmResponse("alarm-event-001"));
     }
 
     public Task<BusinessConsoleTelemetryAlarmEventListResponse> ListAlarmsAsync(

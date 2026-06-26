@@ -52,6 +52,40 @@ public sealed class CreateOrUpdateBusinessConsolePlanningDemandEndpoint(
 }
 
 [Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/demands/{demandSourceId}/cancel")]
+[BusinessGatewayOperationId("cancelBusinessConsolePlanningDemand")]
+public sealed class CancelBusinessConsolePlanningDemandEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsolePlanningDemandCancelRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.PlanningDemandsManage)
+{
+    protected override string OrganizationId(BusinessConsolePlanningDemandCancelRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsolePlanningDemandCancelRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsolePlanningDemandCancelRequest request) => "planning-demand";
+
+    protected override string? ResourceId(BusinessConsolePlanningDemandCancelRequest request) =>
+        Route<string>("demandSourceId") ?? request.DemandSourceId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsolePlanningDemandCancelRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var demandSourceId = Route<string>("demandSourceId") ?? request.DemandSourceId;
+        return planning.CancelDemandSourceAsync(
+            tokenProvider.BearerToken,
+            demandSourceId,
+            request with { DemandSourceId = demandSourceId },
+            cancellationToken);
+    }
+}
+
+[Tags("Business Console Planning")]
 [HttpPost("/api/business-console/v1/planning/mrp-runs")]
 [BusinessGatewayOperationId("runBusinessConsolePlanningMrp")]
 public sealed class RunBusinessConsolePlanningMrpEndpoint(
@@ -198,6 +232,17 @@ public sealed class BusinessConsoleRunMrpRequestValidator : Validator<BusinessCo
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.HorizonEnd).GreaterThanOrEqualTo(x => x.HorizonStart);
+    }
+}
+
+public sealed class BusinessConsolePlanningDemandCancelRequestValidator
+    : Validator<BusinessConsolePlanningDemandCancelRequest>
+{
+    public BusinessConsolePlanningDemandCancelRequestValidator()
+    {
+        RuleFor(x => x.DemandSourceId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }
 
