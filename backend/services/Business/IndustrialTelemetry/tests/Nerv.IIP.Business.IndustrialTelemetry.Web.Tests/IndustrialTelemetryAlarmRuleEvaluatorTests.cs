@@ -159,6 +159,24 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
         Assert.Contains(alarm.GetDomainEvents(), x => x is AlarmClearedDomainEvent);
     }
 
+    [Fact]
+    public async Task RecordTelemetrySample_ignores_late_return_to_normal_bucket_before_active_alarm()
+    {
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_ignores_late_return_to_normal_bucket_before_active_alarm));
+        dbContext.AlarmRules.Add(AlarmRule.Configure("org-001", "env-dev", "DEV-PUMP-06", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", ">=", 90m, "celsius", true));
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        var alarmBucketEndUtc = new DateTimeOffset(2026, 6, 1, 8, 10, 0, TimeSpan.Zero);
+
+        await handler.Handle(CreateSample("DEV-PUMP-06", alarmBucketEndUtc, 95m, "sample-006-1"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-06", alarmBucketEndUtc.AddMinutes(-5), 80m, "sample-006-late-normal"), CancellationToken.None);
+
+        var alarm = Assert.Single(dbContext.AlarmEvents);
+        Assert.Equal("raised", alarm.Status);
+        Assert.Null(alarm.ClearedAtUtc);
+    }
+
     private static RecordTelemetrySampleCommand CreateSample(
         string deviceAssetId,
         DateTimeOffset bucketEndUtc,

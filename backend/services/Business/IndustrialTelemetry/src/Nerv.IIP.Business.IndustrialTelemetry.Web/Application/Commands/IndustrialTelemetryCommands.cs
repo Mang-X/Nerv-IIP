@@ -319,7 +319,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
                 foreach (var duplicate in ruleActiveAlarms.Skip(1))
                 {
-                    duplicate.Clear(request.BucketEndUtc, "system:industrial-telemetry", "duplicate-rule-alarm-suppressed");
+                    TryClearRuleAlarm(duplicate, request.BucketEndUtc, "duplicate-rule-alarm-suppressed");
                 }
 
                 continue;
@@ -327,7 +327,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
             foreach (var activeAlarm in ruleActiveAlarms)
             {
-                activeAlarm.Clear(request.BucketEndUtc, "system:industrial-telemetry", "return-to-normal");
+                TryClearRuleAlarm(activeAlarm, request.BucketEndUtc, "return-to-normal");
             }
         }
     }
@@ -341,6 +341,16 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
     {
         return string.Equals(alarm.ExternalAlarmId, ruleCode, StringComparison.Ordinal)
             || alarm.ExternalAlarmId.StartsWith($"{ruleCode}:", StringComparison.Ordinal);
+    }
+
+    private static void TryClearRuleAlarm(AlarmEvent alarm, DateTimeOffset clearedAtUtc, string clearReason)
+    {
+        if (clearedAtUtc < alarm.RaisedAtUtc)
+        {
+            return;
+        }
+
+        alarm.Clear(clearedAtUtc, "system:industrial-telemetry", clearReason);
     }
 }
 
