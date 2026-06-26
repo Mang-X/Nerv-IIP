@@ -77,7 +77,9 @@ public static class BusinessGatewayPermissions
     public const string SchedulingPlansManage = "business.scheduling.plans.manage";
     public const string SchedulingPlansRelease = "business.scheduling.plans.release";
     public const string IiotTelemetryRead = "business.iiot.telemetry.read";
+    public const string IiotTelemetryWrite = "business.iiot.telemetry.write";
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
+    public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";

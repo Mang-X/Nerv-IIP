@@ -29,9 +29,10 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var contracts = DemandPlanningEndpointContracts.All.ToArray();
 
-        Assert.Equal(7, contracts.Length);
+        Assert.Equal(8, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/demands" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createOrUpdatePlanningDemand");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/demands" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningDemands");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/demands/{demandSourceId}/cancel" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "cancelPlanningDemand");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mrp-runs" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRun && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "runPlanningMrp");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMrpRuns");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mrp-runs/{runId}/pegging" && x.PermissionCode == DemandPlanningPermissionCodes.MrpRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getPlanningMrpPegging");
@@ -42,6 +43,7 @@ public sealed class DemandPlanningEndpointContractTests
     [Theory]
     [InlineData(typeof(CreateOrUpdateDemandSourceEndpoint))]
     [InlineData(typeof(ListDemandSourcesEndpoint))]
+    [InlineData(typeof(CancelDemandSourceEndpoint))]
     [InlineData(typeof(RunMrpEndpoint))]
     [InlineData(typeof(ListMrpRunsEndpoint))]
     [InlineData(typeof(ListMrpPeggingEndpoint))]
@@ -70,6 +72,25 @@ public sealed class DemandPlanningEndpointContractTests
         var demand = Assert.Single(demands);
         Assert.Equal("DEMAND-001", demand.SourceReference);
         Assert.Equal(10m, demand.Quantity);
+    }
+
+    [Fact]
+    public async Task Cancel_demand_source_command_removes_source_from_planning_input()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var id = await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(NewDemandCommand(), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CancelDemandSourceCommandHandler(dbContext).Handle(
+            new CancelDemandSourceCommand("org-001", "env-dev", id),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var demands = await new ListDemandSourcesQueryHandler(dbContext)
+            .Handle(new ListDemandSourcesQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Empty(demands);
     }
 
     [Fact]
