@@ -37,7 +37,7 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
         Assert.Equal("TEMP_HIGH", alarm.AlarmCode);
         Assert.Equal("warning", alarm.Severity);
         Assert.Equal(bucketEndUtc, alarm.RaisedAtUtc);
-        Assert.Equal("TEMP_RULE:2026-06-01T08:05:00.0000000+00:00", alarm.ExternalAlarmId);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
         Assert.IsType<AlarmRaisedDomainEvent>(alarm.GetDomainEvents().Single());
     }
 
@@ -69,9 +69,9 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
     }
 
     [Fact]
-    public async Task RecordTelemetrySample_uses_rule_and_bucket_external_alarm_id_for_idempotency()
+    public async Task RecordTelemetrySample_uses_rule_external_alarm_id_for_idempotency()
     {
-        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_uses_rule_and_bucket_external_alarm_id_for_idempotency));
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_uses_rule_external_alarm_id_for_idempotency));
         dbContext.AlarmRules.Add(AlarmRule.Configure("org-001", "env-dev", "DEV-PUMP-03", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", ">=", 90m, "celsius", true));
         await dbContext.SaveChangesAsync();
 
@@ -96,13 +96,13 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
         await dbContext.SaveChangesAsync();
 
         var alarm = Assert.Single(dbContext.AlarmEvents);
-        Assert.Equal("TEMP_RULE:2026-06-01T08:15:00.0000000+00:00", alarm.ExternalAlarmId);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
     }
 
     [Fact]
-    public async Task RecordTelemetrySample_keeps_rule_bucket_idempotency_when_rule_definition_changes_after_alarm_was_raised()
+    public async Task RecordTelemetrySample_keeps_rule_alarm_idempotency_when_rule_definition_changes_after_alarm_was_raised()
     {
-        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_keeps_rule_bucket_idempotency_when_rule_definition_changes_after_alarm_was_raised));
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_keeps_rule_alarm_idempotency_when_rule_definition_changes_after_alarm_was_raised));
         var rule = AlarmRule.Configure("org-001", "env-dev", "DEV-PUMP-04", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", ">=", 90m, "celsius", true);
         dbContext.AlarmRules.Add(rule);
         await dbContext.SaveChangesAsync();
@@ -132,7 +132,51 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
         var alarm = Assert.Single(dbContext.AlarmEvents);
         Assert.Equal("TEMP_HIGH", alarm.AlarmCode);
         Assert.Equal("warning", alarm.Severity);
-        Assert.Equal("TEMP_RULE:2026-06-01T08:20:00.0000000+00:00", alarm.ExternalAlarmId);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
+    }
+
+    [Fact]
+    public async Task RecordTelemetrySample_keeps_one_active_rule_alarm_until_return_to_normal()
+    {
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_keeps_one_active_rule_alarm_until_return_to_normal));
+        dbContext.AlarmRules.Add(AlarmRule.Configure("org-001", "env-dev", "DEV-PUMP-05", "TEMP_RULE", "TEMP_HIGH", "warning", "temperature", ">=", 90m, "celsius", true));
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        var firstBucketEndUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+
+        await handler.Handle(CreateSample("DEV-PUMP-05", firstBucketEndUtc, 95m, "sample-005-1"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-05", firstBucketEndUtc.AddMinutes(1), 96m, "sample-005-2"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-05", firstBucketEndUtc.AddMinutes(2), 80m, "sample-005-3"), CancellationToken.None);
+
+        var alarm = Assert.Single(dbContext.AlarmEvents);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
+        Assert.Equal("cleared", alarm.Status);
+        Assert.Equal(firstBucketEndUtc.AddMinutes(2), alarm.ClearedAtUtc);
+        Assert.Equal("system:industrial-telemetry", alarm.ClearedBy);
+        Assert.Equal("return-to-normal", alarm.ClearReason);
+        Assert.Contains(alarm.GetDomainEvents(), x => x is AlarmClearedDomainEvent);
+    }
+
+    private static RecordTelemetrySampleCommand CreateSample(
+        string deviceAssetId,
+        DateTimeOffset bucketEndUtc,
+        decimal maxValue,
+        string sourceSequence)
+    {
+        return new RecordTelemetrySampleCommand(
+            "org-001",
+            "env-dev",
+            deviceAssetId,
+            "temperature",
+            bucketEndUtc.AddMinutes(-1),
+            bucketEndUtc,
+            10,
+            70m,
+            maxValue,
+            80m,
+            sourceSequence);
     }
 
     private static ApplicationDbContext CreateDbContext(string databaseName)
