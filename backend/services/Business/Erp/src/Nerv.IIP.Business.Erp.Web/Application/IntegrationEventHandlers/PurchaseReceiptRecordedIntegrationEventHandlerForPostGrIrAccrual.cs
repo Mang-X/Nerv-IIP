@@ -4,7 +4,6 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
-using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -14,15 +13,12 @@ using NetCorePal.Extensions.DistributedTransactions;
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
-public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable(
+public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore,
-    ErpCodingService codingService)
+    IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<PurchaseReceiptRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-erp.purchase-receipt-ap-accrual";
-    // PurchaseOrder has no currency snapshot yet; keep the existing ERP finance default until that source fact exists.
-    private const string DefaultReceiptAccrualCurrencyCode = "CNY";
 
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName,
@@ -113,29 +109,20 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccou
             return;
         }
 
-        if (await dbContext.AccountPayables.AnyAsync(x =>
+        var voucherNo = FinanceVoucherFactory.GoodsReceiptIrAccrualVoucherNo(receipt.PurchaseReceiptNo);
+        if (await dbContext.JournalVouchers.AnyAsync(x =>
             x.OrganizationId == receipt.OrganizationId
             && x.EnvironmentId == receipt.EnvironmentId
-            && x.SourceDocumentNo == receipt.PurchaseReceiptNo,
+            && x.VoucherNo == voucherNo,
             cancellationToken))
         {
             return;
         }
 
-        await new CreateAccountPayableCommandHandler(dbContext, codingService).Handle(
-            new CreateAccountPayableCommand(
-                receipt.OrganizationId,
-                receipt.EnvironmentId,
-                null,
-                receipt.PurchaseReceiptNo,
-                receipt.SupplierCode,
-                amount,
-                DefaultReceiptAccrualCurrencyCode,
-                DateOnly.FromDateTime(receipt.RecordedAtUtc),
-                null,
-                "RECEIPT-ACCRUAL",
-                $"{integrationEvent.IdempotencyKey}:account-payable"),
-            cancellationToken);
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForGoodsReceiptIrAccrual(
+            receipt,
+            amount,
+            voucherNo));
     }
 
     private static ReceiptAccrualDecision TryCalculateReceiptAmount(

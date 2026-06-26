@@ -36,7 +36,7 @@ public sealed class StockLedger : Entity<StockLedgerId>, IAggregateRoot
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
         QualityStatus = StockQualityStatus.Normalize(qualityStatus);
-        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         UpdatedAtUtc = DateTime.UtcNow;
     }

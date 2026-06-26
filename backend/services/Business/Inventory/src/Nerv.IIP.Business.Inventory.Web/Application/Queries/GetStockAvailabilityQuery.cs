@@ -72,7 +72,7 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
     public async Task<StockAvailabilityResponse> Handle(GetStockAvailabilityQuery request, CancellationToken cancellationToken)
     {
         var qualityStatus = NormalizeQualityStatus(request.QualityStatus);
-        var ownerType = Normalize(request.OwnerType);
+        var ownerType = NormalizeOwnerType(request.OwnerType);
         var query = dbContext.StockLedgers
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -156,13 +156,13 @@ public sealed class GetStockAvailabilityQueryHandler(ApplicationDbContext dbCont
             items);
     }
 
-    private static string? Normalize(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
-    }
-
     private static string? NormalizeQualityStatus(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : StockQualityStatus.Normalize(value);
+    }
+
+    private static string? NormalizeOwnerType(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : StockOwnerType.Normalize(value);
     }
 }
