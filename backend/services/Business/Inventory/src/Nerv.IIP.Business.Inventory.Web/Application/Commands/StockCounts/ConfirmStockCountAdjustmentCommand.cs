@@ -73,7 +73,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
         {
             throw new KnownException(exception.Message);
         }
-        catch (InventoryDomainException exception) when (IsReservedStockGuard(exception))
+        catch (InventoryDomainException exception) when (IsCommittedStockGuard(exception))
         {
             throw new KnownException(exception.Message);
         }
@@ -84,7 +84,7 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
         return new ConfirmStockCountAdjustmentResult(movement.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity);
     }
 
-    private static bool IsReservedStockGuard(InventoryDomainException exception)
+    private static bool IsCommittedStockGuard(InventoryDomainException exception)
     {
         return exception.Reason == InventoryDomainFailureReason.CommittedStockProtection;
     }
