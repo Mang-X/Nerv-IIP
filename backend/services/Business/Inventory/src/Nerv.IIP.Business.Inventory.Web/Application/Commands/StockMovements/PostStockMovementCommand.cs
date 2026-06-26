@@ -57,28 +57,13 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
 public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
-    private static readonly HashSet<string> ExternalMovementTypes =
-    [
+    private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
         "inbound",
         "outbound",
         "transfer",
         "adjustment",
-    ];
-
-    private static readonly IReadOnlyDictionary<string, string> OwnerTypeAliases =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["company"] = "company",
-            ["internal"] = "company",
-            ["own"] = "company",
-            ["owned"] = "company",
-            ["customer"] = "customer",
-            ["supplier"] = "supplier",
-            ["vendor"] = "supplier",
-            ["production"] = "production",
-            ["manufacturing"] = "production",
-            ["maintenance"] = "maintenance",
-        };
+    };
 
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
@@ -236,12 +221,17 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     private static string NormalizeOwnerTypeOrReject(string ownerType)
     {
-        var normalized = NormalizeRequired(ownerType, nameof(ownerType));
-        return OwnerTypeAliases.TryGetValue(normalized, out var canonical)
-            ? canonical
-            : throw new InventoryPostingRejectedException(
+        try
+        {
+            return StockOwnerType.Normalize(ownerType);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InventoryPostingRejectedException(
                 InventoryPostingFailureCodes.PostingRejected,
-                $"Owner type '{ownerType}' is not supported for stock movement posting.");
+                exception.Message,
+                exception);
+        }
     }
 
     private static string NormalizeRequired(string value, string parameterName)

@@ -151,6 +151,64 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Availability_query_normalizes_owner_type_aliases_before_filtering()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            18m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetStockAvailabilityQueryHandler(dbContext).Handle(new GetStockAvailabilityQuery(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "vendor",
+            "owner-001"), CancellationToken.None);
+
+        Assert.Equal("supplier", response.OwnerType);
+        Assert.Equal(18m, response.OnHandQuantity);
+        Assert.Single(response.Items);
+        Assert.Equal("supplier", response.Items.Single().OwnerType);
+    }
+
+    [Fact]
     public async Task Reserve_stock_command_reduces_available_quantity_and_is_idempotent()
     {
         await using var provider = CreateInMemoryProvider();
@@ -187,6 +245,72 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(6m, duplicate.AvailableQuantity);
         Assert.Equal(4m, dbContext.StockLedgers.Single().ReservedQuantity);
         Assert.Single(dbContext.StockReservations);
+    }
+
+    [Fact]
+    public async Task Reserve_stock_command_normalizes_owner_type_aliases_before_ledger_lookup()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-reserve-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ReserveStockCommandHandler(dbContext).Handle(
+            new ReserveStockCommand(
+                "org-001",
+                "env-dev",
+                "mes",
+                "WO-ALIAS-001",
+                "LINE-001",
+                "idem-reserve-alias-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "vendor",
+                "owner-001",
+                4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(4m, result.ReservedQuantity);
+        Assert.Equal(6m, result.AvailableQuantity);
+        Assert.Equal("supplier", dbContext.StockReservations.Single().OwnerType);
+        Assert.Equal(4m, ledger.ReservedQuantity);
     }
 
     [Fact]
@@ -421,6 +545,48 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Status_transfer_normalizes_owner_type_aliases_before_ledger_lookup_and_target_creation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "qualified",
+                "blocked",
+                "inventory",
+                "BLK-ALIAS-001",
+                null,
+                "idem-status-owner-alias-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "internal",
+                "owner-001",
+                2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked");
+        Assert.Equal(8m, result.SourceOnHandQuantity);
+        Assert.Equal(2m, result.TargetOnHandQuantity);
+        Assert.Equal("company", source.OwnerType);
+        Assert.Equal("company", target.OwnerType);
+        Assert.All(dbContext.StockMovements, movement => Assert.Equal("company", movement.OwnerType));
+    }
+
+    [Fact]
     public async Task Status_transfer_returns_known_exception_when_source_ledger_is_frozen_for_count()
     {
         await using var provider = CreateInMemoryProvider();
@@ -497,6 +663,68 @@ public sealed class InventoryEndpointContractTests
                 CancellationToken.None));
 
         Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_count_task_command_normalizes_owner_type_aliases_before_ledger_lookup()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-count-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-ALIAS-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "vendor",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var task = Assert.Single(dbContext.StockCountTasks);
+        Assert.Equal(ledger.LedgerVersion, result.ExpectedLedgerVersion);
+        Assert.Equal("supplier", task.OwnerType);
+        Assert.True(ledger.IsFrozenForCount);
     }
 
     [Fact]

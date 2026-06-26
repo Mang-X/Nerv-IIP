@@ -61,6 +61,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
     {
         var sourceStatus = StockQualityStatus.Normalize(request.SourceQualityStatus);
         var targetStatus = StockQualityStatus.Normalize(request.TargetQualityStatus);
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
         if (sourceStatus == targetStatus)
         {
             throw new KnownException("Source and target stock status must be different.");
@@ -102,11 +103,11 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.SiteCode,
             request.LocationCode,
             request.LotNo,
-            request.SerialNo,
-            sourceStatus,
-            request.OwnerType,
-            request.OwnerId,
-            -request.Quantity);
+                request.SerialNo,
+                sourceStatus,
+                ownerType,
+                request.OwnerId,
+                -request.Quantity);
         try
         {
             source.ApplyMovement(outbound);
@@ -131,7 +132,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 request.LotNo,
                 request.SerialNo,
                 targetStatus,
-                request.OwnerType,
+                ownerType,
                 request.OwnerId);
             dbContext.StockLedgers.Add(target);
         }
@@ -151,7 +152,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.LotNo,
             request.SerialNo,
             targetStatus,
-            request.OwnerType,
+            ownerType,
             request.OwnerId,
             request.Quantity,
             transferUnitCost);
@@ -182,7 +183,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 
     private Task<StockLedger?> FindLedgerAsync(PostStockStatusTransferCommand request, string qualityStatus, CancellationToken cancellationToken)
     {
-        var ownerType = request.OwnerType.ToLowerInvariant();
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
         return dbContext.StockLedgers.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
