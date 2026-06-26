@@ -1,3 +1,4 @@
+using System.Net;
 using FastEndpoints;
 using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -194,10 +195,20 @@ public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var authorization = AuthorizationResult
+            ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+        var actorRef = authorization.PrincipalId ?? authorization.LoginName;
+        if (string.IsNullOrWhiteSpace(actorRef))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+        }
+
         var downstreamRequest = request with
         {
             ChainId = Route<string>("chainId") ?? request.ChainId,
             StepNo = Route<int>("stepNo"),
+            ActorType = string.IsNullOrWhiteSpace(authorization.PrincipalType) ? "user" : authorization.PrincipalType,
+            ActorRef = actorRef,
         };
         return approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
     }

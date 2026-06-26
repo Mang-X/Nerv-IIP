@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 
@@ -20,17 +21,46 @@ public sealed class SubmitNonconformanceReportDispositionCommandValidator : Abst
     }
 }
 
-public sealed class SubmitNonconformanceReportDispositionCommandHandler(INonconformanceReportRepository repository)
+public sealed class SubmitNonconformanceReportDispositionCommandHandler(
+    INonconformanceReportRepository repository,
+    IApprovalChainStatusClient approvalChainStatusClient)
     : ICommandHandler<SubmitNonconformanceReportDispositionCommand>
 {
     public async Task Handle(SubmitNonconformanceReportDispositionCommand request, CancellationToken cancellationToken)
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+        if (RequiresCentralApproval(request.DispositionType))
+        {
+            if (string.IsNullOrWhiteSpace(request.DispositionApprovalChainId))
+            {
+                throw new KnownException("NCR disposition requires an approved central approval chain.");
+            }
+
+            var isApproved = await approvalChainStatusClient.IsApprovedForNcrDispositionAsync(
+                request.DispositionApprovalChainId,
+                ncr.OrganizationId,
+                ncr.EnvironmentId,
+                ncr.NcrCode,
+                cancellationToken);
+            if (!isApproved)
+            {
+                throw new KnownException("NCR disposition approval chain is not approved.");
+            }
+        }
+
         ncr.SubmitDisposition(
             request.DispositionType,
             request.DispositionApprovalChainId,
             request.AttachmentFileIds,
             request.MrbReviews);
+    }
+
+    private static bool RequiresCentralApproval(string dispositionType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(dispositionType)
+            ? string.Empty
+            : dispositionType.Trim().ToLowerInvariant();
+        return normalized is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
     }
 }

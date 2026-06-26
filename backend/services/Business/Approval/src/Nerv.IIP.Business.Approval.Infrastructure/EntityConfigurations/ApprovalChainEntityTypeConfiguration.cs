@@ -19,6 +19,7 @@ public sealed class ApprovalChainEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.StartedAtUtc).HasColumnName("started_at_utc").IsRequired().HasComment("UTC time when the chain started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when the chain reached a terminal result.");
         builder.Property(x => x.RoundNo).HasColumnName("round_no").IsRequired().HasComment("Current submission round number; increments when a returned or withdrawn chain is resubmitted.");
+        builder.Property(x => x.RowVersion).HasColumnName("row_version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token for approval chain decisions and runtime step changes.");
         builder.OwnsOne(x => x.DocumentReference, document =>
         {
             document.Property(x => x.SourceService).HasColumnName("source_service").IsRequired().HasMaxLength(100).HasComment("Source business service that owns the document.");

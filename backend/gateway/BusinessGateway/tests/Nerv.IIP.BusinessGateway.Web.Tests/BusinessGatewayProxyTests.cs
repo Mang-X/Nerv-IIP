@@ -1147,6 +1147,42 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
+    {
+        var approval = new RecordingApprovalClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessApprovalClient>();
+            services.AddSingleton<IBusinessApprovalClient>(approval);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/approval/chains/chain-001/steps/1/resolve",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                chainId = "chain-spoofed",
+                stepNo = 99,
+                actorType = "user",
+                actorRef = "u-victim",
+                decision = "approve",
+                comment = "ok",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal("chain-001", approval.LastResolveStepRequest?.ChainId);
+        Assert.Equal(1, approval.LastResolveStepRequest?.StepNo);
+        Assert.Equal("user", approval.LastResolveStepRequest?.ActorType);
+        Assert.Equal("user-admin", approval.LastResolveStepRequest?.ActorRef);
+    }
+
+    [Fact]
     public async Task Barcode_facade_uses_internal_service_token_for_print_and_scan_actions()
     {
         var barcode = new RecordingBarcodeLabelClient();

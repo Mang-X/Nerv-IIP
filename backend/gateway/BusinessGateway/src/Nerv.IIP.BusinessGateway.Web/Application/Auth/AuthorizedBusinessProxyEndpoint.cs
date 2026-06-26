@@ -52,6 +52,11 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
 
     protected virtual string? ResourceId(TRequest request) => null;
 
+    protected BusinessGatewayAuthorizationResult? AuthorizationResult =>
+        HttpContext.Items.TryGetValue(BusinessGatewayAuthorization.PrincipalItemKey, out var value)
+            ? value as BusinessGatewayAuthorizationResult
+            : null;
+
     protected abstract string OrganizationId(TRequest request);
 
     protected abstract string EnvironmentId(TRequest request);
