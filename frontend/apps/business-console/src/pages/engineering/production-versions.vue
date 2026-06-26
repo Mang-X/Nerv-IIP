@@ -29,7 +29,6 @@ import {
   CardProTitle,
   CheckboxPro,
   DataTablePro,
-  DataTablePaginationPro,
   DatePickerPro,
   DialogPro,
   DialogProContent,
@@ -560,7 +559,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="productionVersionsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="productionVersions"
       row-key="productionVersionId"
@@ -617,12 +622,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="productionVersionsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <AlertDialogPro v-model:open="archiveOpen">
       <AlertDialogProContent>

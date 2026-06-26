@@ -13,7 +13,6 @@ import {
   AlertDialogProHeader,
   AlertDialogProTitle,
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -257,7 +256,13 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="inboundOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="inboundOrders"
       :row-key="rowKey"
@@ -281,12 +286,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="inboundOrdersTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <AlertDialogPro v-model:open="completeOpen">
       <AlertDialogProContent>

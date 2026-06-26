@@ -14,7 +14,6 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -573,7 +572,13 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="totalItems"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedRows"
@@ -595,6 +600,5 @@ function isNonEmpty(value: string) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="totalItems" @update:page-size="(v) => (pageSize = String(v))" />
   </BusinessLayout>
 </template>

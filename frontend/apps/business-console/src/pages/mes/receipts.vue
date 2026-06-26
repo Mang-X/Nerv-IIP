@@ -9,7 +9,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -237,7 +236,13 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="receiptRequestsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="receiptRequests"
       row-key="receiptRequestId"
@@ -281,12 +286,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="receiptRequestsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <DialogPro v-model:open="receiptSheetOpen">
       <DialogProContent>

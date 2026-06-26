@@ -19,7 +19,6 @@ import {
   AlertDialogProTitle,
   AlertDialogProTrigger,
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DropdownMenuProItem,
   FieldPro,
@@ -236,7 +235,13 @@ watch(targetNcr, (ncr) => {
       未找到 NCR {{ targetNcrId }}。请确认该 NCR 是否已归档或无权访问。
     </p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="ncrsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="ncrs"
       :row-key="(r) => r.id ?? r.code ?? '无'"
@@ -256,12 +261,6 @@ watch(targetNcr, (ncr) => {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="ncrsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <SheetPro v-model:open="detailOpen">
       <SheetProContent class="w-full overflow-y-auto sm:max-w-xl">

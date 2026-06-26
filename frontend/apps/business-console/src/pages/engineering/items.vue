@@ -10,7 +10,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -318,7 +317,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="itemsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="items"
       :row-key="(r) => `${r.itemCode}:${r.revision}`"
@@ -338,12 +343,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="itemsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <SheetPro v-model:open="viewOpen">
       <SheetProContent class="sm:max-w-md">

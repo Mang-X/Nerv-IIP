@@ -6,7 +6,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   PageHeader,
   SectionCard,
@@ -94,7 +93,13 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="qualityItemsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="qualityItems"
       row-key="qualityItemId"
@@ -126,11 +131,5 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="qualityItemsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
   </BusinessLayout>
 </template>

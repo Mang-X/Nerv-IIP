@@ -10,7 +10,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -278,7 +277,13 @@ function isPresent(value: string | undefined | null): value is string {
       未找到检验方案 {{ targetInspectionPlanId }}。请确认该方案是否已归档或无权访问。
     </p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="inspectionPlansTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="inspectionPlans"
       :row-key="(r) => r.id ?? r.code ?? '无'"
@@ -301,12 +306,6 @@ function isPresent(value: string | undefined | null): value is string {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="inspectionPlansTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <DialogPro v-model:open="recordSheetOpen">
       <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">

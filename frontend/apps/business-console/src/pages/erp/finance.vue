@@ -17,7 +17,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -350,7 +349,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(receivables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(receivables.error.value) }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="receivablesPaged.page.value"
+          :page-size="receivablesPaged.pageSize.value"
+          :total-items="receivables.total.value"
+          @update:page="receivablesPaged.page.value = $event"
+          @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
           :columns="receivableColumns"
           :rows="receivables.items.value"
           :row-key="(r: BusinessConsoleErpReceivableItem) => r.receivableNo ?? r.sourceDocumentNo ?? '应收'"
@@ -363,12 +368,6 @@ function formatError(error: unknown) {
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="receivablesPaged.page.value"
-          :page-size="receivablesPaged.pageSize.value"
-          :total-items="receivables.total.value"
-          @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="payables" class="grid gap-4">
@@ -392,7 +391,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(payables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(payables.error.value) }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="payablesPaged.page.value"
+          :page-size="payablesPaged.pageSize.value"
+          :total-items="payables.total.value"
+          @update:page="payablesPaged.page.value = $event"
+          @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
           :columns="payableColumns"
           :rows="payables.items.value"
           :row-key="(r: BusinessConsoleErpPayableItem) => r.payableNo ?? r.sourceDocumentNo ?? '应付'"
@@ -405,12 +410,6 @@ function formatError(error: unknown) {
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="payablesPaged.page.value"
-          :page-size="payablesPaged.pageSize.value"
-          :total-items="payables.total.value"
-          @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="vouchers" class="grid gap-4">
@@ -426,7 +425,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(vouchers.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(vouchers.error.value) }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="vouchersPaged.page.value"
+          :page-size="vouchersPaged.pageSize.value"
+          :total-items="vouchers.total.value"
+          @update:page="vouchersPaged.page.value = $event"
+          @update:page-size="(v) => (vouchersPaged.pageSize.value = String(v))"
           :columns="voucherColumns"
           :rows="vouchers.items.value"
           :row-key="(r: BusinessConsoleErpJournalVoucherItem) => r.voucherNo ?? '凭证'"
@@ -439,12 +444,6 @@ function formatError(error: unknown) {
           <template #cell-totalCreditAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalCreditAmount) }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="vouchersPaged.page.value"
-          :page-size="vouchersPaged.pageSize.value"
-          :total-items="vouchers.total.value"
-          @update:page-size="(v) => (vouchersPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="cost-candidates" class="grid gap-4">
@@ -460,7 +459,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="formatError(costCandidates.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(costCandidates.error.value) }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="costCandidatesPaged.page.value"
+          :page-size="costCandidatesPaged.pageSize.value"
+          :total-items="costCandidates.total.value"
+          @update:page="costCandidatesPaged.page.value = $event"
+          @update:page-size="(v) => (costCandidatesPaged.pageSize.value = String(v))"
           :columns="costCandidateColumns"
           :rows="costCandidates.items.value"
           :row-key="(r: BusinessConsoleErpCostCandidateItem) => r.candidateNo ?? r.sourceDocumentNo ?? '成本候选'"
@@ -472,12 +477,6 @@ function formatError(error: unknown) {
           <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="costCandidatesPaged.page.value"
-          :page-size="costCandidatesPaged.pageSize.value"
-          :total-items="costCandidates.total.value"
-          @update:page-size="(v) => (costCandidatesPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
     </TabsPro>
 

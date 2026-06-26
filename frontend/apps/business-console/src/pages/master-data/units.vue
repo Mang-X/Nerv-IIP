@@ -15,7 +15,6 @@ import {
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -525,7 +524,13 @@ async function submitConversion() {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="page"
+          :page-size="pageSize"
+          :total-items="uomsTotal"
+          @update:page="page = $event"
+          @update:page-size="(v) => (pageSize = String(v))"
           :columns="columns"
           :rows="listRows"
           :row-key="rowKey"
@@ -541,8 +546,6 @@ async function submitConversion() {
             <MasterDataRowActions :row="row" entity-label="计量单位" :detail-fields="uomDetailFields(row)" :actions="uomActions" @edit="openEdit" />
           </template>
         </DataTablePro>
-
-        <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="uomsTotal" @update:page-size="(v) => (pageSize = String(v))" />
       </TabsProContent>
 
       <!-- 换算关系 -->
@@ -624,7 +627,13 @@ async function submitConversion() {
 
         <p v-if="conversionListError" class="text-sm text-destructive" role="alert">{{ conversionListError }}</p>
 
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="conversionPage"
+          :page-size="conversionPageSize"
+          :total-items="conversionsTotal"
+          @update:page="conversionPage = $event"
+          @update:page-size="(v) => (conversionPageSize = String(v))"
           :columns="conversionColumns"
           :rows="conversionRows"
           :row-key="rowKey"
@@ -640,8 +649,6 @@ async function submitConversion() {
             <MasterDataRowActions :row="row" entity-label="换算关系" :detail-fields="conversionDetailFields(row)" :actions="conversionActions" />
           </template>
         </DataTablePro>
-
-        <DataTablePaginationPro v-model:page="conversionPage" :page-size="conversionPageSize" :total-items="conversionsTotal" @update:page-size="(v) => (conversionPageSize = String(v))" />
       </TabsProContent>
     </TabsPro>
   </BusinessLayout>

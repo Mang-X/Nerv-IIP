@@ -8,7 +8,6 @@ import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -135,7 +134,13 @@ function isNonEmpty(value: string) {
       <span class="text-sm text-muted-foreground">{{ formatDateTime(lastSchedule?.scheduledAtUtc) }}</span>
     </div>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="assignments.length"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="pagedAssignments"
       :row-key="rowKey"
@@ -148,12 +153,6 @@ function isNonEmpty(value: string) {
       <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="assignments.length"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <div v-if="affectedWorkOrderIds.length" class="rounded-lg border bg-background p-4">
       <h2 class="text-sm font-semibold text-foreground">受影响工单</h2>

@@ -9,7 +9,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -219,7 +218,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="countExecutionsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="countExecutions"
       :row-key="rowKey"
@@ -242,12 +247,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="countExecutionsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>

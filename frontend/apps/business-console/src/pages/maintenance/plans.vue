@@ -9,7 +9,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -186,7 +185,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="plansTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="plans"
       :row-key="rowKey"
@@ -196,12 +201,6 @@ function formatError(error: unknown) {
       empty-message="暂无保养计划。为关键设备登记周期保养，再用「生成到期工单」批量开单。"
     />
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="plansTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <DialogPro v-model:open="createOpen">
       <DialogProContent>

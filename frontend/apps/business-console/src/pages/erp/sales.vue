@@ -16,7 +16,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProClose,
@@ -324,7 +323,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="opportunitiesError" class="text-sm text-destructive" role="alert">{{ opportunitiesError }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="opportunitiesPaged.page.value"
+          :page-size="opportunitiesPaged.pageSize.value"
+          :total-items="opportunities.total.value"
+          @update:page="opportunitiesPaged.page.value = $event"
+          @update:page-size="(v) => (opportunitiesPaged.pageSize.value = String(v))"
           :columns="opportunityColumns"
           :rows="opportunities.items.value"
           :row-key="(r: BusinessConsoleErpOpportunityItem) => r.opportunityNo ?? '商机'"
@@ -335,12 +340,6 @@ function formatError(error: unknown) {
         >
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="opportunitiesPaged.page.value"
-          :page-size="opportunitiesPaged.pageSize.value"
-          :total-items="opportunities.total.value"
-          @update:page-size="(v) => (opportunitiesPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="quotations" class="grid gap-4">
@@ -366,7 +365,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="quotationsError" class="text-sm text-destructive" role="alert">{{ quotationsError }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="quotationsPaged.page.value"
+          :page-size="quotationsPaged.pageSize.value"
+          :total-items="quotations.total.value"
+          @update:page="quotationsPaged.page.value = $event"
+          @update:page-size="(v) => (quotationsPaged.pageSize.value = String(v))"
           :columns="quotationColumns"
           :rows="quotations.items.value"
           :row-key="(r: BusinessConsoleErpQuotationItem) => r.quotationNo ?? '报价单'"
@@ -387,12 +392,6 @@ function formatError(error: unknown) {
             <span v-else class="text-muted-foreground">—</span>
           </template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="quotationsPaged.page.value"
-          :page-size="quotationsPaged.pageSize.value"
-          :total-items="quotations.total.value"
-          @update:page-size="(v) => (quotationsPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="orders" class="grid gap-4">
@@ -408,7 +407,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="ordersError" class="text-sm text-destructive" role="alert">{{ ordersError }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="ordersPaged.page.value"
+          :page-size="ordersPaged.pageSize.value"
+          :total-items="orders.salesOrdersTotal.value"
+          @update:page="ordersPaged.page.value = $event"
+          @update:page-size="(v) => (ordersPaged.pageSize.value = String(v))"
           :columns="orderColumns"
           :rows="orders.salesOrders.value"
           :row-key="(r: BusinessConsoleErpSalesOrderItem) => r.salesOrderNo ?? '销售订单'"
@@ -420,12 +425,6 @@ function formatError(error: unknown) {
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
           <template #cell-totalAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalAmount) }}</span></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="ordersPaged.page.value"
-          :page-size="ordersPaged.pageSize.value"
-          :total-items="orders.salesOrdersTotal.value"
-          @update:page-size="(v) => (ordersPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
 
       <TabsProContent value="deliveries" class="grid gap-4">
@@ -435,7 +434,13 @@ function formatError(error: unknown) {
           </template>
         </Toolbar>
         <p v-if="deliveriesError" class="text-sm text-destructive" role="alert">{{ deliveriesError }}</p>
-        <DataTablePro :pagination="false"
+        <DataTablePro
+          manual
+          :page="deliveriesPaged.page.value"
+          :page-size="deliveriesPaged.pageSize.value"
+          :total-items="deliveries.total.value"
+          @update:page="deliveriesPaged.page.value = $event"
+          @update:page-size="(v) => (deliveriesPaged.pageSize.value = String(v))"
           :columns="deliveryColumns"
           :rows="deliveries.items.value"
           :row-key="(r: BusinessConsoleErpDeliveryOrderItem) => r.deliveryOrderNo ?? '发货单'"
@@ -446,12 +451,6 @@ function formatError(error: unknown) {
         >
           <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
         </DataTablePro>
-        <DataTablePaginationPro
-          v-model:page="deliveriesPaged.page.value"
-          :page-size="deliveriesPaged.pageSize.value"
-          :total-items="deliveries.total.value"
-          @update:page-size="(v) => (deliveriesPaged.pageSize.value = String(v))"
-        />
       </TabsProContent>
     </TabsPro>
 

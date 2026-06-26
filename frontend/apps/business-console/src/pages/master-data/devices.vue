@@ -11,7 +11,6 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -321,7 +320,13 @@ async function submitDevice() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="devices.total.value"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :searchable="false" :column-settings="false"
       :columns="columns"
       :rows="listRows"
@@ -339,6 +344,5 @@ async function submitDevice() {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="devices.total.value" @update:page-size="(v) => (pageSize = String(v))" />
   </BusinessLayout>
 </template>

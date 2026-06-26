@@ -14,7 +14,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   CheckboxPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -397,7 +396,13 @@ function isNonEmpty(value: string) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="workOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedWorkOrders"
@@ -464,12 +469,6 @@ function isNonEmpty(value: string) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="workOrdersTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <DialogPro v-model:open="rushSheetOpen">
       <DialogProContent class="sm:max-w-2xl">

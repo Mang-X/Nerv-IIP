@@ -19,7 +19,6 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -290,7 +289,13 @@ async function confirmArchive() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="skillsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="skills"
       row-key="skillCode"
@@ -324,7 +329,6 @@ async function confirmArchive() {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="skillsTotal" @update:page-size="(v) => (pageSize = String(v))" />
 
     <AlertDialogPro v-model:open="archiveOpen">
       <AlertDialogProContent>

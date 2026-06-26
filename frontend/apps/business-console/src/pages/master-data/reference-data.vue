@@ -7,7 +7,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  DataTablePaginationPro,
   DialogPro,
   DialogProContent,
   DialogProDescription,
@@ -336,7 +335,13 @@ function isNonEmpty(value: string) {
 
         <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-        <DataTablePro :pagination="false"
+        <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="codesTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
           :searchable="false" :column-settings="false"
           v-model:sort="sort"
           :columns="columns"
@@ -354,7 +359,6 @@ function isNonEmpty(value: string) {
           </template>
         </DataTablePro>
 
-        <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="codesTotal" @update:page-size="(v) => (pageSize = String(v))" />
       </div>
     </div>
   </BusinessLayout>

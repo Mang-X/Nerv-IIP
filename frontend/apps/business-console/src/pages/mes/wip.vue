@@ -8,7 +8,6 @@ import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   PageHeader,
   SelectPro,
@@ -91,7 +90,13 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="wipTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
@@ -139,12 +144,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="wipTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
   </BusinessLayout>

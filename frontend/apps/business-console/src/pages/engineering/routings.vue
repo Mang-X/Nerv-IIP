@@ -12,7 +12,6 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
   DataTablePro,
-  DataTablePaginationPro,
   DatePickerPro,
   DialogPro,
   DialogProContent,
@@ -489,7 +488,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="routingsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="routings"
       :row-key="(r) => `${r.routingCode}:${r.revision}`"
@@ -515,12 +520,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="routingsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <SheetPro v-model:open="viewOpen">
       <SheetProContent class="sm:max-w-lg">

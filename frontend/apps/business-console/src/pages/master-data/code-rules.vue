@@ -12,7 +12,6 @@ import {
   ButtonPro,
   CheckboxPro,
   DataTablePro,
-  DataTablePaginationPro,
   DatePickerPro,
   DialogPro,
   DialogProContent,
@@ -505,7 +504,13 @@ async function submitForm() {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="rules.length"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :searchable="false" :column-settings="false"
       :columns="columns"
       :rows="pagedRules"
@@ -528,7 +533,6 @@ async function submitForm() {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro v-model:page="page" :page-size="pageSize" :total-items="rules.length" @update:page-size="(v) => (pageSize = String(v))" />
 
     <!-- 查看 Sheet 抽屉 -->
     <DialogPro v-model:open="viewOpen">

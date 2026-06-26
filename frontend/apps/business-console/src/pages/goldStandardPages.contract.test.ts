@@ -59,7 +59,8 @@ const GOLD_STANDARD_PAGES = [
 // decision-driving metrics only — never mechanical pagination/tree metadata). Many
 // maintenance pages legitimately have none. See master-data-templates.md §0/§2 and
 // business-console AGENTS.md §1.5-B.
-const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro', 'DataTablePagination(Pro)?']
+// 分页已集成进 DataTablePro（manual 服务端模式 → 卡内页脚），不再要求独立的 DataTablePagination 块。
+const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',

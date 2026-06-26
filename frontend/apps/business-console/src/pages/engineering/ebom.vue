@@ -10,7 +10,6 @@ import { useEngineeringEboms } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DatePickerPro,
   DialogPro,
@@ -422,7 +421,13 @@ function uomLabel(code?: string | null) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="ebomsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="eboms"
       :row-key="(r) => `${r.bomCode}:${r.revision}`"
@@ -448,12 +453,6 @@ function uomLabel(code?: string | null) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="ebomsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <SheetPro v-model:open="viewOpen">
       <SheetProContent class="sm:max-w-lg">

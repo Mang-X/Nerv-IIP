@@ -9,7 +9,6 @@ import { useEngineeringDocuments } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ButtonPro,
-  DataTablePaginationPro,
   DataTablePro,
   DialogPro,
   DialogProContent,
@@ -288,7 +287,13 @@ function formatError(error: unknown) {
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTablePro :pagination="false"
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="documentsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="documents"
       :row-key="(r) => `${r.documentNumber}:${r.revision}`"
@@ -306,12 +311,6 @@ function formatError(error: unknown) {
       </template>
     </DataTablePro>
 
-    <DataTablePaginationPro
-      v-model:page="page"
-      :page-size="pageSize"
-      :total-items="documentsTotal"
-      @update:page-size="(v) => (pageSize = String(v))"
-    />
 
     <SheetPro v-model:open="viewOpen">
       <SheetProContent class="sm:max-w-md">

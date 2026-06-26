@@ -54,11 +54,17 @@ const props = withDefaults(
     selectable?: boolean
     /** Column show/hide + density menu. */
     columnSettings?: boolean
-    /** Built-in client-side pagination footer + row slicing. Turn off (`:pagination="false"`)
-     *  when the parent owns paging (server-side) and renders its own DataTablePaginationPro. */
+    /** Pagination footer. Default on. */
     pagination?: boolean
-    /** Initial page size. */
-    pageSize?: number
+    /** Server-driven pagination: parent owns the page window. Rows render verbatim (no client
+     *  slicing); the footer reflects `page` / `total` and emits `update:page` / `update:pageSize`. */
+    manual?: boolean
+    /** Controlled current page (1-based) — manual mode (`v-model:page`). */
+    page?: number
+    /** External total row count — manual mode. */
+    total?: number
+    /** Initial (client mode) or controlled (manual mode) page size. */
+    pageSize?: number | string
     pageSizeOptions?: number[]
     /** Initial density. */
     density?: DataTableProDensity
@@ -85,6 +91,7 @@ const props = withDefaults(
     selectable: false,
     columnSettings: true,
     pagination: true,
+    manual: false,
     pageSize: 10,
     pageSizeOptions: () => [10, 20, 50, 100],
     density: 'comfortable',
@@ -96,6 +103,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:selected': [value: (string | number)[]]
+  'update:page': [value: number]
+  'update:pageSize': [value: number]
   'row-click': [row: T]
   refresh: []
 }>()
@@ -313,18 +322,31 @@ const processed = computed(() => {
 })
 
 // ── Pagination ──
-const page = ref(1)
-const innerPageSize = ref(props.pageSize)
-const totalItems = computed(() => processed.value.length)
+const innerPage = ref(1)
+const innerPageSize = ref(Number(props.pageSize) || 10)
+// Manual (server-driven) mode: parent owns page / size / total. Otherwise paginate client-side.
+const currentPage = computed(() => (props.manual ? (props.page ?? 1) : innerPage.value))
+const currentPageSize = computed(() => (props.manual ? (Number(props.pageSize) || 10) : innerPageSize.value))
+const totalItems = computed(() => (props.manual ? (props.total ?? processed.value.length) : processed.value.length))
 const pagedRows = computed(() => {
-  // When the parent owns paging (`:pagination="false"`), render the given rows verbatim.
-  if (!props.pagination) return processed.value
-  const start = (page.value - 1) * innerPageSize.value
+  // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
+  if (props.manual || !props.pagination) return processed.value
+  const start = (innerPage.value - 1) * innerPageSize.value
   return processed.value.slice(start, start + innerPageSize.value)
 })
+function setPage(p: number) {
+  if (props.manual) emit('update:page', p)
+  else innerPage.value = p
+}
+function setPageSize(s: number) {
+  if (props.manual) { emit('update:pageSize', s); return }
+  innerPageSize.value = s
+  innerPage.value = 1
+}
 // Any pipeline change that shrinks results below the window snaps back to page 1.
 function resetPage() {
-  page.value = 1
+  if (props.manual) emit('update:page', 1)
+  else innerPage.value = 1
 }
 
 // ── Selection (covers the rows currently in view) ──
@@ -698,13 +720,13 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
       <Separator />
       <DataTablePaginationPro
         class="px-3 py-3 sm:px-4"
-        :page="page"
-        :page-size="innerPageSize"
+        :page="currentPage"
+        :page-size="currentPageSize"
         :total-items="totalItems"
         :page-size-options="pageSizeOptions"
         show-jump
-        @update:page="page = $event"
-        @update:page-size="innerPageSize = $event"
+        @update:page="setPage"
+        @update:page-size="setPageSize"
       />
     </template>
   </div>
