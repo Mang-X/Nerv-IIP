@@ -52,6 +52,21 @@ internal static class DomainWmsFactory
             [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
     }
 
+    public static InboundOrder MultiLineInboundOrder()
+    {
+        return Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new InboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 3m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
+    }
+
     public static OutboundOrder OutboundOrder()
     {
         return Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder.Create(
@@ -62,5 +77,20 @@ internal static class DomainWmsFactory
             "SO-001",
             "SITE-01",
             [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+    }
+
+    public static OutboundOrder MultiLineOutboundOrder()
+    {
+        return Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [
+                new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
     }
 }

@@ -101,9 +101,9 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
             ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
-        var movementRequest = inbound.Complete(request.IdempotencyKey);
-        dbContext.InventoryMovementRequests.Add(movementRequest);
-        return new CompleteWmsMovementResult(movementRequest.Id, null);
+        var movementRequests = inbound.Complete(request.IdempotencyKey);
+        dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 }
 
@@ -244,9 +244,9 @@ public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbC
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
-        var movementRequest = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey);
-        dbContext.InventoryMovementRequests.Add(movementRequest);
-        return new CompleteWmsMovementResult(movementRequest.Id, null);
+        var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey);
+        dbContext.InventoryMovementRequests.AddRange(movementRequests);
+        return new CompleteWmsMovementResult(movementRequests.First().Id, null);
     }
 }
 

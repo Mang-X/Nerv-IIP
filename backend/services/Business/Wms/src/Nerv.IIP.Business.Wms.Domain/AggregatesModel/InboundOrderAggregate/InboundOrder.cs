@@ -114,32 +114,34 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             quantity);
     }
 
-    public InventoryMovementRequest Complete(string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> Complete(string idempotencyKey)
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
-        var line = lines[0];
+        EnsureHasLines();
         Status = InboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
-        var request = InventoryMovementRequest.Create(
-            OrganizationId,
-            EnvironmentId,
-            "inbound",
-            InboundOrderNo,
-            line.LineNo,
-            idempotencyKey,
-            line.SkuCode,
-            line.UomCode,
-            SiteCode,
-            line.StagingLocationCode,
-            line.LotNo,
-            line.SerialNo,
-            line.QualityStatus,
-            line.OwnerType,
-            line.OwnerId,
-            line.ReceivedQuantity);
+        var singleLine = lines.Count == 1;
+        var requests = lines.Select(line => InventoryMovementRequest.Create(
+                OrganizationId,
+                EnvironmentId,
+                "inbound",
+                InboundOrderNo,
+                line.LineNo,
+                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                line.SkuCode,
+                line.UomCode,
+                SiteCode,
+                line.StagingLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                line.ReceivedQuantity))
+            .ToArray();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
-        return request;
+        return requests;
     }
 
     public void MarkInventoryPostingFailed()
@@ -168,6 +170,14 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         if (Status != InboundOrderStatus.Open)
         {
             throw new InvalidOperationException("Completed or failed inbound orders are immutable.");
+        }
+    }
+
+    private void EnsureHasLines()
+    {
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("Inbound order must contain at least one line before completion.");
         }
     }
 }

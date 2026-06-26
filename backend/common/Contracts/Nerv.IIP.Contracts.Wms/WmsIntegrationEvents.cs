@@ -51,7 +51,17 @@ public sealed record WmsIntegrationPayload(
     decimal? Quantity,
     string? Status,
     string? DiagnosticCode,
-    string? DiagnosticMessage);
+    string? DiagnosticMessage,
+    IReadOnlyCollection<WmsIntegrationPayloadLine>? Lines = null);
+
+public sealed record WmsIntegrationPayloadLine(
+    string LineReference,
+    string SkuCode,
+    string UomCode,
+    string? SiteCode,
+    string? LocationCode,
+    decimal Quantity,
+    string? Status);
 
 public sealed record WmsOutboundOrderRequestedIntegrationEvent(
     string EventId,
