@@ -159,6 +159,7 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectorHostEnvironmentId)) {
 
 if (-not [string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
     $environment["ConnectorIngestionToken__SigningKey"] = $ConnectorIngestionTokenSigningKey
+    $environment["Parameters__connector-ingestion-token-signing-key"] = $ConnectorIngestionTokenSigningKey
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ExternalClientSecret)) {

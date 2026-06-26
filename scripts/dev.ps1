@@ -116,7 +116,8 @@ function Assert-AppHostUserSecrets {
         'Parameters:minio-root-user',
         'Parameters:minio-root-password',
         'Parameters:iam-seed-admin-password',
-        'Parameters:iam-seed-connector-host-secret'
+        'Parameters:iam-seed-connector-host-secret',
+        'Parameters:connector-ingestion-token-signing-key'
     )
     $secrets = Get-AppHostUserSecrets -AppHostProject $AppHostProject
     $missing = @($requiredSecrets | Where-Object {
