@@ -90,6 +90,8 @@ public interface IPlanningScheduledReceiptSnapshotClient
         CancellationToken cancellationToken);
 }
 
+public interface IPlanningScheduledReceiptSourceClient : IPlanningScheduledReceiptSnapshotClient;
+
 public sealed record PlanningParameterSnapshotItem(string SkuCode, string UomCode, string SiteCode);
 
 public sealed record PlanningParameterSnapshotRequest(
@@ -473,7 +475,59 @@ public sealed class HttpPlanningProductEngineeringSnapshotClient(HttpClient http
     }
 }
 
-public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSnapshotClient
+public sealed class CompositePlanningScheduledReceiptSnapshotClient(
+    IEnumerable<IPlanningScheduledReceiptSourceClient> sourceClients,
+    ILogger<CompositePlanningScheduledReceiptSnapshotClient>? logger = null) : IPlanningScheduledReceiptSnapshotClient
+{
+    public async Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+        string internalBearerToken,
+        PlanningScheduledReceiptSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        var clients = sourceClients.ToArray();
+        if (clients.Length == 0)
+        {
+            return new PlanningScheduledReceiptSnapshot("scheduled-receipts:none", []);
+        }
+
+        var sourceSegments = new List<string>();
+        var receipts = new List<ScheduledReceiptSnapshot>();
+        foreach (var client in clients)
+        {
+            try
+            {
+                var snapshot = await client.GetScheduledReceiptsAsync(internalBearerToken, request, cancellationToken);
+                sourceSegments.Add(snapshot.SnapshotSource);
+                receipts.AddRange(snapshot.ScheduledReceipts);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (IsOptionalPlanningSourceFailure(ex))
+            {
+                var sourceName = client.GetType().Name.Contains("Mes", StringComparison.OrdinalIgnoreCase)
+                    ? "mes-work-orders"
+                    : client.GetType().Name.Contains("Erp", StringComparison.OrdinalIgnoreCase)
+                        ? "erp-purchase-orders"
+                        : "scheduled-receipts";
+                logger?.LogWarning(ex, "DemandPlanning MRP scheduled receipt source {SourceName} failed; continuing with other scheduled receipt sources.", sourceName);
+                sourceSegments.Add($"{sourceName}:error");
+            }
+        }
+
+        return new PlanningScheduledReceiptSnapshot(string.Join(';', sourceSegments), receipts);
+    }
+
+    private static bool IsOptionalPlanningSourceFailure(Exception exception)
+    {
+        return exception is OptionalPlanningSnapshotException
+            or HttpRequestException
+            or TaskCanceledException;
+    }
+}
+
+public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
 {
     public async Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
         string internalBearerToken,
@@ -548,6 +602,110 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
             .ToArray();
 
         return new PlanningScheduledReceiptSnapshot($"erp-purchase-orders:{receipts.Length}", receipts);
+    }
+}
+
+public sealed class HttpPlanningMesScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
+{
+    private static readonly HashSet<string> OpenWorkOrderStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "created",
+        "released",
+        "started",
+        "hold",
+    };
+
+    public async Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+        string internalBearerToken,
+        PlanningScheduledReceiptSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Items.Count == 0)
+        {
+            return new PlanningScheduledReceiptSnapshot("mes-work-orders:0", []);
+        }
+
+        var siteBySkuUom = request.Items
+            .GroupBy(x => $"{NormalizeKey(x.SkuCode)}\u001f{NormalizeKey(x.UomCode)}", StringComparer.OrdinalIgnoreCase)
+            .Where(x => x.Select(y => NormalizeKey(y.SiteCode)).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+            .ToDictionary(x => x.Key, x => x.First().SiteCode, StringComparer.OrdinalIgnoreCase);
+        if (siteBySkuUom.Count == 0)
+        {
+            return new PlanningScheduledReceiptSnapshot("mes-work-orders:0", []);
+        }
+
+        var workOrders = new List<MesWorkOrderItem>();
+        const int PageSize = 500;
+        var skip = 0;
+        while (true)
+        {
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                "/api/business/v1/mes/work-orders?" + Query(
+                    ("organizationId", request.OrganizationId),
+                    ("environmentId", request.EnvironmentId),
+                    ("skip", skip),
+                    ("take", PageSize)));
+            if (!string.IsNullOrWhiteSpace(internalBearerToken))
+            {
+                httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+            }
+
+            using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var body = await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<MesWorkOrdersResponse>(
+                response,
+                "MES returned an invalid work order response.",
+                "MES returned an empty work order response envelope.",
+                cancellationToken);
+            workOrders.AddRange(body.Items);
+            skip += PageSize;
+            if (body.Items.Count == 0 || skip >= body.Total)
+            {
+                break;
+            }
+        }
+
+        var receipts = workOrders
+            .Where(x => OpenWorkOrderStatuses.Contains(x.Status))
+            .Select(x => new
+            {
+                WorkOrder = x,
+                SkuCode = string.IsNullOrWhiteSpace(x.SkuCode) ? x.SkuId : x.SkuCode,
+                x.UomCode,
+                RemainingQuantity = x.Quantity - x.CompletedQuantity,
+                ExpectedReceiptDate = DateOnly.FromDateTime(x.DueUtc.UtcDateTime),
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.SkuCode) && !string.IsNullOrWhiteSpace(x.UomCode))
+            .Where(x => x.RemainingQuantity > 0m)
+            .Where(x => x.ExpectedReceiptDate <= request.HorizonEnd)
+            .Select(x => new
+            {
+                x.WorkOrder,
+                x.SkuCode,
+                UomCode = x.UomCode!,
+                x.RemainingQuantity,
+                x.ExpectedReceiptDate,
+                SiteCode = siteBySkuUom.GetValueOrDefault($"{NormalizeKey(x.SkuCode)}\u001f{NormalizeKey(x.UomCode!)}"),
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.SiteCode))
+            .Select(x => new ScheduledReceiptSnapshot(
+                x.SkuCode,
+                x.UomCode!,
+                x.SiteCode!,
+                x.RemainingQuantity,
+                x.ExpectedReceiptDate,
+                "mes",
+                "work-order",
+                x.WorkOrder.WorkOrderId))
+            .ToArray();
+
+        return new PlanningScheduledReceiptSnapshot($"mes-work-orders:{receipts.Length}", receipts);
+    }
+
+    private static string NormalizeKey(string value)
+    {
+        return value.Trim().ToUpperInvariant();
     }
 }
 
@@ -943,6 +1101,18 @@ internal sealed record ErpPurchaseOrderLineItem(
     decimal ReceivedQuantity,
     decimal UnitPrice,
     DateOnly PromisedDate);
+
+internal sealed record MesWorkOrdersResponse(IReadOnlyCollection<MesWorkOrderItem> Items, int Total);
+
+internal sealed record MesWorkOrderItem(
+    string WorkOrderId,
+    string SkuId,
+    decimal Quantity,
+    decimal CompletedQuantity,
+    DateTimeOffset DueUtc,
+    string Status,
+    string? UomCode = null,
+    string? SkuCode = null);
 
 internal sealed record MasterDataSkuPlanningDetail(
     string Code,

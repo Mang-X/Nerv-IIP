@@ -588,7 +588,9 @@ public sealed class MesEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
         var dueUtc = DateTimeOffset.Parse("2026-06-01T08:00:00Z");
         dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-002", "SKU-002", "PV-002", 1m, 10, dueUtc.AddMinutes(1)));
+        var partiallyCompleted = WorkOrder.Create("org-001", "env-dev", "WO-002", "SKU-002", "PV-002", 3m, 10, dueUtc.AddMinutes(1), "PCS");
+        partiallyCompleted.RecordProductionProgress(1m, 0m, dueUtc.AddMinutes(2));
+        dbContext.WorkOrders.Add(partiallyCompleted);
         dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-003", "SKU-003", "PV-003", 1m, 10, dueUtc.AddMinutes(2)));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -597,7 +599,10 @@ public sealed class MesEndpointContractTests
             CancellationToken.None);
 
         Assert.Equal(3, page.Total);
-        Assert.Equal("WO-002", Assert.Single(page.Items).WorkOrderId);
+        var workOrder = Assert.Single(page.Items);
+        Assert.Equal("WO-002", workOrder.WorkOrderId);
+        Assert.Equal("PCS", workOrder.UomCode);
+        Assert.Equal(1m, workOrder.CompletedQuantity);
     }
 
     [Fact]

@@ -446,6 +446,101 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Mes_scheduled_receipt_client_maps_open_work_order_remaining_output()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            Assert.Equal("/api/business/v1/mes/work-orders", request.RequestUri!.AbsolutePath);
+            Assert.Contains("organizationId=org-001", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("environmentId=env-dev", request.RequestUri.Query, StringComparison.OrdinalIgnoreCase);
+
+            return JsonResponse("""
+                {
+                  "success": true,
+                  "message": "ok",
+                  "code": 0,
+                  "data": {
+                    "total": 4,
+                    "items": [
+                      {
+                        "workOrderId": "WO-OPEN-001",
+                        "skuId": "SKU-FG-1000",
+                        "skuCode": "SKU-FG-1000",
+                        "uomCode": "pcs",
+                        "quantity": 10,
+                        "completedQuantity": 4,
+                        "priority": 5,
+                        "dueUtc": "2026-05-31T00:00:00Z",
+                        "status": "started",
+                        "operationTasks": []
+                      },
+                      {
+                        "workOrderId": "WO-CLOSED-001",
+                        "skuId": "SKU-FG-1000",
+                        "skuCode": "SKU-FG-1000",
+                        "uomCode": "pcs",
+                        "quantity": 12,
+                        "completedQuantity": 0,
+                        "priority": 5,
+                        "dueUtc": "2026-05-31T00:00:00Z",
+                        "status": "closed",
+                        "operationTasks": []
+                      },
+                      {
+                        "workOrderId": "WO-LATE-001",
+                        "skuId": "SKU-FG-1000",
+                        "skuCode": "SKU-FG-1000",
+                        "uomCode": "pcs",
+                        "quantity": 5,
+                        "completedQuantity": 0,
+                        "priority": 5,
+                        "dueUtc": "2026-07-01T00:00:00Z",
+                        "status": "released",
+                        "operationTasks": []
+                      },
+                      {
+                        "workOrderId": "WO-OTHER-001",
+                        "skuId": "SKU-OTHER",
+                        "skuCode": "SKU-OTHER",
+                        "uomCode": "pcs",
+                        "quantity": 5,
+                        "completedQuantity": 0,
+                        "priority": 5,
+                        "dueUtc": "2026-05-31T00:00:00Z",
+                        "status": "released",
+                        "operationTasks": []
+                      }
+                    ]
+                  }
+                }
+                """);
+        });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.test") };
+        var client = new HttpPlanningMesScheduledReceiptSnapshotClient(httpClient);
+
+        var snapshot = await client.GetScheduledReceiptsAsync(
+            "token",
+            new PlanningScheduledReceiptSnapshotRequest(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 5, 25),
+                new DateOnly(2026, 6, 30),
+                [new PlanningScheduledReceiptSnapshotItem("sku-fg-1000", "PCS", "SITE-01")]),
+            CancellationToken.None);
+
+        var receipt = Assert.Single(snapshot.ScheduledReceipts);
+        Assert.Equal("mes-work-orders:1", snapshot.SnapshotSource);
+        Assert.Equal("SKU-FG-1000", receipt.SkuCode);
+        Assert.Equal("pcs", receipt.UomCode);
+        Assert.Equal("SITE-01", receipt.SiteCode);
+        Assert.Equal(6m, receipt.Quantity);
+        Assert.Equal(new DateOnly(2026, 5, 31), receipt.ExpectedReceiptDate);
+        Assert.Equal("mes", receipt.SourceSystem);
+        Assert.Equal("work-order", receipt.SourceDocumentType);
+        Assert.Equal("WO-OPEN-001", receipt.SourceDocumentId);
+    }
+
+    [Fact]
     public async Task Master_data_planning_parameter_client_maps_sku_planning_attributes()
     {
         var handler = new StubHttpMessageHandler(request =>

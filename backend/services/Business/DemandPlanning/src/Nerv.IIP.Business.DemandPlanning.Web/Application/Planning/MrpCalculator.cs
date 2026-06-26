@@ -130,18 +130,29 @@ public static class MrpCalculator
             .GroupBy(x => x.ParentSkuCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.ToArray(), StringComparer.OrdinalIgnoreCase);
         var suggestions = new List<CalculatedPlanningSuggestion>();
-        var pending = input.Demands
+        var normalizedDemands = input.Demands
             .Where(x => x.DueDate >= input.HorizonStart && x.DueDate <= input.HorizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DemandSourceReference, StringComparer.Ordinal)
             .Select(x => NormalizeDemand(x, planningParameters, converter))
             .ToList();
-
-        while (pending.Count > 0)
+        var lowLevelCodes = CalculateLowLevelCodes(
+            normalizedDemands,
+            planningParameters,
+            productionVersions,
+            componentsByParent);
+        var pendingByLowLevel = new SortedDictionary<int, List<Requirement>>();
+        foreach (var demand in normalizedDemands)
         {
-            var current = pending;
-            pending = [];
+            AddPendingRequirement(pendingByLowLevel, lowLevelCodes, demand);
+        }
+
+        while (pendingByLowLevel.Count > 0)
+        {
+            var currentLevel = pendingByLowLevel.First();
+            pendingByLowLevel.Remove(currentLevel.Key);
+            var current = currentLevel.Value;
             foreach (var group in current
                 .GroupBy(x => new RequirementBucket(ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode), x.RequiredDate))
                 .OrderBy(x => x.Key.RequiredDate)
@@ -237,7 +248,7 @@ public static class MrpCalculator
                         componentUomCode,
                         plannedQuantity * component.QuantityPerParent,
                         converter);
-                    pending.Add(new Requirement(
+                    AddPendingRequirement(pendingByLowLevel, lowLevelCodes, new Requirement(
                         component.ComponentSkuCode,
                         componentUomCode,
                         first.SiteCode,
@@ -461,6 +472,70 @@ public static class MrpCalculator
 
         var normalized = value.Trim();
         return candidates.Any(candidate => string.Equals(normalized, candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyDictionary<SkuSiteKey, int> CalculateLowLevelCodes(
+        IReadOnlyCollection<Requirement> rootRequirements,
+        IReadOnlyDictionary<SkuSiteKey, PlanningParameterSnapshot> planningParameters,
+        IReadOnlyDictionary<string, ProductionVersionSnapshot> productionVersions,
+        IReadOnlyDictionary<string, BomComponentSnapshot[]> componentsByParent)
+    {
+        var lowLevelCodes = new Dictionary<SkuSiteKey, int>();
+        foreach (var requirement in rootRequirements)
+        {
+            Visit(requirement.SkuCode, requirement.SiteCode, 0, [Normalize(requirement.SkuCode)]);
+        }
+
+        return lowLevelCodes;
+
+        void Visit(string skuCode, string siteCode, int level, HashSet<string> path)
+        {
+            var key = SkuSiteKey.Create(skuCode, siteCode);
+            if (!lowLevelCodes.TryGetValue(key, out var existing) || level > existing)
+            {
+                lowLevelCodes[key] = level;
+            }
+
+            planningParameters.TryGetValue(key, out var planningParameter);
+            productionVersions.TryGetValue(skuCode, out var version);
+            if (!IsMakeItem(planningParameter?.ProcurementType, version) ||
+                !componentsByParent.TryGetValue(skuCode, out var components))
+            {
+                return;
+            }
+
+            foreach (var component in components.OrderBy(x => x.ComponentSkuCode, StringComparer.OrdinalIgnoreCase))
+            {
+                var normalizedComponent = Normalize(component.ComponentSkuCode);
+                if (path.Contains(normalizedComponent))
+                {
+                    continue;
+                }
+
+                Visit(
+                    component.ComponentSkuCode,
+                    siteCode,
+                    level + 1,
+                    new HashSet<string>(path, StringComparer.OrdinalIgnoreCase) { normalizedComponent });
+            }
+        }
+    }
+
+    private static void AddPendingRequirement(
+        SortedDictionary<int, List<Requirement>> pendingByLowLevel,
+        IReadOnlyDictionary<SkuSiteKey, int> lowLevelCodes,
+        Requirement requirement)
+    {
+        var lowLevelCode = lowLevelCodes.TryGetValue(SkuSiteKey.Create(requirement.SkuCode, requirement.SiteCode), out var code)
+            ? code
+            : 0;
+        if (!pendingByLowLevel.TryGetValue(lowLevelCode, out var pending))
+        {
+            pending = [];
+            pendingByLowLevel[lowLevelCode] = pending;
+        }
+
+        pending.Add(requirement);
     }
 
     private static decimal ApportionByGrossRequirement(decimal totalQuantity, decimal sourceQuantity, decimal grossRequirement)
