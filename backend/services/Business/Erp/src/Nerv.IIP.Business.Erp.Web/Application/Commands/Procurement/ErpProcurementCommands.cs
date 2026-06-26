@@ -533,7 +533,7 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             invoice.DueDate,
             "MATCHED");
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
         return invoice.Id;
     }
 }
@@ -628,7 +628,7 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             invoice.DueDate,
             "MATCHED");
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForAccountPayable(payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
         return invoice.Id;
     }
 }

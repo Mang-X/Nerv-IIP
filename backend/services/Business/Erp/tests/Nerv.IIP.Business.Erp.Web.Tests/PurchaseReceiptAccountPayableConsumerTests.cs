@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
-using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
@@ -15,7 +14,7 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 public sealed class PurchaseReceiptAccountPayableConsumerTests
 {
     [Fact]
-    public async Task PurchaseReceiptRecordedHandler_CreatesPayableFromReceiptAndPurchaseOrderFactsOnce()
+    public async Task PurchaseReceiptRecordedHandler_PostsGrIrAccrualFromReceiptAndPurchaseOrderFactsOnce()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -45,24 +44,20 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var payable = await new GetAccountPayableBySourceDocumentQueryHandler(dbContext).Handle(
-            new GetAccountPayableBySourceDocumentQuery("org-001", "env-dev", "RCV-AP-001"),
-            CancellationToken.None);
-        Assert.Equal("RCV-AP-001", payable.SourceDocumentNo);
-        Assert.Equal("SUP-001", payable.SupplierCode);
-        Assert.Equal(46.75m, payable.Amount);
-        Assert.Equal("CNY", payable.CurrencyCode);
-        Assert.Single(dbContext.AccountPayables);
+        Assert.Empty(dbContext.AccountPayables);
         Assert.Single(dbContext.JournalVouchers);
+        Assert.Equal(46.75m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(-46.75m, AccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(0m, AccountBalance(dbContext, "2202"));
         Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(await deadLetters.ListAsync(
-            PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable.ConsumerName,
+            PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
     }
 
     [Fact]
-    public async Task PurchaseReceiptRecordedHandler_CreatesDistinctPayablesForDifferentReceipts()
+    public async Task PurchaseReceiptRecordedHandler_PostsDistinctGrIrAccrualsForDifferentReceipts()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -87,19 +82,18 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await handler.HandleAsync(await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-102"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var payables = await dbContext.AccountPayables.OrderBy(x => x.SourceDocumentNo).ToListAsync(CancellationToken.None);
-        Assert.Equal(2, payables.Count);
-        Assert.Equal(["RCV-AP-101", "RCV-AP-102"], payables.Select(x => x.SourceDocumentNo).ToArray());
-        Assert.Equal(2, payables.Select(x => x.PayableNo).Distinct(StringComparer.Ordinal).Count());
+        var vouchers = await dbContext.JournalVouchers.OrderBy(x => x.VoucherNo).ToListAsync(CancellationToken.None);
+        Assert.Empty(dbContext.AccountPayables);
+        Assert.Equal(["JV-GRIR-RCV-AP-101", "JV-GRIR-RCV-AP-102"], vouchers.Select(x => x.VoucherNo).ToArray());
         Assert.Equal(2, dbContext.JournalVouchers.Count());
         Assert.Empty(await deadLetters.ListAsync(
-            PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable.ConsumerName,
+            PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
     }
 
     [Fact]
-    public async Task PurchaseReceiptRecordedHandler_CreatesPayableForInspectionReceiptBecauseNoQualityPassRetriggerExists()
+    public async Task PurchaseReceiptRecordedHandler_PostsGrIrAccrualForInspectionReceiptBecauseNoQualityPassRetriggerExists()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -116,16 +110,13 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         await handler.HandleAsync(await BuildReceiptRecordedEventAsync(dbContext, "RCV-AP-INSPECTION"), CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var payable = await new GetAccountPayableBySourceDocumentQueryHandler(dbContext).Handle(
-            new GetAccountPayableBySourceDocumentQuery("org-001", "env-dev", "RCV-AP-INSPECTION"),
-            CancellationToken.None);
-        Assert.Equal("RCV-AP-INSPECTION", payable.SourceDocumentNo);
-        Assert.Equal(25m, payable.Amount);
-        Assert.Single(dbContext.AccountPayables);
+        Assert.Empty(dbContext.AccountPayables);
         Assert.Single(dbContext.JournalVouchers);
+        Assert.Equal(25m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(-25m, AccountBalance(dbContext, "GR-IR"));
         Assert.Single(dbContext.ProcessedIntegrationEvents);
         Assert.Empty(await deadLetters.ListAsync(
-            PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable.ConsumerName,
+            PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
     }
@@ -153,7 +144,7 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
         Assert.Empty(dbContext.JournalVouchers);
         Assert.Empty(dbContext.ProcessedIntegrationEvents);
         var deadLetter = Assert.Single(await deadLetters.ListAsync(
-            PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable.ConsumerName,
+            PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
         Assert.Equal("unsupported-quality-status", deadLetter.FailureCode);
@@ -171,15 +162,22 @@ public sealed class PurchaseReceiptAccountPayableConsumerTests
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
     }
 
-    private static PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable CreateHandler(
+    private static PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual CreateHandler(
         IServiceScope scope,
         Infrastructure.ApplicationDbContext dbContext,
         IIntegrationEventDeadLetterStore deadLetters)
     {
-        return new PurchaseReceiptRecordedIntegrationEventHandlerForCreateAccountPayable(
+        return new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
             dbContext,
-            deadLetters,
-            scope.ServiceProvider.GetRequiredService<ErpCodingService>());
+            deadLetters);
+    }
+
+    private static decimal AccountBalance(Infrastructure.ApplicationDbContext dbContext, string accountCode)
+    {
+        return dbContext.JournalVouchers
+            .SelectMany(x => x.Lines)
+            .Where(x => x.AccountCode == accountCode)
+            .Sum(x => x.DebitAmount - x.CreditAmount);
     }
 
     private static async Task RecordReceiptAsync(
