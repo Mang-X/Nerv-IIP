@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application.Commands;
@@ -190,6 +192,86 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var claims = await ReadResponseDataAsync<PendingOperationTasksResponse>(claimAfterApproval);
         Assert.NotNull(claims);
         Assert.Equal(created.OperationTaskId, Assert.Single(claims.Items).OperationTaskId);
+    }
+
+    [Fact]
+    public async Task Approval_actor_is_derived_from_server_context_and_body_actor_is_ignored()
+    {
+        var client = CreateInternalServiceClient(factory);
+        client.DefaultRequestHeaders.Add("X-Actor", "user:trusted-approver");
+
+        await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
+            "lifecycle.high-risk-restart.actor-derived",
+            "High-risk restart",
+            "{}",
+            "high",
+            DefaultMaxAttempts: 3,
+            DefaultLeaseDurationSeconds: 300,
+            RequiresApproval: true));
+        var created = await PostCreateAsync(
+            client,
+            CreateRestartRequest("idem-approval-actor-derived-001", "org-approval-actor", "env-dev") with
+            {
+                OperationCode = "lifecycle.high-risk-restart.actor-derived"
+            });
+
+        var approvalResponse = await client.PostAsJsonAsync(
+            $"/api/ops/v1/operation-tasks/{created.OperationTaskId}/approval/approve",
+            new DecideOperationApprovalRequest(
+                "org-approval-actor",
+                "env-dev",
+                "user:spoofed-body-actor",
+                "approved from server context",
+                "corr-approval-actor-derived"));
+
+        Assert.Equal(HttpStatusCode.OK, approvalResponse.StatusCode);
+        var approved = await ReadResponseDataAsync<OperationTaskResponse>(approvalResponse);
+        Assert.NotNull(approved);
+        Assert.Equal("user:trusted-approver", approved.Approval?.DecidedBy);
+        Assert.Contains(approved.AuditRecords, x =>
+            x.Action == "operation.approved"
+            && x.Actor == "user:trusted-approver");
+        Assert.DoesNotContain(approved.AuditRecords, x => x.Actor == "user:spoofed-body-actor");
+    }
+
+    [Fact]
+    public async Task Approval_endpoint_rejects_requester_self_approval_from_server_context()
+    {
+        var client = CreateInternalServiceClient(factory);
+        client.DefaultRequestHeaders.Add("X-Actor", "local-admin");
+
+        await CreateTemplateAsync(client, new CreateOperationTemplateRequest(
+            "lifecycle.high-risk-restart.self",
+            "High-risk restart",
+            "{}",
+            "high",
+            DefaultMaxAttempts: 3,
+            DefaultLeaseDurationSeconds: 300,
+            RequiresApproval: true));
+        var created = await PostCreateAsync(
+            client,
+            CreateRestartRequest("idem-approval-self-001", "org-approval-self", "env-dev") with
+            {
+                OperationCode = "lifecycle.high-risk-restart.self"
+            });
+
+        var approvalResponse = await client.PostAsJsonAsync(
+            $"/api/ops/v1/operation-tasks/{created.OperationTaskId}/approval/approve",
+            new DecideOperationApprovalRequest(
+                "org-approval-self",
+                "env-dev",
+                "user:different-body-actor",
+                "self approval attempt",
+                "corr-approval-self"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, approvalResponse.StatusCode);
+
+        var detailResponse = await client.GetAsync($"/api/ops/v1/operation-tasks/{created.OperationTaskId}");
+        Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+        var detail = await ReadResponseDataAsync<OperationTaskResponse>(detailResponse);
+        Assert.Equal("approval-pending", detail.Status);
+        Assert.DoesNotContain(detail.AuditRecords, x => x.Action == "operation.approved");
+        Assert.DoesNotContain(detail.AuditRecords, x => x.Actor == "user:different-body-actor");
     }
 
     [Fact]
@@ -613,6 +695,57 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
     }
 
     [Fact]
+    public async Task Audit_integrity_endpoint_accepts_contiguous_chain()
+    {
+        await using var auditFactory = CreateEfInMemoryFactory("ops-audit-chain-valid");
+        var client = CreateInternalServiceClient(auditFactory);
+
+        await PostCreateAsync(client, CreateRestartRequest("idem-audit-chain-001", "org-audit-chain", "env-dev"));
+        await PostCreateAsync(client, CreateRestartRequest("idem-audit-chain-002", "org-audit-chain", "env-dev"));
+
+        var auditResponse = await client.GetAsync(
+            "/api/ops/v1/audit-records?organizationId=org-audit-chain&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+        var records = await ReadResponseDataAsync<AuditRecordListResponse>(auditResponse);
+        Assert.Equal([2L, 1L], records.Items.Select(x => x.SequenceNo).ToArray());
+        Assert.Equal(string.Empty, records.Items.Single(x => x.SequenceNo == 1).PreviousIntegrityHash);
+        Assert.Equal(
+            records.Items.Single(x => x.SequenceNo == 1).IntegrityHash,
+            records.Items.Single(x => x.SequenceNo == 2).PreviousIntegrityHash);
+
+        var validationResponse = await client.GetAsync(
+            "/api/ops/v1/audit-records/integrity?organizationId=org-audit-chain&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, validationResponse.StatusCode);
+        var validation = await ReadResponseDataAsync<AuditIntegrityValidationResponse>(validationResponse);
+        Assert.True(validation.IsValid);
+        Assert.Equal(2, validation.CheckedRecords);
+    }
+
+    [Theory]
+    [InlineData("tamper", "hash-mismatch")]
+    [InlineData("delete", "sequence-gap")]
+    [InlineData("reorder", "previous-hash-mismatch")]
+    public async Task Audit_integrity_endpoint_detects_tamper_delete_and_reorder(string mutation, string expectedFailureCode)
+    {
+        var databaseName = $"ops-audit-chain-{mutation}";
+        await using var auditFactory = CreateEfInMemoryFactory(databaseName);
+        var client = CreateInternalServiceClient(auditFactory);
+
+        await PostCreateAsync(client, CreateRestartRequest($"idem-audit-chain-{mutation}-001", "org-audit-chain-break", "env-dev"));
+        await PostCreateAsync(client, CreateRestartRequest($"idem-audit-chain-{mutation}-002", "org-audit-chain-break", "env-dev"));
+        await MutateAuditChainAsync(auditFactory, mutation);
+
+        var validationResponse = await client.GetAsync(
+            "/api/ops/v1/audit-records/integrity?organizationId=org-audit-chain-break&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, validationResponse.StatusCode);
+        var validation = await ReadResponseDataAsync<AuditIntegrityValidationResponse>(validationResponse);
+        Assert.False(validation.IsValid);
+        Assert.Equal(expectedFailureCode, validation.FailureCode);
+        Assert.False(string.IsNullOrWhiteSpace(validation.FirstInvalidAuditRecordId));
+    }
+
+    [Fact]
     public async Task Submit_audit_intent_creates_audit_record_for_task_scope()
     {
         await using var auditFactory = CreateEfInMemoryFactory("ops-submit-audit-intent");
@@ -983,6 +1116,41 @@ public sealed class OperationTaskEndpointTests(WebApplicationFactory<Program> fa
         var pending = await ReadResponseDataAsync<PendingOperationTasksResponse>(response);
         Assert.NotNull(pending);
         return Assert.Single(pending.Items);
+    }
+
+    private static async Task MutateAuditChainAsync(WebApplicationFactory<Program> testFactory, string mutation)
+    {
+        using var scope = testFactory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var records = await db.AuditRecords
+            .OrderBy(x => x.SequenceNo)
+            .ToListAsync();
+        Assert.True(records.Count >= 2);
+
+        switch (mutation)
+        {
+            case "tamper":
+                SetPrivateProperty(records[0], nameof(AuditRecord.Action), "operation.tampered");
+                break;
+            case "delete":
+                db.AuditRecords.Remove(records[0]);
+                break;
+            case "reorder":
+                SetPrivateProperty(records[0], nameof(AuditRecord.SequenceNo), records[1].SequenceNo);
+                SetPrivateProperty(records[1], nameof(AuditRecord.SequenceNo), 1L);
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown audit chain mutation: {mutation}");
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static void SetPrivateProperty<T>(object target, string propertyName, T value)
+    {
+        target.GetType()
+            .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
+            .SetValue(target, value);
     }
 
     private sealed class RecordingLoggerProvider : ILoggerProvider

@@ -217,11 +217,46 @@ public sealed class OperationTaskAggregateTests
             AuditRecord.ComputeIntegrityHash(
                 "audit-000001",
                 "op-000001",
+                1,
+                string.Empty,
                 "operation.requested",
                 "local-admin",
                 Now,
                 "corr-001"),
             audit.IntegrityHash);
+    }
+
+    [Fact]
+    public void Audit_records_include_monotonic_chain_metadata()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-chain-001"), Template("lifecycle.restart"), Now);
+        task.AssignInitialAuditId(AuditId("audit-000001"));
+        var dispatch = Claim(task, "attempt-000001", "audit-000002", "lease-001", "connector-host-001");
+        task.RecordResult(Result(dispatch, "succeeded"), AuditId("audit-000003"));
+
+        var records = task.AuditRecords.OrderBy(x => x.SequenceNo).ToArray();
+
+        Assert.Equal([1L, 2L, 3L], records.Select(x => x.SequenceNo).ToArray());
+        Assert.Equal(string.Empty, records[0].PreviousIntegrityHash);
+        Assert.Equal(records[0].IntegrityHash, records[1].PreviousIntegrityHash);
+        Assert.Equal(records[1].IntegrityHash, records[2].PreviousIntegrityHash);
+        Assert.All(records, x => Assert.True(x.HasValidIntegrityHash()));
+    }
+
+    [Fact]
+    public void Approval_decision_rejects_requester_self_approval()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-self-approval-001"), Template("lifecycle.restart", requiresApproval: true), Now);
+        task.AssignPendingAuditIds([AuditId("audit-000001"), AuditId("audit-000002")]);
+
+        var approve = () => task.Approve(
+            new DecideOperationApprovalInput("org-001", "env-dev", "local-admin", "self approval", "corr-self-approval"),
+            AuditId("audit-000003"),
+            Now.AddMinutes(1));
+
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(approve);
+        Assert.Contains("requester cannot approve", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("approval-pending", task.ToFact().Status);
     }
 
     [Fact]

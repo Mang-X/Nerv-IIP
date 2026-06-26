@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using NetCorePal.Extensions.Repository;
 using NetCorePal.Extensions.Repository.EntityFrameworkCore;
@@ -13,6 +14,7 @@ public interface IOperationTaskRepository : IRepository<OperationTask, Operation
     Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default);
     Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default);
     Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default);
+    Task<AuditChainHead?> GetAuditChainHeadAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default);
 }
 
 public sealed class OperationTaskRepository(ApplicationDbContext context)
@@ -67,6 +69,7 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
                 LIMIT {cappedTake}
                 """)
             .Include(x => x.Attempts)
+            .Include(x => x.AuditRecords)
             .ToListAsync(cancellationToken);
     }
 
@@ -84,5 +87,18 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
     public Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new AuditRecordId($"audit-{Guid.CreateVersion7():N}"));
+    }
+
+    public async Task<AuditChainHead?> GetAuditChainHeadAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
+            .SelectMany(x => x.AuditRecords)
+            .OrderByDescending(x => x.SequenceNo)
+            .ThenByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Select(x => new AuditChainHead(x.SequenceNo, x.IntegrityHash))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }

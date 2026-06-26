@@ -13,6 +13,10 @@ public sealed record ListAuditRecordsRequest(
     string EnvironmentId,
     string? OperationTaskId);
 
+public sealed record ValidateAuditIntegrityRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
 [HttpGet("/api/ops/v1/audit-records")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class ListAuditRecordsEndpoint(IMediator mediator)
@@ -25,5 +29,19 @@ public sealed class ListAuditRecordsEndpoint(IMediator mediator)
             req.EnvironmentId,
             req.OperationTaskId), ct);
         await Send.OkAsync(records.AsResponseData(), ct);
+    }
+}
+
+[HttpGet("/api/ops/v1/audit-records/integrity")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ValidateAuditIntegrityEndpoint(IMediator mediator)
+    : Endpoint<ValidateAuditIntegrityRequest, ResponseData<AuditIntegrityValidationResponse>>
+{
+    public override async Task HandleAsync(ValidateAuditIntegrityRequest req, CancellationToken ct)
+    {
+        var result = await mediator.Send(new ValidateAuditIntegrityQuery(
+            req.OrganizationId,
+            req.EnvironmentId), ct);
+        await Send.OkAsync(result.AsResponseData(), ct);
     }
 }

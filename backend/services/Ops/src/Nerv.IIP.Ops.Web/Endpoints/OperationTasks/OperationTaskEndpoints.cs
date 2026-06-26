@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -82,7 +83,8 @@ public sealed class ApproveOperationApprovalEndpoint(IMediator mediator)
         try
         {
             var operationTaskId = Route<string>("operationTaskId")!;
-            var task = await mediator.Send(new ApproveOperationApprovalCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            var trustedRequest = req with { Actor = OpsApprovalActorResolver.ResolveActor(HttpContext) };
+            var task = await mediator.Send(new ApproveOperationApprovalCommand(operationTaskId, trustedRequest, DateTimeOffset.UtcNow), ct);
             await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationTaskRequestException ex)
@@ -106,7 +108,8 @@ public sealed class RejectOperationApprovalEndpoint(IMediator mediator)
         try
         {
             var operationTaskId = Route<string>("operationTaskId")!;
-            var task = await mediator.Send(new RejectOperationApprovalCommand(operationTaskId, req, DateTimeOffset.UtcNow), ct);
+            var trustedRequest = req with { Actor = OpsApprovalActorResolver.ResolveActor(HttpContext) };
+            var task = await mediator.Send(new RejectOperationApprovalCommand(operationTaskId, trustedRequest, DateTimeOffset.UtcNow), ct);
             await Send.OkAsync(task.AsResponseData(), ct);
         }
         catch (InvalidOperationTaskRequestException ex)
@@ -322,6 +325,45 @@ internal static class OpsEndpointResults
     public static async Task WriteBadRequestAsync(HttpContext context, string detail, CancellationToken cancellationToken)
     {
         await ResponseDataEndpointResults.WriteErrorAsync(context, StatusCodes.Status400BadRequest, detail, cancellationToken);
+    }
+}
+
+internal static class OpsApprovalActorResolver
+{
+    public static string ResolveActor(HttpContext context)
+    {
+        var subject = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? context.User.FindFirstValue("sub");
+        var name = context.User.Identity?.Name;
+        if (!IsInternalService(subject) && !string.IsNullOrWhiteSpace(subject))
+        {
+            return $"user:{subject}";
+        }
+
+        if (!IsInternalService(name) && !string.IsNullOrWhiteSpace(name))
+        {
+            return $"user:{name}";
+        }
+
+        var forwardedActor = ReadHeader(context, "X-Actor");
+        if (!string.IsNullOrWhiteSpace(forwardedActor))
+        {
+            return forwardedActor;
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "system:ops" : $"system:{name}";
+    }
+
+    private static bool IsInternalService(string? value)
+    {
+        return string.Equals(value, "internal-service", StringComparison.Ordinal);
+    }
+
+    private static string? ReadHeader(HttpContext context, string name)
+    {
+        return context.Request.Headers.TryGetValue(name, out var values)
+            ? values.FirstOrDefault()
+            : null;
     }
 }
 

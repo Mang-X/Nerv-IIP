@@ -45,6 +45,8 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
             .Select(x => new AuditRecordSummary(
                 x.Id.Id,
                 x.OperationTaskId.Id,
+                x.SequenceNo,
+                x.PreviousIntegrityHash,
                 x.Action,
                 x.Actor,
                 x.OccurredAtUtc,

@@ -120,6 +120,8 @@ public sealed class OpsSdkEnvelopeCompatibilityTests
         var expected = new AuditIntentResponse(
             "audit-001",
             "op-audit",
+            1,
+            "",
             "manual.reviewed",
             "user:auditor",
             DateTimeOffset.Parse("2026-05-22T00:00:00Z"),

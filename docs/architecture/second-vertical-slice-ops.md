@@ -71,6 +71,9 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 9. `POST /api/ops/v1/operation-results`
    - Connector Host 回传执行结果，Ops 写入 OperationAttempt 和完成/失败审计事实。
 
+10. `GET /api/ops/v1/audit-records/integrity`
+   - 按 organization/environment 和可选 operationTaskId 重算 Ops 审计链，校验 `SequenceNo`、`PreviousIntegrityHash` 和 `IntegrityHash`，用于检出审计记录字段篡改、删条和重排序。
+
 ## 认证与范围
 
 第二阶段仍是本地纵切验证，尚未接入完整 IAM 授权链路。
@@ -78,6 +81,7 @@ AppHub 仍然是实例状态事实来源。Ops 只记录动作事实和执行结
 1. Connector Host 调用 claim、pending、heartbeat、abandon 与 result 接口时必须携带 `X-Connector-Host-Id`、`X-Connector-Secret`、`X-Organization-Id` 和 `X-Environment-Id`。
 2. Ops 会校验 connectorHostId、secret、organizationId、environmentId 与请求范围一致，避免 Connector Host 跨范围领取或回传任务。
 3. Gateway restart facade 暂时保留本地开发入口，后续接入控制台登录、权限和审批。
+4. 高风险动作审批端点不信任请求 body 中的 actor；审批 actor 从服务端认证主体或受信转发上下文派生，请求人不能审批或拒绝自己发起的任务。
 
 该 header-secret 机制不是最终生产认证方案。Connector Host 机器身份终态以 [Connector Host 机器身份认证终态](connector-host-machine-auth.md) 为准：Connector Host 通过 IAM 换发短期 bearer token，Ops pending/result 接口按 bearer token、permission code 和 capability scope 授权。
 
