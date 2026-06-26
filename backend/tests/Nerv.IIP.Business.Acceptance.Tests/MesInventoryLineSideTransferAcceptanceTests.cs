@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -151,6 +152,113 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             x.LocationCode == "line-side" &&
             x.Quantity == -5m);
         Assert.Equal(4, inventoryDb.StockMovements.Count());
+    }
+
+    [Fact]
+    public async Task Inventory_rejecting_mes_line_side_receipt_rolls_back_material_issue_status()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                5m,
+                DateTimeOffset.Parse("2026-06-18T08:00:00Z"),
+                "issue-541"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001",
+                "env-dev",
+                issueResult.ReferenceId,
+                DateTimeOffset.Parse("2026-06-18T08:20:00Z"),
+                5m,
+                "LOT-OIL-A"),
+            CancellationToken.None);
+        var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(issueRequest.GetDomainEvents().First()));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(issueEvent, CancellationToken.None);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(inventoryPublisher.Published));
+
+        await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var persistedIssue = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(MaterialIssueRequest.RequestedStatus, persistedIssue.Status);
+        Assert.Equal(0m, persistedIssue.ReceivedQuantity);
+        Assert.Null(persistedIssue.ReceivedAtUtc);
+        Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
+        Assert.Contains("negative", persistedIssue.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(persistedIssue.InventoryPostingFailedAtUtc);
+    }
+
+    [Fact]
+    public async Task Inventory_rejecting_mes_finished_goods_receipt_marks_receipt_failed()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541");
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(mesDb).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-541",
+                "SKU-FG-541",
+                8m,
+                "PCS",
+                DateTimeOffset.Parse("2026-06-18T09:00:00Z"),
+                UnitCost: 12.34m,
+                IdempotencyKey: "receipt-541",
+                ProducedLotNo: "LOT-FG-541"),
+            CancellationToken.None);
+        var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+            .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
+        await inventoryHandler.HandleAsync(receiptEvent with
+        {
+            EventId = "evt-fgr-541-conflict",
+            Payload = receiptEvent.Payload with { Quantity = 9m },
+        }, CancellationToken.None);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(inventoryPublisher.Published));
+
+        await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var persistedReceipt = await mesDb.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, persistedReceipt.Status);
+        Assert.Null(persistedReceipt.PostedInventoryMovementId);
+        Assert.Equal("IDEMPOTENCY_CONFLICT", persistedReceipt.InventoryPostingFailureCode);
+        Assert.Contains("conflicts", persistedReceipt.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(persistedReceipt.InventoryPostingFailedAtUtc);
     }
 
     private static InventoryMovementRequestedIntegrationEvent CreateWarehouseSeedEvent(DateTimeOffset occurredAtUtc)

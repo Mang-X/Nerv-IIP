@@ -24,6 +24,9 @@ public sealed class MaterialIssueRequestEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("Material issue lifecycle status within MES.");
         builder.Property(x => x.RequestedAtUtc).HasColumnName("requested_at_utc").IsRequired().HasComment("UTC time when the material issue request was created.");
         builder.Property(x => x.ReceivedAtUtc).HasColumnName("received_at_utc").HasComment("UTC time when line-side receipt was confirmed.");
+        builder.Property(x => x.InventoryPostingFailureCode).HasColumnName("inventory_posting_failure_code").HasMaxLength(100).HasComment("Last Inventory posting failure code returned for this MES material issue request.");
+        builder.Property(x => x.InventoryPostingFailureMessage).HasColumnName("inventory_posting_failure_message").HasMaxLength(500).HasComment("Last Inventory posting failure message returned for this MES material issue request.");
+        builder.Property(x => x.InventoryPostingFailedAtUtc).HasColumnName("inventory_posting_failed_at_utc").HasComment("UTC time when Inventory rejected the latest MES material issue or line-side receipt posting.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

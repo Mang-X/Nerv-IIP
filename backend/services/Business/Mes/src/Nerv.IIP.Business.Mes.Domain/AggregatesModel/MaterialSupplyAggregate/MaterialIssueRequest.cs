@@ -52,6 +52,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset RequestedAtUtc { get; private set; }
     public DateTimeOffset? ReceivedAtUtc { get; private set; }
+    public string? InventoryPostingFailureCode { get; private set; }
+    public string? InventoryPostingFailureMessage { get; private set; }
+    public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
 
     public static MaterialIssueRequest Create(
         string organizationId,
@@ -98,7 +101,36 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         ReceivedQuantity += quantity;
         ReceivedAtUtc = receivedAtUtc;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
+        InventoryPostingFailureCode = null;
+        InventoryPostingFailureMessage = null;
+        InventoryPostingFailedAtUtc = null;
         AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
         AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
+    }
+
+    public void MarkInventoryPostingFailed(
+        decimal rollbackQuantity,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc)
+    {
+        if (rollbackQuantity > 0m && ReceivedQuantity > 0m)
+        {
+            ReceivedQuantity = Math.Max(0m, ReceivedQuantity - rollbackQuantity);
+            if (ReceivedQuantity == 0m)
+            {
+                ReceivedAtUtc = null;
+                MaterialLotId = null;
+                Status = RequestedStatus;
+            }
+            else
+            {
+                Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
+            }
+        }
+
+        InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
+        InventoryPostingFailureMessage = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        InventoryPostingFailedAtUtc = failedAtUtc;
     }
 }

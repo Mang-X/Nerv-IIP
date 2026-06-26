@@ -130,7 +130,10 @@ public sealed record FinishedGoodsReceiptRequestFact(
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string? PostedInventoryMovementId = null,
-    DateTimeOffset? PostedAtUtc = null);
+    DateTimeOffset? PostedAtUtc = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListFinishedGoodsReceiptRequestsQuery, ListFinishedGoodsReceiptRequestsResponse>
@@ -197,7 +200,10 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.ProducedLotNo,
                 x.SerialNo,
                 x.PostedInventoryMovementId,
-                x.PostedAtUtc))
+                x.PostedAtUtc,
+                x.InventoryPostingFailureCode,
+                x.InventoryPostingFailureMessage,
+                x.InventoryPostingFailedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }
