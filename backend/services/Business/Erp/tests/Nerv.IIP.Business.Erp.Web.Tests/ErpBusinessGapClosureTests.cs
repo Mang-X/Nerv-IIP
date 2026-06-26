@@ -227,6 +227,95 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
+    public async Task Supplier_invoice_price_variance_leaves_gr_ir_balance_for_later_reconciliation()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-GRIR-VAR",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-GRIR-VAR", approvalClient.LastRequest!.ChainId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-GRIR-VAR",
+                "PO-GRIR-VAR",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01", "LOT-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receipt = dbContext.PurchaseReceipts.Single(x => x.PurchaseReceiptNo == "RCV-GRIR-VAR");
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RecordSupplierInvoiceCommandHandler(dbContext).Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-GRIR-VAR",
+                "PO-GRIR-VAR",
+                "RCV-GRIR-VAR",
+                new DateOnly(2026, 6, 10),
+                new DateOnly(2026, 7, 10),
+                "CNY",
+                0m,
+                1m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 13m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(26m, Assert.Single(dbContext.AccountPayables).Amount);
+        Assert.Equal(25m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(1m, AccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(-26m, AccountBalance(dbContext, "2202"));
+    }
+
+    [Fact]
+    public async Task Direct_account_payable_posts_expense_payable_without_touching_inventory_or_gr_ir()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+
+        await new CreateAccountPayableCommandHandler(dbContext).Handle(
+            new CreateAccountPayableCommand(
+                "org-001",
+                "env-dev",
+                "AP-DIRECT-001",
+                "MANUAL-AP-001",
+                "SUP-001",
+                100m,
+                "CNY",
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 7, 1),
+                "DIRECT"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(100m, Assert.Single(dbContext.AccountPayables).Amount);
+        Assert.Equal(0m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(0m, AccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(100m, AccountBalance(dbContext, "5001"));
+        Assert.Equal(-100m, AccountBalance(dbContext, "2202"));
+    }
+
+    [Fact]
     public async Task Supplier_invoice_command_holds_payment_when_cumulative_invoice_quantity_exceeds_receipt()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();

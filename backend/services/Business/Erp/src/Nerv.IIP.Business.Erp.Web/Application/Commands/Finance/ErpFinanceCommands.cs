@@ -313,6 +313,7 @@ internal static class FinanceVoucherFactory
 {
     public const string InventoryAccountCode = "1401";
     public const string AccountsPayableAccountCode = "2202";
+    public const string DirectPayableExpenseAccountCode = "5001";
     public const string GoodsReceiptInvoiceReceiptAccountCode = "GR-IR";
 
     public static string GoodsReceiptIrAccrualVoucherNo(string purchaseReceiptNo)
@@ -354,7 +355,7 @@ internal static class FinanceVoucherFactory
             $"JV-AP-{payable.PayableNo}",
             payable.InvoiceDate,
             [
-                new JournalVoucherLineDraft(InventoryAccountCode, payable.Amount, 0m, $"AP matched invoice {payable.SourceDocumentNo}"),
+                new JournalVoucherLineDraft(DirectPayableExpenseAccountCode, payable.Amount, 0m, $"Direct AP expense {payable.SourceDocumentNo}"),
                 new JournalVoucherLineDraft(AccountsPayableAccountCode, 0m, payable.Amount, $"AP {payable.PayableNo}"),
             ]);
     }

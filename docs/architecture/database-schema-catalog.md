@@ -389,7 +389,7 @@ Source:
 | `quotations` / `quotation_lines` | business | 销售报价和报价行。 | `quotation_no` 是业务编号；行记录 SKU、数量、单价和交期。 | quotation no 唯一索引用于销售订单创建。 | 报价需显式 approve 才能创建销售订单。 |
 | `sales_orders` / `sales_order_lines` | business | 销售订单和行，记录已释放发货数量。 | `sales_order_no` 是业务编号；行记录 ordered/delivered quantity。 | SO no 唯一索引用于发货请求反查。 | ERP 只拥有订单事实；可按客户信用额度、已开放应收和 active SO exposure 阻断超限订单，WMS 拥有出库执行。 |
 | `delivery_orders` / `delivery_order_lines` | business | ERP 发货请求，供 WMS outbound 执行。 | `delivery_order_no` 是业务编号；行引用 SO line no，并复制 SKU、UOM、location 和可选 lot。 | delivery order no 唯一索引用于 WMS/AR 下游引用。 | release 后通过公开 WMS outbound-requested 事件请求出库执行，不表达 WMS task state。 |
-| `account_payables` | business | 应付候选事实。 | `payable_no` 是业务编号；记录来源单据、供应商、金额、已付金额、发票日、到期日和付款条件。 | AP no 唯一索引用于幂等生成。 | 支付推进不允许超过 open amount；列表可按 as-of date 输出账龄 bucket；创建和付款核销会生成平衡子分类账凭证，完整总账月结后置。 |
+| `account_payables` | business | 应付候选事实。 | `payable_no` 是业务编号；记录来源单据、供应商、金额、已付金额、发票日、到期日和付款条件。 | AP no 唯一索引用于幂等生成。 | 支付推进不允许超过 open amount；列表可按 as-of date 输出账龄 bucket；供应商发票匹配创建的 AP 通过 GR/IR clearing 入账，直接 AP 创建走费用/应付凭证，不触碰库存或 GR/IR；完整总账月结后置。 |
 | `account_receivables` | business | 应收候选事实。 | `receivable_no` 是业务编号；记录来源单据、客户、金额、已收金额、发票日、到期日和付款条件。 | AR no 唯一索引用于幂等生成。 | 收款推进不允许超过 open amount；列表可按 as-of date 输出账龄 bucket；创建和收款核销会生成平衡子分类账凭证，完整收款核销后置。 |
 | `cost_candidates` | business | 成本候选事实，引用 MES、Inventory 或 WMS 公开事实。 | `candidate_no` 是业务编号；`source_type + source_document_no` 描述来源。 | candidate no 唯一索引用于成本候选幂等。 | 作为候选保留，不代表最终成本结转。 |
 | `journal_vouchers` / `journal_voucher_lines` | business | 平衡凭证事实和借贷行。 | `voucher_no` 是业务编号；行记录 account code、debit/credit。 | voucher no 唯一索引用于凭证审计。 | posted 后不可变，借贷必须平衡；AP/AR/Cost 创建和 AP/AR 清算命令会自动写入最小子分类账凭证。 |
