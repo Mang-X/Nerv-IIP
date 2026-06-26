@@ -229,6 +229,69 @@ public sealed class InventoryMovementRequestedConsumerTests
     }
 
     [Fact]
+    public async Task Movement_requested_consumer_executes_status_transfer_request_from_blocked_to_restricted()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            StockQualityStatus.Blocked,
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "quality",
+            "NCR-SEED",
+            "LINE-001",
+            "idem-blocked-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            StockQualityStatus.Blocked,
+            "company",
+            "owner-001",
+            5m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-status-transfer") with
+        {
+            SourceService = InventoryIntegrationEventSources.BusinessQuality,
+            Payload = CreateRequestedEvent("evt-status-transfer").Payload with
+            {
+                MovementType = "status-transfer",
+                SourceService = "quality",
+                SourceDocumentId = "NCR-001",
+                SourceDocumentLineId = "NCR-CODE-001",
+                IdempotencyKey = "quality:ncr-inventory-disposition:org-001:env-dev:NCR-CODE-001:rework",
+                QualityStatus = StockQualityStatus.Blocked,
+                Quantity = 3m,
+                TargetQualityStatus = StockQualityStatus.Restricted,
+            },
+        }, CancellationToken.None);
+
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Blocked).OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Restricted).OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Movement_requested_consumer_publishes_posting_failed_when_unreserved_outbound_would_pierce_reserved_stock()
     {
         await using var dbContext = CreateContext();

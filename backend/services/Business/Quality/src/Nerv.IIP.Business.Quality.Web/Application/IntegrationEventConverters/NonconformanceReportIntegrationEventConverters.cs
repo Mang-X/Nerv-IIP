@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
@@ -75,8 +76,90 @@ public sealed class NcrDispositionDecidedIntegrationEventConverter(IQualityInteg
                     x.Comment,
                     x.ReviewedAtUtc)).ToArray())
             {
-                SourceDocumentId = ncr.SourceDocumentId
+                SourceDocumentId = ncr.SourceDocumentId,
+                LotNo = ncr.BatchNo,
+                SerialNo = ncr.SerialNo,
+                UomCode = ncr.UomCode,
+                SiteCode = ncr.SiteCode,
+                LocationCode = ncr.LocationCode,
+                OwnerType = ncr.OwnerType,
+                OwnerId = ncr.OwnerId
             });
+    }
+}
+
+public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<NonconformanceReportInventoryDispositionRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(NonconformanceReportInventoryDispositionRequestedDomainEvent domainEvent)
+    {
+        var ncr = domainEvent.NonconformanceReport;
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        var context = contextAccessor.GetContext();
+        var dispositionType = ncr.DispositionType ?? throw new InvalidOperationException("NCR disposition type is required for inventory disposition routing.");
+        var movementType = dispositionType == QualityNcrDispositionTypes.Scrap
+            ? "adjustment"
+            : "status-transfer";
+        var idempotencyKey = EventIds.Idempotency(
+            "ncr-inventory-disposition",
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            ncr.NcrCode,
+            dispositionType);
+        return new InventoryMovementRequestedIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            occurredAtUtc,
+            InventoryIntegrationEventSources.BusinessQuality,
+            context.CorrelationId,
+            context.CausationId,
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            context.Actor,
+            idempotencyKey,
+            new InventoryMovementRequestedPayload(
+                movementType,
+                "quality",
+                ncr.Id.ToString(),
+                ncr.NcrCode,
+                idempotencyKey,
+                ncr.SkuCode,
+                Required(ncr.UomCode, nameof(ncr.UomCode)),
+                Required(ncr.SiteCode, nameof(ncr.SiteCode)),
+                Required(ncr.LocationCode, nameof(ncr.LocationCode)),
+                ncr.BatchNo,
+                ncr.SerialNo,
+                "blocked",
+                Required(ncr.OwnerType, nameof(ncr.OwnerType)),
+                ncr.OwnerId,
+                Quantity(ncr),
+                occurredAtUtc,
+                TargetQualityStatus: TargetQualityStatus(dispositionType)));
+    }
+
+    private static decimal Quantity(Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate.NonconformanceReport ncr)
+    {
+        return ncr.DispositionType == QualityNcrDispositionTypes.Scrap
+            ? -Math.Abs(ncr.DefectQuantity)
+            : Math.Abs(ncr.DefectQuantity);
+    }
+
+    private static string? TargetQualityStatus(string dispositionType)
+    {
+        return dispositionType switch
+        {
+            QualityNcrDispositionTypes.Rework or QualityNcrDispositionTypes.ConditionalRelease => QualityStockReleaseTargetStatuses.Restricted,
+            QualityNcrDispositionTypes.Scrap => null,
+            _ => throw new InvalidOperationException($"Unsupported inventory NCR disposition '{dispositionType}'."),
+        };
+    }
+
+    private static string Required(string? value, string name)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"{name} is required for NCR inventory disposition routing.")
+            : value;
     }
 }
 

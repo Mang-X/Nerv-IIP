@@ -22,6 +22,7 @@ public static class InventoryIntegrationEventSources
     public const string BusinessWms = "business-wms";
     public const string BusinessErp = "business-erp";
     public const string BusinessMes = "business-mes";
+    public const string BusinessQuality = "business-quality";
 }
 
 public sealed record InventoryMovementRequestedIntegrationEvent(
@@ -59,7 +60,8 @@ public sealed record InventoryMovementRequestedPayload(
     decimal Quantity,
     DateTimeOffset RequestedAtUtc,
     string? InventoryReservationId = null,
-    decimal? UnitCost = null);
+    decimal? UnitCost = null,
+    string? TargetQualityStatus = null);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,
