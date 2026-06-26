@@ -192,12 +192,12 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Where(x => string.IsNullOrWhiteSpace(request.PartnerType) || x.PartnerType == request.PartnerType || x.PartnerRoles.Contains(request.PartnerType))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(
+            .Select(x => new MasterDataResourceItem(
                 resourceType,
                 x.Code,
                 x.Name,
                 !x.Disabled,
-                x.UpdatedAtUtc,
+                x.UpdatedAtUtc.ToString("O"),
                 x.PartnerType,
                 x.PartnerRoles,
                 null,
@@ -212,8 +212,6 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 null,
                 null,
                 x.TaxId,
-                null,
-                null,
                 null,
                 null,
                 null,
