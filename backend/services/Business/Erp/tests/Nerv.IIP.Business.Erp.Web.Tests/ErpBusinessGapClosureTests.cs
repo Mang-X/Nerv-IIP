@@ -157,6 +157,76 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
+    public async Task Purchase_receipt_then_supplier_invoice_clears_gr_ir_without_duplicate_payable()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-GRIR-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-GRIR-001", approvalClient.LastRequest!.ChainId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-GRIR-001",
+                "PO-GRIR-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01", "LOT-001")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receipt = dbContext.PurchaseReceipts.Single(x => x.PurchaseReceiptNo == "RCV-GRIR-001");
+        var receiptEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
+            .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(receiptEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(dbContext.AccountPayables);
+        Assert.Equal(25m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(-25m, AccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(0m, AccountBalance(dbContext, "2202"));
+
+        await new RecordSupplierInvoiceCommandHandler(dbContext).Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-GRIR-001",
+                "PO-GRIR-001",
+                "RCV-GRIR-001",
+                new DateOnly(2026, 6, 10),
+                new DateOnly(2026, 7, 10),
+                "CNY",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 12.5m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payable = Assert.Single(dbContext.AccountPayables);
+        Assert.Equal("INV-GRIR-001", payable.SourceDocumentNo);
+        Assert.Equal(25m, payable.Amount);
+        Assert.Equal(2, dbContext.JournalVouchers.Count());
+        Assert.Equal(25m, AccountBalance(dbContext, "1401"));
+        Assert.Equal(0m, AccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(-25m, AccountBalance(dbContext, "2202"));
+    }
+
+    [Fact]
     public async Task Supplier_invoice_command_holds_payment_when_cumulative_invoice_quantity_exceeds_receipt()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -473,6 +543,14 @@ public sealed class ErpBusinessGapClosureTests
                 null,
                 null,
                 new ApprovalDocumentReferencePayload("business-erp", "purchase-order", purchaseOrderNo, null)));
+    }
+
+    private static decimal AccountBalance(Infrastructure.ApplicationDbContext dbContext, string accountCode)
+    {
+        return dbContext.JournalVouchers
+            .SelectMany(x => x.Lines)
+            .Where(x => x.AccountCode == accountCode)
+            .Sum(x => x.DebitAmount - x.CreditAmount);
     }
 
     private sealed class CapturingPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient
