@@ -65,7 +65,7 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
                         order.SiteCode,
                         x.StagingLocationCode,
                         x.ReceivedQuantity,
-                        status))
+                        null))
                     .ToArray()));
     }
 }
@@ -103,7 +103,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
                         order.SiteCode,
                         x.PickLocationCode,
                         x.RequestedQuantity,
-                        status))
+                        null))
                     .ToArray()));
     }
 }

@@ -118,6 +118,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureHasLines();
         Status = InboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
         var singleLine = lines.Count == 1;
@@ -127,7 +128,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 "inbound",
                 InboundOrderNo,
                 line.LineNo,
-                singleLine ? idempotencyKey : BuildLineIdempotencyKey(idempotencyKey, line.LineNo),
+                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
@@ -172,17 +173,12 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         }
     }
 
-    private static string BuildLineIdempotencyKey(string idempotencyKey, string lineNo)
+    private void EnsureHasLines()
     {
-        var candidate = $"{idempotencyKey}:{lineNo}";
-        if (candidate.Length <= 128)
+        if (lines.Count == 0)
         {
-            return candidate;
+            throw new InvalidOperationException("Inbound order must contain at least one line before completion.");
         }
-
-        var raw = $"{idempotencyKey}:{lineNo}";
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
-        return $"wms-line:{hash}";
     }
 }
 

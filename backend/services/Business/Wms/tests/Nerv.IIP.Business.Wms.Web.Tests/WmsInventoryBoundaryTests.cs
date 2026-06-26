@@ -40,6 +40,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("inbound", movementRequest.MovementType);
         Assert.Equal("idem-in-001", movementRequest.IdempotencyKey);
+        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal("SKU-FG-1000", movementRequest.SkuCode);
     }
 
@@ -130,6 +131,7 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(InventoryMovementRequestStatus.Pending, movementRequest.Status);
         Assert.Equal("outbound", movementRequest.MovementType);
         Assert.Equal("idem-out-001", movementRequest.IdempotencyKey);
+        Assert.DoesNotContain(':', movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
     }
 

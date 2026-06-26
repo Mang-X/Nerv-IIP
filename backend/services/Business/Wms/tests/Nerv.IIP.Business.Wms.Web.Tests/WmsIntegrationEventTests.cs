@@ -42,6 +42,7 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([5m, 3m], lines.Select(x => x.Quantity).ToArray());
+        Assert.All(lines, x => Assert.Null(x.Status));
     }
 
     [Fact]
@@ -60,6 +61,7 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([4m, 2m], lines.Select(x => x.Quantity).ToArray());
+        Assert.All(lines, x => Assert.Null(x.Status));
     }
 
     [Fact]

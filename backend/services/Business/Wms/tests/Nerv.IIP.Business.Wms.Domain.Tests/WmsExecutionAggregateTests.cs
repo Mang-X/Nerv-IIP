@@ -50,6 +50,17 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Inbound_completion_rejects_empty_persisted_line_set()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+        DomainWmsFactory.ClearInboundLines(inbound);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => inbound.Complete("idem-in-001"));
+
+        Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Outbound_pack_review_requires_idempotency_key_and_creates_inventory_request()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
@@ -74,6 +85,17 @@ public sealed class WmsExecutionAggregateTests
         var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
         Assert.Equal("res-001", request.InventoryReservationId);
+    }
+
+    [Fact]
+    public void Outbound_pack_review_rejects_empty_persisted_line_set()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        DomainWmsFactory.ClearOutboundLines(outbound);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+
+        Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -156,5 +178,21 @@ internal static class DomainWmsFactory
             "company",
             "owner-001",
             5m);
+    }
+
+    public static void ClearInboundLines(Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder inbound)
+    {
+        var lines = (List<InboundOrderLine>)typeof(Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder)
+            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(inbound)!;
+        lines.Clear();
+    }
+
+    public static void ClearOutboundLines(Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder outbound)
+    {
+        var lines = (List<OutboundOrderLine>)typeof(Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder)
+            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(outbound)!;
+        lines.Clear();
     }
 }
