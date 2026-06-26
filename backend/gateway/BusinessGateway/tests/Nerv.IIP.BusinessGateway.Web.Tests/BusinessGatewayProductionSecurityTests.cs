@@ -12,7 +12,7 @@ public sealed class BusinessGatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+                builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 BusinessGatewayTestServiceBaseUrls.Configure(builder);
@@ -30,7 +30,7 @@ public sealed class BusinessGatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+                builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");
@@ -58,7 +58,7 @@ public sealed class BusinessGatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+                builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://business.example.test");

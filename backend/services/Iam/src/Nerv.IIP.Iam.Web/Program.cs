@@ -69,14 +69,14 @@ if (usesPostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 }
 
 if (!builder.Environment.IsDevelopment()
-    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKey"]))
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKeys:0:PrivateKeyPem"]))
 {
-    throw new InvalidOperationException("Iam:Jwt:SigningKey is required outside Development.");
+    throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:PrivateKeyPem is required outside Development.");
 }
 if (!builder.Environment.IsDevelopment()
-    && System.Text.Encoding.UTF8.GetByteCount(builder.Configuration["Iam:Jwt:SigningKey"] ?? string.Empty) < 32)
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKeys:0:Kid"]))
 {
-    throw new InvalidOperationException("Iam:Jwt:SigningKey must be at least 32 bytes outside Development.");
+    throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:Kid is required outside Development.");
 }
 var configuredAccessTokenMinutes = builder.Configuration.GetValue("Iam:Jwt:AccessTokenMinutes", 15);
 if (!builder.Environment.IsDevelopment()

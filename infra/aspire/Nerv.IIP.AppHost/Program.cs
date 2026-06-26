@@ -5,7 +5,9 @@ const string LocalDevelopmentEnvironment = "Development";
 
 builder.AddDockerComposeEnvironment("compose");
 
-var iamJwtSigningKey = builder.AddParameter("iam-jwt-signing-key", secret: true);
+var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
+var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret: true);
+var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
@@ -112,7 +114,8 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
+    .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(iamDatabase, "IamDb")
     .WithReference(redis)
@@ -423,7 +426,7 @@ var gateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPr
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
@@ -482,7 +485,7 @@ else
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
     .WithEnvironment("Iam__Jwt__Audience", "nerv-iip-api")
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)

@@ -134,6 +134,7 @@ $platformOutput = Join-Path $openApiDirectory "platform-gateway.v1.json"
 $businessGatewayUrl = Get-AvailableLoopbackUrl
 $businessGatewayProject = Join-Path $root "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj"
 $businessOutput = Join-Path $openApiDirectory "business-gateway-console.v1.json"
+$devJwksJson = '{"keys":[{"kty":"RSA","use":"sig","kid":"dev-rsa-2026-01","alg":"RS256","n":"tEYU0967vfBIQVtsmO87GsJUC_9PXED2hplI9VMnrKWW_5UO38OloycNOcVKFDUekblpr6YZ10SpdrkoyM9nENLoi8WYL5__VUCo96Dbd5oo7kanAi5m0FzvnY9a0Ax39TFTsUyBZ2G8alWMOkw1-BYJFtm8-z6j_kTlz93xe3griVcGyXTlNWi09pgvAC8Lj1ON42fovXiLjygnvCA5ZJeviMFZe43kftxjF0-fu0I6By6j-DyiIPGdHAIaSWn3cSl0Il2uBRmkW-aCs9GULHTs0Z3XpXklpQCc5dcn_UsFPGY5gIW-TbqqfBebZCZBROdgSnVrSNnIsdWRgplR9Q","e":"AQAB"}]}'
 
 New-Item -ItemType Directory -Force -Path $openApiDirectory | Out-Null
 
@@ -149,7 +150,7 @@ Export-GatewayOpenApi `
   -BaseUrl $businessGatewayUrl `
   -OutputPath $businessOutput `
   -Environment @{
-    "Iam__Jwt__SigningKey" = "nerv-iip-openapi-export-signing-key-local-only-0001"
+    "Iam__Jwt__JwksJson" = $devJwksJson
     "Iam__Jwt__Issuer" = "nerv-iip-iam"
     "Iam__Jwt__Audience" = "nerv-iip-api"
     "Iam__BaseUrl" = "http://127.0.0.1:5102"

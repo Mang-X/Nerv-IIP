@@ -81,7 +81,9 @@ if (-not $SkipDockerComposeConfig) {
         NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID = "env-dev"
         NERV_IIP_CONNECTOR_HOST_SECRET = "connector-secret-32chars-test-value"
         NERV_IIP_CONNECTOR_INGESTION_TOKEN_SIGNING_KEY = "ingestion-signing-key-32chars-test-value"
-        NERV_IIP_IAM_JWT_SIGNING_KEY = "iam-jwt-signing-key-32chars-test-value"
+        NERV_IIP_IAM_JWT_SIGNING_KEY_ID = "deployment-test-rsa-key"
+        NERV_IIP_IAM_JWT_PRIVATE_KEY_PEM = "deployment-test-private-key-pem"
+        NERV_IIP_IAM_JWT_JWKS_JSON = '{"keys":[{"kty":"RSA","use":"sig","kid":"deployment-test-rsa-key","alg":"RS256","n":"deployment-test-modulus","e":"AQAB"}]}'
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
     }
 

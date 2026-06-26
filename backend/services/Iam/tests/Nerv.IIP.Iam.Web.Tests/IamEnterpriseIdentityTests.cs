@@ -159,7 +159,8 @@ public sealed class IamEnterpriseIdentityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "0123456789abcdef0123456789abcdef");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
             });
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -288,7 +289,8 @@ public sealed class IamEnterpriseIdentityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "0123456789abcdef0123456789abcdef");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
             });
     }

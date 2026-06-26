@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -43,6 +44,63 @@ public sealed class GatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Console_instances_accept_rs256_token_validated_with_public_jwks()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var appHub = new FakeAppHubClient();
+        await using var factory = CreateFactory(auth, appHub, builder =>
+        {
+            builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidRsaAccessToken());
+
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("apphub.instances.read", auth.LastRequirement!.PermissionCode);
+        Assert.Equal(1, appHub.QueryCallCount);
+    }
+
+    [Fact]
+    public async Task Console_instances_accept_rs256_token_when_jwks_omits_optional_algorithm()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var appHub = new FakeAppHubClient();
+        await using var factory = CreateFactory(auth, appHub, builder =>
+        {
+            builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJsonWithoutAlgorithm());
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidRsaAccessToken());
+
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("apphub.instances.read", auth.LastRequirement!.PermissionCode);
+        Assert.Equal(1, appHub.QueryCallCount);
+    }
+
+    [Fact]
+    public async Task Console_instances_reject_hs256_token_with_rsa_key_id()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var appHub = new FakeAppHubClient();
+        await using var factory = CreateFactory(auth, appHub, builder =>
+        {
+            builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.Hs256AccessTokenWithRsaKid());
+
+        var response = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Null(auth.LastRequirement);
+        Assert.Equal(0, appHub.QueryCallCount);
+    }
+
+    [Fact]
     public async Task Console_instances_return_forbidden_when_iam_denies_permission()
     {
         var auth = FakeGatewayAuthorizationClient.Forbidden();
@@ -62,14 +120,19 @@ public sealed class GatewayAuthorizationTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         FakeGatewayAuthorizationClient auth,
-        FakeAppHubClient appHub) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        FakeAppHubClient appHub,
+        Action<IWebHostBuilder>? configureBuilder = null) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            services.RemoveAll<IGatewayAuthorizationClient>();
-            services.AddSingleton<IGatewayAuthorizationClient>(auth);
-            services.RemoveAll<IAppHubClient>();
-            services.AddSingleton<IAppHubClient>(appHub);
-        }));
+            configureBuilder?.Invoke(builder);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGatewayAuthorizationClient>();
+                services.AddSingleton<IGatewayAuthorizationClient>(auth);
+                services.RemoveAll<IAppHubClient>();
+                services.AddSingleton<IAppHubClient>(appHub);
+            });
+        });
 
     private sealed class FakeAppHubClient : IAppHubClient
     {

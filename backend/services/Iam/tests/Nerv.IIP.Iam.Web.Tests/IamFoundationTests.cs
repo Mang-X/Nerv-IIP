@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Hosting;
@@ -499,29 +498,29 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public void Production_iam_requires_explicit_jwt_signing_key_for_every_persistence_profile()
+    public void Production_iam_requires_explicit_jwt_private_key_for_every_persistence_profile()
     {
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.Contains("Iam:Jwt:SigningKey", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Iam:Jwt:SigningKeys:0:PrivateKeyPem", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Production_iam_rejects_short_jwt_signing_key()
+    public void Production_iam_requires_jwt_key_id()
     {
         using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "short-key");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
             });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
-        Assert.Contains("at least 32 bytes", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Iam:Jwt:SigningKeys:0:Kid", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -531,7 +530,8 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
                 builder.UseSetting("Iam:Jwt:AccessTokenMinutes", "120");
             });
 
@@ -572,8 +572,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         ValidateAudience = true,
         ValidAudience = "nerv-iip-api",
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes("nerv-iip-iam-development-signing-key-local-only-0001")),
+        IssuerSigningKeys = IamJwtTestKeys.PublicJwks().Keys,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromMinutes(1)
     };
