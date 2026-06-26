@@ -81,7 +81,9 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         var releaseQuantity = Positive(quantity, nameof(quantity));
         if (releaseQuantity > OpenQuantity)
         {
-            throw new InvalidOperationException("Cannot release more than the open reserved quantity.");
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Cannot release more than the open committed quantity.");
         }
 
         ReleasedQuantity += releaseQuantity;
@@ -95,7 +97,9 @@ public sealed class StockReservation : Entity<StockReservationId>, IAggregateRoo
         var allocateQuantity = Positive(quantity, nameof(quantity));
         if (allocateQuantity > OpenQuantity)
         {
-            throw new InvalidOperationException("Cannot allocate more than the open reserved quantity.");
+            throw new InventoryDomainException(
+                InventoryDomainFailureReason.ReservationAllocationRejected,
+                "Cannot allocate more than the open committed quantity.");
         }
 
         AllocatedQuantity += allocateQuantity;

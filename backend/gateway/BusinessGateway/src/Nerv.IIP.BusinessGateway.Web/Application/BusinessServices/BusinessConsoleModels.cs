@@ -36,7 +36,10 @@ public sealed record BusinessConsoleResourceItem(
     decimal? Factor = null,
     decimal? Offset = null,
     int? Precision = null,
-    string? RoundingMode = null);
+    string? RoundingMode = null,
+    string? DeviceAssetId = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record BusinessConsoleResourceListResponse(
     IReadOnlyCollection<BusinessConsoleResourceItem> Resources,
@@ -64,6 +67,16 @@ public sealed record BusinessConsoleListResourcesRequest(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null);
+
+public sealed record BusinessConsoleListDeviceAssetsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    bool IncludeDisabled = false,
+    int Skip = 0,
+    int Take = 100,
+    string? LineCode = null,
+    string? WorkCenterCode = null,
+    string? Keyword = null);
 
 public sealed record BusinessConsoleListSkusRequest(
     string OrganizationId,
@@ -231,6 +244,8 @@ public sealed record BusinessConsoleCreateBusinessPartnerRequest(
     string Name,
     IReadOnlyCollection<string>? PartnerRoles = null,
     string? TaxId = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null,
     string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateUnitOfMeasureRequest(
@@ -539,7 +554,10 @@ public sealed record BusinessConsoleUpdateMasterDataResourceRequest(
     IReadOnlyCollection<BusinessConsoleWorkCalendarException>? Exceptions = null,
     decimal? Factor = null,
     decimal? Offset = null,
-    DateOnly? EffectiveFrom = null);
+    DateOnly? EffectiveFrom = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null,
+    bool ClearCreditLimit = false);
 
 public sealed record BusinessConsoleSetMasterDataResourceEnabledRequest(
     string OrganizationId,
@@ -617,7 +635,9 @@ public sealed record BusinessConsoleMasterDataResourceDetail(
     DateOnly? EffectiveTo = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? SkillLevel = null);
+    string? SkillLevel = null,
+    decimal? CreditLimit = null,
+    string? CreditCurrencyCode = null);
 
 public sealed record BusinessConsolePersonnelSkillMatrixRequest(
     string OrganizationId,
@@ -946,6 +966,15 @@ public sealed record BusinessConsoleInspectionStockRelease(
     string? OwnerId);
 
 public sealed record BusinessConsoleCreateInspectionRecordResponse(string InspectionRecordId);
+
+public sealed record BusinessConsoleOpenNcrFromInspectionRequest(
+    [property: RouteParam] string InspectionRecordId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string DefectReason,
+    IReadOnlyCollection<string>? AttachmentFileIds = null);
+
+public sealed record BusinessConsoleOpenNcrFromInspectionResponse(string NcrId);
 
 public sealed record BusinessConsoleNcrDispositionRequest(
     [property: RouteParam] string NcrId,
@@ -1395,6 +1424,11 @@ public sealed record BusinessConsoleDemandSourceResponse(
 
 public sealed record BusinessConsoleDemandSourceListResponse(IReadOnlyCollection<BusinessConsoleDemandSourceResponse> Items);
 
+public sealed record BusinessConsolePlanningDemandCancelRequest(
+    [property: RouteParam] string DemandSourceId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId);
+
 public sealed record BusinessConsoleRunMrpRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1523,6 +1557,41 @@ public sealed record BusinessConsoleEquipmentDeviceDetailResponse(
 
 public sealed record BusinessConsoleEquipmentAlarmListResponse(
     IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items);
+
+public sealed record BusinessConsoleRecordTelemetrySampleRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey,
+    DateTimeOffset BucketStartUtc,
+    DateTimeOffset BucketEndUtc,
+    int SampleCount,
+    decimal MinValue,
+    decimal MaxValue,
+    decimal AverageValue,
+    string SourceSequence,
+    string SourceSystem,
+    string SourceConnector,
+    string? DeviceState = null,
+    DateTimeOffset? StateOccurredAtUtc = null);
+
+public sealed record BusinessConsoleRecordTelemetrySampleResponse(
+    string? TelemetrySummaryId,
+    string? DeviceStateSnapshotId);
+
+public sealed record BusinessConsolePostTelemetryAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    DateTimeOffset RaisedAtUtc,
+    string ExternalAlarmId,
+    DateTimeOffset? ClearedAtUtc = null,
+    string? ClearedBy = null,
+    string? ClearReason = null);
+
+public sealed record BusinessConsolePostTelemetryAlarmResponse(string AlarmEventId);
 
 public sealed record BusinessConsoleErpContextRequest(
     string OrganizationId,

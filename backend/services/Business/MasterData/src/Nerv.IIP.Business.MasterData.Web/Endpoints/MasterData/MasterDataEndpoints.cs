@@ -265,7 +265,8 @@ public sealed record UpdateMasterDataResourceRequest(
     string? HolidayCalendarCode = null,
     int? BreakMinutes = null,
     decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null);
+    string? CreditCurrencyCode = null,
+    bool ClearCreditLimit = false);
 
 public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
     : MasterDataEndpoint<UpdateMasterDataResourceRequest, ResponseData<MasterDataResourceDetail>>
@@ -372,7 +373,8 @@ public sealed class UpdateMasterDataResourceEndpoint(ISender sender)
                 req.HolidayCalendarCode,
                 req.BreakMinutes,
                 req.CreditLimit,
-                req.CreditCurrencyCode),
+                req.CreditCurrencyCode,
+                req.ClearCreditLimit),
             ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }

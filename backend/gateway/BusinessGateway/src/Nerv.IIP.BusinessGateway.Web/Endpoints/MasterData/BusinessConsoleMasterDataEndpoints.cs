@@ -30,6 +30,40 @@ public sealed class ListBusinessConsoleMasterDataResourcesEndpoint(
 }
 
 [Tags("Business Console MasterData")]
+[HttpGet("/api/business-console/v1/master-data/device-assets")]
+[BusinessGatewayOperationId("listBusinessConsoleDeviceAssets")]
+public sealed class ListBusinessConsoleDeviceAssetsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleListDeviceAssetsRequest, BusinessConsoleResourceListResponse>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesRead)
+{
+    protected override string OrganizationId(BusinessConsoleListDeviceAssetsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleListDeviceAssetsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceListResponse> ForwardAsync(
+        BusinessConsoleListDeviceAssetsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.ListResourcesAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleListResourcesRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                "device-asset",
+                request.IncludeDisabled,
+                request.Skip,
+                request.Take,
+                LineCode: request.LineCode,
+                WorkCenterCode: request.WorkCenterCode,
+                Keyword: request.Keyword),
+            cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
 [HttpGet("/api/business-console/v1/master-data/skus")]
 [BusinessGatewayOperationId("listBusinessConsoleSkus")]
 public sealed class ListBusinessConsoleSkusEndpoint(
@@ -496,6 +530,9 @@ public sealed class BusinessConsoleCreateBusinessPartnerRequestValidator : Valid
         RuleFor(x => x.Code).MaximumLength(100);
         RuleFor(x => x.PartnerType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0m).When(x => x.CreditLimit.HasValue);
+        RuleFor(x => x.CreditCurrencyCode).NotEmpty().When(x => x.CreditLimit.HasValue);
+        RuleFor(x => x.CreditCurrencyCode).MaximumLength(10);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
@@ -826,6 +863,11 @@ public sealed class BusinessConsoleUpdateMasterDataResourceRequestValidator : Va
         RuleFor(x => x.MaximumCapacity).GreaterThanOrEqualTo(x => x.MinimumCapacity)
             .When(x => x.MinimumCapacity.HasValue && x.MaximumCapacity.HasValue);
         RuleFor(x => x.Precision).GreaterThanOrEqualTo(0).When(x => x.Precision.HasValue);
+        RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0m).When(x => x.CreditLimit.HasValue);
+        RuleFor(x => x.CreditLimit).Null().When(x => x.ClearCreditLimit);
+        RuleFor(x => x.CreditCurrencyCode).NotEmpty().When(x => x.CreditLimit.HasValue && !x.ClearCreditLimit);
+        RuleFor(x => x.CreditCurrencyCode).Empty().When(x => x.ClearCreditLimit);
+        RuleFor(x => x.CreditCurrencyCode).MaximumLength(10);
     }
 }
 

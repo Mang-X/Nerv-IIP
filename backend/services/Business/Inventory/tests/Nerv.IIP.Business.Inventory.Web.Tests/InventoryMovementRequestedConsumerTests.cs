@@ -290,7 +290,7 @@ public sealed class InventoryMovementRequestedConsumerTests
         var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(publisher.Published));
         Assert.Equal(InventoryIntegrationEventTypes.StockMovementPostingFailed, failedEvent.EventType);
         Assert.Equal(InventoryPostingFailureCodes.ReservationAllocationRejected, failedEvent.Payload.FailureCode);
-        Assert.Contains("reserved", failedEvent.Payload.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("reserved", failedEvent.Payload.FailureMessage, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(10m, ledger.OnHandQuantity);
         Assert.Equal(8m, ledger.ReservedQuantity);
         Assert.Equal(2m, ledger.AvailableQuantity);

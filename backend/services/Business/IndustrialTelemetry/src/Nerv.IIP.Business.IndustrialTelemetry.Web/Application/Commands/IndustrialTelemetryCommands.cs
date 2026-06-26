@@ -322,6 +322,108 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
     private sealed record MatchedAlarmRule(AlarmRule Rule, string ExternalAlarmId);
 }
 
+public sealed class IndustrialTelemetryIdempotentIngestionBehavior<TRequest, TResponse>(ApplicationDbContext dbContext)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        if (!IsIdempotentIngestionCommand(request))
+        {
+            return await next(cancellationToken);
+        }
+
+        try
+        {
+            return await next(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsIdempotentIngestionUniqueConflict(ex, dbContext))
+        {
+            // These ingestion commands own the scoped DbContext writes; clear failed Added entities before retrying.
+            dbContext.ChangeTracker.Clear();
+            return await next(cancellationToken);
+        }
+    }
+
+    private static bool IsIdempotentIngestionCommand(TRequest request)
+    {
+        return request is RecordTelemetrySampleCommand or RaiseAlarmCommand;
+    }
+
+    private static bool IsIdempotentIngestionUniqueConflict(DbUpdateException exception, ApplicationDbContext context)
+    {
+        // Keep detection entity-scoped so provider-specific index names do not leak into the application layer.
+        return exception.Entries.Any(entry => entry.Entity is TelemetrySummary or DeviceStateSnapshot or AlarmEvent) &&
+            EnumerateExceptions(exception).Any(inner =>
+                IsPostgreSqlUniqueConflict(inner) ||
+                IsSqliteUniqueConflict(context, inner) ||
+                IsSqlServerUniqueConflict(context, inner) ||
+                IsMySqlUniqueConflict(context, inner));
+    }
+
+    private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            yield return current;
+        }
+    }
+
+    private static bool IsPostgreSqlUniqueConflict(Exception exception)
+    {
+        if (!string.Equals(exception.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string == "23505";
+    }
+
+    private static bool IsSqliteUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) &&
+            !typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
+        var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
+        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
+    }
+
+    private static bool IsSqlServerUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        return (providerName.Contains("SqlServer", StringComparison.OrdinalIgnoreCase) ||
+                typeName.Contains("SqlException", StringComparison.OrdinalIgnoreCase)) &&
+            GetIntProperty(exception, "Number") is 2601 or 2627;
+    }
+
+    private static bool IsMySqlUniqueConflict(ApplicationDbContext context, Exception exception)
+    {
+        var providerName = context.Database.ProviderName ?? string.Empty;
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        return (providerName.Contains("MySql", StringComparison.OrdinalIgnoreCase) ||
+                typeName.Contains("MySql", StringComparison.OrdinalIgnoreCase)) &&
+            GetIntProperty(exception, "Number") == 1062;
+    }
+
+    private static int? GetIntProperty(Exception exception, string propertyName)
+    {
+        var value = exception.GetType().GetProperty(propertyName)?.GetValue(exception);
+        return value switch
+        {
+            int intValue => intValue,
+            uint uintValue when uintValue <= int.MaxValue => (int)uintValue,
+            _ => null
+        };
+    }
+}
+
 public sealed record RaiseAlarmCommand(
     string OrganizationId,
     string EnvironmentId,
