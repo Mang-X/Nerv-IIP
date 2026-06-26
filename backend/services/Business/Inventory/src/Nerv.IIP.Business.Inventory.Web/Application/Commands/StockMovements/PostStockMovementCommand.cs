@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
@@ -100,7 +101,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
             {
                 ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
             }
-            catch (InvalidOperationException exception)
+            catch (InventoryDomainException exception)
             {
                 throw InventoryPostingRejectedException.FromDomain(exception);
             }
@@ -111,7 +112,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         {
             applied = ledger.ApplyMovement(movement);
         }
-        catch (InvalidOperationException exception)
+        catch (InventoryDomainException exception)
         {
             throw InventoryPostingRejectedException.FromDomain(exception);
         }
