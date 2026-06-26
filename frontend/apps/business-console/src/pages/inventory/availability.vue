@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import type { BusinessConsoleInventoryAvailabilityLineResponse } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useInventoryAvailability } from '@/composables/useBusinessInventory'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DropdownMenuProItem,
+  DropdownMenuProSeparator,
+  InputPro,
   PageHeader,
   RowActions,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from 'lucide-vue-next'
@@ -74,7 +74,7 @@ const qualityStatusFilter = computed({
 })
 
 type Line = BusinessConsoleInventoryAvailabilityLineResponse
-const columns: DataTableColumn<Line>[] = [
+const columns: DataTableProColumn<Line>[] = [
   { key: 'locationCode', header: '库位', cellClass: 'font-medium', accessor: (r) => r.locationCode ?? '无' },
   { key: 'lot', header: '批次/序列号' },
   { key: 'qualityStatus', header: '质量状态', width: 'w-28' },
@@ -119,13 +119,13 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="库存可用量" :breadcrumbs="[{ label: '库存' }]" :count="`${availabilityLines.length} 条明细`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="availabilityPending" @click="refreshAvailability">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="availabilityPending" @click="refreshAvailability">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -138,37 +138,39 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
-        <Input v-model="filters.uomCode" class="h-9 w-20" placeholder="单位" aria-label="单位" />
-        <Input v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
-        <Input v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
-        <Input v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
-        <Input v-model="filters.serialNo" class="h-9 w-28" placeholder="序列号" aria-label="序列号" />
-        <Select v-model="qualityStatusFilter">
-          <SelectTrigger class="h-9 w-28" aria-label="质量状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in qualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="filters.ownerType">
-          <SelectTrigger class="h-9 w-24" aria-label="货主类型"><SelectValue placeholder="货主类型" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="owned">自有</SelectItem>
-            <SelectItem value="customer">客户</SelectItem>
-            <SelectItem value="supplier">供应商</SelectItem>
-            <SelectItem value="consignment">寄售</SelectItem>
-          </SelectContent>
-        </Select>
+        <InputPro v-model="filters.skuCode" class="h-9 w-32" placeholder="SKU" aria-label="SKU" />
+        <InputPro v-model="filters.uomCode" class="h-9 w-20" placeholder="单位" aria-label="单位" />
+        <InputPro v-model="filters.siteCode" class="h-9 w-20" placeholder="工厂" aria-label="工厂" />
+        <InputPro v-model="filters.locationCode" class="h-9 w-24" placeholder="库位" aria-label="库位" />
+        <InputPro v-model="filters.lotNo" class="h-9 w-28" placeholder="批次" aria-label="批次" />
+        <InputPro v-model="filters.serialNo" class="h-9 w-28" placeholder="序列号" aria-label="序列号" />
+        <SelectPro v-model="qualityStatusFilter">
+          <SelectProTrigger class="h-9 w-28" aria-label="质量状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in qualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="filters.ownerType">
+          <SelectProTrigger class="h-9 w-24" aria-label="货主类型"><SelectProValue placeholder="货主类型" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="owned">自有</SelectProItem>
+            <SelectProItem value="customer">客户</SelectProItem>
+            <SelectProItem value="supplier">供应商</SelectProItem>
+            <SelectProItem value="consignment">寄售</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="availabilityLines"
       :row-key="(r) => `${r.locationCode ?? 'loc'}-${r.lotNo ?? ''}-${r.serialNo ?? ''}`"
       :loading="availabilityPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="未返回可用量明细。确认 SKU、工厂等查询条件后再试。"
     >
       <template #cell-lot="{ row }">
@@ -177,23 +179,23 @@ function formatError(error: unknown) {
           <span class="text-xs text-muted-foreground">{{ row.serialNo ?? '无序列号' }}</span>
         </div>
       </template>
-      <template #cell-qualityStatus="{ row }"><StatusBadge :value="row.qualityStatus" /></template>
+      <template #cell-qualityStatus="{ row }"><StatusBadgePro :value="row.qualityStatus" /></template>
       <template #cell-onHandQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template>
       <template #cell-availableQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template>
       <template #cell-frozen="{ row }"><span class="tabular-nums">{{ formatQuantity(lineFrozen(row.onHandQuantity, row.availableQuantity)) }}</span></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`库存操作 ${row.locationCode ?? ''}`">
-          <DropdownMenuItem @click="openMovement(row)">
+          <DropdownMenuProItem @click="openMovement(row)">
             <MoveRightIcon aria-hidden="true" />
             发起移动
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem @click="openCount(row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProSeparator />
+          <DropdownMenuProItem @click="openCount(row)">
             <ClipboardListIcon aria-hidden="true" />
             创建盘点
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
   </BusinessLayout>
 </template>

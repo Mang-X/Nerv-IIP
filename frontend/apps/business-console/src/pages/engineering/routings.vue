@@ -4,43 +4,42 @@ import type {
   BusinessConsoleRoutingItem,
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useEngineeringRoutings, useStandardOperations } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  DatePicker,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
@@ -173,7 +172,7 @@ const draftCount = computed(() => routings.value.filter((r) => (r.status ?? '').
 
 const listErrorMessage = computed(() => formatError(routingsError.value))
 
-const columns: DataTableColumn<BusinessConsoleRoutingItem>[] = [
+const columns: DataTableProColumn<BusinessConsoleRoutingItem>[] = [
   { key: 'routingCode', header: '路线号', cellClass: 'font-medium' },
   { key: 'revision', header: '修订', width: 'w-20' },
   { key: 'skuCode', header: '产出物料' },
@@ -340,24 +339,24 @@ function formatError(error: unknown) {
       :count="`${routingsTotal} 个版本`"
     >
       <template #actions>
-        <Button size="sm" variant="outline" type="button" :disabled="routingsPending" @click="refresh">
+        <ButtonPro size="sm" variant="outline" type="button" :disabled="routingsPending" @click="refresh">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Dialog v-model:open="formOpen">
-          <DialogTrigger as-child>
-            <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <DialogPro v-model:open="formOpen">
+          <DialogProTrigger as-child>
+            <ButtonPro size="sm" type="button" @click="openCreate">
               <PlusIcon aria-hidden="true" />
               发布新版本
-            </Button>
-          </DialogTrigger>
-          <DialogContent class="sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>发布工艺路线新版本</DialogTitle>
-              <DialogDescription>
+            </ButtonPro>
+          </DialogProTrigger>
+          <DialogProContent class="sm:max-w-3xl">
+            <DialogProHeader>
+              <DialogProTitle>发布工艺路线新版本</DialogProTitle>
+              <DialogProDescription>
                 按顺序编排工序，每道工序指派一个工作中心。一经发布即不可变，修改请填新工序 + 新修订号再发布。带 * 为必填项。
-              </DialogDescription>
-            </DialogHeader>
+              </DialogProDescription>
+            </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，确保每道工序有工作中心、标准工序与非负工时，且序号正整数且不重复。
@@ -380,33 +379,33 @@ function formatError(error: unknown) {
               </p>
 
               <FormSectionTitle>版本头</FormSectionTitle>
-              <FieldGroup class="grid gap-3 sm:grid-cols-3">
-                <Field :data-invalid="showErrors && !skuValid">
-                  <FieldLabel for="rt-sku">产出物料 <span class="text-destructive">*</span></FieldLabel>
-                  <Select v-model="form.skuCode">
-                    <SelectTrigger id="rt-sku"><SelectValue placeholder="选择产出物料" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FieldDescription>来自基础数据物料。</FieldDescription>
-                </Field>
-                <Field :data-invalid="showErrors && !revisionValid">
-                  <FieldLabel for="rt-rev">修订号 <span class="text-destructive">*</span></FieldLabel>
-                  <Input id="rt-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </Field>
-                <Field :data-invalid="showErrors && !effectiveValid">
-                  <FieldLabel>生效日 <span class="text-destructive">*</span></FieldLabel>
-                  <DatePicker v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
-                </Field>
-              </FieldGroup>
+              <FieldProGroup class="grid gap-3 sm:grid-cols-3">
+                <FieldPro :data-invalid="showErrors && !skuValid">
+                  <FieldProLabel for="rt-sku">产出物料 <span class="text-destructive">*</span></FieldProLabel>
+                  <SelectPro v-model="form.skuCode">
+                    <SelectProTrigger id="rt-sku"><SelectProValue placeholder="选择产出物料" /></SelectProTrigger>
+                    <SelectProContent>
+                      <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                    </SelectProContent>
+                  </SelectPro>
+                  <FieldProDescription>来自基础数据物料。</FieldProDescription>
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !revisionValid">
+                  <FieldProLabel for="rt-rev">修订号 <span class="text-destructive">*</span></FieldProLabel>
+                  <InputPro id="rt-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                </FieldPro>
+                <FieldPro :data-invalid="showErrors && !effectiveValid">
+                  <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
+                  <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
+                </FieldPro>
+              </FieldProGroup>
 
               <div class="flex items-center justify-between">
                 <FormSectionTitle>工序（按顺序）</FormSectionTitle>
-                <Button type="button" variant="outline" size="sm" :disabled="!hasWorkCenters || !hasOperations" @click="addOperation">
+                <ButtonPro type="button" variant="outline" size="sm" :disabled="!hasWorkCenters || !hasOperations" @click="addOperation">
                   <PlusIcon aria-hidden="true" />
                   增加工序
-                </Button>
+                </ButtonPro>
               </div>
               <p v-if="showErrors && !sequencesValid" class="text-sm text-destructive" role="alert">
                 工序序号须为正整数且互不相同。
@@ -417,57 +416,57 @@ function formatError(error: unknown) {
                   :key="index"
                   class="grid grid-cols-[4.5rem_1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
                 >
-                  <Field :data-invalid="showErrors && !sequencesValid">
-                    <FieldLabel :for="`rt-seq-${index}`">序号 <span class="text-destructive">*</span></FieldLabel>
-                    <Input :id="`rt-seq-${index}`" v-model.number="op.sequence" type="number" min="1" step="1" />
-                  </Field>
-                  <Field :data-invalid="showErrors && !op.workCenterCode.trim()">
-                    <FieldLabel :for="`rt-wc-${index}`">工作中心 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="op.workCenterCode">
-                      <SelectTrigger :id="`rt-wc-${index}`"><SelectValue placeholder="选择工作中心" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field :data-invalid="showErrors && !op.operationCode.trim()">
-                    <FieldLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldLabel>
-                    <Select v-model="op.operationCode" @update:model-value="applyOperationDefaults(op)">
-                      <SelectTrigger :id="`rt-name-${index}`"><SelectValue placeholder="选择标准工序" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem v-for="o in operationOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
-                    <FieldLabel :for="`rt-min-${index}`">工时(分)</FieldLabel>
-                    <Input :id="`rt-min-${index}`" v-model="op.standardMinutes" type="number" min="0" step="any" />
-                    <FieldDescription>选工序后自动带出，可改。</FieldDescription>
-                  </Field>
+                  <FieldPro :data-invalid="showErrors && !sequencesValid">
+                    <FieldProLabel :for="`rt-seq-${index}`">序号 <span class="text-destructive">*</span></FieldProLabel>
+                    <InputPro :id="`rt-seq-${index}`" v-model.number="op.sequence" type="number" min="1" step="1" />
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !op.workCenterCode.trim()">
+                    <FieldProLabel :for="`rt-wc-${index}`">工作中心 <span class="text-destructive">*</span></FieldProLabel>
+                    <SelectPro v-model="op.workCenterCode">
+                      <SelectProTrigger :id="`rt-wc-${index}`"><SelectProValue placeholder="选择工作中心" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && !op.operationCode.trim()">
+                    <FieldProLabel :for="`rt-name-${index}`">工序 <span class="text-destructive">*</span></FieldProLabel>
+                    <SelectPro v-model="op.operationCode" @update:model-value="applyOperationDefaults(op)">
+                      <SelectProTrigger :id="`rt-name-${index}`"><SelectProValue placeholder="选择标准工序" /></SelectProTrigger>
+                      <SelectProContent>
+                        <SelectProItem v-for="o in operationOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                      </SelectProContent>
+                    </SelectPro>
+                  </FieldPro>
+                  <FieldPro :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0">
+                    <FieldProLabel :for="`rt-min-${index}`">工时(分)</FieldProLabel>
+                    <InputPro :id="`rt-min-${index}`" v-model="op.standardMinutes" type="number" min="0" step="any" />
+                    <FieldProDescription>选工序后自动带出，可改。</FieldProDescription>
+                  </FieldPro>
                   <div class="flex gap-1">
-                    <Button type="button" variant="ghost" size="icon" aria-label="上移工序" :disabled="index === 0" @click="moveUp(index)">
+                    <ButtonPro type="button" variant="ghost" size="icon" aria-label="上移工序" :disabled="index === 0" @click="moveUp(index)">
                       <ArrowUpIcon aria-hidden="true" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="icon" aria-label="下移工序" :disabled="index === form.operations.length - 1" @click="moveDown(index)">
+                    </ButtonPro>
+                    <ButtonPro type="button" variant="ghost" size="icon" aria-label="下移工序" :disabled="index === form.operations.length - 1" @click="moveDown(index)">
                       <ArrowDownIcon aria-hidden="true" />
-                    </Button>
-                    <Button type="button" variant="ghost" size="icon" aria-label="删除该工序" :disabled="form.operations.length <= 1" @click="removeOperation(index)">
+                    </ButtonPro>
+                    <ButtonPro type="button" variant="ghost" size="icon" aria-label="删除该工序" :disabled="form.operations.length <= 1" @click="removeOperation(index)">
                       <Trash2Icon aria-hidden="true" />
-                    </Button>
+                    </ButtonPro>
                   </div>
                 </div>
               </div>
 
-              <DialogFooter>
-                <Button type="button" variant="outline" @click="formOpen = false">取消</Button>
-                <Button type="submit" :disabled="releasePending">
+              <DialogProFooter>
+                <ButtonPro type="button" variant="outline" @click="formOpen = false">取消</ButtonPro>
+                <ButtonPro type="submit" :disabled="releasePending">
                   <Spinner v-if="releasePending" aria-hidden="true" />
                   发布版本
-                </Button>
-              </DialogFooter>
+                </ButtonPro>
+              </DialogProFooter>
             </form>
-          </DialogContent>
-        </Dialog>
+          </DialogProContent>
+        </DialogPro>
       </template>
     </PageHeader>
 
@@ -478,22 +477,30 @@ function formatError(error: unknown) {
 
     <Toolbar v-model:search="skuSearch" search-placeholder="按产出物料编码筛选">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="状态筛选"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="状态筛选"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in STATUS_FILTER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="routingsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="routings"
       :row-key="(r) => `${r.routingCode}:${r.revision}`"
       :loading="routingsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前范围没有工艺路线。可发布新版本，按顺序编排工序并指派工作中心。"
     >
       <template #cell-skuCode="{ row }">
@@ -503,31 +510,30 @@ function formatError(error: unknown) {
         </div>
       </template>
       <template #cell-status="{ row }">
-        <StatusBadge :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
+        <StatusBadgePro :label="engStatus(row.status).label" :tone="engStatus(row.status).tone" />
       </template>
       <template #cell-effectiveDate="{ row }">{{ row.effectiveDate ? formatDate(row.effectiveDate) : '长期' }}</template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <Button type="button" variant="ghost" size="sm" @click="openView(row)">查看</Button>
+          <ButtonPro type="button" variant="ghost" size="sm" @click="openView(row)">查看</ButtonPro>
         </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="routingsTotal" />
 
-    <Sheet v-model:open="viewOpen">
-      <SheetContent class="sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>工艺路线 · 工序</SheetTitle>
-          <SheetDescription>
+    <SheetPro v-model:open="viewOpen">
+      <SheetProContent class="sm:max-w-lg">
+        <SheetProHeader>
+          <SheetProTitle>工艺路线 · 工序</SheetProTitle>
+          <SheetProDescription>
             {{ viewTarget ? `${viewTarget.routingCode} · 修订 ${viewTarget.revision} · ${skuLabel(viewTarget.skuCode)}` : '' }}
-          </SheetDescription>
-        </SheetHeader>
+          </SheetProDescription>
+        </SheetProHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>
-              <StatusBadge :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
+              <StatusBadgePro :label="engStatus(viewTarget.status).label" :tone="engStatus(viewTarget.status).tone" />
             </div>
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">生效日</span>
@@ -566,7 +572,7 @@ function formatError(error: unknown) {
             该版本没有工序行。
           </p>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

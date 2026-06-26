@@ -5,7 +5,7 @@ import type {
   BusinessConsoleErpPayableItem,
   BusinessConsoleErpReceivableItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import {
   useErpCostCandidates,
   useErpFinanceSummary,
@@ -16,34 +16,34 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -97,7 +97,7 @@ function refreshActive() {
   else void costCandidates.refresh()
 }
 
-const receivableColumns: DataTableColumn<BusinessConsoleErpReceivableItem>[] = [
+const receivableColumns: DataTableProColumn<BusinessConsoleErpReceivableItem>[] = [
   { key: 'receivableNo', header: '应收单号', cellClass: 'font-medium', accessor: (r) => r.receivableNo ?? '—' },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '—' },
   { key: 'customerCode', header: '客户', accessor: (r) => r.customerCode ?? '—' },
@@ -105,7 +105,7 @@ const receivableColumns: DataTableColumn<BusinessConsoleErpReceivableItem>[] = [
   { key: 'openAmount', header: '未结', align: 'end', width: 'w-32', accessor: (r) => r.openAmount ?? 0 },
   { key: 'status', header: '状态', width: 'w-24' },
 ]
-const payableColumns: DataTableColumn<BusinessConsoleErpPayableItem>[] = [
+const payableColumns: DataTableProColumn<BusinessConsoleErpPayableItem>[] = [
   { key: 'payableNo', header: '应付单号', cellClass: 'font-medium', accessor: (r) => r.payableNo ?? '—' },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '—' },
   { key: 'supplierCode', header: '供应商', accessor: (r) => r.supplierCode ?? '—' },
@@ -113,14 +113,14 @@ const payableColumns: DataTableColumn<BusinessConsoleErpPayableItem>[] = [
   { key: 'openAmount', header: '未结', align: 'end', width: 'w-32', accessor: (r) => r.openAmount ?? 0 },
   { key: 'status', header: '状态', width: 'w-24' },
 ]
-const voucherColumns: DataTableColumn<BusinessConsoleErpJournalVoucherItem>[] = [
+const voucherColumns: DataTableProColumn<BusinessConsoleErpJournalVoucherItem>[] = [
   { key: 'voucherNo', header: '凭证号', cellClass: 'font-medium', accessor: (r) => r.voucherNo ?? '—' },
   { key: 'postingDate', header: '过账日期', width: 'w-32', accessor: (r) => formatDate(r.postingDate) },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'totalDebitAmount', header: '借方', align: 'end', width: 'w-32', accessor: (r) => r.totalDebitAmount ?? 0 },
   { key: 'totalCreditAmount', header: '贷方', align: 'end', width: 'w-32', accessor: (r) => r.totalCreditAmount ?? 0 },
 ]
-const costCandidateColumns: DataTableColumn<BusinessConsoleErpCostCandidateItem>[] = [
+const costCandidateColumns: DataTableProColumn<BusinessConsoleErpCostCandidateItem>[] = [
   { key: 'candidateNo', header: '候选编号', cellClass: 'font-medium', accessor: (r) => r.candidateNo ?? '—' },
   { key: 'sourceType', header: '来源类型', accessor: (r) => sourceTypeLabel(r.sourceType) },
   { key: 'sourceDocumentNo', header: '来源单据', accessor: (r) => r.sourceDocumentNo ?? '—' },
@@ -304,10 +304,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="财务" :breadcrumbs="[{ label: '经营管理' }]" :count="`${receivables.total.value} 笔应收`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="summaryPending" @click="refreshActive">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="summaryPending" @click="refreshActive">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -320,280 +320,320 @@ function formatError(error: unknown) {
       <SectionCard description="已过账凭证" :value="summary?.postedVoucherCount ?? 0" hint="累计过账凭证数" />
     </SectionCards>
 
-    <Tabs v-model="activeTab">
-      <TabsList>
-        <TabsTrigger value="receivables">应收账款</TabsTrigger>
-        <TabsTrigger value="payables">应付账款</TabsTrigger>
-        <TabsTrigger value="vouchers">会计凭证</TabsTrigger>
-        <TabsTrigger value="cost-candidates">成本候选</TabsTrigger>
-      </TabsList>
+    <TabsPro v-model="activeTab">
+      <TabsProList>
+        <TabsProTrigger value="receivables">应收账款</TabsProTrigger>
+        <TabsProTrigger value="payables">应付账款</TabsProTrigger>
+        <TabsProTrigger value="vouchers">会计凭证</TabsProTrigger>
+        <TabsProTrigger value="cost-candidates">成本候选</TabsProTrigger>
+      </TabsProList>
 
-      <TabsContent value="receivables" class="grid gap-4">
+      <TabsProContent value="receivables" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="receivables.filters.keyword" class="h-9 w-48" placeholder="应收单号 / 客户" aria-label="应收关键字" />
-            <Select v-model="receivableStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="应收状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="open">未结</SelectItem>
-                <SelectItem value="settled">已结清</SelectItem>
-              </SelectContent>
-            </Select>
+            <InputPro v-model="receivables.filters.keyword" class="h-9 w-48" placeholder="应收单号 / 客户" aria-label="应收关键字" />
+            <SelectPro v-model="receivableStatus">
+              <SelectProTrigger class="h-9 w-32" aria-label="应收状态"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
+              <SelectProContent>
+                <SelectProItem value="all">全部状态</SelectProItem>
+                <SelectProItem value="open">未结</SelectProItem>
+                <SelectProItem value="settled">已结清</SelectProItem>
+              </SelectProContent>
+            </SelectPro>
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openReceivableDialog">
+            <ButtonPro size="sm" type="button" @click="openReceivableDialog">
               <PlusIcon aria-hidden="true" />
               登记应收
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="formatError(receivables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(receivables.error.value) }}</p>
-        <DataTable
+        <DataTablePro
+          manual
+          :page="receivablesPaged.page.value"
+          :page-size="receivablesPaged.pageSize.value"
+          :total-items="receivables.total.value"
+          @update:page="receivablesPaged.page.value = $event"
+          @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
           :columns="receivableColumns"
           :rows="receivables.items.value"
           :row-key="(r: BusinessConsoleErpReceivableItem) => r.receivableNo ?? r.sourceDocumentNo ?? '应收'"
           :loading="receivables.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无应收账款。销售发货过账后会在这里生成应收。"
         >
           <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
-        <DataTablePagination v-model:page="receivablesPaged.page.value" v-model:page-size="receivablesPaged.pageSize.value" :total-items="receivables.total.value" />
-      </TabsContent>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
+      </TabsProContent>
 
-      <TabsContent value="payables" class="grid gap-4">
+      <TabsProContent value="payables" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="payables.filters.keyword" class="h-9 w-48" placeholder="应付单号 / 供应商" aria-label="应付关键字" />
-            <Select v-model="payableStatus">
-              <SelectTrigger class="h-9 w-32" aria-label="应付状态"><SelectValue placeholder="全部状态" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="open">未结</SelectItem>
-                <SelectItem value="settled">已结清</SelectItem>
-              </SelectContent>
-            </Select>
+            <InputPro v-model="payables.filters.keyword" class="h-9 w-48" placeholder="应付单号 / 供应商" aria-label="应付关键字" />
+            <SelectPro v-model="payableStatus">
+              <SelectProTrigger class="h-9 w-32" aria-label="应付状态"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
+              <SelectProContent>
+                <SelectProItem value="all">全部状态</SelectProItem>
+                <SelectProItem value="open">未结</SelectProItem>
+                <SelectProItem value="settled">已结清</SelectProItem>
+              </SelectProContent>
+            </SelectPro>
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openPayableDialog">
+            <ButtonPro size="sm" type="button" @click="openPayableDialog">
               <PlusIcon aria-hidden="true" />
               登记应付
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="formatError(payables.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(payables.error.value) }}</p>
-        <DataTable
+        <DataTablePro
+          manual
+          :page="payablesPaged.page.value"
+          :page-size="payablesPaged.pageSize.value"
+          :total-items="payables.total.value"
+          @update:page="payablesPaged.page.value = $event"
+          @update:page-size="(v) => (payablesPaged.pageSize.value = String(v))"
           :columns="payableColumns"
           :rows="payables.items.value"
           :row-key="(r: BusinessConsoleErpPayableItem) => r.payableNo ?? r.sourceDocumentNo ?? '应付'"
           :loading="payables.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无应付账款。采购收货后会在这里生成应付。"
         >
           <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount, row.currencyCode ?? 'CNY') }}</span></template>
           <template #cell-openAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.openAmount, row.currencyCode ?? 'CNY') }}</span></template>
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
-        <DataTablePagination v-model:page="payablesPaged.page.value" v-model:page-size="payablesPaged.pageSize.value" :total-items="payables.total.value" />
-      </TabsContent>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
+      </TabsProContent>
 
-      <TabsContent value="vouchers" class="grid gap-4">
+      <TabsProContent value="vouchers" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="vouchers.filters.keyword" class="h-9 w-48" placeholder="凭证号" aria-label="凭证关键字" />
+            <InputPro v-model="vouchers.filters.keyword" class="h-9 w-48" placeholder="凭证号" aria-label="凭证关键字" />
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openVoucherDialog">
+            <ButtonPro size="sm" type="button" @click="openVoucherDialog">
               <PlusIcon aria-hidden="true" />
               过账凭证
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="formatError(vouchers.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(vouchers.error.value) }}</p>
-        <DataTable
+        <DataTablePro
+          manual
+          :page="vouchersPaged.page.value"
+          :page-size="vouchersPaged.pageSize.value"
+          :total-items="vouchers.total.value"
+          @update:page="vouchersPaged.page.value = $event"
+          @update:page-size="(v) => (vouchersPaged.pageSize.value = String(v))"
           :columns="voucherColumns"
           :rows="vouchers.items.value"
           :row-key="(r: BusinessConsoleErpJournalVoucherItem) => r.voucherNo ?? '凭证'"
           :loading="vouchers.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无会计凭证。成本/收入过账后会在这里生成凭证。"
         >
           <template #cell-totalDebitAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalDebitAmount) }}</span></template>
           <template #cell-totalCreditAmount="{ row }"><span class="tabular-nums">{{ formatAmount(row.totalCreditAmount) }}</span></template>
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
-        <DataTablePagination v-model:page="vouchersPaged.page.value" v-model:page-size="vouchersPaged.pageSize.value" :total-items="vouchers.total.value" />
-      </TabsContent>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
+      </TabsProContent>
 
-      <TabsContent value="cost-candidates" class="grid gap-4">
+      <TabsProContent value="cost-candidates" class="grid gap-4">
         <Toolbar :show-search="false">
           <template #filters>
-            <Input v-model="costCandidates.filters.keyword" class="h-9 w-48" placeholder="候选编号 / 来源单据" aria-label="成本候选关键字" />
+            <InputPro v-model="costCandidates.filters.keyword" class="h-9 w-48" placeholder="候选编号 / 来源单据" aria-label="成本候选关键字" />
           </template>
           <template #actions>
-            <Button size="sm" type="button" @click="openCostDialog">
+            <ButtonPro size="sm" type="button" @click="openCostDialog">
               <PlusIcon aria-hidden="true" />
               登记成本候选
-            </Button>
+            </ButtonPro>
           </template>
         </Toolbar>
         <p v-if="formatError(costCandidates.error.value)" class="text-sm text-destructive" role="alert">{{ formatError(costCandidates.error.value) }}</p>
-        <DataTable
+        <DataTablePro
+          manual
+          :page="costCandidatesPaged.page.value"
+          :page-size="costCandidatesPaged.pageSize.value"
+          :total-items="costCandidates.total.value"
+          @update:page="costCandidatesPaged.page.value = $event"
+          @update:page-size="(v) => (costCandidatesPaged.pageSize.value = String(v))"
           :columns="costCandidateColumns"
           :rows="costCandidates.items.value"
           :row-key="(r: BusinessConsoleErpCostCandidateItem) => r.candidateNo ?? r.sourceDocumentNo ?? '成本候选'"
           :loading="costCandidates.pending.value"
+          :searchable="false"
+          :column-settings="false"
           empty-message="暂无成本候选。生产/采购成本归集后会在这里生成待结转候选。"
         >
           <template #cell-amount="{ row }"><span class="tabular-nums">{{ formatAmount(row.amount, row.currencyCode ?? 'CNY') }}</span></template>
-          <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
-        </DataTable>
-        <DataTablePagination v-model:page="costCandidatesPaged.page.value" v-model:page-size="costCandidatesPaged.pageSize.value" :total-items="costCandidates.total.value" />
-      </TabsContent>
-    </Tabs>
+          <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+        </DataTablePro>
+      </TabsProContent>
+    </TabsPro>
 
-    <Dialog v-model:open="receivableOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>登记应收账款</DialogTitle>
-          <DialogDescription>对已发货销售单据登记客户应收。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="receivableOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>登记应收账款</DialogProTitle>
+          <DialogProDescription>对已发货销售单据登记客户应收。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitReceivable">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-ar-source">来源单据</FieldLabel>
-              <Input id="erp-ar-source" v-model="receivableForm.sourceDocumentNo" autocomplete="off" placeholder="如 销售订单号 / 发货单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ar-customer">客户</FieldLabel>
-              <Input id="erp-ar-customer" v-model="receivableForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ar-amount">金额（元）</FieldLabel>
-              <Input id="erp-ar-amount" v-model="receivableForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="receivableFormError" :errors="[receivableFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="receivables.createReceivablePending.value">
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-source">来源单据</FieldProLabel>
+              <InputPro id="erp-ar-source" v-model="receivableForm.sourceDocumentNo" autocomplete="off" placeholder="如 销售订单号 / 发货单号" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-customer">客户</FieldProLabel>
+              <InputPro id="erp-ar-customer" v-model="receivableForm.customerCode" autocomplete="off" placeholder="如 CUST-HENGJING" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ar-amount">金额（元）</FieldProLabel>
+              <InputPro id="erp-ar-amount" v-model="receivableForm.amount" type="number" min="0" step="0.01" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="receivableFormError" :errors="[receivableFormError]" />
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="receivables.createReceivablePending.value">
               <Spinner v-if="receivables.createReceivablePending.value" aria-hidden="true" />
               登记应收
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="payableOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>登记应付账款</DialogTitle>
-          <DialogDescription>对已收货采购单据登记供应商应付。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="payableOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>登记应付账款</DialogProTitle>
+          <DialogProDescription>对已收货采购单据登记供应商应付。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitPayable">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-ap-source">来源单据</FieldLabel>
-              <Input id="erp-ap-source" v-model="payableForm.sourceDocumentNo" autocomplete="off" placeholder="如 采购订单号 / 入库单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ap-supplier">供应商</FieldLabel>
-              <Input id="erp-ap-supplier" v-model="payableForm.supplierCode" autocomplete="off" placeholder="如 SUP-XINWEI" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-ap-amount">金额（元）</FieldLabel>
-              <Input id="erp-ap-amount" v-model="payableForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="payableFormError" :errors="[payableFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="payables.createPayablePending.value">
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-source">来源单据</FieldProLabel>
+              <InputPro id="erp-ap-source" v-model="payableForm.sourceDocumentNo" autocomplete="off" placeholder="如 采购订单号 / 入库单号" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-supplier">供应商</FieldProLabel>
+              <InputPro id="erp-ap-supplier" v-model="payableForm.supplierCode" autocomplete="off" placeholder="如 SUP-XINWEI" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-ap-amount">金额（元）</FieldProLabel>
+              <InputPro id="erp-ap-amount" v-model="payableForm.amount" type="number" min="0" step="0.01" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="payableFormError" :errors="[payableFormError]" />
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="payables.createPayablePending.value">
               <Spinner v-if="payables.createPayablePending.value" aria-hidden="true" />
               登记应付
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="costOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>登记成本候选</DialogTitle>
-          <DialogDescription>归集待结转成本，过账后形成会计凭证。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="costOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>登记成本候选</DialogProTitle>
+          <DialogProDescription>归集待结转成本，过账后形成会计凭证。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCost">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="erp-cc-type">来源类型</FieldLabel>
-              <Select v-model="costForm.sourceType">
-                <SelectTrigger id="erp-cc-type" aria-label="来源类型"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="production">生产成本</SelectItem>
-                  <SelectItem value="procurement">采购成本</SelectItem>
-                  <SelectItem value="maintenance">维护成本</SelectItem>
-                  <SelectItem value="logistics">物流成本</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="erp-cc-source">来源单据</FieldLabel>
-              <Input id="erp-cc-source" v-model="costForm.sourceDocumentNo" autocomplete="off" placeholder="如 工单号 / 采购单号" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-cc-amount">金额（元）</FieldLabel>
-              <Input id="erp-cc-amount" v-model="costForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="costFormError" :errors="[costFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="costCandidates.createCostCandidatePending.value">
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-type">来源类型</FieldProLabel>
+              <SelectPro v-model="costForm.sourceType">
+                <SelectProTrigger id="erp-cc-type" aria-label="来源类型"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem value="production">生产成本</SelectProItem>
+                  <SelectProItem value="procurement">采购成本</SelectProItem>
+                  <SelectProItem value="maintenance">维护成本</SelectProItem>
+                  <SelectProItem value="logistics">物流成本</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-source">来源单据</FieldProLabel>
+              <InputPro id="erp-cc-source" v-model="costForm.sourceDocumentNo" autocomplete="off" placeholder="如 工单号 / 采购单号" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-cc-amount">金额（元）</FieldProLabel>
+              <InputPro id="erp-cc-amount" v-model="costForm.amount" type="number" min="0" step="0.01" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="costFormError" :errors="[costFormError]" />
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="costCandidates.createCostCandidatePending.value">
               <Spinner v-if="costCandidates.createCostCandidatePending.value" aria-hidden="true" />
               登记成本候选
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="voucherOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>过账会计凭证</DialogTitle>
-          <DialogDescription>登记一借一贷分录并过账，借贷自动平衡。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="voucherOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>过账会计凭证</DialogProTitle>
+          <DialogProDescription>登记一借一贷分录并过账，借贷自动平衡。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitVoucher">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="erp-jv-date">过账日期</FieldLabel>
-              <Input id="erp-jv-date" v-model="voucherForm.postingDate" type="date" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-amount">金额（元）</FieldLabel>
-              <Input id="erp-jv-amount" v-model="voucherForm.amount" type="number" min="0" step="0.01" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-debit">借方科目</FieldLabel>
-              <Input id="erp-jv-debit" v-model="voucherForm.debitAccount" autocomplete="off" placeholder="如 5001 生产成本" />
-            </Field>
-            <Field>
-              <FieldLabel for="erp-jv-credit">贷方科目</FieldLabel>
-              <Input id="erp-jv-credit" v-model="voucherForm.creditAccount" autocomplete="off" placeholder="如 1403 原材料" />
-            </Field>
-            <Field class="sm:col-span-2">
-              <FieldLabel for="erp-jv-memo">摘要</FieldLabel>
-              <Input id="erp-jv-memo" v-model="voucherForm.memo" autocomplete="off" placeholder="如 结转本月生产领料成本" />
-            </Field>
-          </FieldGroup>
-          <FieldError v-if="voucherFormError" :errors="[voucherFormError]" />
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="vouchers.postVoucherPending.value">
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="erp-jv-date">过账日期</FieldProLabel>
+              <InputPro id="erp-jv-date" v-model="voucherForm.postingDate" type="date" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-amount">金额（元）</FieldProLabel>
+              <InputPro id="erp-jv-amount" v-model="voucherForm.amount" type="number" min="0" step="0.01" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-debit">借方科目</FieldProLabel>
+              <InputPro id="erp-jv-debit" v-model="voucherForm.debitAccount" autocomplete="off" placeholder="如 5001 生产成本" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="erp-jv-credit">贷方科目</FieldProLabel>
+              <InputPro id="erp-jv-credit" v-model="voucherForm.creditAccount" autocomplete="off" placeholder="如 1403 原材料" />
+            </FieldPro>
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel for="erp-jv-memo">摘要</FieldProLabel>
+              <InputPro id="erp-jv-memo" v-model="voucherForm.memo" autocomplete="off" placeholder="如 结转本月生产领料成本" />
+            </FieldPro>
+          </FieldProGroup>
+          <FieldProError v-if="voucherFormError" :errors="[voucherFormError]" />
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="vouchers.postVoucherPending.value">
               <Spinner v-if="vouchers.postVoucherPending.value" aria-hidden="true" />
               过账凭证
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

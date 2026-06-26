@@ -87,41 +87,43 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  Dialog: { template: '<div><slot /></div>' },
+  DialogRoot: { template: '<div><slot /></div>' },
   DialogTrigger: { template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
 }
 const datePickerStub = {
-  DatePicker: {
+  DatePickerPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input type="date" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value || null)" />',
   },
 }
 const formSelectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+// AlertDialogPro 全家为真 .vue 包装（__name 即 Pro 名），故 global.stubs 键用 Pro 名；
+// content 用轻量 stub 避免真实 Teleport 在 jsdom 卸载抛错。
 const alertDialogStubs = {
-  AlertDialog: { template: '<div><slot /></div>' },
-  AlertDialogContent: { template: '<div data-testid="confirm"><slot /></div>' },
-  AlertDialogHeader: { template: '<div><slot /></div>' },
-  AlertDialogFooter: { template: '<div><slot /></div>' },
-  AlertDialogTitle: { template: '<h2><slot /></h2>' },
-  AlertDialogDescription: { template: '<p><slot /></p>' },
-  AlertDialogCancel: { template: '<button type="button"><slot /></button>' },
-  AlertDialogAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>' },
+  AlertDialogPro: { template: '<div><slot /></div>' },
+  AlertDialogProContent: { template: '<div data-testid="confirm"><slot /></div>' },
+  AlertDialogProHeader: { template: '<div><slot /></div>' },
+  AlertDialogProFooter: { template: '<div><slot /></div>' },
+  AlertDialogProTitle: { template: '<h2><slot /></h2>' },
+  AlertDialogProDescription: { template: '<p><slot /></p>' },
+  AlertDialogProCancel: { template: '<button type="button"><slot /></button>' },
+  AlertDialogProAction: { emits: ['click'], template: '<button type="button" data-testid="confirm-archive" @click="$emit(\'click\', $event)"><slot /></button>' },
 }
 
 const allStubs = { ...layoutStub, ...dialogStubs, ...datePickerStub, ...formSelectStubs, ...alertDialogStubs }

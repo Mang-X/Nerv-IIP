@@ -1,34 +1,34 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
+  DialogPro,
+  DialogProClose,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProError,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
   toast,
 } from '@nerv-iip/ui'
@@ -191,7 +191,7 @@ const openCount = computed(
 )
 
 type OutboundRow = BusinessConsoleWmsOutboundOrderItem
-const columns: DataTableColumn<OutboundRow>[] = [
+const columns: DataTableProColumn<OutboundRow>[] = [
   { key: 'outboundOrderNo', header: '出库单号', cellClass: 'font-medium', accessor: (r) => r.outboundOrderNo ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
@@ -215,14 +215,14 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="出库发货" :breadcrumbs="[{ label: '仓储作业' }]" :count="`${outboundOrders.length} 张出库单`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="outboundOrdersPending" @click="refreshOutboundOrders">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="outboundOrdersPending" @click="refreshOutboundOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
-        <Button size="sm" type="button" @click="openCreate">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建出库单
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -233,22 +233,30 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Input v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="出库单状态" />
+        <InputPro v-model="filters.status" class="h-9 w-32" placeholder="状态（可选）" aria-label="出库单状态" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="outboundOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="outboundOrders"
       :row-key="rowKey"
       :loading="outboundOrdersPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
     >
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <Button
+        <ButtonPro
           size="sm"
           type="button"
           variant="outline"
@@ -257,104 +265,109 @@ function formatError(error: unknown) {
           @click="openReview(row)"
         >
           完成复核
-        </Button>
+        </ButtonPro>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="outboundOrdersTotal" />
 
-    <Dialog v-model:open="reviewOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>出库复核</DialogTitle>
-          <DialogDescription>
+    <DialogPro v-model:open="reviewOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>出库复核</DialogProTitle>
+          <DialogProDescription>
             对出库单 {{ pendingOrder?.outboundOrderNo ?? '' }} 进行发货前复核。
-          </DialogDescription>
-        </DialogHeader>
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitReview">
-          <FieldGroup>
-            <Field>
-              <FieldLabel for="wms-pack-review-no">复核单号</FieldLabel>
-              <Input id="wms-pack-review-no" v-model="form.packReviewNo" :aria-invalid="Boolean(formError)" autocomplete="off" />
-              <FieldError v-if="formError" :errors="[formError]" />
-            </Field>
-            <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldLabel for="wms-pack-passed">复核通过</FieldLabel>
-              <Checkbox id="wms-pack-passed" v-model:checked="form.passed" />
-            </Field>
-          </FieldGroup>
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="completeOutboundPending">提交复核</Button>
-          </DialogFooter>
+          <FieldProGroup>
+            <FieldPro>
+              <FieldProLabel for="wms-pack-review-no">复核单号</FieldProLabel>
+              <InputPro id="wms-pack-review-no" v-model="form.packReviewNo" :aria-invalid="Boolean(formError)" autocomplete="off" />
+              <FieldProError v-if="formError" :errors="[formError]" />
+            </FieldPro>
+            <FieldPro orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+              <FieldProLabel for="wms-pack-passed">复核通过</FieldProLabel>
+              <CheckboxPro id="wms-pack-passed" v-model:checked="form.passed" />
+            </FieldPro>
+          </FieldProGroup>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="completeOutboundPending">提交复核</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="createOpen">
-      <DialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>新建出库单</DialogTitle>
-          <DialogDescription>登记出库发货单的来源与明细，提交后进入拣货/复核流程。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="createOpen">
+      <DialogProContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+        <DialogProHeader>
+          <DialogProTitle>新建出库单</DialogProTitle>
+          <DialogProDescription>登记出库发货单的来源与明细，提交后进入拣货/复核流程。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitCreate">
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="wms-out-no">出库单号</FieldLabel>
-              <Input id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-site">工厂</FieldLabel>
-              <Input id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-srctype">来源类型</FieldLabel>
-              <Input id="wms-out-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 销售发货" />
-            </Field>
-            <Field>
-              <FieldLabel for="wms-out-srcid">来源单据</FieldLabel>
-              <Input id="wms-out-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="wms-out-no">出库单号</FieldProLabel>
+              <InputPro id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-site">工厂</FieldProLabel>
+              <InputPro id="wms-out-site" v-model="createForm.siteCode" autocomplete="off" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-srctype">来源类型</FieldProLabel>
+              <InputPro id="wms-out-srctype" v-model="createForm.sourceDocumentType" autocomplete="off" placeholder="如 销售发货" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="wms-out-srcid">来源单据</FieldProLabel>
+              <InputPro id="wms-out-srcid" v-model="createForm.sourceDocumentId" autocomplete="off" />
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="grid gap-2">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">发货明细</span>
-              <Button type="button" size="sm" variant="outline" @click="addLine">
+              <ButtonPro type="button" size="sm" variant="outline" @click="addLine">
                 <PlusIcon aria-hidden="true" />
                 添加行
-              </Button>
+              </ButtonPro>
             </div>
             <div v-for="(line, index) in createForm.lines" :key="index" class="flex flex-wrap items-end gap-2 rounded-md border p-2">
-              <Input v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
-              <Input v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
-              <Input v-model="line.requestedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="需求数量*" :aria-label="`第 ${index + 1} 行需求数量`" />
-              <Input v-model="line.pickLocationCode" class="h-9 w-24" placeholder="拣货库位*" :aria-label="`第 ${index + 1} 行拣货库位`" />
-              <Input v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
-              <Select v-model="line.qualityStatus">
-                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select v-model="line.ownerType">
-                <SelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
+              <InputPro v-model="line.skuCode" class="h-9 w-28" placeholder="物料*" :aria-label="`第 ${index + 1} 行物料`" />
+              <InputPro v-model="line.uomCode" class="h-9 w-16" placeholder="单位*" :aria-label="`第 ${index + 1} 行单位`" />
+              <InputPro v-model="line.requestedQuantity" class="h-9 w-24" type="number" min="0" step="any" placeholder="需求数量*" :aria-label="`第 ${index + 1} 行需求数量`" />
+              <InputPro v-model="line.pickLocationCode" class="h-9 w-24" placeholder="拣货库位*" :aria-label="`第 ${index + 1} 行拣货库位`" />
+              <InputPro v-model="line.lotNo" class="h-9 w-24" placeholder="批次" :aria-label="`第 ${index + 1} 行批次`" />
+              <SelectPro v-model="line.qualityStatus">
+                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <SelectPro v-model="line.ownerType">
+                <SelectProTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <ButtonPro type="button" size="icon-sm" variant="ghost" :aria-label="`删除第 ${index + 1} 行`" @click="removeLine(index)">
                 <Trash2Icon class="size-4" aria-hidden="true" />
-              </Button>
+              </ButtonPro>
             </div>
           </div>
 
-          <FieldError v-if="createError" :errors="[createError]" />
+          <FieldProError v-if="createError" :errors="[createError]" />
 
-          <DialogFooter show-close-button>
-            <Button type="submit" :disabled="createOutboundPending">创建出库单</Button>
-          </DialogFooter>
+          <DialogProFooter>
+            <DialogProClose as-child>
+              <ButtonPro type="button" variant="outline">取消</ButtonPro>
+            </DialogProClose>
+            <ButtonPro type="submit" :disabled="createOutboundPending">创建出库单</ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

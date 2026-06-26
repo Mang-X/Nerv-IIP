@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesRelatedQualityItems } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
+  ButtonPro,
+  DataTablePro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  StatusBadge,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
@@ -40,7 +39,7 @@ const openCount = computed(() => qualityItems.value.filter((r) => (r.status ?? '
 const ncrCount = computed(() => qualityItems.value.filter((r) => r.ncrId).length)
 
 type QualityRow = (typeof qualityItems)['value'][number]
-const columns: DataTableColumn<QualityRow>[] = [
+const columns: DataTableProColumn<QualityRow>[] = [
   { key: 'qualityItemId', header: '质量项', cellClass: 'font-medium', accessor: (r) => r.qualityItemId ?? '无' },
   { key: 'sourceType', header: '来源类型', accessor: (r) => r.sourceType ?? '未指定' },
   { key: 'sourceDocumentId', header: '来源单据', accessor: (r) => r.sourceDocumentId ?? '未指定' },
@@ -65,13 +64,13 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="质量与不良" :breadcrumbs="[{ label: '制造执行' }]" :count="`${qualityItemsTotal} 条质量项`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="qualityItemsPending" @click="refreshQualityItems">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -83,22 +82,30 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="质量状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in mesQualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="质量状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in mesQualityStatusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="qualityItemsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="qualityItems"
       row-key="qualityItemId"
       :loading="qualityItemsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无质量或不良记录。工单/工序产生检验、不良或质量阻塞后会出现在这里。"
     >
       <template #cell-sourceDocumentId="{ row }">
@@ -111,7 +118,7 @@ function formatError(error: unknown) {
         </RouterLink>
         <span v-else>{{ row.sourceDocumentId ?? '未指定' }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-ncrId="{ row }">
         <RouterLink
           v-if="row.ncrId"
@@ -122,8 +129,7 @@ function formatError(error: unknown) {
         </RouterLink>
         <span v-else class="text-muted-foreground">无</span>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="qualityItemsTotal" />
   </BusinessLayout>
 </template>

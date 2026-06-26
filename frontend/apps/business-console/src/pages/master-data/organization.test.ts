@@ -114,24 +114,26 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
-  Dialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogFooter: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
+  DialogPro: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProFooter: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
 }
 // 把 reka-ui Select 换成原生 <select>，让测试能 setValue。
 const formSelectStubs = {
-  Select: {
+  SelectPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
-  SelectTrigger: { template: '<span><slot /></span>' },
+  SelectProTrigger: { template: '<span><slot /></span>' },
+  SelectProValue: { template: '<span />' },
   SelectValue: { template: '<span />' },
-  SelectContent: { template: '<slot />' },
-  SelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  SelectProContent: { template: '<slot />' },
+  SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 
 // 找到树里某节点的「选中」按钮（按文本，排除带「新建」aria-label 的 + 按钮）。
@@ -139,7 +141,7 @@ function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
   return wrapper.findAll('button').find((b) => b.text().includes(label) && !b.attributes('aria-label')?.includes('新建'))
 }
 
-const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs } } }
+const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...formSelectStubs } } }
 
 describe('master-data organization (department tree) page', () => {
   it('renders title, hint and department tree nodes', async () => {

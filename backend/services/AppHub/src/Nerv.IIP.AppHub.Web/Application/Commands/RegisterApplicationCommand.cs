@@ -4,31 +4,33 @@ using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationInstanceAggregate;
 using Nerv.IIP.AppHub.Domain.AggregatesModel.ManagedNodeAggregate;
 using Nerv.IIP.AppHub.Infrastructure;
 using Nerv.IIP.AppHub.Infrastructure.Repositories;
+using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using NetCorePal.Extensions.Primitives;
 using AppHubApplication = Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate.Application;
 
 namespace Nerv.IIP.AppHub.Web.Application.Commands;
 
-public record RegisterApplicationCommand(ApplicationRegistration Registration) : ICommand<RegistrationResult>;
+public record RegisterApplicationCommand(ApplicationRegistration Registration) : ICommand<ApplicationRegistrationResult>;
 
 public class RegisterApplicationCommandHandler(IServiceProvider services)
-    : ICommandHandler<RegisterApplicationCommand, RegistrationResult>
+    : ICommandHandler<RegisterApplicationCommand, ApplicationRegistrationResult>
 {
-    public async Task<RegistrationResult> Handle(RegisterApplicationCommand request, CancellationToken cancellationToken)
+    public async Task<ApplicationRegistrationResult> Handle(RegisterApplicationCommand request, CancellationToken cancellationToken)
     {
+        var registration = request.Registration;
         if (services.GetService<ApplicationDbContext>() is null)
         {
-            return services.GetRequiredService<IAppHubStateStore>().Register(request.Registration);
+            var result = services.GetRequiredService<IAppHubStateStore>().Register(registration);
+            return CreateRegistrationResult(registration, result);
         }
 
-        var registration = request.Registration;
         var context = registration.Context;
         var idempotencyRepository = services.GetRequiredService<IRegistrationIdempotencyRepository>();
         var existing = await idempotencyRepository.GetByKeyAsync(registration.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return new RegistrationResult(existing.RegistrationId, existing.InstanceKey);
+            return CreateRegistrationResult(registration, new RegistrationResult(existing.RegistrationId, existing.InstanceKey));
         }
 
         var applicationRepository = services.GetRequiredService<IApplicationRepository>();
@@ -86,6 +88,13 @@ public class RegisterApplicationCommandHandler(IServiceProvider services)
 
         var registrationId = $"reg-{Guid.CreateVersion7():N}";
         await idempotencyRepository.AddAsync(new RegistrationIdempotency(registration.IdempotencyKey, registrationId, registration.InstanceKey), cancellationToken);
-        return new RegistrationResult(registrationId, registration.InstanceKey);
+        return CreateRegistrationResult(registration, new RegistrationResult(registrationId, registration.InstanceKey));
+    }
+
+    private ApplicationRegistrationResult CreateRegistrationResult(ApplicationRegistration registration, RegistrationResult result)
+    {
+        var tokenService = services.GetRequiredService<IConnectorIngestionTokenService>();
+        var token = tokenService.CreateToken(registration, result.RegistrationId);
+        return new ApplicationRegistrationResult(result.RegistrationId, result.InstanceKey, token);
     }
 }

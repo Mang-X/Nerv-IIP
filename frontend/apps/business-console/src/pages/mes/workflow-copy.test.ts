@@ -193,7 +193,7 @@ const uiStubs = {
     props: ['search', 'searchPlaceholder'],
     template: '<div><slot name="filters" /><slot name="actions" /></div>',
   },
-  DataTable: {
+  DataTablePro: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
       <slot name="cell-workOrderId" :row="row" />
@@ -203,37 +203,37 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  Dialog: {
+  DialogRoot: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
-  DialogContent: {
+  DialogProContent: {
     template: '<div><slot /></div>',
   },
-  DialogHeader: {
+  DialogProHeader: {
     template: '<div><slot /></div>',
   },
-  DialogTitle: {
+  DialogProTitle: {
     template: '<h2><slot /></h2>',
   },
-  DialogDescription: {
+  DialogProDescription: {
     template: '<p><slot /></p>',
   },
-  DialogFooter: {
+  DialogProFooter: {
     template: '<div><slot /></div>',
   },
   RowActions: {
     props: ['label'],
     template: '<div><slot /></div>',
   },
-  StatusBadge: {
+  StatusBadgePro: {
     props: ['value'],
     template: '<span>{{ value }}</span>',
   },
-  Button: {
+  ButtonPro: {
     template: '<button v-bind="$attrs"><slot /></button>',
   },
-  Checkbox: {
+  CheckboxPro: {
     template: '<input type="checkbox" />',
   },
   DropdownMenuItem: {
@@ -252,22 +252,22 @@ const uiStubs = {
   FieldLabel: {
     template: '<label><slot /></label>',
   },
-  Input: {
+  InputPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Select: {
+  SelectPro: {
     template: '<div><slot /></div>',
   },
-  SelectContent: {
+  SelectProContent: {
     template: '<div><slot /></div>',
   },
-  SelectItem: {
+  SelectProItem: {
     props: ['value'],
     template: '<div><slot /></div>',
   },
-  SelectTrigger: {
+  SelectProTrigger: {
     template: '<button><slot /></button>',
   },
   SelectValue: {

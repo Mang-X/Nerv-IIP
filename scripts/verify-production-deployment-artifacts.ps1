@@ -76,7 +76,11 @@ if (-not $SkipDockerComposeConfig) {
         NERV_IIP_MINIO_ROOT_USER = "minioadmin"
         NERV_IIP_MINIO_ROOT_PASSWORD = "minio-password-32chars-test"
         NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN = "internal-token-32chars-test-value"
+        NERV_IIP_CONNECTOR_HOST_ID = "connector-host-001"
+        NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID = "org-001"
+        NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID = "env-dev"
         NERV_IIP_CONNECTOR_HOST_SECRET = "connector-secret-32chars-test-value"
+        NERV_IIP_CONNECTOR_INGESTION_TOKEN_SIGNING_KEY = "ingestion-signing-key-32chars-test-value"
         NERV_IIP_IAM_JWT_SIGNING_KEY = "iam-jwt-signing-key-32chars-test-value"
         NERV_IIP_CORS_ALLOWED_ORIGINS = "https://console.example.test,https://business.example.test"
     }
