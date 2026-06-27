@@ -450,7 +450,7 @@ public sealed class GetMasterDataWorkCenterUsageQueryHandler(ApplicationDbContex
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.Status != EngineeringVersionStatus.Archived &&
+                x.Status == EngineeringVersionStatus.Published &&
                 x.Operations.Any(operation => operation.WorkCenterCode == workCenterCode))
             .OrderBy(x => x.RoutingCode)
             .ThenBy(x => x.Revision)

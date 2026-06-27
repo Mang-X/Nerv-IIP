@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -904,6 +906,78 @@ public sealed class MasterDataApiContractTests
             new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, Reason: "retired"),
             CancellationToken.None));
         Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_uom_conversion_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.AddRange(
+            Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"),
+            Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 0, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "kg",
+            "g",
+            1000m,
+            0m,
+            3,
+            "half-up",
+            new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, Reason: "retired"),
+            CancellationToken.None));
+
+        Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
+        {
+            BaseAddress = new Uri("https://product-engineering.local")
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Contains("ProductEngineering work center usage check", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_treats_missing_references_as_empty()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"success":true,"message":"ok","code":0,"data":{"hasActiveReference":true}}""",
+                Encoding.UTF8,
+                "application/json")
+        }))
+        {
+            BaseAddress = new Uri("https://product-engineering.local")
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+
+        var usage = await checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None);
+
+        Assert.True(usage.HasActiveReference);
+        Assert.Empty(usage.References);
     }
 
     [Fact]
@@ -1878,6 +1952,19 @@ public sealed class MasterDataApiContractTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(usage);
+        }
+    }
+
+    private sealed class FixedInternalServiceTokenProvider : IInternalServiceTokenProvider
+    {
+        public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(send(request));
         }
     }
 

@@ -732,6 +732,17 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
         {
             throw new KnownException($"Unit of measure '{request.Code}' cannot be disabled because it is referenced by active SKU records.");
         }
+
+        var referencedByConversion = await dbContext.UomConversions.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            (x.FromUomCode == request.Code || x.ToUomCode == request.Code),
+            cancellationToken);
+        if (referencedByConversion)
+        {
+            throw new KnownException($"Unit of measure '{request.Code}' cannot be disabled because it is referenced by active UOM conversion records.");
+        }
     }
 
     private async Task EnsureWorkCenterIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)

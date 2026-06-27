@@ -843,7 +843,9 @@ public sealed class ProductEngineeringReleaseApiContractTests
         var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-MIX", "A", "SKU-FG-1000")
             .AddOperation(10, "WC-MIX-01", "mixing", "Mixing", 30);
         routing.Release(new DateOnly(2026, 6, 1));
-        dbContext.Routings.Add(routing);
+        var draftRouting = Routing.CreateDraft("org-001", "env-dev", "ROUTE-DRAFT", "A", "SKU-FG-1001")
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mixing", 30);
+        dbContext.Routings.AddRange(routing, draftRouting);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var usage = await new GetMasterDataWorkCenterUsageQueryHandler(dbContext).Handle(
@@ -853,6 +855,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.True(usage.HasActiveReference);
         Assert.Contains("standard-operation:mixing", usage.References);
         Assert.Contains("routing:ROUTE-MIX:A", usage.References);
+        Assert.DoesNotContain("routing:ROUTE-DRAFT:A", usage.References);
     }
 
     [Fact]
