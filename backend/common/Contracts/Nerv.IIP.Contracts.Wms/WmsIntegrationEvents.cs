@@ -6,11 +6,13 @@ public static class WmsIntegrationEventTypes
 {
     public const string InboundOrderCompleted = "wms.InboundOrderCompleted";
     public const string OutboundOrderCompleted = "wms.OutboundOrderCompleted";
+    public const string OutboundOrderCancelled = "wms.OutboundOrderCancelled";
     public const string OutboundOrderRequested = "wms.OutboundOrderRequested";
     public const string CountExecutionCompleted = "wms.CountExecutionCompleted";
     public const string WcsTaskDispatched = "wms.WcsTaskDispatched";
     public const string WcsTaskFailed = "wms.WcsTaskFailed";
     public const string WcsTaskCompleted = "wms.WcsTaskCompleted";
+    public const string WcsTaskCancelled = "wms.WcsTaskCancelled";
 }
 
 public static class WmsIntegrationEventVersions

@@ -109,6 +109,15 @@ public sealed class CompleteInboundOrderCommandHandler(ApplicationDbContext dbCo
 
 public sealed record RetryInboundInventoryPostingCommand(InboundOrderId InboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
+public sealed class RetryInboundInventoryPostingCommandValidator : AbstractValidator<RetryInboundInventoryPostingCommand>
+{
+    public RetryInboundInventoryPostingCommandValidator()
+    {
+        RuleFor(x => x.InboundOrderId).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+    }
+}
+
 public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<RetryInboundInventoryPostingCommand, CompleteWmsMovementResult>
 {
@@ -260,6 +269,15 @@ public sealed class CompleteOutboundOrderCommandHandler(ApplicationDbContext dbC
 
 public sealed record CancelOutboundOrderCommand(OutboundOrderId OutboundOrderId, string Reason) : ICommand;
 
+public sealed class CancelOutboundOrderCommandValidator : AbstractValidator<CancelOutboundOrderCommand>
+{
+    public CancelOutboundOrderCommandValidator()
+    {
+        RuleFor(x => x.OutboundOrderId).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+    }
+}
+
 public sealed class CancelOutboundOrderCommandHandler(
     ApplicationDbContext dbContext,
     IWmsInventoryReservationClient? inventoryReservationClient = null)
@@ -270,6 +288,7 @@ public sealed class CancelOutboundOrderCommandHandler(
         _ = WmsText.Required(request.Reason, nameof(request.Reason));
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
+        outbound.EnsureCanCancel();
         var openPickingTasks = await dbContext.WarehouseTasks
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
@@ -283,15 +302,17 @@ public sealed class CancelOutboundOrderCommandHandler(
             .ToArrayAsync(cancellationToken);
         foreach (var line in outbound.Lines.Where(x => x.InventoryReservationId is not null))
         {
-            if (inventoryReservationClient is not null)
+            if (inventoryReservationClient is null)
             {
-                await inventoryReservationClient.ReleaseAsync(
-                    new WmsInventoryReservationReleaseRequest(line.InventoryReservationId!, line.RequestedQuantity),
-                    cancellationToken);
+                throw new KnownException("Inventory reservation client is required to cancel an outbound order with reserved stock.");
             }
+
+            await inventoryReservationClient.ReleaseAsync(
+                new WmsInventoryReservationReleaseRequest(line.InventoryReservationId!, line.RequestedQuantity),
+                cancellationToken);
         }
 
-        outbound.Cancel();
+        outbound.Cancel(request.Reason);
         foreach (var task in openPickingTasks)
         {
             task.Cancel();
@@ -306,6 +327,15 @@ public sealed class CancelOutboundOrderCommandHandler(
 
 public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
 
+public sealed class RetryOutboundInventoryPostingCommandValidator : AbstractValidator<RetryOutboundInventoryPostingCommand>
+{
+    public RetryOutboundInventoryPostingCommandValidator()
+    {
+        RuleFor(x => x.OutboundOrderId).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+    }
+}
+
 public sealed class RetryOutboundInventoryPostingCommandHandler(
     ApplicationDbContext dbContext,
     IWmsInventoryReservationClient? inventoryReservationClient = null)
@@ -315,32 +345,47 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
-        var reservationIds = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (var line in outbound.Lines.OrderBy(x => x.LineNo, StringComparer.Ordinal))
+        var failedRequests = await dbContext.InventoryMovementRequests
+            .Where(x => x.OrganizationId == outbound.OrganizationId
+                && x.EnvironmentId == outbound.EnvironmentId
+                && x.MovementType == "outbound"
+                && x.SourceDocumentId == outbound.OutboundOrderNo
+                && x.Status == InventoryMovementRequestStatus.Failed)
+            .ToArrayAsync(cancellationToken);
+        var failedLineNos = failedRequests
+            .Select(x => x.SourceDocumentLineId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        outbound.EnsureCanRetryInventoryPosting(failedLineNos);
+        if (inventoryReservationClient is null)
         {
-            string? reservationId = null;
-            if (inventoryReservationClient is not null)
-            {
-                reservationId = (await inventoryReservationClient.ReserveAsync(
-                    new WmsInventoryReservationRequest(
-                        outbound.OrganizationId,
-                        outbound.EnvironmentId,
-                        "wms",
-                        outbound.OutboundOrderNo,
-                        line.LineNo,
-                        WmsInventoryReservationIdempotencyKeys.ForOutboundRetry(outbound, line.LineNo, request.IdempotencyKey),
-                        line.SkuCode,
-                        line.UomCode,
-                        outbound.SiteCode,
-                        line.PickLocationCode,
-                        line.LotNo,
-                        line.SerialNo,
-                        line.QualityStatus,
-                        line.OwnerType,
-                        line.OwnerId,
-                        line.RequestedQuantity),
-                    cancellationToken)).ReservationId;
-            }
+            throw new KnownException("Inventory reservation client is required to retry outbound Inventory posting.");
+        }
+
+        var reservationIds = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var line in outbound.Lines.Where(x => failedLineNos.Contains(x.LineNo, StringComparer.Ordinal)).OrderBy(x => x.LineNo, StringComparer.Ordinal))
+        {
+            var reservationId = (await inventoryReservationClient.ReserveAsync(
+                new WmsInventoryReservationRequest(
+                    outbound.OrganizationId,
+                    outbound.EnvironmentId,
+                    "wms",
+                    outbound.OutboundOrderNo,
+                    line.LineNo,
+                    WmsInventoryReservationIdempotencyKeys.ForOutboundRetry(outbound, line.LineNo, request.IdempotencyKey),
+                    line.SkuCode,
+                    line.UomCode,
+                    outbound.SiteCode,
+                    line.PickLocationCode,
+                    line.LotNo,
+                    line.SerialNo,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    line.RequestedQuantity),
+                cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
         }
@@ -465,6 +510,10 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
             await inventoryReservationClient.ReleaseAsync(
                 new WmsInventoryReservationReleaseRequest(movementRequest.InventoryReservationId, Math.Abs(movementRequest.Quantity)),
                 cancellationToken);
+        }
+        else if (request.MovementType == "outbound" && movementRequest.InventoryReservationId is not null)
+        {
+            throw new KnownException("Inventory reservation client is required to release failed outbound reserved stock.");
         }
 
         movementRequest.MarkFailed(request.FailureCode, request.FailureMessage);

@@ -108,6 +108,43 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
     }
 }
 
+public sealed class OutboundOrderCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<OutboundOrderCancelledDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(OutboundOrderCancelledDomainEvent domainEvent)
+    {
+        var order = domainEvent.OutboundOrder;
+        var line = order.Lines.FirstOrDefault();
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.OutboundOrderCancelled,
+            order.OrganizationId,
+            order.EnvironmentId,
+            $"wms:outbound-cancelled:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
+            new WmsIntegrationPayload(
+                order.OutboundOrderNo,
+                line?.LineNo,
+                line?.SkuCode,
+                line?.UomCode,
+                order.SiteCode,
+                line?.PickLocationCode,
+                null,
+                order.Status.ToString(),
+                "OUTBOUND_CANCELLED",
+                order.CancellationReason,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.PickLocationCode,
+                        x.RequestedQuantity,
+                        order.Status.ToString()))
+                    .ToArray()));
+    }
+}
+
 public sealed class CountExecutionCompletedIntegrationEventConverter
     : IIntegrationEventConverter<CountExecutionCompletedDomainEvent, WmsIntegrationEvent>
 {
@@ -165,6 +202,21 @@ public sealed class WcsTaskCompletedIntegrationEventConverter
             task.EnvironmentId,
             $"wms:wcs-completed:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
             new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), null, null));
+    }
+}
+
+public sealed class WcsTaskCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<WcsTaskCancelledDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(WcsTaskCancelledDomainEvent domainEvent)
+    {
+        var task = domainEvent.WcsTask;
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.WcsTaskCancelled,
+            task.OrganizationId,
+            task.EnvironmentId,
+            $"wms:wcs-cancelled:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), "WCS_TASK_CANCELLED", task.FailureMessage));
     }
 }
 

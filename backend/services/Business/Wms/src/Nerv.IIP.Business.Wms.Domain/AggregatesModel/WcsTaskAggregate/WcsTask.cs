@@ -108,5 +108,6 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         }
 
         Status = WcsTaskStatus.Cancelled;
+        this.AddDomainEvent(new WcsTaskCancelledDomainEvent(this));
     }
 }

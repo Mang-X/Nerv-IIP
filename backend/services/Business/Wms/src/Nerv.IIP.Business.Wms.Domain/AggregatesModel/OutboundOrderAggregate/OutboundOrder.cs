@@ -73,8 +73,10 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
+    public string? CancellationReason { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
     public IReadOnlyCollection<OutboundOrderLine> Lines => lines;
 
     public static OutboundOrder Create(
@@ -188,15 +190,23 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         Status = OutboundOrderStatus.InventoryPostingFailed;
     }
 
-    public void Cancel()
+    public void EnsureCanCancel()
     {
         EnsureOpen();
+    }
+
+    public void Cancel(string reason)
+    {
+        EnsureCanCancel();
+        CancellationReason = WmsText.Required(reason, nameof(reason));
         foreach (var line in lines)
         {
             line.ClearInventoryReservation();
         }
 
         Status = OutboundOrderStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new OutboundOrderCancelledDomainEvent(this));
     }
 
     public void MarkInventoryReservationReleased(string inventoryReservationId)
@@ -208,22 +218,43 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         }
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
-        string idempotencyKey,
-        IReadOnlyDictionary<string, string?> inventoryReservationIds)
+    public void EnsureCanRetryInventoryPosting(IReadOnlyCollection<string> lineNos)
     {
         if (Status != OutboundOrderStatus.InventoryPostingFailed)
         {
             throw new InvalidOperationException("Only outbound orders with failed Inventory posting can be retried.");
         }
 
-        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
-        EnsureHasLines();
-        Status = OutboundOrderStatus.Completed;
-        var singleLine = lines.Count == 1;
-        var requests = lines.Select(line =>
+        if (lineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed outbound line is required for Inventory posting retry.");
+        }
+
+        foreach (var lineNo in lineNos)
+        {
+            var line = FindLine(lineNo);
+            if (line.InventoryReservationId is not null)
             {
-                inventoryReservationIds.TryGetValue(line.LineNo, out var inventoryReservationId);
+                throw new InvalidOperationException($"Outbound line '{lineNo}' still has an Inventory reservation and cannot be retried safely.");
+            }
+        }
+    }
+
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string?> inventoryReservationIds)
+    {
+        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureCanRetryInventoryPosting(inventoryReservationIds.Keys.ToArray());
+        Status = OutboundOrderStatus.Completed;
+        var retryLines = lines
+            .Where(line => inventoryReservationIds.ContainsKey(line.LineNo))
+            .OrderBy(line => line.LineNo, StringComparer.Ordinal)
+            .ToArray();
+        var singleLine = retryLines.Length == 1;
+        var requests = retryLines.Select(line =>
+            {
+                var inventoryReservationId = inventoryReservationIds[line.LineNo];
                 line.MarkInventoryReserved(inventoryReservationId);
                 return InventoryMovementRequest.Create(
                     OrganizationId,

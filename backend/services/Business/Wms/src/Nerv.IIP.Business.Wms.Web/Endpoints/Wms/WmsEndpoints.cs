@@ -60,6 +60,7 @@ public sealed record ListOutboundOrdersRequest(string? OrganizationId, string? E
 public sealed record CreatePickingTaskRequest(OutboundOrderId OutboundOrderId, string TaskNo, string LineNo, string FromLocationCode, string ToLocationCode, decimal Quantity);
 public sealed record CompleteOutboundOrderRequest(OutboundOrderId OutboundOrderId, string PackReviewNo, bool Passed, string IdempotencyKey);
 public sealed record CancelOutboundOrderRequest(OutboundOrderId OutboundOrderId, string Reason);
+public sealed record CancelOutboundOrderResponse(OutboundOrderId OutboundOrderId, string Status);
 public sealed record RetryOutboundInventoryPostingRequest(OutboundOrderId OutboundOrderId, string IdempotencyKey);
 public sealed record CreateCountExecutionRequest(string OrganizationId, string EnvironmentId, string CountNo, string SkuCode, string UomCode, string SiteCode, string LocationCode, decimal ExpectedQuantity);
 public sealed record CreateCountExecutionResponse(CountExecutionId CountExecutionId);
@@ -217,13 +218,13 @@ public sealed class CompleteOutboundOrderEndpoint(ISender sender) : WmsEndpoint<
     }
 }
 
-public sealed class CancelOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CancelOutboundOrderRequest, ResponseData<object>>
+public sealed class CancelOutboundOrderEndpoint(ISender sender) : WmsEndpoint<CancelOutboundOrderRequest, ResponseData<CancelOutboundOrderResponse>>
 {
     public override void Configure() => ConfigureWmsContract(WmsEndpointContracts.Get<CancelOutboundOrderEndpoint>());
     public override async Task HandleAsync(CancelOutboundOrderRequest req, CancellationToken ct)
     {
         await sender.Send(new CancelOutboundOrderCommand(req.OutboundOrderId, req.Reason), ct);
-        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CancelOutboundOrderResponse(req.OutboundOrderId, "Cancelled").AsResponseData(), cancellation: ct);
     }
 }
 
