@@ -440,6 +440,47 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public async Task Production_report_rejects_non_completion_report_for_operation_outside_work_order()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var reportedAt = DateTimeOffset.Parse("2026-05-24T10:00:00Z");
+        var workOrder = Domain.AggregatesModel.WorkOrderAggregate.WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-OUTPUT",
+            "SKU-FG-1000",
+            "PV-001",
+            100m,
+            1,
+            reportedAt.AddHours(8));
+        var tasks = workOrder.Release(
+            reportedAt.AddHours(-1),
+            [
+                new Domain.AggregatesModel.WorkOrderAggregate.RoutingStepSnapshot(
+                    "OP-10",
+                    10,
+                    "WC-MIX-01",
+                    [],
+                    TimeSpan.FromMinutes(30)),
+            ]);
+        workOrder.Start(reportedAt.AddMinutes(-20));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.AddRange(tasks);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-404", 1m, 0m, false, reportedAt),
+            CancellationToken.None));
+
+        Assert.Contains("报工工序任务不存在或不属于当前工单", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(dbContext.ProductionReports);
+        Assert.Equal(0m, workOrder.CompletedQuantity);
+        Assert.Equal(0m, workOrder.ScrapQuantity);
+    }
+
+    [Fact]
     public void Operation_task_status_filters_do_not_depend_on_enum_ToString_provider_translation()
     {
         var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
