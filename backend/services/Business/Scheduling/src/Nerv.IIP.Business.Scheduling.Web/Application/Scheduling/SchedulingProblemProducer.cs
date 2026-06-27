@@ -126,7 +126,7 @@ public sealed class SchedulingProblemProducer(
                 OperationId: operationId,
                 OperationSequence: operation.Sequence,
                 PredecessorOperationIds: previousOperationIds.ToArray(),
-                DurationMinutes: Math.Max(1, operation.RunMinutes + operation.TeardownMinutes),
+                DurationMinutes: CalculateDurationMinutes(operation, order.Quantity),
                 RequiredCapabilityCode: operation.OperationCode,
                 EligibleResourceIds: eligibleResources,
                 PrimaryResourceId: eligibleResources.FirstOrDefault(),
@@ -214,6 +214,9 @@ public sealed class SchedulingProblemProducer(
             var resourceIds = devices.Count == 0
                 ? [workCenter.Code]
                 : devices.Select(x => x.ResourceId).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            var capacityUnits = devices.Count == 0
+                ? Math.Max(1, workCenter.NumberOfCapacities)
+                : 1;
             foreach (var resourceId in resourceIds)
             {
                 resources[resourceId] = new SchedulingResourceContract(
@@ -222,13 +225,21 @@ public sealed class SchedulingProblemProducer(
                     CapabilityCodes: NormalizeCodes(workCenter.CapabilityCodes
                         .Concat(operationCapabilitiesByWorkCenter.GetValueOrDefault(workCenter.Code) ?? [])
                         .Concat([workCenter.Code])),
-                    CapacityUnits: Math.Max(1, workCenter.NumberOfCapacities),
+                    CapacityUnits: capacityUnits,
                     CalendarId: workCenter.DefaultCalendarCode,
                     SortKey: $"{workCenter.Code}:{resourceId}");
             }
         }
 
         return resources;
+    }
+
+    private static int CalculateDurationMinutes(SchedulingProblemRoutingOperationSnapshot operation, decimal quantity)
+    {
+        var runMinutes = Math.Max(0, operation.RunMinutes);
+        var effectiveQuantity = Math.Max(0m, quantity);
+        var totalRunMinutes = (int)Math.Ceiling(runMinutes * effectiveQuantity);
+        return Math.Max(1, totalRunMinutes + Math.Max(0, operation.TeardownMinutes));
     }
 
     private static IReadOnlyCollection<string> NormalizeCodes(IEnumerable<string>? values)
@@ -292,9 +303,7 @@ public sealed record SchedulingProblemRoutingOperationSnapshot(
 
 public sealed record SchedulingProblemWorkCenterSnapshot(
     string Code,
-    int CapacityMinutesPerDay,
     string DefaultCalendarCode,
-    bool FiniteCapacity,
     int NumberOfCapacities,
     IReadOnlyCollection<string> CapabilityCodes);
 
@@ -394,6 +403,9 @@ public sealed class HttpSchedulingProblemMasterDataClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider? internalTokenProvider = null) : ISchedulingProblemMasterDataClient
 {
+    private readonly object shiftDetailsLock = new();
+    private readonly Dictionary<(string OrganizationId, string EnvironmentId), Task<IReadOnlyCollection<MasterDataResourceDetailResponse>>> shiftDetailsTasks = new();
+
     public async Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
         string organizationId,
         string environmentId,
@@ -408,9 +420,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             cancellationToken);
         return new SchedulingProblemWorkCenterSnapshot(
             detail.Code,
-            Math.Max(1, detail.CapacityMinutesPerDay ?? 1),
             detail.DefaultCalendarCode ?? throw new KnownException($"Work center '{workCenterCode}' does not have a default calendar."),
-            detail.FiniteCapacity ?? true,
             Math.Max(1, detail.NumberOfCapacities ?? 1),
             [detail.Code]);
     }
@@ -424,7 +434,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         CancellationToken cancellationToken)
     {
         var calendar = await GetResourceDetailAsync(organizationId, environmentId, "work-calendar", calendarCode, cancellationToken);
-        var shifts = await ListShiftDetailsAsync(organizationId, environmentId, cancellationToken);
+        var shifts = await GetShiftDetailsAsync(organizationId, environmentId, cancellationToken);
         var windows = BuildShiftWindows(calendar, shifts, horizonStartUtc, horizonEndUtc);
         return new SchedulingProblemCalendarSnapshot(calendar.Code, windows);
     }
@@ -456,6 +466,24 @@ public sealed class HttpSchedulingProblemMasterDataClient(
                 workCenterCode))
             .OrderBy(x => x.ResourceId, StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private Task<IReadOnlyCollection<MasterDataResourceDetailResponse>> GetShiftDetailsAsync(
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var key = (organizationId, environmentId);
+        lock (shiftDetailsLock)
+        {
+            if (!shiftDetailsTasks.TryGetValue(key, out var task))
+            {
+                task = ListShiftDetailsAsync(organizationId, environmentId, cancellationToken);
+                shiftDetailsTasks.Add(key, task);
+            }
+
+            return task;
+        }
     }
 
     private async Task<IReadOnlyCollection<MasterDataResourceDetailResponse>> ListShiftDetailsAsync(
@@ -539,15 +567,16 @@ public sealed class HttpSchedulingProblemMasterDataClient(
 
             if (hasException && exception!.StartsAt.HasValue && exception.EndsAt.HasValue)
             {
-                AddWindow(windows, day, exception.StartsAt.Value, exception.EndsAt.Value, "calendar-exception", null, horizonStartUtc, horizonEndUtc);
+                AddWindow(windows, day, exception.StartsAt.Value, exception.EndsAt.Value, "calendar-exception", horizonStartUtc, horizonEndUtc);
                 continue;
             }
 
+            // Current MasterData calendars own working-day markers; shift definitions are global resources.
             foreach (var shift in shifts)
             {
                 if (shift.StartsAt.HasValue && shift.EndsAt.HasValue)
                 {
-                    AddWindow(windows, day, shift.StartsAt.Value, shift.EndsAt.Value, shift.Code, shift.PaidMinutes, horizonStartUtc, horizonEndUtc);
+                    AddWindow(windows, day, shift.StartsAt.Value, shift.EndsAt.Value, shift.Code, horizonStartUtc, horizonEndUtc);
                 }
             }
         }
@@ -565,17 +594,12 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         TimeOnly startsAt,
         TimeOnly endsAt,
         string reasonCode,
-        int? paidMinutes,
         DateTimeOffset horizonStartUtc,
         DateTimeOffset horizonEndUtc)
     {
         var start = new DateTimeOffset(day.ToDateTime(startsAt), TimeSpan.Zero);
         var rawEndDay = endsAt <= startsAt ? day.AddDays(1) : day;
         var end = new DateTimeOffset(rawEndDay.ToDateTime(endsAt), TimeSpan.Zero);
-        if (paidMinutes is > 0)
-        {
-            end = start.AddMinutes(paidMinutes.Value);
-        }
 
         var clippedStart = start < horizonStartUtc ? horizonStartUtc : start;
         var clippedEnd = end > horizonEndUtc ? horizonEndUtc : end;
@@ -611,9 +635,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         TimeOnly? StartsAt = null,
         TimeOnly? EndsAt = null,
         int? PaidMinutes = null,
-        int? CapacityMinutesPerDay = null,
         string? DefaultCalendarCode = null,
-        bool? FiniteCapacity = null,
         IReadOnlyCollection<WorkCalendarWorkingTimeResponse>? WorkingTimes = null,
         IReadOnlyCollection<WorkCalendarHolidayResponse>? Holidays = null,
         IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null,
