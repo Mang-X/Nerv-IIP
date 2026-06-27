@@ -552,6 +552,46 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Equal("NCR-APPROVAL-003", approvalStatusClient.LastNcrCode);
     }
 
+    [Fact]
+    public async Task Submit_ncr_sort_and_screen_disposition_does_not_call_central_approval()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-APPROVAL-004",
+            "receiving",
+            "RCV-004",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalStatusClient = new FixedApprovalChainStatusClient(false);
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approvalStatusClient);
+
+        await handler.Handle(
+            new SubmitNonconformanceReportDispositionCommand(
+                ncr.Id,
+                "sort-and-screen",
+                null,
+                [],
+                []),
+            CancellationToken.None);
+
+        Assert.Null(approvalStatusClient.LastChainId);
+        Assert.Equal("sort-and-screen", ncr.DispositionType);
+        Assert.Null(ncr.DispositionApprovalChainId);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();

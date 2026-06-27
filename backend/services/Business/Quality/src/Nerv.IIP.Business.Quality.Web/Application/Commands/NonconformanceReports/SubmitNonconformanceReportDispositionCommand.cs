@@ -30,7 +30,7 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
-        if (RequiresCentralApproval(request.DispositionType))
+        if (NonconformanceReport.RequiresCentralApproval(request.DispositionType))
         {
             if (string.IsNullOrWhiteSpace(request.DispositionApprovalChainId))
             {
@@ -56,11 +56,4 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
             request.MrbReviews);
     }
 
-    private static bool RequiresCentralApproval(string dispositionType)
-    {
-        var normalized = string.IsNullOrWhiteSpace(dispositionType)
-            ? string.Empty
-            : dispositionType.Trim().ToLowerInvariant();
-        return normalized is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
-    }
 }

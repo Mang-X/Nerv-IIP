@@ -1,4 +1,3 @@
-using System.Net;
 using FastEndpoints;
 using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -92,8 +91,14 @@ public sealed class StartBusinessConsoleApprovalChainEndpoint(
     protected override Task<BusinessConsoleStartApprovalChainResponse> ForwardAsync(
         BusinessConsoleStartApprovalChainRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        approval.StartChainAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
+        return approval.StartChainAsync(
+            tokenProvider.BearerToken,
+            request with { StartedBy = actorRef },
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console Approval")]
@@ -195,19 +200,13 @@ public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var authorization = AuthorizationResult
-            ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
-        var actorRef = authorization.PrincipalId ?? authorization.LoginName;
-        if (string.IsNullOrWhiteSpace(actorRef))
-        {
-            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
-        }
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
 
         var downstreamRequest = request with
         {
             ChainId = Route<string>("chainId") ?? request.ChainId,
             StepNo = Route<int>("stepNo"),
-            ActorType = string.IsNullOrWhiteSpace(authorization.PrincipalType) ? "user" : authorization.PrincipalType,
+            ActorType = actorType,
             ActorRef = actorRef,
         };
         return approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
@@ -254,8 +253,19 @@ public sealed class CreateBusinessConsoleApprovalDelegationEndpoint(
     protected override Task<BusinessConsoleCreateApprovalDelegationResponse> ForwardAsync(
         BusinessConsoleCreateApprovalDelegationRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        approval.CreateDelegationAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        return approval.CreateDelegationAsync(
+            tokenProvider.BearerToken,
+            request with
+            {
+                DelegatorActorType = actorType,
+                DelegatorActorRef = actorRef,
+                CreatedBy = actorRef,
+            },
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console Approval")]
@@ -283,11 +293,16 @@ public sealed class RevokeBusinessConsoleApprovalDelegationEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var delegationId = Route<string>("delegationId") ?? request.DelegationId;
         return approval.RevokeDelegationAsync(
             tokenProvider.BearerToken,
             delegationId,
-            request with { DelegationId = delegationId },
+            request with
+            {
+                DelegationId = delegationId,
+                RevokedBy = actorRef,
+            },
             cancellationToken);
     }
 }

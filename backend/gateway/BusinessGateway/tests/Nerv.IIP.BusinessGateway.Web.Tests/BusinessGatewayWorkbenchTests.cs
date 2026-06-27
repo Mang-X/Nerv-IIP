@@ -253,6 +253,8 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
 
     public BusinessConsoleApprovalDelegationListRequest? LastDelegationListRequest { get; private set; }
 
+    public BusinessConsoleStartApprovalChainRequest? LastStartChainRequest { get; private set; }
+
     public BusinessConsoleCreateApprovalDelegationRequest? LastCreateDelegationRequest { get; private set; }
 
     public BusinessConsoleRevokeApprovalDelegationRequest? LastRevokeDelegationRequest { get; private set; }
@@ -294,6 +296,7 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastStartChainRequest = request;
         return Task.FromResult(new BusinessConsoleStartApprovalChainResponse("chain-001"));
     }
 

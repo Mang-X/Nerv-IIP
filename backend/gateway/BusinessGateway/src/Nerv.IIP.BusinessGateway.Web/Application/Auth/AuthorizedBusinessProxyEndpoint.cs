@@ -2,6 +2,7 @@ using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using NetCorePal.Extensions.Dto;
+using System.Net;
 using System.Text.Json;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
@@ -56,6 +57,22 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         HttpContext.Items.TryGetValue(BusinessGatewayAuthorization.PrincipalItemKey, out var value)
             ? value as BusinessGatewayAuthorizationResult
             : null;
+
+    protected (string ActorType, string ActorRef) RequireAuthorizedPrincipalActor()
+    {
+        var authorization = AuthorizationResult
+            ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+        var actorRef = authorization.PrincipalId ?? authorization.LoginName;
+        if (string.IsNullOrWhiteSpace(actorRef))
+        {
+            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+        }
+
+        var actorType = string.IsNullOrWhiteSpace(authorization.PrincipalType)
+            ? "user"
+            : authorization.PrincipalType;
+        return (actorType, actorRef);
+    }
 
     protected abstract string OrganizationId(TRequest request);
 
