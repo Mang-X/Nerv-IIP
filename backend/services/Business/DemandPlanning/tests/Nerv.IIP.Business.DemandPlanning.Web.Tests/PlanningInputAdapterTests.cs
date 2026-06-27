@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
@@ -538,6 +539,62 @@ public sealed class PlanningInputAdapterTests
         Assert.Equal("mes", receipt.SourceSystem);
         Assert.Equal("work-order", receipt.SourceDocumentType);
         Assert.Equal("WO-OPEN-001", receipt.SourceDocumentId);
+    }
+
+    [Fact]
+    public async Task Scheduled_receipt_source_registration_keeps_erp_and_mes_base_addresses_isolated()
+    {
+        var requests = new List<Uri>();
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new CaptureHttpMessageHandlerBuilderFilter(request =>
+        {
+            requests.Add(request.RequestUri!);
+            return request.RequestUri!.AbsolutePath.Contains("/erp/", StringComparison.OrdinalIgnoreCase)
+                ? JsonResponse("""{"success":true,"message":"ok","code":0,"data":{"total":0,"items":[]}}""")
+                : JsonResponse("""{"success":true,"message":"ok","code":0,"data":{"total":0,"items":[]}}""");
+        }));
+        services.AddPlanningScheduledReceiptSourceClients(
+            new Uri("http://erp.test"),
+            new Uri("http://mes.test"));
+        await using var provider = services.BuildServiceProvider();
+        var sources = provider.GetServices<IPlanningScheduledReceiptSourceClient>().ToArray();
+
+        foreach (var source in sources)
+        {
+            await source.GetScheduledReceiptsAsync(
+                "token",
+                new PlanningScheduledReceiptSnapshotRequest(
+                    "org-001",
+                    "env-dev",
+                    new DateOnly(2026, 5, 25),
+                    new DateOnly(2026, 6, 30),
+                    [new PlanningScheduledReceiptSnapshotItem("SKU-FG-1000", "pcs", "SITE-01")]),
+                CancellationToken.None);
+        }
+
+        Assert.Equal(2, sources.Length);
+        Assert.Contains(requests, x => x.Host == "erp.test" && x.AbsolutePath == "/api/business/v1/erp/purchase-orders");
+        Assert.Contains(requests, x => x.Host == "mes.test" && x.AbsolutePath == "/api/business/v1/mes/work-orders");
+    }
+
+    [Fact]
+    public async Task Composite_scheduled_receipts_uses_explicit_source_name_when_source_degrades()
+    {
+        var composite = new CompositePlanningScheduledReceiptSnapshotClient(
+            [new ThrowingNamedScheduledReceiptSourceClient("mes-work-orders")]);
+
+        var snapshot = await composite.GetScheduledReceiptsAsync(
+            "token",
+            new PlanningScheduledReceiptSnapshotRequest(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 5, 25),
+                new DateOnly(2026, 6, 30),
+                [new PlanningScheduledReceiptSnapshotItem("SKU-FG-1000", "pcs", "SITE-01")]),
+            CancellationToken.None);
+
+        Assert.Equal("mes-work-orders:error", snapshot.SnapshotSource);
+        Assert.Empty(snapshot.ScheduledReceipts);
     }
 
     [Fact]
@@ -1103,6 +1160,40 @@ public sealed class PlanningInputAdapterTests
             CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("MasterData optional source bug");
+        }
+    }
+
+    private sealed class ThrowingNamedScheduledReceiptSourceClient(string sourceName) : IPlanningScheduledReceiptSourceClient
+    {
+        public string SourceName { get; } = sourceName;
+
+        public Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
+            string internalBearerToken,
+            PlanningScheduledReceiptSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new OptionalPlanningSnapshotException($"{SourceName} unavailable");
+        }
+    }
+
+    private sealed class CaptureHttpMessageHandlerBuilderFilter(Func<HttpRequestMessage, HttpResponseMessage> send)
+        : IHttpMessageHandlerBuilderFilter
+    {
+        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next)
+        {
+            return builder =>
+            {
+                next(builder);
+                builder.AdditionalHandlers.Add(new CaptureHttpMessageHandler(send));
+            };
+        }
+    }
+
+    private sealed class CaptureHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(send(request));
         }
     }
 

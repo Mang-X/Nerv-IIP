@@ -3,8 +3,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.ServiceAuth;
+using Prometheus;
 using static Nerv.IIP.Business.DemandPlanning.Web.Application.Planning.PlanningHttpQuery;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
@@ -90,7 +92,35 @@ public interface IPlanningScheduledReceiptSnapshotClient
         CancellationToken cancellationToken);
 }
 
-public interface IPlanningScheduledReceiptSourceClient : IPlanningScheduledReceiptSnapshotClient;
+public interface IPlanningScheduledReceiptSourceClient : IPlanningScheduledReceiptSnapshotClient
+{
+    string SourceName { get; }
+}
+
+public static class PlanningScheduledReceiptServiceCollectionExtensions
+{
+    public static IServiceCollection AddPlanningScheduledReceiptSourceClients(
+        this IServiceCollection services,
+        Uri erpBaseAddress,
+        Uri mesBaseAddress)
+    {
+        services.AddHttpClient<HttpPlanningErpScheduledReceiptSnapshotClient>(client =>
+        {
+            client.BaseAddress = erpBaseAddress;
+        }).UseHttpClientMetrics();
+        services.AddHttpClient<HttpPlanningMesScheduledReceiptSnapshotClient>(client =>
+        {
+            client.BaseAddress = mesBaseAddress;
+        }).UseHttpClientMetrics();
+        services.AddScoped<IPlanningScheduledReceiptSourceClient>(sp =>
+            sp.GetRequiredService<HttpPlanningErpScheduledReceiptSnapshotClient>());
+        services.AddScoped<IPlanningScheduledReceiptSourceClient>(sp =>
+            sp.GetRequiredService<HttpPlanningMesScheduledReceiptSnapshotClient>());
+        services.AddScoped<IPlanningScheduledReceiptSnapshotClient, CompositePlanningScheduledReceiptSnapshotClient>();
+
+        return services;
+    }
+}
 
 public sealed record PlanningParameterSnapshotItem(string SkuCode, string UomCode, string SiteCode);
 
@@ -506,13 +536,8 @@ public sealed class CompositePlanningScheduledReceiptSnapshotClient(
             }
             catch (Exception ex) when (IsOptionalPlanningSourceFailure(ex))
             {
-                var sourceName = client.GetType().Name.Contains("Mes", StringComparison.OrdinalIgnoreCase)
-                    ? "mes-work-orders"
-                    : client.GetType().Name.Contains("Erp", StringComparison.OrdinalIgnoreCase)
-                        ? "erp-purchase-orders"
-                        : "scheduled-receipts";
-                logger?.LogWarning(ex, "DemandPlanning MRP scheduled receipt source {SourceName} failed; continuing with other scheduled receipt sources.", sourceName);
-                sourceSegments.Add($"{sourceName}:error");
+                logger?.LogWarning(ex, "DemandPlanning MRP scheduled receipt source {SourceName} failed; continuing with other scheduled receipt sources.", client.SourceName);
+                sourceSegments.Add($"{client.SourceName}:error");
             }
         }
 
@@ -529,6 +554,8 @@ public sealed class CompositePlanningScheduledReceiptSnapshotClient(
 
 public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
 {
+    public string SourceName => "erp-purchase-orders";
+
     public async Task<PlanningScheduledReceiptSnapshot> GetScheduledReceiptsAsync(
         string internalBearerToken,
         PlanningScheduledReceiptSnapshotRequest request,
@@ -607,6 +634,8 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
 
 public sealed class HttpPlanningMesScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
 {
+    public string SourceName => "mes-work-orders";
+
     private static readonly HashSet<string> OpenWorkOrderStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
         "created",

@@ -491,11 +491,12 @@ public static class MrpCalculator
         void Visit(string skuCode, string siteCode, int level, HashSet<string> path)
         {
             var key = SkuSiteKey.Create(skuCode, siteCode);
-            if (!lowLevelCodes.TryGetValue(key, out var existing) || level > existing)
+            if (lowLevelCodes.TryGetValue(key, out var existing) && existing >= level)
             {
-                lowLevelCodes[key] = level;
+                return;
             }
 
+            lowLevelCodes[key] = level;
             planningParameters.TryGetValue(key, out var planningParameter);
             productionVersions.TryGetValue(skuCode, out var version);
             if (!IsMakeItem(planningParameter?.ProcurementType, version) ||
