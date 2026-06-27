@@ -157,6 +157,11 @@ public sealed class ProductionVersion : Entity<ProductionVersionId>, IAggregateR
             throw new ArgumentException("Supersede effective date must be after the superseded production version ValidFrom.", nameof(effectiveDate));
         }
 
+        if (successor.ValidTo is not null && effectiveDate > successor.ValidTo.Value)
+        {
+            throw new ArgumentException("Successor production version effective window must include the supersede effective date.", nameof(effectiveDate));
+        }
+
         ValidTo = effectiveDate.AddDays(-1);
         successor.ValidFrom = effectiveDate;
         successor.Touch();

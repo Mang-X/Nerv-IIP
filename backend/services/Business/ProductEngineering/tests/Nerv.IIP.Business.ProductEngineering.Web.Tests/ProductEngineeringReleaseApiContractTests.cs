@@ -1264,6 +1264,68 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_change_rejects_successor_production_version_when_effective_date_exceeds_successor_valid_to()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:A",
+            "ROUTE-3000:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        var successor = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:B",
+            "ROUTE-3000:B",
+            new DateOnly(2026, 3, 1),
+            new DateOnly(2026, 5, 31),
+            null,
+            null,
+            20,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.AddRange(oldVersion, successor);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-PV-DEAD-WINDOW",
+                "Reject successor dead window",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
+            CancellationToken.None));
+
+        Assert.Contains("successor production version effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ProductionVersionStatus.Active, oldVersion.Status);
+        Assert.Null(oldVersion.ValidTo);
+        Assert.Equal(new DateOnly(2026, 3, 1), successor.ValidFrom);
+        Assert.Equal(new DateOnly(2026, 5, 31), successor.ValidTo);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_rejects_self_supersede_version()
     {
         await using var provider = CreateInMemoryProvider();
