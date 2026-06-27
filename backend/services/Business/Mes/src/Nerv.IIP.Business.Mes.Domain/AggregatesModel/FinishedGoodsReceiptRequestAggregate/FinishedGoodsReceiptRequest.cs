@@ -9,6 +9,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public const string RequestedStatus = "Requested";
     public const string PostedStatus = "Posted";
     public const string InventoryPostingFailedStatus = "InventoryPostingFailed";
+    public const int FailureMessageMaxLength = 500;
 
     private FinishedGoodsReceiptRequest()
     {
@@ -109,7 +110,15 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         PostedInventoryMovementId = null;
         PostedAtUtc = null;
         InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
-        InventoryPostingFailureMessage = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
         InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    private static string NormalizeFailureMessage(string failureMessage)
+    {
+        var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        return normalized.Length <= FailureMessageMaxLength
+            ? normalized
+            : normalized[..FailureMessageMaxLength];
     }
 }

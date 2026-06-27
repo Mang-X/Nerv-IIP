@@ -10,6 +10,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public const string RequestedStatus = "Requested";
     public const string PartiallyReceivedStatus = "PartiallyReceived";
     public const string ReceivedStatus = "Received";
+    public const int FailureMessageMaxLength = 500;
 
     private MaterialIssueRequest()
     {
@@ -55,6 +56,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string? InventoryPostingFailureCode { get; private set; }
     public string? InventoryPostingFailureMessage { get; private set; }
     public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
+    public string? InventoryPostingRollbackKey { get; private set; }
 
     public static MaterialIssueRequest Create(
         string organizationId,
@@ -104,6 +106,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailureCode = null;
         InventoryPostingFailureMessage = null;
         InventoryPostingFailedAtUtc = null;
+        InventoryPostingRollbackKey = null;
         AddDomainEvent(new MaterialIssueRequestedDomainEvent(this, quantity));
         AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
     }
@@ -112,9 +115,23 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         decimal rollbackQuantity,
         string failureCode,
         string failureMessage,
-        DateTimeOffset failedAtUtc)
+        DateTimeOffset failedAtUtc,
+        string? rollbackKey = null)
     {
-        if (rollbackQuantity > 0m && ReceivedQuantity > 0m)
+        if (rollbackQuantity > 0m &&
+            ReceivedAtUtc is not null &&
+            failedAtUtc < ReceivedAtUtc.Value)
+        {
+            return;
+        }
+
+        var normalizedRollbackKey = string.IsNullOrWhiteSpace(rollbackKey) ? null : rollbackKey.Trim();
+        var shouldRollback = rollbackQuantity > 0m &&
+            ReceivedQuantity > 0m &&
+            (normalizedRollbackKey is null ||
+                !string.Equals(InventoryPostingRollbackKey, normalizedRollbackKey, StringComparison.OrdinalIgnoreCase));
+
+        if (shouldRollback)
         {
             ReceivedQuantity = Math.Max(0m, ReceivedQuantity - rollbackQuantity);
             if (ReceivedQuantity == 0m)
@@ -127,10 +144,20 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             {
                 Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
             }
+
+            InventoryPostingRollbackKey = normalizedRollbackKey;
         }
 
         InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
-        InventoryPostingFailureMessage = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
         InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    private static string NormalizeFailureMessage(string failureMessage)
+    {
+        var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        return normalized.Length <= FailureMessageMaxLength
+            ? normalized
+            : normalized[..FailureMessageMaxLength];
     }
 }

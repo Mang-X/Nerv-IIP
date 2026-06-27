@@ -20,6 +20,9 @@ public sealed class ProductionReportMaterialConsumptionEntityTypeConfiguration :
         builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasDefaultValue(ProductionReportMaterialConsumption.UnspecifiedUomCode).HasComment("Unit of measure code copied from the line-side material issue request.");
         builder.Property(x => x.ConsumedQuantity).HasColumnName("consumed_quantity").HasPrecision(18, 6).IsRequired().HasComment("Consumed material quantity for this lot.");
         builder.Property(x => x.MaterialIssueRequestNo).HasColumnName("material_issue_request_no").IsRequired().HasMaxLength(100).HasComment("MES material issue request number that supplied the consumed lot.");
+        builder.Property(x => x.InventoryPostingFailureCode).HasColumnName("inventory_posting_failure_code").HasMaxLength(100).HasComment("Last Inventory posting failure code returned for this MES production material consumption.");
+        builder.Property(x => x.InventoryPostingFailureMessage).HasColumnName("inventory_posting_failure_message").HasMaxLength(500).HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
+        builder.Property(x => x.InventoryPostingFailedAtUtc).HasColumnName("inventory_posting_failed_at_utc").HasComment("UTC time when Inventory rejected the latest MES production material consumption posting.");
         builder.HasOne<ProductionReport>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
