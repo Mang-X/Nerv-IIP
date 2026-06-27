@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -263,12 +264,25 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
                 return ReceiptProjectionDecision.Failed;
             }
 
+            var receiptQualityStatus = ErpQualityStatusNormalizer.NormalizeReceiptQualityStatus(line.Status);
+            if (!ErpQualityStatusNormalizer.IsPayableReceiptQuality(receiptQualityStatus))
+            {
+                continue;
+            }
+
             commandLines.Add(new PurchaseReceiptCommandLine(
                 lineReference,
                 line.Quantity,
-                line.Status,
+                receiptQualityStatus,
                 line.LocationCode,
                 null));
+        }
+
+        if (commandLines.Count == 0)
+        {
+            failureCode = "no-payable-receipt-lines";
+            failureMessage = $"WMS inbound completion '{integrationEvent.Payload.PublicReference}' does not contain payable quality lines.";
+            return ReceiptProjectionDecision.Failed;
         }
 
         receiptLines = commandLines;

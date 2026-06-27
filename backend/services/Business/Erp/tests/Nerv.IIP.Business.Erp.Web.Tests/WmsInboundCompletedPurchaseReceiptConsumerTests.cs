@@ -39,7 +39,9 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         var receipt = Assert.Single(dbContext.PurchaseReceipts.Include(x => x.Lines));
         Assert.Equal("WMS-IN-GRIR-001", receipt.PurchaseReceiptNo);
         Assert.Equal("PO-WMS-GRIR-001", receipt.PurchaseOrderNo);
-        Assert.Equal("LINE-001", Assert.Single(receipt.Lines).PurchaseOrderLineNo);
+        var receiptLine = Assert.Single(receipt.Lines);
+        Assert.Equal("LINE-001", receiptLine.PurchaseOrderLineNo);
+        Assert.Equal("unrestricted", receiptLine.QualityStatus);
         Assert.Empty(dbContext.AccountPayables);
         Assert.Empty(dbContext.JournalVouchers);
 
@@ -87,6 +89,39 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
             WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task InboundOrderCompletedHandler_DeadLettersWhenNoPayableQualityLinesRemain()
+    {
+        await using var dbContext = CreateDbContext();
+        await ReleasePurchaseOrderAsync(dbContext, "PO-WMS-BLOCKED-ONLY", "LINE-001", 2m, 12.5m);
+        var integrationEvent = BuildWmsCompletedEvent("WMS-IN-BLOCKED-ONLY", "purchase-order", "PO-WMS-BLOCKED-ONLY", "LINE-001", 2m);
+        integrationEvent = integrationEvent with
+        {
+            Payload = integrationEvent.Payload with
+            {
+                Lines =
+                [
+                    new WmsIntegrationPayloadLine("LINE-001", "SKU-RM-1000", "kg", "SITE-01", "HOLD-A-01", 2m, "blocked"),
+                ],
+            },
+        };
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateInboundHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(dbContext.PurchaseReceipts);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var order = dbContext.PurchaseOrders.Include(x => x.Lines).Single(x => x.PurchaseOrderNo == "PO-WMS-BLOCKED-ONLY");
+        Assert.Equal(0m, Assert.Single(order.Lines).ReceivedQuantity);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("no-payable-receipt-lines", deadLetter.FailureCode);
     }
 
     [Fact]
@@ -149,6 +184,55 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         Assert.Equal("duplicate-source-line", deadLetter.FailureCode);
     }
 
+    [Fact]
+    public async Task InboundOrderCompletedHandler_RecordsOnlyPayableQualityLinesWithoutClosingBlockedLine()
+    {
+        await using var dbContext = CreateDbContext();
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-WMS-MIXED-QUALITY",
+            "SUP-001",
+            "SITE-01",
+            [
+                new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, 12.5m, new DateOnly(2026, 7, 1)),
+                new PurchaseOrderLineDraft("LINE-002", "SKU-RM-1000", "kg", 3m, 12.5m, new DateOnly(2026, 7, 1)),
+            ]);
+        order.MarkApprovalRequested("chain-PO-WMS-MIXED-QUALITY");
+        order.ReleaseAfterApproval("chain-PO-WMS-MIXED-QUALITY");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var integrationEvent = BuildWmsCompletedEvent("WMS-IN-MIXED-QUALITY", "purchase-order", "PO-WMS-MIXED-QUALITY", "LINE-001", 2m);
+        integrationEvent = integrationEvent with
+        {
+            Payload = integrationEvent.Payload with
+            {
+                Lines =
+                [
+                    new WmsIntegrationPayloadLine("LINE-001", "SKU-RM-1000", "kg", "SITE-01", "RAW-A-01", 2m, "qualified"),
+                    new WmsIntegrationPayloadLine("LINE-002", "SKU-RM-1000", "kg", "SITE-01", "HOLD-A-01", 3m, "blocked"),
+                ],
+            },
+        };
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateInboundHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receipt = Assert.Single(dbContext.PurchaseReceipts.Include(x => x.Lines));
+        var receiptLine = Assert.Single(receipt.Lines);
+        Assert.Equal("LINE-001", receiptLine.PurchaseOrderLineNo);
+        Assert.Equal("unrestricted", receiptLine.QualityStatus);
+        var persistedOrder = dbContext.PurchaseOrders.Include(x => x.Lines).Single(x => x.PurchaseOrderNo == "PO-WMS-MIXED-QUALITY");
+        Assert.Equal(2m, persistedOrder.Lines.Single(x => x.LineNo == "LINE-001").ReceivedQuantity);
+        Assert.Equal(0m, persistedOrder.Lines.Single(x => x.LineNo == "LINE-002").ReceivedQuantity);
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
     private static WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt CreateInboundHandler(
         ApplicationDbContext dbContext,
         IIntegrationEventDeadLetterStore deadLetterStore)
@@ -203,7 +287,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
                     "RAW-A-01",
                     "LOT-001",
                     null,
-                    "accepted",
+                    "qualified",
                     "company",
                     null)
             ]);

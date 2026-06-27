@@ -32,7 +32,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
             "purchase-order",
             "PO-P2P-WMS-001",
             "SITE-01",
-            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, "RAW-A-01", "LOT-001", null, "accepted", "company", null)]);
+            [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 2m, "RAW-A-01", "LOT-001", null, "qualified", "company", null)]);
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
