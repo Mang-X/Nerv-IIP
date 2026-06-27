@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
@@ -28,7 +29,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow));
+            new FixedTimeProvider(FixedNow),
+            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
 
         await handler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
@@ -39,6 +41,80 @@ public sealed class SchedulingInputChangeEventHandlerTests
         Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
         Assert.Equal("maintenance.AssetUnavailable", invalidation.SourceEventType);
         Assert.Equal(FixedNow, invalidation.RecordedAtUtc);
+    }
+
+    [Fact]
+    public async Task Maintenance_asset_unavailable_event_rejects_blank_device_asset_id()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new FixedTimeProvider(FixedNow),
+            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var integrationEvent = CreateAssetUnavailableEvent() with
+        {
+            Payload = new AssetUnavailablePayload(" ", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => handler.HandleAsync(integrationEvent, CancellationToken.None));
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+    }
+
+    [Fact]
+    public async Task Maintenance_asset_unavailable_event_logs_when_resource_mapping_matches_no_generated_plan()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new FixedTimeProvider(FixedNow),
+            logger);
+        var integrationEvent = CreateAssetUnavailableEvent() with
+        {
+            Payload = new AssetUnavailablePayload("ASSET-NOT-MAPPED", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Contains(logger.Messages, x =>
+            x.LogLevel == LogLevel.Information &&
+            x.Message.Contains("ASSET-NOT-MAPPED", StringComparison.Ordinal) &&
+            x.Message.Contains("matched no generated schedule plan", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Maintenance_asset_restored_event_invalidates_generated_plan_for_affected_resource()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new FixedTimeProvider(FixedNow),
+            new RecordingLogger<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>());
+
+        await handler.HandleAsync(CreateAssetRestoredEvent(), CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidation = Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal("plan-generated", invalidation.PlanId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentRestored, invalidation.ReasonCode);
+        Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
+        Assert.Equal("maintenance.AssetRestored", invalidation.SourceEventType);
     }
 
     [Fact]
@@ -88,6 +164,31 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
+    public async Task Quality_inspection_event_ignores_non_mes_source_service()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new FixedTimeProvider(FixedNow));
+        var integrationEvent = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected) with
+        {
+            Payload = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected).Payload with
+            {
+                SourceService = QualityIntegrationEventSources.BusinessQuality
+            }
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Mes_work_order_released_event_invalidates_generated_plans_in_same_business_scope_once()
     {
         await using var provider = CreateInMemoryProvider();
@@ -117,6 +218,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(
             "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent",
             AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent",
+            AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
             "Nerv.IIP.Contracts.Inventory.StockAvailabilityChangedIntegrationEvent",
             StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -211,6 +315,23 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "system:maintenance",
             "maintenance:asset-unavailable:ASSET-CNC-01",
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)));
+    }
+
+    private static AssetRestoredIntegrationEvent CreateAssetRestoredEvent()
+    {
+        return new AssetRestoredIntegrationEvent(
+            "evt-maint-restored-001",
+            MaintenanceIntegrationEventTypes.AssetRestored,
+            MaintenanceIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero),
+            MaintenanceIntegrationEventSources.Maintenance,
+            "corr-maint-001",
+            "wo-maint-001",
+            "org-001",
+            "env-dev",
+            "system:maintenance",
+            "maintenance:asset-restored:ASSET-CNC-01",
+            new AssetRestoredPayload("ASSET-CNC-01", new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero)));
     }
 
     private static StockAvailabilityChangedIntegrationEvent CreateStockAvailabilityChangedEvent()
@@ -310,5 +431,25 @@ public sealed class SchedulingInputChangeEventHandlerTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel LogLevel, string Message)> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add((logLevel, formatter(state, exception)));
+        }
     }
 }

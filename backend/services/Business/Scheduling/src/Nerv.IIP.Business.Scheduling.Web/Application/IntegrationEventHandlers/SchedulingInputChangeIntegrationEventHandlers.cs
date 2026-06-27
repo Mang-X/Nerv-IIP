@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.asset-unavailable";
@@ -54,6 +56,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
             integrationEvent,
             SchedulingPlanInvalidationReasons.EquipmentUnavailable,
             integrationEvent.Payload.DeviceAssetId,
+            logger,
             cancellationToken);
     }
 }
@@ -62,7 +65,8 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
 public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<AssetRestoredIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.asset-restored";
@@ -99,6 +103,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePla
             integrationEvent,
             SchedulingPlanInvalidationReasons.EquipmentRestored,
             integrationEvent.Payload.DeviceAssetId,
+            logger,
             cancellationToken);
     }
 }
@@ -264,20 +269,31 @@ internal static class SchedulingPlanInvalidationService
         TIntegrationEvent integrationEvent,
         string reasonCode,
         string affectedResourceId,
+        ILogger logger,
         CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
+        var normalizedResourceId = Required(affectedResourceId, nameof(affectedResourceId));
         var planIds = await dbContext.SchedulePlans
             .Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
                 x.Status == SchedulePlanLifecycleStatus.Generated &&
                 x.Assignments.Any(assignment =>
-                    assignment.ResourceId == affectedResourceId ||
-                    assignment.WorkCenterId == affectedResourceId))
+                    assignment.ResourceId == normalizedResourceId ||
+                    assignment.WorkCenterId == normalizedResourceId))
             .Select(x => x.PlanId)
             .Distinct()
             .ToArrayAsync(cancellationToken);
+        if (planIds.Length == 0)
+        {
+            logger.LogInformation(
+                "Scheduling input change {EventType} for resource {AffectedResourceId} matched no generated schedule plan in {OrganizationId}/{EnvironmentId}.",
+                integrationEvent.EventType,
+                normalizedResourceId,
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId);
+        }
 
         await AddInvalidationsAsync(
             dbContext,
@@ -285,7 +301,7 @@ internal static class SchedulingPlanInvalidationService
             integrationEvent,
             reasonCode,
             planIds,
-            affectedResourceId: affectedResourceId,
+            affectedResourceId: normalizedResourceId,
             affectedWorkOrderId: null,
             affectedOperationId: null,
             affectedSkuCode: null,
