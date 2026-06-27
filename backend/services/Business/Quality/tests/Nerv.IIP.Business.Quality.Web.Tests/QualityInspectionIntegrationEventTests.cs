@@ -200,7 +200,7 @@ public sealed class QualityInspectionIntegrationEventTests
             lowerSpecLimit: 9.5m,
             upperSpecLimit: 10.5m,
             unitCode: "mm",
-            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 3, acceptanceNumber: 0, rejectionNumber: 1));
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
         plan.Activate();
 
         return InspectionRecord.CreateFromPlan(
@@ -209,7 +209,7 @@ public sealed class QualityInspectionIntegrationEventTests
             "purchase-receipt",
             "RCV-001",
             "SKU-RM-1000",
-            10m,
+            20m,
             "BATCH-001",
             null,
             StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),

@@ -437,47 +437,47 @@ internal static class AqlZ14SamplingTable
         ["R"] = 2_000,
     };
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, (int Acceptance, int Rejection)>> ThresholdsByAql =
-        new Dictionary<string, IReadOnlyDictionary<int, (int Acceptance, int Rejection)>>(StringComparer.OrdinalIgnoreCase)
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<int, SamplingScheme>> ThresholdsByAql =
+        new Dictionary<string, IReadOnlyDictionary<int, SamplingScheme>>(StringComparer.OrdinalIgnoreCase)
         {
-            ["0.065"] = SampleSizeByCode.Values.Distinct().ToDictionary(x => x, _ => (Acceptance: 0, Rejection: 1)),
-            ["1.0"] = new Dictionary<int, (int Acceptance, int Rejection)>
+            ["0.065"] = SampleSizeByCode.Values.Distinct().ToDictionary(x => x, x => new SamplingScheme(x, AcceptanceNumber: 0, RejectionNumber: 1)),
+            ["1.0"] = new Dictionary<int, SamplingScheme>
             {
-                [2] = (0, 1),
-                [3] = (0, 1),
-                [5] = (0, 1),
-                [8] = (0, 1),
-                [13] = (0, 1),
-                [20] = (0, 1),
-                [32] = (1, 2),
-                [50] = (1, 2),
-                [80] = (2, 3),
-                [125] = (3, 4),
-                [200] = (5, 6),
-                [315] = (7, 8),
-                [500] = (10, 11),
-                [800] = (14, 15),
-                [1_250] = (21, 22),
-                [2_000] = (21, 22),
+                [2] = new(20, 0, 1),
+                [3] = new(20, 0, 1),
+                [5] = new(20, 0, 1),
+                [8] = new(20, 0, 1),
+                [13] = new(20, 0, 1),
+                [20] = new(20, 0, 1),
+                [32] = new(32, 1, 2),
+                [50] = new(50, 1, 2),
+                [80] = new(80, 2, 3),
+                [125] = new(125, 3, 4),
+                [200] = new(200, 5, 6),
+                [315] = new(315, 7, 8),
+                [500] = new(500, 10, 11),
+                [800] = new(800, 14, 15),
+                [1_250] = new(1_250, 21, 22),
+                [2_000] = new(2_000, 21, 22),
             },
-            ["2.5"] = new Dictionary<int, (int Acceptance, int Rejection)>
+            ["2.5"] = new Dictionary<int, SamplingScheme>
             {
-                [2] = (0, 1),
-                [3] = (0, 1),
-                [5] = (0, 1),
-                [8] = (0, 1),
-                [13] = (1, 2),
-                [20] = (1, 2),
-                [32] = (2, 3),
-                [50] = (3, 4),
-                [80] = (5, 6),
-                [125] = (7, 8),
-                [200] = (10, 11),
-                [315] = (14, 15),
-                [500] = (21, 22),
-                [800] = (21, 22),
-                [1_250] = (21, 22),
-                [2_000] = (21, 22),
+                [2] = new(8, 0, 1),
+                [3] = new(8, 0, 1),
+                [5] = new(8, 0, 1),
+                [8] = new(8, 0, 1),
+                [13] = new(13, 1, 2),
+                [20] = new(20, 1, 2),
+                [32] = new(32, 2, 3),
+                [50] = new(50, 3, 4),
+                [80] = new(80, 5, 6),
+                [125] = new(125, 7, 8),
+                [200] = new(200, 10, 11),
+                [315] = new(315, 14, 15),
+                [500] = new(500, 21, 22),
+                [800] = new(800, 21, 22),
+                [1_250] = new(1_250, 21, 22),
+                [2_000] = new(2_000, 21, 22),
             },
         };
 
@@ -491,15 +491,16 @@ internal static class AqlZ14SamplingTable
         var codeLetter = ResolveCodeLetter(inspectionLevel, lotQuantity);
         var sampleSize = SampleSizeByCode[codeLetter];
         var thresholds = ResolveThresholds(aql, sampleSize, severity);
-        return new AqlResolvedSamplingPlan(codeLetter, sampleSize, thresholds.Acceptance, thresholds.Rejection);
+        return new AqlResolvedSamplingPlan(codeLetter, thresholds.SampleSize, thresholds.AcceptanceNumber, thresholds.RejectionNumber);
     }
 
     public static bool MatchesThresholds(string aql, int sampleSize, int acceptanceNumber, int rejectionNumber)
     {
         return ThresholdsByAql.TryGetValue(aql.Trim(), out var thresholdsBySampleSize)
             && thresholdsBySampleSize.TryGetValue(sampleSize, out var thresholds)
-            && thresholds.Acceptance == acceptanceNumber
-            && thresholds.Rejection == rejectionNumber;
+            && thresholds.SampleSize == sampleSize
+            && thresholds.AcceptanceNumber == acceptanceNumber
+            && thresholds.RejectionNumber == rejectionNumber;
     }
 
     private static string ResolveCodeLetter(string inspectionLevel, decimal lotQuantity)
@@ -518,11 +519,11 @@ internal static class AqlZ14SamplingTable
         };
     }
 
-    private static (int Acceptance, int Rejection) ResolveThresholds(string aql, int sampleSize, string severity)
+    private static SamplingScheme ResolveThresholds(string aql, int sampleSize, string severity)
     {
         if (string.Equals(severity.Trim(), "critical", StringComparison.OrdinalIgnoreCase))
         {
-            return (0, 1);
+            return new SamplingScheme(sampleSize, AcceptanceNumber: 0, RejectionNumber: 1);
         }
 
         if (!ThresholdsByAql.TryGetValue(aql.Trim(), out var thresholdsBySampleSize)
@@ -533,6 +534,11 @@ internal static class AqlZ14SamplingTable
 
         return thresholds;
     }
+
+    private sealed record SamplingScheme(
+        int SampleSize,
+        int AcceptanceNumber,
+        int RejectionNumber);
 
     private static string NormalizeInspectionLevel(string inspectionLevel)
     {

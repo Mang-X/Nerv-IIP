@@ -288,10 +288,13 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         InspectionResultLineInput input,
         decimal inspectedQuantity)
     {
-        if (characteristic.SamplingPlan is not null
-            && inspectedQuantity < characteristic.SamplingPlan.ResolveForLotSize(inspectedQuantity, characteristic.Severity).SampleSize)
+        if (characteristic.SamplingPlan is not null)
         {
-            throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {characteristic.SamplingPlan.SampleSize}.");
+            var resolvedSamplingPlan = characteristic.SamplingPlan.ResolveForLotSize(inspectedQuantity, characteristic.Severity);
+            if (inspectedQuantity < resolvedSamplingPlan.SampleSize)
+            {
+                throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {resolvedSamplingPlan.SampleSize}.");
+            }
         }
 
         return characteristic.CharacteristicType switch
