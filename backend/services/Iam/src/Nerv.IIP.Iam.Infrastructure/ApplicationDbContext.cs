@@ -5,6 +5,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SecurityAuditAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
@@ -28,6 +29,7 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     public DbSet<ExternalClient> ExternalClients => Set<ExternalClient>();
     public DbSet<AuthorizationGrant> AuthorizationGrants => Set<AuthorizationGrant>();
     public DbSet<SeedManifest> SeedManifests => Set<SeedManifest>();
+    public DbSet<SecurityAuditRecord> SecurityAuditRecords => Set<SecurityAuditRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

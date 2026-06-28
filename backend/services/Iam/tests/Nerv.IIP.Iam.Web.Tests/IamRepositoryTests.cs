@@ -78,6 +78,7 @@ public sealed class IamRepositoryTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
             NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
 

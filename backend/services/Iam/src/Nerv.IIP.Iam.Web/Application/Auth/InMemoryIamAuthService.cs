@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -38,8 +39,14 @@ public sealed class InMemoryIamAuthService(
         return Task.FromResult(ToResponse(store.Refresh(refreshToken)));
     }
 
-    public Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
+    public Task RevokeSessionAsync(
+        string sessionId,
+        string reason,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken)
     {
+        _ = reason;
+        _ = auditContext;
         store.Logout(sessionId);
         return Task.CompletedTask;
     }

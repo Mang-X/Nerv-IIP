@@ -39,6 +39,7 @@ public static class NervIipSeedPermissions
         "iam.roles.manage",
         "iam.sessions.read",
         "iam.sessions.revoke",
+        "iam.security-audit.read",
         "connectors.registrations.write",
         "connectors.heartbeats.write",
         "connectors.state-snapshots.write",

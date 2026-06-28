@@ -83,6 +83,7 @@ public sealed class IamAuthServiceScopeTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
             NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
 
@@ -253,6 +254,7 @@ public sealed class IamAuthServiceScopeTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             mfaChallenges ?? new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
             NullLogger<PostgreSqlIamAuthService>.Instance,
             environment ?? new TestWebHostEnvironment());
     }

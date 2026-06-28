@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -68,4 +69,28 @@ internal sealed class TestWebHostEnvironment : IWebHostEnvironment
     public string EnvironmentName { get; set; } = "Development";
     public string WebRootPath { get; set; } = string.Empty;
     public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+}
+
+internal sealed class NoopSecurityAuditRecorder : ISecurityAuditRecorder
+{
+    public Task RecordAsync(
+        SecurityAuditContext context,
+        string action,
+        string targetType,
+        string targetId,
+        string outcome,
+        object details,
+        DateTimeOffset occurredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        _ = context;
+        _ = action;
+        _ = targetType;
+        _ = targetId;
+        _ = outcome;
+        _ = details;
+        _ = occurredAtUtc;
+        _ = cancellationToken;
+        return Task.CompletedTask;
+    }
 }

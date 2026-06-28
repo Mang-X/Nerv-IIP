@@ -592,6 +592,7 @@ Source:
 2. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/IamPersistenceServiceCollectionExtensions.cs`
 3. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Migrations/20260517102102_InitialIamPersistentAuth.cs`
+5. `backend/services/Iam/src/Nerv.IIP.Iam.Infrastructure/Migrations/20260628081213_AddIamSecurityAuditRecords.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
@@ -607,6 +608,7 @@ Source:
 | `connector_host_credential_capabilities` | business | Connector Host credential 被授予的能力码集合。 | `ConnectorHostCredentialId` 指向 `connector_host_credentials`；`ConnectorHostCredentialId + CapabilityCode` 唯一。 |
 | `external_clients` | business | 外部系统或平台应用的 client_credentials 身份，保存 client id、display name、organization/environment、secret hash、启用状态、permission version 和有效期。 | `ClientId` 唯一；secret 只保存 hash。 |
 | `authorization_grants` | business | 非用户主体的授权授予事实，首批覆盖 `external-client` 的 permission grant，并支持 resource type/resource id 范围。 | `PrincipalType + PrincipalId + OrganizationId + EnvironmentId + PermissionCode + ResourceType + ResourceId` 唯一；`*` 表示 wildcard；支持有效期和撤销时间。 |
+| `security_audit_records` | business | IAM 安全审计记录，覆盖认证决策、会话吊销和角色权限管理变更。 | `Id` 为 `audit-` 前缀 string 强类型 ID；`OrganizationId + EnvironmentId + OccurredAtUtc` 支持租户范围审计查询；`Action + OccurredAtUtc` 支持按安全事件类型查询；`TargetType + TargetId + OccurredAtUtc` 支持按用户、会话或角色追溯；`DetailsJson` 保存登录失败计数、吊销原因和权限前后值等结构化事实。 |
 | `seed_manifests` | business | IAM seed 执行清单，用于记录初始 admin、platform admin role、seed permissions、membership 和 local Connector Host credential seed 的版本化幂等执行。 | `SeedName + SeedVersion` 唯一；记录 owner service 与 applied time。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 IAM 已应用迁移。 | 必须位于 `iam` schema；业务代码不直接读写。 |
 

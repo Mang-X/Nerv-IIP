@@ -127,6 +127,6 @@ public sealed class LogoutCommandHandler(IIamAuthService auth)
 {
     public async Task Handle(LogoutCommand request, CancellationToken cancellationToken)
     {
-        await auth.RevokeSessionAsync(request.SessionId, "logout", cancellationToken);
+        await auth.RevokeSessionAsync(request.SessionId, "logout", null, cancellationToken);
     }
 }

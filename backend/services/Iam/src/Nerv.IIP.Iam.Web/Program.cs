@@ -4,6 +4,7 @@ using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using Nerv.IIP.Iam.Web.Application.Seed;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Application.Sessions;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
@@ -49,6 +50,8 @@ if (usesPostgreSql)
     builder.Services.AddScoped<IIamUserApplicationService, PostgreSqlIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, PostgreSqlIamRoleApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, PostgreSqlIamSessionApplicationService>();
+    builder.Services.AddScoped<ISecurityAuditRecorder, SecurityAuditRecorder>();
+    builder.Services.AddScoped<IIamSecurityAuditApplicationService, PostgreSqlIamSecurityAuditApplicationService>();
 }
 else
 {
@@ -58,6 +61,7 @@ else
     builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, InMemoryIamRoleApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();
+    builder.Services.AddScoped<IIamSecurityAuditApplicationService, InMemoryIamSecurityAuditApplicationService>();
 }
 builder.Services.AddScoped<IamSeedService>();
 
