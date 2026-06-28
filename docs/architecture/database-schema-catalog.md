@@ -480,6 +480,7 @@ Source:
 2. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/SchedulingPersistenceServiceCollectionExtensions.cs`
 3. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260531111947_InitialSchedulingSchema.cs`
+5. `backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Infrastructure/Migrations/20260626170713_AddSchedulingInputChangeInvalidations.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -489,6 +490,9 @@ Source:
 | `schedule_plan_resource_loads` | business | 排程方案的资源负载窗口和利用率。 | `schedule_plan_id` 归属方案；`resource_id`、`window_start_utc`、`window_end_utc`、`assigned_minutes`、`available_minutes` 和 `utilization` 描述负载；`assigned_minutes` 同样使用资源占用口径，包含加工时间和 setup/changeover 时间。 | `schedule_plan_id` 外键索引用于读取方案负载。 | 由排程算法生成并随方案保留，可供产能/Gantt 查询。 |
 | `schedule_plan_conflicts` | business | 排程方案生成过程中识别的交期、产能、日历、物料、质量或设备冲突。 | `schedule_plan_id` 归属方案；`conflict_id` 是公开冲突 ID；`reason_code`、`severity`、`work_order_id`、`operation_id`、`resource_id` 和 `message` 描述冲突。 | `schedule_plan_id` 外键索引用于按方案加载冲突。 | 生成时追加到方案；用于解释和前端展示，不替代下游执行异常。 |
 | `schedule_plan_unscheduled_operations` | business | 在当前 horizon 内无法安排的工序及原因。 | `schedule_plan_id` 归属方案；`work_order_id`、`operation_id`、`reason_code` 和 `message` 描述不可排结果。 | `schedule_plan_id` 外键索引用于按方案加载不可排清单。 | 生成时写入并随方案保留；人工调整或新事实输入通过新方案表达。 |
+| `schedule_plan_invalidations` | business | Scheduling 本地事件驱动重排信号投影，记录 Maintenance/Inventory/Quality/MES 事实变化对 generated 方案的失效影响。 | `id` 为 Guid v7 强类型 ID；`organization_id`、`environment_id`、`plan_id` 定位被影响方案；`source_event_type`、`source_event_id`、`source_service` 记录上游事实；`reason_code` 记录 equipment/material/quality/work-order 失效原因；`affected_resource_id`、`affected_work_order_id`、`affected_operation_id`、`affected_sku_code` 保存可用的影响范围。 | `organization_id + environment_id + plan_id + source_event_type + source_event_id` 唯一索引用于消费幂等；`organization_id + environment_id + plan_id + recorded_at_utc` 用于按方案读取待重排原因。 | 由 Scheduling 事件消费者写入；只标记 generated 方案需要重排或失效，不修改 released 方案事实。 |
+| `processed_integration_events` | system | Scheduling 消费上游集成事件的业务 inbox，按 consumer 和 idempotency key 保证事件处理幂等。 | `id` 为 Guid v7 强类型 ID；`ConsumerName + IdempotencyKey` 是幂等键；`EventId`、`EventType`、`EventVersion`、`SourceService`、`ProcessedAtUtc` 保留消费审计。 | `ConsumerName + IdempotencyKey` 唯一；`SourceService + EventType + ProcessedAtUtc` 支撑消费诊断。 | 由 Scheduling CAP consumers 写入；业务代码不把它作为领域事实。 |
+| `integration_event_dead_letters` | system | Scheduling 消费上游集成事件时被 envelope/version/type 校验拒绝的消息留存，用于后续人工诊断和 replay。 | `id` 为消息 ID；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`failure_code`、`failure_message`、`status` 和时间戳描述拒绝原因。 | `consumer_name + status + dead_lettered_at_utc` 支撑待处理 DLQ 查询；`consumer_name + event_id` 支撑单事件定位。 | 由通用 `Nerv.IIP.Messaging.CAP.EntityFrameworkCore` 持久化；业务 handler 不直接修改事件 payload。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -690,7 +694,7 @@ Known gaps:
 | ERP | `erp` | Implemented | Yes | Yes | No | 已有 Procurement、Sales、Finance MVP 和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify scripts；客户 release bundle、完整总账月结和银行/税务对账仍待后续。 |
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序和 CAP system tables schema、migration、schema convention tests、BusinessGateway facade 和 verify script；客户 release bundle、高级优化器仍待后续。 |
+| BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序、事件驱动方案失效投影、consumer inbox/DLQ 和 CAP system tables schema、migration、schema convention tests、BusinessGateway facade 和 verify script；客户 release bundle、高级优化器仍待后续。 |
 | Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；偏好/订阅、外部渠道 provider、限流和模板映射仍待后续。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |

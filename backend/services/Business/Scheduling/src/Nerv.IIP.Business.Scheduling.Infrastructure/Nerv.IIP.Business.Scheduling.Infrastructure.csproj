@@ -16,6 +16,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Nerv.IIP.Business.Scheduling.Domain\Nerv.IIP.Business.Scheduling.Domain.csproj"/>
+        <ProjectReference Include="..\..\..\..\..\common\Messaging\Nerv.IIP.Messaging.CAP.EntityFrameworkCore\Nerv.IIP.Messaging.CAP.EntityFrameworkCore.csproj"/>
         <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj"/>
     </ItemGroup>
 
