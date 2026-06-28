@@ -110,24 +110,13 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
                 line.LocationCode,
                 line.LotNo,
                 null,
-                NormalizeInventoryQualityStatus(line.QualityStatus),
+                ErpQualityStatusNormalizer.NormalizeReceiptQualityStatus(line.QualityStatus),
                 "company",
                 null,
                 line.ReceivedQuantity,
                 occurredAtUtc));
     }
 
-    private static string NormalizeInventoryQualityStatus(string qualityStatus)
-    {
-        var normalized = qualityStatus.Trim().ToLowerInvariant();
-        return normalized switch
-        {
-            "accepted" or "unrestricted" => "unrestricted",
-            "inspection" or "quality" => "quality",
-            "rejected" or "blocked" => "blocked",
-            _ => normalized,
-        };
-    }
 }
 
 internal static class ErpIntegrationEventConverterHelpers

@@ -260,6 +260,42 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Shared_component_across_bom_levels_is_netted_once_at_its_lowest_level()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("DEMAND-FG-A", "SKU-FG-A", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+                new DemandSnapshot("DEMAND-FG-B", "SKU-FG-B", "pcs", "SITE-01", 1m, new DateOnly(2026, 6, 1)),
+            ],
+            availability: [],
+            productionVersions:
+            [
+                new ProductionVersionSnapshot("SKU-FG-A", "PV-FG-A", "MBOM-FG-A", "ROUTING-FG-A"),
+                new ProductionVersionSnapshot("SKU-FG-B", "PV-FG-B", "MBOM-FG-B", "ROUTING-FG-B"),
+                new ProductionVersionSnapshot("SKU-SA", "PV-SA", "MBOM-SA", "ROUTING-SA"),
+            ],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-A", "SKU-RM-X", "pcs", 7m),
+                new BomComponentSnapshot("SKU-FG-B", "SKU-SA", "pcs", 1m),
+                new BomComponentSnapshot("SKU-SA", "SKU-RM-X", "pcs", 7m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-RM-X", "pcs", "SITE-01", 0, 0m, 10m, null, null, ProcurementType: "buy"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var rawMaterialPurchase = Assert.Single(suggestions, x => x.SkuCode == "SKU-RM-X");
+        Assert.Equal("planned-purchase", rawMaterialPurchase.SuggestionType);
+        Assert.Equal(14m, rawMaterialPurchase.Quantity);
+        Assert.Contains(rawMaterialPurchase.PeggingLinks, x => x.DemandSourceReference == "DEMAND-FG-A" && x.Quantity == 7m);
+        Assert.Contains(rawMaterialPurchase.PeggingLinks, x => x.DemandSourceReference == "DEMAND-FG-B" && x.Quantity == 7m);
+    }
+
+    [Fact]
     public void Component_pegging_quantities_are_apportioned_by_source_demand_share()
     {
         var input = NewInput(

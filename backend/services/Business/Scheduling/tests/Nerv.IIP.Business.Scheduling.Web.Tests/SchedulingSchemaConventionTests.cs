@@ -34,6 +34,7 @@ public sealed class SchedulingSchemaConventionTests
             typeof(SchedulePlanResourceLoad),
             typeof(SchedulePlanConflict),
             typeof(SchedulePlanUnscheduledOperation),
+            typeof(SchedulePlanInvalidation),
         };
 
         var failures = new List<string>();

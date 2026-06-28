@@ -49,10 +49,7 @@ try
     {
         client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
-    builder.Services.AddHttpClient<IPlanningScheduledReceiptSnapshotClient, HttpPlanningErpScheduledReceiptSnapshotClient>(client =>
-    {
-        client.BaseAddress = erpBaseAddress;
-    }).UseHttpClientMetrics();
+    builder.Services.AddPlanningScheduledReceiptSourceClients(erpBaseAddress, mesBaseAddress);
     builder.Services.AddHttpClient<IPlanningSuggestionDownstreamBridge, HttpMesPlanningSuggestionDownstreamBridge>(client =>
     {
         client.BaseAddress = mesBaseAddress;
