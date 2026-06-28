@@ -8,6 +8,8 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
 {
     public const string RequestedStatus = "Requested";
     public const string PostedStatus = "Posted";
+    public const string InventoryPostingFailedStatus = "InventoryPostingFailed";
+    public const int FailureMessageMaxLength = 500;
 
     private FinishedGoodsReceiptRequest()
     {
@@ -54,6 +56,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public string Status { get; private set; } = string.Empty;
     public string? PostedInventoryMovementId { get; private set; }
     public DateTimeOffset? PostedAtUtc { get; private set; }
+    public string? InventoryPostingFailureCode { get; private set; }
+    public string? InventoryPostingFailureMessage { get; private set; }
+    public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
 
     public static FinishedGoodsReceiptRequest Create(
         string organizationId,
@@ -89,6 +94,31 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         PostedInventoryMovementId = DomainGuard.Required(inventoryMovementId, nameof(inventoryMovementId));
         PostedAtUtc = postedAtUtc;
         Status = PostedStatus;
+        InventoryPostingFailureCode = null;
+        InventoryPostingFailureMessage = null;
+        InventoryPostingFailedAtUtc = null;
     }
 
+    public void MarkInventoryPostingFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        if (Status == PostedStatus)
+        {
+            return;
+        }
+
+        Status = InventoryPostingFailedStatus;
+        PostedInventoryMovementId = null;
+        PostedAtUtc = null;
+        InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
+        InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
+        InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    private static string NormalizeFailureMessage(string failureMessage)
+    {
+        var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        return normalized.Length <= FailureMessageMaxLength
+            ? normalized
+            : normalized[..FailureMessageMaxLength];
+    }
 }

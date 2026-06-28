@@ -11,6 +11,8 @@ using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -153,6 +155,244 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         Assert.Equal(4, inventoryDb.StockMovements.Count());
     }
 
+    [Fact]
+    public async Task Inventory_rejecting_mes_line_side_receipt_rolls_back_material_issue_status()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                5m,
+                DateTimeOffset.Parse("2026-06-18T08:00:00Z"),
+                "issue-541"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001",
+                "env-dev",
+                issueResult.ReferenceId,
+                DateTimeOffset.Parse("2026-06-18T08:20:00Z"),
+                5m,
+                "LOT-OIL-A"),
+            CancellationToken.None);
+        var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(issueRequest.GetDomainEvents().First()));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(issueEvent, CancellationToken.None);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(inventoryPublisher.Published));
+
+        await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var persistedIssue = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(MaterialIssueRequest.RequestedStatus, persistedIssue.Status);
+        Assert.Equal(0m, persistedIssue.ReceivedQuantity);
+        Assert.Null(persistedIssue.ReceivedAtUtc);
+        Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
+        Assert.Contains("negative", persistedIssue.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(persistedIssue.InventoryPostingFailedAtUtc);
+    }
+
+    [Fact]
+    public async Task Inventory_rejecting_both_mes_transfer_legs_rolls_back_material_issue_once()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                10m,
+                DateTimeOffset.Parse("2026-06-18T08:00:00Z"),
+                "issue-541-double"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:10:00Z"), 3m, "LOT-OIL-A");
+        issueRequest.ClearDomainEvents();
+        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
+        var transferEvents = issueRequest.GetDomainEvents().ToArray();
+        var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        var failedEvents = new[]
+        {
+            CreateFailedEvent(issueEvent, "evt-failed-material-issue-leg"),
+            CreateFailedEvent(receiptEvent, "evt-failed-line-side-receipt-leg"),
+        };
+
+        foreach (var failedEvent in failedEvents)
+        {
+            await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+            await mesDb.SaveChangesAsync();
+        }
+
+        var persistedIssue = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Equal(3m, persistedIssue.ReceivedQuantity);
+        Assert.Equal(MaterialIssueRequest.PartiallyReceivedStatus, persistedIssue.Status);
+        Assert.Equal("NEGATIVE_ON_HAND", persistedIssue.InventoryPostingFailureCode);
+    }
+
+    [Fact]
+    public async Task Inventory_rejecting_mes_production_consumption_marks_consumption_failed_without_polluting_material_issue()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                5m,
+                DateTimeOffset.Parse("2026-06-18T08:00:00Z"),
+                "issue-541-consumption"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        issueRequest.ConfirmLineSideReceipt(DateTimeOffset.Parse("2026-06-18T08:20:00Z"), 5m, "LOT-OIL-A");
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-446",
+                "OP-10",
+                1m,
+                0m,
+                false,
+                DateTimeOffset.Parse("2026-06-18T09:00:00Z"),
+                "report-541-consumption",
+                [
+                    new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 2m, issueResult.ReferenceId),
+                ]),
+            CancellationToken.None);
+        var consumption = mesDb.ProductionReportMaterialConsumptions.Local.Single(x => x.ReportNo == reportResult.ReportNo);
+        var consumptionEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
+            Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(consumptionEvent, CancellationToken.None);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(inventoryPublisher.Published));
+
+        await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var persistedConsumption = await mesDb.ProductionReportMaterialConsumptions.SingleAsync();
+        Assert.Equal("NEGATIVE_ON_HAND", persistedConsumption.InventoryPostingFailureCode);
+        Assert.Contains("negative", persistedConsumption.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(persistedConsumption.InventoryPostingFailedAtUtc);
+        var reports = await new ListProductionReportsQueryHandler(mesDb).Handle(
+            new ListProductionReportsQuery("org-001", "env-dev", "WO-446"),
+            CancellationToken.None);
+        var visibleReport = Assert.Single(reports.Items);
+        Assert.Equal("NEGATIVE_ON_HAND", visibleReport.InventoryPostingFailureCode);
+        Assert.Contains("negative", visibleReport.InventoryPostingFailureMessage, StringComparison.OrdinalIgnoreCase);
+        var persistedIssue = await mesDb.MaterialIssueRequests.SingleAsync();
+        Assert.Null(persistedIssue.InventoryPostingFailureCode);
+        Assert.Equal(MaterialIssueRequest.ReceivedStatus, persistedIssue.Status);
+        Assert.Equal(5m, persistedIssue.ReceivedQuantity);
+    }
+
+    [Fact]
+    public async Task Inventory_rejecting_mes_finished_goods_receipt_marks_receipt_failed()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541");
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
+            mesDb,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(mesDb).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-541",
+                "SKU-FG-541",
+                8m,
+                "PCS",
+                DateTimeOffset.Parse("2026-06-18T09:00:00Z"),
+                UnitCost: 12.34m,
+                IdempotencyKey: "receipt-541",
+                ProducedLotNo: "LOT-FG-541"),
+            CancellationToken.None);
+        var receiptRequest = mesDb.FinishedGoodsReceiptRequests.Local.Single(x => x.RequestNo == receiptResult.RequestNo);
+        var receiptEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
+            .Convert(Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receiptRequest.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
+        await inventoryHandler.HandleAsync(receiptEvent with
+        {
+            EventId = "evt-fgr-541-conflict",
+            Payload = receiptEvent.Payload with { Quantity = 9m },
+        }, CancellationToken.None);
+        var failedEvent = Assert.IsType<StockMovementPostingFailedIntegrationEvent>(Assert.Single(inventoryPublisher.Published));
+        failedEvent = failedEvent with
+        {
+            Payload = failedEvent.Payload with { FailureMessage = new string('x', 650) },
+        };
+
+        await failedConsumer.HandleAsync(failedEvent, CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+
+        var persistedReceipt = await mesDb.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, persistedReceipt.Status);
+        Assert.Null(persistedReceipt.PostedInventoryMovementId);
+        Assert.Equal("IDEMPOTENCY_CONFLICT", persistedReceipt.InventoryPostingFailureCode);
+        Assert.Equal(500, persistedReceipt.InventoryPostingFailureMessage?.Length);
+        Assert.NotNull(persistedReceipt.InventoryPostingFailedAtUtc);
+    }
+
     private static InventoryMovementRequestedIntegrationEvent CreateWarehouseSeedEvent(DateTimeOffset occurredAtUtc)
     {
         return new InventoryMovementRequestedIntegrationEvent(
@@ -184,6 +424,44 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
                 null,
                 5m,
                 occurredAtUtc));
+    }
+
+    private static StockMovementPostingFailedIntegrationEvent CreateFailedEvent(
+        InventoryMovementRequestedIntegrationEvent requestedEvent,
+        string eventId)
+    {
+        var payload = requestedEvent.Payload;
+        return new StockMovementPostingFailedIntegrationEvent(
+            eventId,
+            InventoryIntegrationEventTypes.StockMovementPostingFailed,
+            InventoryIntegrationEventVersions.V1,
+            requestedEvent.OccurredAtUtc.AddSeconds(1),
+            InventoryIntegrationEventSources.BusinessInventory,
+            requestedEvent.CorrelationId,
+            requestedEvent.EventId,
+            requestedEvent.OrganizationId,
+            requestedEvent.EnvironmentId,
+            "system:business-inventory",
+            $"inventory:stock-movement-posting-failed:{requestedEvent.OrganizationId}:{requestedEvent.EnvironmentId}:{payload.SourceService}:{payload.SourceDocumentId}:{payload.IdempotencyKey}",
+            new StockMovementPostingFailedPayload(
+                payload.MovementType,
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.SourceDocumentLineId,
+                payload.IdempotencyKey,
+                payload.SkuCode,
+                payload.UomCode,
+                payload.SiteCode,
+                payload.LocationCode,
+                payload.LotNo,
+                payload.SerialNo,
+                payload.QualityStatus,
+                payload.OwnerType,
+                payload.OwnerId,
+                payload.Quantity,
+                "NEGATIVE_ON_HAND",
+                "Stock movement would make on-hand quantity negative.",
+                requestedEvent.OccurredAtUtc.AddSeconds(1)));
     }
 
     private static InventoryMovementRequestedIntegrationEventHandlerForPostingMovement CreateInventoryHandler(

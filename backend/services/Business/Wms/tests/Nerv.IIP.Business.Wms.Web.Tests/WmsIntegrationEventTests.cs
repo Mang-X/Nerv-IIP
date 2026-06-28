@@ -42,7 +42,9 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([5m, 3m], lines.Select(x => x.Quantity).ToArray());
-        Assert.All(lines, x => Assert.Null(x.Status));
+        Assert.All(lines, x => Assert.Equal("qualified", x.Status));
+        Assert.Equal(inbound.SourceDocumentType, integrationEvent.Payload.SourceDocumentType);
+        Assert.Equal(inbound.SourceDocumentId, integrationEvent.Payload.SourceDocumentId);
     }
 
     [Fact]
@@ -62,6 +64,8 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([4m, 2m], lines.Select(x => x.Quantity).ToArray());
         Assert.All(lines, x => Assert.Null(x.Status));
+        Assert.Equal(outbound.SourceDocumentType, integrationEvent.Payload.SourceDocumentType);
+        Assert.Equal(outbound.SourceDocumentId, integrationEvent.Payload.SourceDocumentId);
     }
 
     [Fact]
@@ -69,12 +73,17 @@ public sealed class WmsIntegrationEventTests
     {
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        var cancelledOutbound = DomainWmsFactory.OutboundOrder();
+        cancelledOutbound.Cancel("customer-cancelled");
         var count = CountExecution.Create("org-001", "env-dev", "COUNT-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m);
         count.Complete(8m);
         var wcs = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
         wcs.Fail("E001", "blocked");
 
         Assert.Equal(WmsIntegrationEventTypes.OutboundOrderCompleted, new OutboundOrderCompletedIntegrationEventConverter().Convert(new OutboundOrderCompletedDomainEvent(outbound)).EventType);
+        var cancelledEvent = new OutboundOrderCancelledIntegrationEventConverter().Convert(new OutboundOrderCancelledDomainEvent(cancelledOutbound));
+        Assert.Equal(WmsIntegrationEventTypes.OutboundOrderCancelled, cancelledEvent.EventType);
+        Assert.Equal("customer-cancelled", cancelledEvent.Payload.DiagnosticMessage);
         Assert.Equal(WmsIntegrationEventTypes.CountExecutionCompleted, new CountExecutionCompletedIntegrationEventConverter().Convert(new CountExecutionCompletedDomainEvent(count)).EventType);
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskDispatched, new WcsTaskDispatchedIntegrationEventConverter().Convert(new WcsTaskDispatchedDomainEvent(wcs)).EventType);
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskFailed, new WcsTaskFailedIntegrationEventConverter().Convert(new WcsTaskFailedDomainEvent(wcs)).EventType);
@@ -83,8 +92,12 @@ public sealed class WmsIntegrationEventTests
         wcs.Complete("{}");
 
         var completedEvent = new WcsTaskCompletedIntegrationEventConverter().Convert(new WcsTaskCompletedDomainEvent(wcs));
+        var cancelledWcs = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-CANCEL", "{}");
+        cancelledWcs.Cancel();
+        var cancelledWcsEvent = new WcsTaskCancelledIntegrationEventConverter().Convert(new WcsTaskCancelledDomainEvent(cancelledWcs));
 
         Assert.Equal(WmsIntegrationEventTypes.WcsTaskCompleted, completedEvent.EventType);
+        Assert.Equal(WmsIntegrationEventTypes.WcsTaskCancelled, cancelledWcsEvent.EventType);
         Assert.Equal("org-001", completedEvent.OrganizationId);
         Assert.Equal("env-dev", completedEvent.EnvironmentId);
     }

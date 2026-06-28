@@ -34,6 +34,7 @@ public sealed class MesCapSubscriptionTests
     private const string NcrDispositionDecidedTopic = "Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent";
     private const string InspectionResultTopic = "Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent";
     private const string StockMovementPostedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent";
+    private const string StockMovementPostingFailedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostingFailedIntegrationEvent";
 
     [Fact]
     public void Mes_cap_registration_discovers_maintenance_asset_event_subscribers()
@@ -63,6 +64,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
     }
 
     [Fact]
@@ -93,6 +95,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
         Assert.Null(provider.GetService<IStorageInitializer>());
     }
 
@@ -111,6 +114,9 @@ public sealed class MesCapSubscriptionTests
             descriptor.Lifetime == ServiceLifetime.Scoped);
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 

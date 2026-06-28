@@ -13,6 +13,7 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<ProductionVersionCreatedIntegrationEventHandlerForBindMesWorkOrders>();
         services.AddScoped<QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext>();
         services.AddScoped<StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted>();
+        services.AddScoped<StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed>();
         return services;
     }
 }

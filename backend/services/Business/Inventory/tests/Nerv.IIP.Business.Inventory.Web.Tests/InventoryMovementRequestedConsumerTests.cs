@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
@@ -226,6 +227,137 @@ public sealed class InventoryMovementRequestedConsumerTests
         Assert.Equal(0m, ledger.ReservedQuantity);
         Assert.Equal(0m, reservation.OpenQuantity);
         Assert.Equal("allocated", reservation.Status);
+    }
+
+    [Fact]
+    public async Task Released_wms_reservation_restores_available_stock_for_retry_posting()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-SEED",
+            "LINE-001",
+            "idem-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            5m));
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-001", "LINE-001", "idem-res-001", 4m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ReleaseStockReservationCommandHandler(dbContext).Handle(
+            new ReleaseStockReservationCommand(reservation.Id, 4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-retry-outbound") with
+        {
+            Payload = CreateRequestedEvent("evt-retry-outbound").Payload with
+            {
+                MovementType = "outbound",
+                SourceDocumentId = "OUT-001",
+                IdempotencyKey = "idem-out-retry-001",
+                Quantity = -4m,
+                InventoryReservationId = null,
+            },
+        }, CancellationToken.None);
+
+        Assert.Equal(1m, ledger.OnHandQuantity);
+        Assert.Equal(0m, ledger.ReservedQuantity);
+        Assert.Equal(0m, reservation.OpenQuantity);
+        Assert.Equal("released", reservation.Status);
+        Assert.Contains(dbContext.StockMovements, x => x.SourceDocumentId == "OUT-001" && x.IdempotencyKey == "idem-out-retry-001");
+    }
+
+    [Fact]
+    public async Task Movement_requested_consumer_executes_status_transfer_request_from_blocked_to_restricted()
+    {
+        await using var dbContext = CreateContext();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            StockQualityStatus.Blocked,
+            "company",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "quality",
+            "NCR-SEED",
+            "LINE-001",
+            "idem-blocked-seed",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            StockQualityStatus.Blocked,
+            "company",
+            "owner-001",
+            5m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new InventoryMovementRequestedIntegrationEventHandlerForPostingMovement(
+            NullLogger<InventoryMovementRequestedIntegrationEventHandlerForPostingMovement>.Instance,
+            new CommandExecutingSender(dbContext),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new RecordingIntegrationEventPublisher());
+
+        await handler.HandleAsync(CreateRequestedEvent("evt-status-transfer") with
+        {
+            SourceService = InventoryIntegrationEventSources.BusinessQuality,
+            Payload = CreateRequestedEvent("evt-status-transfer").Payload with
+            {
+                MovementType = InventoryMovementRequestTypes.StatusTransfer,
+                SourceService = InventoryMovementSourceServices.Quality,
+                SourceDocumentId = "NCR-001",
+                SourceDocumentLineId = "NCR-CODE-001",
+                IdempotencyKey = "quality:ncr-inventory-disposition:org-001:env-dev:NCR-CODE-001:rework",
+                QualityStatus = StockQualityStatus.Blocked,
+                Quantity = 3m,
+                TargetQualityStatus = StockQualityStatus.Restricted,
+            },
+        }, CancellationToken.None);
+
+        Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Blocked).OnHandQuantity);
+        Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Restricted).OnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith(InventoryMovementRequestTypes.StatusTransfer, StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -735,7 +867,38 @@ public sealed class InventoryMovementRequestedConsumerTests
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None);
         var deadLetter = Assert.Single(deadLetters);
-        Assert.Equal("unexpected-event-type", deadLetter.FailureCode);
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnexpectedEventTypeFailureCode, deadLetter.FailureCode);
+        Assert.Equal("quality.UnknownInspectionResult", deadLetter.EventType);
+        Assert.Equal(QualityIntegrationEventVersions.V1, deadLetter.EventVersion);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_unsupported_version_to_dead_letter_store()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            sender,
+            dbContext,
+            deadLetterStore);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed) with
+            {
+                EventVersion = QualityIntegrationEventVersions.V1 + 1,
+            },
+            CancellationToken.None);
+
+        Assert.Empty(dbContext.StockMovements);
+        var deadLetters = await deadLetterStore.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None);
+        var deadLetter = Assert.Single(deadLetters);
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, deadLetter.FailureCode);
+        Assert.Equal(QualityIntegrationEventTypes.InspectionPassed, deadLetter.EventType);
+        Assert.Equal(QualityIntegrationEventVersions.V1 + 1, deadLetter.EventVersion);
     }
 
     [Fact]

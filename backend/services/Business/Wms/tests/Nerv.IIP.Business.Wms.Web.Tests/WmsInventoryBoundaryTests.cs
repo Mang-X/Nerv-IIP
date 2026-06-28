@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -206,6 +207,196 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Cancel_outbound_order_releases_inventory_reservation_and_cancels_open_picking_tasks()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var warehouseTask = Assert.Single(dbContext.WarehouseTasks.Local);
+        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
+            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-OUT-001", """{"step":1}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CancelOutboundOrderCommandHandler(dbContext, inventory).Handle(
+            new CancelOutboundOrderCommand(outbound.Id, "customer-cancelled"),
+            CancellationToken.None);
+
+        Assert.Equal("Cancelled", outbound.Status.ToString());
+        Assert.Null(outbound.Lines.Single().InventoryReservationId);
+        var task = Assert.Single(dbContext.WarehouseTasks.Local);
+        Assert.Equal("Cancelled", task.Status.ToString());
+        var wcsTask = Assert.Single(dbContext.WcsTasks.Local);
+        Assert.Equal(WcsTaskStatus.Cancelled, wcsTask.Status);
+        var release = Assert.Single(inventory.ReleaseRequests);
+        Assert.Equal("res-001", release.ReservationId);
+        Assert.Equal(4m, release.Quantity);
+    }
+
+    [Fact]
+    public async Task Inventory_posting_failed_releases_outbound_reservation_and_keeps_order_retryable()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        var inventory = new FakeWmsInventoryReservationClient("res-001", "res-002");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MarkInventoryMovementRequestFailedCommandHandler(dbContext, inventory).Handle(
+            new MarkInventoryMovementRequestFailedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-001", "idem-out-001", "NEGATIVE_ON_HAND", "negative stock"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory).Handle(
+            new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001"),
+            CancellationToken.None);
+
+        Assert.Equal("Completed", outbound.Status.ToString());
+        Assert.Equal("res-002", outbound.Lines.Single().InventoryReservationId);
+        Assert.Collection(
+            dbContext.InventoryMovementRequests.Local.OrderBy(x => x.CreatedAtUtc),
+            failed => Assert.Equal(InventoryMovementRequestStatus.Failed, failed.Status),
+            retried =>
+            {
+                Assert.Equal(InventoryMovementRequestStatus.Pending, retried.Status);
+                Assert.Equal("idem-out-retry-001", retried.IdempotencyKey);
+                Assert.Equal("res-002", retried.InventoryReservationId);
+            });
+        Assert.Equal("res-001", Assert.Single(inventory.ReleaseRequests).ReservationId);
+        Assert.Equal(["res-001", "res-002"], inventory.ReservationResults);
+    }
+
+    [Fact]
+    public async Task Retry_outbound_inventory_posting_only_retries_failed_lines_after_partial_failure()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [
+                new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001"),
+                new OutboundOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 2m, "LOC-A-02", "LOT-002", null, "qualified", "company", "owner-001")
+            ]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-line-1", "res-line-2", "res-line-2-retry");
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-002", "LINE-002", "LOC-A-02", "PACK-01", 2m),
+            CancellationToken.None);
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MarkInventoryMovementRequestPostedCommandHandler(dbContext).Handle(
+            new MarkInventoryMovementRequestPostedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-001", "idem-out-001:LINE-001", "move-001"),
+            CancellationToken.None);
+        await new MarkInventoryMovementRequestFailedCommandHandler(dbContext, inventory).Handle(
+            new MarkInventoryMovementRequestFailedCommand("org-001", "env-dev", "outbound", "OUT-001", "LINE-002", "idem-out-001:LINE-002", "NEGATIVE_ON_HAND", "negative stock"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory).Handle(
+            new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001"),
+            CancellationToken.None);
+
+        Assert.Equal("res-line-1", outbound.Lines.Single(x => x.LineNo == "LINE-001").InventoryReservationId);
+        Assert.Equal("res-line-2-retry", outbound.Lines.Single(x => x.LineNo == "LINE-002").InventoryReservationId);
+        Assert.Equal("res-line-2", Assert.Single(inventory.ReleaseRequests).ReservationId);
+        Assert.Equal(["res-line-1", "res-line-2", "res-line-2-retry"], inventory.ReservationResults);
+        var retryRequest = dbContext.InventoryMovementRequests.Local.Single(x => x.Id == result.RequestId);
+        Assert.Equal("LINE-002", retryRequest.SourceDocumentLineId);
+        Assert.Equal("idem-out-retry-001", retryRequest.IdempotencyKey);
+        Assert.Equal("res-line-2-retry", retryRequest.InventoryReservationId);
+        Assert.Equal(3, dbContext.InventoryMovementRequests.Local.Count);
+    }
+
+    [Fact]
+    public async Task Cancel_outbound_order_validates_state_before_releasing_inventory_reservation()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001"),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new CancelOutboundOrderCommandHandler(dbContext, inventory).Handle(
+            new CancelOutboundOrderCommand(outbound.Id, "late-cancel"),
+            CancellationToken.None));
+
+        Assert.Empty(inventory.ReleaseRequests);
+    }
+
+    [Fact]
+    public async Task Retry_outbound_inventory_posting_validates_state_before_reserving_inventory()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new RetryOutboundInventoryPostingCommandHandler(dbContext, inventory).Handle(
+            new RetryOutboundInventoryPostingCommand(outbound.Id, "idem-out-retry-001"),
+            CancellationToken.None));
+
+        Assert.Empty(inventory.Requests);
+    }
+
+    [Fact]
     public async Task Picking_task_does_not_reserve_inventory_when_wms_validation_fails()
     {
         await using var dbContext = CreateContext();
@@ -337,16 +528,28 @@ public sealed class WmsInventoryBoundaryTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private sealed class FakeWmsInventoryReservationClient(string reservationId) : IWmsInventoryReservationClient
+    private sealed class FakeWmsInventoryReservationClient(params string[] reservationIds) : IWmsInventoryReservationClient
     {
         public List<WmsInventoryReservationRequest> Requests { get; } = [];
+        public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
+        public List<string> ReservationResults { get; } = [];
 
         public Task<WmsInventoryReservationResult> ReserveAsync(
             WmsInventoryReservationRequest request,
             CancellationToken cancellationToken)
         {
             Requests.Add(request);
+            var reservationId = reservationIds[Math.Min(Requests.Count - 1, reservationIds.Length - 1)];
+            ReservationResults.Add(reservationId);
             return Task.FromResult(new WmsInventoryReservationResult(reservationId, request.Quantity, 0m));
+        }
+
+        public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
+            WmsInventoryReservationReleaseRequest request,
+            CancellationToken cancellationToken)
+        {
+            ReleaseRequests.Add(request);
+            return Task.FromResult(new WmsInventoryReservationReleaseResult(request.ReservationId, 0m, request.Quantity));
         }
     }
 
