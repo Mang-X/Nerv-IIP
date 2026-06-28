@@ -79,6 +79,67 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
+    public async Task Consumer_guard_dead_letters_unexpected_event_type_by_default_without_invoking_handler()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var guard = new IntegrationEventConsumerGuard<SampleIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(),
+            store,
+            new IntegrationEventConsumerOptions(
+                ConsumerName: "sample.consumer",
+                ExpectedEventType: "sample.Event",
+                SupportedEventVersion: 1));
+        var invoked = false;
+
+        await guard.HandleAsync(
+            CreateValidEvent("event-shared-topic-001") with { EventType = "sample.OtherEvent" },
+            (_, _) =>
+            {
+                invoked = true;
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        var message = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.False(invoked);
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnexpectedEventTypeFailureCode, message.FailureCode);
+        Assert.Equal("sample.OtherEvent", message.EventType);
+    }
+
+    [Fact]
+    public async Task Consumer_guard_ignores_unexpected_event_type_when_shared_topic_option_is_enabled()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var guard = new IntegrationEventConsumerGuard<SampleIntegrationEvent>(
+            new IntegrationEventEnvelopeValidator(),
+            store,
+            new IntegrationEventConsumerOptions(
+                ConsumerName: "sample.consumer",
+                ExpectedEventType: "sample.Event",
+                SupportedEventVersion: 1)
+            {
+                IgnoreUnsupportedEventTypes = true
+            });
+        var invoked = false;
+
+        await guard.HandleAsync(
+            CreateValidEvent("event-shared-topic-002") with
+            {
+                EventType = "sample.OtherEvent",
+                Payload = null!
+            },
+            (_, _) =>
+            {
+                invoked = true;
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.False(invoked);
+        Assert.Empty(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task Dead_letter_store_marks_pending_message_as_replayed()
     {
         var store = new InMemoryIntegrationEventDeadLetterStore();

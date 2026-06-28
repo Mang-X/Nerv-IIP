@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260626170011_AddMesInventoryPostingFailureFeedback")]
+    partial class AddMesInventoryPostingFailureFeedback
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -189,12 +192,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("inventory_posting_failure_message")
                         .HasComment("Last Inventory posting failure message returned for this MES material issue request.");
-
-                    b.Property<string>("InventoryPostingRollbackKey")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("inventory_posting_rollback_key")
-                        .HasComment("MES normalized receipt-step key already rolled back for Inventory posting failure, used to avoid double rollback when both transfer legs fail.");
 
                     b.Property<string>("MaterialId")
                         .IsRequired()
@@ -659,23 +656,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the material consumption fact.");
-
-                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("inventory_posting_failed_at_utc")
-                        .HasComment("UTC time when Inventory rejected the latest MES production material consumption posting.");
-
-                    b.Property<string>("InventoryPostingFailureCode")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("inventory_posting_failure_code")
-                        .HasComment("Last Inventory posting failure code returned for this MES production material consumption.");
-
-                    b.Property<string>("InventoryPostingFailureMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("inventory_posting_failure_message")
-                        .HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
 
                     b.Property<string>("MaterialId")
                         .IsRequired()

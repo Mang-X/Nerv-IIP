@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
 using System.Globalization;
@@ -213,6 +214,46 @@ public sealed class DefectRaisedIntegrationEventConverter
                 defect.DefectCode,
                 defect.Quantity,
                 defect.RecordedAtUtc));
+    }
+}
+
+public sealed class WorkOrderReleasedIntegrationEventConverter
+    : IIntegrationEventConverter<WorkOrderReleasedDomainEvent, WorkOrderReleasedIntegrationEvent>
+{
+    public WorkOrderReleasedIntegrationEvent Convert(WorkOrderReleasedDomainEvent domainEvent)
+    {
+        var workOrder = domainEvent.WorkOrder;
+        var idempotencyKey = EventIds.Idempotency(
+            "work-order-released",
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.WorkOrderId);
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+
+        return new WorkOrderReleasedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.WorkOrderReleased,
+            MesIntegrationEventVersions.V1,
+            occurredAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            workOrder.WorkOrderId,
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new WorkOrderReleasedPayload(
+                workOrder.WorkOrderId,
+                workOrder.SkuId,
+                workOrder.Quantity,
+                occurredAtUtc,
+                domainEvent.OperationTasks
+                    .OrderBy(x => x.OperationSequence)
+                    .Select(x => new ReleasedOperationPayload(
+                        x.OperationTaskId,
+                        x.OperationSequence,
+                        x.WorkCenterId))
+                    .ToArray()));
     }
 }
 
