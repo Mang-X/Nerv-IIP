@@ -10,6 +10,8 @@ public sealed record InboundOrderCompletedDomainEvent(InboundOrder InboundOrder)
 
 public sealed record OutboundOrderCompletedDomainEvent(OutboundOrder OutboundOrder) : IDomainEvent;
 
+public sealed record OutboundOrderCancelledDomainEvent(OutboundOrder OutboundOrder) : IDomainEvent;
+
 public sealed record CountExecutionCompletedDomainEvent(CountExecution CountExecution) : IDomainEvent;
 
 public sealed record InventoryMovementRequestCreatedDomainEvent(InventoryMovementRequest InventoryMovementRequest) : IDomainEvent;
@@ -19,3 +21,5 @@ public sealed record WcsTaskDispatchedDomainEvent(WcsTask WcsTask) : IDomainEven
 public sealed record WcsTaskFailedDomainEvent(WcsTask WcsTask) : IDomainEvent;
 
 public sealed record WcsTaskCompletedDomainEvent(WcsTask WcsTask) : IDomainEvent;
+
+public sealed record WcsTaskCancelledDomainEvent(WcsTask WcsTask) : IDomainEvent;

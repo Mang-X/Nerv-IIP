@@ -264,6 +264,51 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public async Task Concurrent_approval_decisions_on_same_chain_are_rejected()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var template = ApprovalTemplate.Create(
+                "org-001",
+                "env-dev",
+                "COUNT-VARIANCE",
+                "inventory-count-variance",
+                1,
+                true,
+                [
+                    new ApprovalTemplateStepDefinition(1, "Finance review", "finance-qc", "user", "u-finance", 24, "any"),
+                    new ApprovalTemplateStepDefinition(1, "Quality review", "finance-qc", "user", "u-quality", 24, "any"),
+                ]);
+            var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("inventory", "inventory-count-variance", "COUNT-001", null), "system:inventory");
+            dbContext.ApprovalTemplates.Add(template);
+            dbContext.ApprovalChains.Add(chain);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var firstScope = provider.CreateAsyncScope();
+        await using var secondScope = provider.CreateAsyncScope();
+        var firstDbContext = firstScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var firstChain = await firstDbContext.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .SingleAsync(CancellationToken.None);
+        var secondChain = await secondDbContext.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .SingleAsync(CancellationToken.None);
+
+        firstChain.ResolveStep(1, "user", "u-finance", "approve", "ok");
+        secondChain.ResolveStep(1, "user", "u-quality", "approve", "ok");
+        await firstDbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => secondDbContext.SaveChangesAsync(CancellationToken.None));
+        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Approval_action_commands_withdraw_resubmit_add_signer_and_transfer()
     {
         await using var provider = CreateInMemoryProvider();
@@ -523,8 +568,10 @@ public sealed class ApprovalEndpointContractTests
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
+        var databaseName = $"approval-api-contract-{Guid.CreateVersion7():N}";
+        var databaseRoot = new Microsoft.EntityFrameworkCore.Storage.InMemoryDatabaseRoot();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase($"approval-api-contract-{Guid.CreateVersion7():N}"));
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName, databaseRoot));
         return services.BuildServiceProvider();
     }
 

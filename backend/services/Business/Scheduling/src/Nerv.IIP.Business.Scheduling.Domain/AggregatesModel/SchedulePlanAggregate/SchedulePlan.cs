@@ -8,6 +8,17 @@ public partial record SchedulePlanAssignmentId : IGuidStronglyTypedId;
 public partial record SchedulePlanResourceLoadId : IGuidStronglyTypedId;
 public partial record SchedulePlanConflictId : IGuidStronglyTypedId;
 public partial record SchedulePlanUnscheduledOperationId : IGuidStronglyTypedId;
+public partial record SchedulePlanInvalidationId : IGuidStronglyTypedId;
+
+public static class SchedulingPlanInvalidationReasons
+{
+    public const string EquipmentUnavailable = "equipmentUnavailable";
+    public const string EquipmentRestored = "equipmentRestored";
+    public const string MaterialReadinessChanged = "materialReadinessChanged";
+    public const string QualityBlocked = "qualityBlocked";
+    public const string QualityReleased = "qualityReleased";
+    public const string WorkOrderReleased = "workOrderReleased";
+}
 
 public enum SchedulePlanLifecycleStatus
 {
@@ -334,6 +345,103 @@ public sealed class SchedulePlan : Entity<SchedulePlanId>, IAggregateRoot
         {
             throw new InvalidOperationException("Released schedule plans are immutable.");
         }
+    }
+
+    private static string Required(string value, string? parameterName = null)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Value is required.", parameterName ?? nameof(value));
+        }
+
+        return value.Trim();
+    }
+}
+
+public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId>
+{
+    private SchedulePlanInvalidation()
+    {
+    }
+
+    private SchedulePlanInvalidation(
+        string organizationId,
+        string environmentId,
+        string planId,
+        string sourceEventId,
+        string sourceEventType,
+        string sourceService,
+        string reasonCode,
+        string? affectedResourceId,
+        string? affectedWorkOrderId,
+        string? affectedOperationId,
+        string? affectedSkuCode,
+        DateTimeOffset occurredAtUtc,
+        DateTimeOffset recordedAtUtc)
+    {
+        OrganizationId = Required(organizationId, nameof(organizationId));
+        EnvironmentId = Required(environmentId, nameof(environmentId));
+        PlanId = Required(planId, nameof(planId));
+        SourceEventId = Required(sourceEventId, nameof(sourceEventId));
+        SourceEventType = Required(sourceEventType, nameof(sourceEventType));
+        SourceService = Required(sourceService, nameof(sourceService));
+        ReasonCode = Required(reasonCode, nameof(reasonCode));
+        AffectedResourceId = Optional(affectedResourceId);
+        AffectedWorkOrderId = Optional(affectedWorkOrderId);
+        AffectedOperationId = Optional(affectedOperationId);
+        AffectedSkuCode = Optional(affectedSkuCode);
+        OccurredAtUtc = occurredAtUtc;
+        RecordedAtUtc = recordedAtUtc;
+    }
+
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public string PlanId { get; private set; } = string.Empty;
+    public string SourceEventId { get; private set; } = string.Empty;
+    public string SourceEventType { get; private set; } = string.Empty;
+    public string SourceService { get; private set; } = string.Empty;
+    public string ReasonCode { get; private set; } = string.Empty;
+    public string? AffectedResourceId { get; private set; }
+    public string? AffectedWorkOrderId { get; private set; }
+    public string? AffectedOperationId { get; private set; }
+    public string? AffectedSkuCode { get; private set; }
+    public DateTimeOffset OccurredAtUtc { get; private set; }
+    public DateTimeOffset RecordedAtUtc { get; private set; }
+
+    public static SchedulePlanInvalidation Create(
+        string organizationId,
+        string environmentId,
+        string planId,
+        string sourceEventId,
+        string sourceEventType,
+        string sourceService,
+        string reasonCode,
+        string? affectedResourceId,
+        string? affectedWorkOrderId,
+        string? affectedOperationId,
+        string? affectedSkuCode,
+        DateTimeOffset occurredAtUtc,
+        DateTimeOffset recordedAtUtc)
+    {
+        return new SchedulePlanInvalidation(
+            organizationId,
+            environmentId,
+            planId,
+            sourceEventId,
+            sourceEventType,
+            sourceService,
+            reasonCode,
+            affectedResourceId,
+            affectedWorkOrderId,
+            affectedOperationId,
+            affectedSkuCode,
+            occurredAtUtc,
+            recordedAtUtc);
+    }
+
+    private static string? Optional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     private static string Required(string value, string? parameterName = null)

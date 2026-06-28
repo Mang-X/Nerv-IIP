@@ -54,6 +54,12 @@ namespace Nerv.IIP.Business.Approval.Infrastructure.Migrations
                         .HasColumnName("round_no")
                         .HasComment("Current submission round number; increments when a returned or withdrawn chain is resubmitted.");
 
+                    b.Property<int>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("row_version")
+                        .HasComment("Optimistic concurrency token for approval chain decisions and runtime step changes.");
+
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at_utc")

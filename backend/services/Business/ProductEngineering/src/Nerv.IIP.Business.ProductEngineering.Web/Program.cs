@@ -36,6 +36,11 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName)
         .UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    builder.Services.AddHttpClient<IProductEngineeringMasterDataReferenceValidator, HttpProductEngineeringMasterDataReferenceValidator>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
+    }).UseHttpClientMetrics();
     var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IEngineeringApprovalVerifier, HttpEngineeringApprovalVerifier>(client =>
     {

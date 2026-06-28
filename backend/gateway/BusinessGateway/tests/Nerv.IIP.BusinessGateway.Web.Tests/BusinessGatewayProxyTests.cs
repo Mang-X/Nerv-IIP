@@ -1113,28 +1113,40 @@ public sealed class BusinessGatewayProxyTests
         var decisions = await client.GetAsync("/api/business-console/v1/approval/decisions?organizationId=org-001&environmentId=env-dev&chainId=chain-001&actorType=user&actorRef=u-manager&decision=approve&skip=2&take=11");
         var tasks = await client.GetAsync("/api/business-console/v1/approval/tasks?organizationId=org-001&environmentId=env-dev&actorType=user&actorRef=u-manager&skip=3&take=12");
         var delegations = await client.GetAsync("/api/business-console/v1/approval/delegations?organizationId=org-001&environmentId=env-dev&status=active&delegateActorRef=u-backup&skip=4&take=13");
+        var startChain = await client.PostAsJsonAsync("/api/business-console/v1/approval/chains", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            templateCode = "purchase-order-default",
+            sourceService = "erp",
+            documentType = "purchase-order",
+            documentId = "PO-001",
+            documentLineId = (string?)null,
+            startedBy = "u-victim",
+        });
         var createDelegation = await client.PostAsJsonAsync("/api/business-console/v1/approval/delegations", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
             delegatorActorType = "user",
-            delegatorActorRef = "u-manager",
+            delegatorActorRef = "u-victim",
             delegateActorType = "user",
             delegateActorRef = "u-backup",
             documentType = "purchase-order",
             effectiveFromUtc = "2026-06-01T00:00:00Z",
             effectiveToUtc = "2026-06-30T00:00:00Z",
             reason = "travel",
-            createdBy = "u-manager",
+            createdBy = "u-victim",
         });
         var revokeDelegation = await client.PostAsJsonAsync(
             "/api/business-console/v1/approval/delegations/delegation-001/revoke?organizationId=org-001&environmentId=env-dev",
-            new { revokedBy = "u-manager" });
+            new { revokedBy = "u-victim" });
 
         Assert.Equal(HttpStatusCode.OK, chains.StatusCode);
         Assert.Equal(HttpStatusCode.OK, decisions.StatusCode);
         Assert.Equal(HttpStatusCode.OK, tasks.StatusCode);
         Assert.Equal(HttpStatusCode.OK, delegations.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, startChain.StatusCode);
         Assert.Equal(HttpStatusCode.OK, createDelegation.StatusCode);
         Assert.Equal(HttpStatusCode.OK, revokeDelegation.StatusCode);
         Assert.Equal("internal-test-token", approval.LastInternalToken);
@@ -1142,8 +1154,49 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "u-manager", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
         Assert.Equal(new BusinessConsoleApprovalTaskListRequest("org-001", "env-dev", "user", "u-manager", 3, 12), approval.LastRequest);
         Assert.Equal(new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", "active", null, "u-backup", null, 4, 13), approval.LastDelegationListRequest);
+        Assert.Equal("user-admin", approval.LastStartChainRequest?.StartedBy);
+        Assert.Equal("user", approval.LastCreateDelegationRequest?.DelegatorActorType);
+        Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.DelegatorActorRef);
+        Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.CreatedBy);
         Assert.Equal("u-backup", approval.LastCreateDelegationRequest?.DelegateActorRef);
         Assert.Equal("delegation-001", approval.LastRevokeDelegationRequest?.DelegationId);
+        Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
+    }
+
+    [Fact]
+    public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
+    {
+        var approval = new RecordingApprovalClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessApprovalClient>();
+            services.AddSingleton<IBusinessApprovalClient>(approval);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/approval/chains/chain-001/steps/1/resolve",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                chainId = "chain-spoofed",
+                stepNo = 99,
+                actorType = "user",
+                actorRef = "u-victim",
+                decision = "approve",
+                comment = "ok",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal("chain-001", approval.LastResolveStepRequest?.ChainId);
+        Assert.Equal(1, approval.LastResolveStepRequest?.StepNo);
+        Assert.Equal("user", approval.LastResolveStepRequest?.ActorType);
+        Assert.Equal("user-admin", approval.LastResolveStepRequest?.ActorRef);
     }
 
     [Fact]

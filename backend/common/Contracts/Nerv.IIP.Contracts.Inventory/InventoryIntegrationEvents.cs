@@ -22,6 +22,32 @@ public static class InventoryIntegrationEventSources
     public const string BusinessWms = "business-wms";
     public const string BusinessErp = "business-erp";
     public const string BusinessMes = "business-mes";
+    public const string BusinessQuality = "business-quality";
+}
+
+public static class InventoryMovementSourceServices
+{
+    public const string Quality = "quality";
+}
+
+public static class InventoryMovementRequestTypes
+{
+    public const string StatusTransfer = "status-transfer";
+}
+
+public static class InventoryMovementTypes
+{
+    public const string Adjustment = "adjustment";
+    public const string StatusTransferOut = "status-transfer-out";
+    public const string StatusTransferIn = "status-transfer-in";
+}
+
+public static class InventoryQualityStatuses
+{
+    public const string Quality = "quality";
+    public const string Unrestricted = "unrestricted";
+    public const string Blocked = "blocked";
+    public const string Restricted = "restricted";
 }
 
 public sealed record InventoryMovementRequestedIntegrationEvent(
@@ -59,7 +85,8 @@ public sealed record InventoryMovementRequestedPayload(
     decimal Quantity,
     DateTimeOffset RequestedAtUtc,
     string? InventoryReservationId = null,
-    decimal? UnitCost = null);
+    decimal? UnitCost = null,
+    string? TargetQualityStatus = null);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,

@@ -274,10 +274,13 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             throw new InvalidOperationException($"Inspection record is missing required characteristic(s): {string.Join(", ", missingRequired)}.");
         }
 
-        return inspectionPlan.Characteristics
+        var plannedLines = inspectionPlan.Characteristics
             .Where(x => inputByCode.ContainsKey(x.CharacteristicCode))
-            .Select(x => CalculatePlannedLine(x, inputByCode[x.CharacteristicCode], inspectedQuantity))
+            .Select(x => new PlannedLineEvaluation(
+                x,
+                CalculatePlannedLine(x, inputByCode[x.CharacteristicCode], inspectedQuantity)))
             .ToArray();
+        return ApplyAqlSeverityDecisions(plannedLines, inspectedQuantity);
     }
 
     private static InspectionResultLineInput CalculatePlannedLine(
@@ -285,9 +288,13 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         InspectionResultLineInput input,
         decimal inspectedQuantity)
     {
-        if (characteristic.SamplingPlan is not null && inspectedQuantity < characteristic.SamplingPlan.SampleSize)
+        if (characteristic.SamplingPlan is not null)
         {
-            throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {characteristic.SamplingPlan.SampleSize}.");
+            var resolvedSamplingPlan = characteristic.SamplingPlan.ResolveForLotSize(inspectedQuantity, characteristic.Severity);
+            if (inspectedQuantity < resolvedSamplingPlan.SampleSize)
+            {
+                throw new InvalidOperationException($"Inspection characteristic '{characteristic.CharacteristicCode}' requires sample size {resolvedSamplingPlan.SampleSize}.");
+            }
         }
 
         return characteristic.CharacteristicType switch
@@ -347,20 +354,73 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         }
 
         var defectQuantity = input.DefectQuantity ?? 0m;
-        var result = defectQuantity <= characteristic.SamplingPlan.AcceptanceNumber
-            ? InspectionLineResults.Passed
-            : defectQuantity >= characteristic.SamplingPlan.RejectionNumber
-                ? InspectionLineResults.Failed
-                : InspectionLineResults.ConditionalRelease;
         return input with
         {
-            Result = result,
-            DefectReason = result == InspectionLineResults.Passed
-                ? input.DefectReason
-                : input.DefectReason ?? (result == InspectionLineResults.Failed ? "aql-rejection-number-reached" : "aql-conditional-release"),
+            Result = InspectionLineResults.Passed,
             DefectQuantity = defectQuantity,
         };
     }
+
+    private static IReadOnlyCollection<InspectionResultLineInput> ApplyAqlSeverityDecisions(
+        IReadOnlyCollection<PlannedLineEvaluation> plannedLines,
+        decimal inspectedQuantity)
+    {
+        var lineByCharacteristicCode = plannedLines.ToDictionary(x => x.Characteristic.CharacteristicCode, x => x.Line, StringComparer.OrdinalIgnoreCase);
+        var aqlGroups = plannedLines
+            .Where(x => x.Characteristic.CharacteristicType == InspectionCharacteristicTypes.Attribute
+                && x.Characteristic.SamplingPlan is not null)
+            .GroupBy(x => x.Characteristic.Severity, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in aqlGroups)
+        {
+            var groupLines = group.ToArray();
+            var firstSamplingPlan = groupLines[0].Characteristic.SamplingPlan!;
+            if (groupLines.Any(x => !HasSameSamplingPlan(firstSamplingPlan, x.Characteristic.SamplingPlan!)))
+            {
+                throw new InvalidOperationException($"AQL sampling plan must be consistent for severity '{group.Key}'.");
+            }
+
+            var resolved = firstSamplingPlan.ResolveForLotSize(inspectedQuantity, group.Key);
+            var defectQuantity = groupLines.Sum(x => x.Line.DefectQuantity ?? 0m);
+            var result = defectQuantity <= resolved.AcceptanceNumber
+                ? InspectionLineResults.Passed
+                : defectQuantity >= resolved.RejectionNumber
+                    ? InspectionLineResults.Failed
+                    : InspectionLineResults.ConditionalRelease;
+            var reason = result == InspectionLineResults.Failed
+                ? string.Equals(group.Key, "critical", StringComparison.OrdinalIgnoreCase)
+                    ? "critical-defect-observed"
+                    : "aql-rejection-number-reached"
+                : "aql-conditional-release";
+
+            foreach (var evaluation in groupLines)
+            {
+                var lineDefectQuantity = evaluation.Line.DefectQuantity ?? 0m;
+                if (result == InspectionLineResults.Passed || lineDefectQuantity <= 0m)
+                {
+                    continue;
+                }
+
+                lineByCharacteristicCode[evaluation.Characteristic.CharacteristicCode] = evaluation.Line with
+                {
+                    Result = result,
+                    DefectReason = evaluation.Line.DefectReason ?? reason,
+                };
+            }
+        }
+
+        return plannedLines.Select(x => lineByCharacteristicCode[x.Characteristic.CharacteristicCode]).ToArray();
+    }
+
+    private static bool HasSameSamplingPlan(InspectionSamplingPlan first, InspectionSamplingPlan second)
+    {
+        return string.Equals(first.InspectionLevel, second.InspectionLevel, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(first.Aql, second.Aql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record PlannedLineEvaluation(
+        InspectionPlanCharacteristic Characteristic,
+        InspectionResultLineInput Line);
 
     private void Touch()
     {

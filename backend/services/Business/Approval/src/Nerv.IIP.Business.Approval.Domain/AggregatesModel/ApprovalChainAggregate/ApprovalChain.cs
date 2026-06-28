@@ -62,6 +62,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     public DateTimeOffset StartedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public int RoundNo { get; private set; }
+    public int RowVersion { get; private set; }
     public IReadOnlyCollection<ApprovalStep> Steps => steps;
     public IReadOnlyCollection<ApprovalDecision> Decisions => decisions;
 
@@ -139,6 +140,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedOnBehalfOfActorRef);
         decisions.Add(approvalDecision);
         this.AddDomainEvent(new ApprovalStepResolvedDomainEvent(this, step, approvalDecision));
+        IncrementRowVersion();
 
         if (normalizedDecision == ApprovalDecisions.Reject)
         {
@@ -200,6 +202,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             withdrawnAtUtc);
         Status = ApprovalChainStatuses.Withdrawn;
         CompletedAtUtc = withdrawnAtUtc;
+        IncrementRowVersion();
         this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));
     }
 
@@ -229,6 +232,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         StartedAtUtc = resubmittedAtUtc;
         CompletedAtUtc = null;
         RoundNo++;
+        IncrementRowVersion();
         var firstCurrentStepNo = steps.Where(x => x.Status == ApprovalStepStatuses.Pending).Min(x => x.StepNo);
         var currentSteps = steps.Where(x => x.StepNo == firstCurrentStepNo && x.Status == ApprovalStepStatuses.Pending).ToArray();
         var decision = RecordActionDecision(
@@ -276,6 +280,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
 
         var addedStep = ApprovalStep.AdditionalSigner(baseStep, normalizedApproverType, normalizedApproverRef);
         steps.Add(addedStep);
+        IncrementRowVersion();
         var decision = RecordActionDecision(
             addedStep,
             normalizedRequestedByActorType,
@@ -320,6 +325,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
                 && x.Status == ApprovalStepStatuses.Pending)
             ?? throw new InvalidOperationException("No pending approval step is assigned to the transfer source actor.");
         step.TransferTo(normalizedToActorType, normalizedToActorRef);
+        IncrementRowVersion();
         var decision = RecordActionDecision(
             step,
             normalizedRequestedByActorType,
@@ -349,7 +355,17 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             this.AddDomainEvent(new ApprovalStepOverdueDomainEvent(this, step, nowUtc));
         }
 
+        if (marked > 0)
+        {
+            IncrementRowVersion();
+        }
+
         return marked;
+    }
+
+    private void IncrementRowVersion()
+    {
+        RowVersion++;
     }
 
     private void EnsureCurrentPendingStepNo(int stepNo)

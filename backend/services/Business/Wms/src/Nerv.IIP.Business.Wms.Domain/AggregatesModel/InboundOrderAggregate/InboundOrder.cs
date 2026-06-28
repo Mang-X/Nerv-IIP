@@ -159,6 +159,38 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.InventoryPostingFailed;
     }
 
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(string idempotencyKey)
+    {
+        if (Status != InboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new InvalidOperationException("Only inbound orders with failed Inventory posting can be retried.");
+        }
+
+        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureHasLines();
+        Status = InboundOrderStatus.Completed;
+        var singleLine = lines.Count == 1;
+        var requests = lines.Select(line => InventoryMovementRequest.Create(
+                OrganizationId,
+                EnvironmentId,
+                "inbound",
+                InboundOrderNo,
+                line.LineNo,
+                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                line.SkuCode,
+                line.UomCode,
+                SiteCode,
+                line.StagingLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                line.ReceivedQuantity))
+            .ToArray();
+        return requests;
+    }
+
     private InboundOrderLine FindLine(string lineNo)
     {
         return lines.SingleOrDefault(x => x.LineNo == lineNo)
