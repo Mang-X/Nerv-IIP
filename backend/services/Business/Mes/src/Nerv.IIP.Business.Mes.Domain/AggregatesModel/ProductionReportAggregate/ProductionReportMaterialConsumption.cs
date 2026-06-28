@@ -7,6 +7,7 @@ public partial record ProductionReportMaterialConsumptionId : IGuidStronglyTyped
 public sealed class ProductionReportMaterialConsumption : Entity<ProductionReportMaterialConsumptionId>, IAggregateRoot
 {
     public const string UnspecifiedUomCode = "UNSPECIFIED";
+    public const int FailureMessageMaxLength = 500;
 
     private ProductionReportMaterialConsumption()
     {
@@ -46,6 +47,9 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
     public string UomCode { get; private set; } = string.Empty;
     public decimal ConsumedQuantity { get; private set; }
     public string MaterialIssueRequestNo { get; private set; } = string.Empty;
+    public string? InventoryPostingFailureCode { get; private set; }
+    public string? InventoryPostingFailureMessage { get; private set; }
+    public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
 
     public static ProductionReportMaterialConsumption Record(
         string organizationId,
@@ -74,4 +78,18 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         return consumption;
     }
 
+    public void MarkInventoryPostingFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
+        InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
+        InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    private static string NormalizeFailureMessage(string failureMessage)
+    {
+        var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        return normalized.Length <= FailureMessageMaxLength
+            ? normalized
+            : normalized[..FailureMessageMaxLength];
+    }
 }

@@ -9,6 +9,7 @@ public sealed record IntegrationEventConsumerOptions(
     int SupportedEventVersion)
 {
     public IReadOnlyCollection<string> SupportedEventTypes { get; init; } = [ExpectedEventType];
+    public bool IgnoreUnsupportedEventTypes { get; init; }
 
     public IntegrationEventConsumerOptions(
         string consumerName,
@@ -48,6 +49,12 @@ public sealed record IntegrationEventEnvelopeValidationResult(
 
 public sealed class IntegrationEventEnvelopeValidator
 {
+    public const string MissingEnvelopeFailureCode = "missing-envelope";
+    public const string MissingEnvelopeFieldFailureCode = "missing-envelope-field";
+    public const string MissingPayloadFailureCode = "missing-payload";
+    public const string UnexpectedEventTypeFailureCode = "unexpected-event-type";
+    public const string UnsupportedVersionFailureCode = "unsupported-version";
+
     public IntegrationEventEnvelopeValidationResult Validate<TIntegrationEvent>(
         TIntegrationEvent integrationEvent,
         IntegrationEventConsumerOptions options)
@@ -58,7 +65,7 @@ public sealed class IntegrationEventEnvelopeValidator
         if (integrationEvent is null)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "missing-envelope",
+                MissingEnvelopeFailureCode,
                 "Integration event envelope is required.");
         }
 
@@ -67,7 +74,7 @@ public sealed class IntegrationEventEnvelopeValidator
             if (string.IsNullOrWhiteSpace(value))
             {
                 return IntegrationEventEnvelopeValidationResult.Invalid(
-                    "missing-envelope-field",
+                    MissingEnvelopeFieldFailureCode,
                     $"Integration event envelope field '{fieldName}' is required.");
             }
         }
@@ -75,35 +82,35 @@ public sealed class IntegrationEventEnvelopeValidator
         if (integrationEvent.OccurredAtUtc == default)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "missing-envelope-field",
+                MissingEnvelopeFieldFailureCode,
                 "Integration event envelope field 'OccurredAtUtc' is required.");
         }
 
         if (integrationEvent.PayloadObject is null)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "missing-payload",
+                MissingPayloadFailureCode,
                 "Integration event payload is required.");
         }
 
         if (!options.SupportedEventTypes.Contains(integrationEvent.EventType, StringComparer.Ordinal))
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "unexpected-event-type",
+                UnexpectedEventTypeFailureCode,
                 $"Integration event type '{integrationEvent.EventType}' is not supported by consumer '{options.ConsumerName}'.");
         }
 
         if (integrationEvent.EventVersion <= 0)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "missing-envelope-field",
+                MissingEnvelopeFieldFailureCode,
                 "Integration event envelope field 'EventVersion' is required.");
         }
 
         if (integrationEvent.EventVersion != options.SupportedEventVersion)
         {
             return IntegrationEventEnvelopeValidationResult.Invalid(
-                "unsupported-version",
+                UnsupportedVersionFailureCode,
                 $"Integration event version '{integrationEvent.EventVersion}' is not supported by consumer '{options.ConsumerName}'.");
         }
 
@@ -137,6 +144,11 @@ public sealed class IntegrationEventConsumerGuard<TIntegrationEvent>(
     {
         ArgumentNullException.ThrowIfNull(handler);
 
+        if (ShouldIgnoreUnsupportedEventType(integrationEvent))
+        {
+            return;
+        }
+
         var validation = validator.Validate(integrationEvent, options);
         if (!validation.IsValid)
         {
@@ -151,6 +163,14 @@ public sealed class IntegrationEventConsumerGuard<TIntegrationEvent>(
         }
 
         await handler(integrationEvent, cancellationToken);
+    }
+
+    private bool ShouldIgnoreUnsupportedEventType(TIntegrationEvent integrationEvent)
+    {
+        return options.IgnoreUnsupportedEventTypes
+            && integrationEvent is not null
+            && !string.IsNullOrWhiteSpace(integrationEvent.EventType)
+            && !options.SupportedEventTypes.Contains(integrationEvent.EventType, StringComparer.Ordinal);
     }
 }
 
