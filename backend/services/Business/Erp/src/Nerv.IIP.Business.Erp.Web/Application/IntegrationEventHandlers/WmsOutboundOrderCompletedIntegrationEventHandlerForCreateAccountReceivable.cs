@@ -28,7 +28,10 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAcc
     private static readonly IntegrationEventConsumerOptions ConsumerOptions = new(
         ConsumerName,
         WmsIntegrationEventTypes.OutboundOrderCompleted,
-        WmsIntegrationEventVersions.V1);
+        WmsIntegrationEventVersions.V1)
+    {
+        IgnoreUnsupportedEventTypes = true
+    };
 
     private readonly IntegrationEventConsumerGuard<WmsIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),

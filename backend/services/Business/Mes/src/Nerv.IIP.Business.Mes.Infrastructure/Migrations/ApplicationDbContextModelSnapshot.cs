@@ -37,6 +37,23 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the receipt request.");
 
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES finished-goods receipt posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES finished-goods receipt request.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES finished-goods receipt request.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -155,6 +172,29 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the material issue request.");
+
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES material issue or line-side receipt posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES material issue request.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES material issue request.");
+
+                    b.Property<string>("InventoryPostingRollbackKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("inventory_posting_rollback_key")
+                        .HasComment("MES normalized receipt-step key already rolled back for Inventory posting failure, used to avoid double rollback when both transfer legs fail.");
 
                     b.Property<string>("MaterialId")
                         .IsRequired()
@@ -619,6 +659,23 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the material consumption fact.");
+
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES production material consumption posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES production material consumption.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
 
                     b.Property<string>("MaterialId")
                         .IsRequired()

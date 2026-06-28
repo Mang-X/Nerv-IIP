@@ -16,4 +16,6 @@ public sealed record NonconformanceReportOpenedDomainEvent(NonconformanceReport 
 
 public sealed record NonconformanceReportDispositionDecidedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
+public sealed record NonconformanceReportInventoryDispositionRequestedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+
 public sealed record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
