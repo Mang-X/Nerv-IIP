@@ -150,6 +150,108 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_bom_rejects_unknown_master_data_sku_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var masterData = new RecordingMasterDataReferenceValidator(("sku", "ENG-1000"));
+        var handler = new ReleaseEngineeringBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            masterData);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringBomCommand(
+                "org-001",
+                "env-dev",
+                "EBOM-MD",
+                "A",
+                "ENG-1000",
+                new DateOnly(2026, 6, 1),
+                [new BomLineCommand("ENG-MISSING", 1m, "EA")]),
+            CancellationToken.None));
+
+        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ENG-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            [("sku", "ENG-1000"), ("sku", "ENG-MISSING")],
+            masterData.Requests);
+        Assert.Empty(dbContext.EngineeringBoms);
+    }
+
+    [Fact]
+    public async Task Release_manufacturing_bom_rejects_unknown_master_data_material_sku_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-MD", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-MISSING", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var masterData = new RecordingMasterDataReferenceValidator(("sku", "SKU-FG-1000"));
+        var handler = new ReleaseManufacturingBomCommandHandler(
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            masterData);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseManufacturingBomCommand(
+                "org-001",
+                "env-dev",
+                "MBOM-MD",
+                "A",
+                "SKU-FG-1000",
+                "EBOM-MD",
+                "A",
+                new DateOnly(2026, 6, 1),
+                [new ManufacturingBomMaterialLineCommand("SKU-RM-MISSING", 1m, "EA", 0m)],
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SKU-RM-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            [("sku", "SKU-FG-1000"), ("sku", "SKU-RM-MISSING")],
+            masterData.Requests);
+        Assert.Empty(dbContext.ManufacturingBoms);
+    }
+
+    [Fact]
+    public async Task Release_routing_rejects_unknown_master_data_work_center_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(NewStandardOperation("mixing", "WC-MISSING"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var masterData = new RecordingMasterDataReferenceValidator(("sku", "SKU-FG-1000"));
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            masterData);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-MD",
+                "A",
+                "SKU-FG-1000",
+                new DateOnly(2026, 6, 1),
+                [new RoutingOperationCommand(10, null, "mixing", null)]),
+            CancellationToken.None));
+
+        Assert.Contains("MasterData", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WC-MISSING", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            [("sku", "SKU-FG-1000"), ("work-center", "WC-MISSING")],
+            masterData.Requests);
+        Assert.Empty(dbContext.Routings);
+    }
+
+    [Fact]
     public async Task Get_engineering_bom_returns_complete_component_lines_by_code_and_revision()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1099,6 +1201,131 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Release_engineering_change_rebinds_successor_production_version_window_to_effective_date()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:A",
+            "ROUTE-3000:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        var successor = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:B",
+            "ROUTE-3000:B",
+            new DateOnly(2026, 7, 1),
+            null,
+            null,
+            null,
+            20,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.AddRange(oldVersion, successor);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-PV-SUPERSEDE",
+                "Supersede production version window",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(ProductionVersionStatus.Archived, oldVersion.Status);
+        Assert.Equal(new DateOnly(2026, 5, 31), oldVersion.ValidTo);
+        Assert.Equal(ProductionVersionStatus.Active, successor.Status);
+        Assert.Equal(new DateOnly(2026, 6, 1), successor.ValidFrom);
+        Assert.True(successor.IsResolvableFor(new DateOnly(2026, 6, 1), 1m));
+    }
+
+    [Fact]
+    public async Task Release_engineering_change_rejects_successor_production_version_when_effective_date_exceeds_successor_valid_to()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:A",
+            "ROUTE-3000:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        var successor = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-3000:B",
+            "ROUTE-3000:B",
+            new DateOnly(2026, 3, 1),
+            new DateOnly(2026, 5, 31),
+            null,
+            null,
+            20,
+            false,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.AddRange(oldVersion, successor);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-PV-DEAD-WINDOW",
+                "Reject successor dead window",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 1),
+                [new AffectedVersionCommand("production-version", oldVersion.Id.Id.ToString("D"), successor.Id.Id.ToString("D"))]),
+            CancellationToken.None));
+
+        Assert.Contains("successor production version effective window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ProductionVersionStatus.Active, oldVersion.Status);
+        Assert.Null(oldVersion.ValidTo);
+        Assert.Equal(new DateOnly(2026, 3, 1), successor.ValidFrom);
+        Assert.Equal(new DateOnly(2026, 5, 31), successor.ValidTo);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_rejects_self_supersede_version()
     {
         await using var provider = CreateInMemoryProvider();
@@ -1519,6 +1746,35 @@ public sealed class ProductEngineeringReleaseApiContractTests
             if (!shouldApprove)
             {
                 throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingMasterDataReferenceValidator(params (string ResourceType, string Code)[] activeReferences)
+        : IProductEngineeringMasterDataReferenceValidator
+    {
+        private readonly HashSet<string> activeReferenceKeys = activeReferences
+            .Select(reference => $"{reference.ResourceType}:{reference.Code}")
+            .ToHashSet(StringComparer.Ordinal);
+
+        public List<(string ResourceType, string Code)> Requests { get; } = [];
+
+        public Task ValidateActiveReferencesAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<ProductEngineeringMasterDataReference> references,
+            CancellationToken cancellationToken)
+        {
+            Requests.AddRange(references.Select(reference => (reference.ResourceType, reference.Code)));
+            var missing = references
+                .Where(reference => !activeReferenceKeys.Contains($"{reference.ResourceType}:{reference.Code}"))
+                .Select(reference => reference.Code)
+                .ToArray();
+            if (missing.Length > 0)
+            {
+                throw new KnownException($"MasterData reference(s) are missing or inactive: {string.Join(", ", missing)}.");
             }
 
             return Task.CompletedTask;
