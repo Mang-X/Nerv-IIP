@@ -13,6 +13,7 @@ public enum OutboundOrderStatus
     Open = 0,
     Completed = 1,
     InventoryPostingFailed = 2,
+    Cancelled = 3,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -72,8 +73,10 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
+    public string? CancellationReason { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
     public IReadOnlyCollection<OutboundOrderLine> Lines => lines;
 
     public static OutboundOrder Create(
@@ -187,6 +190,95 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         Status = OutboundOrderStatus.InventoryPostingFailed;
     }
 
+    public void EnsureCanCancel()
+    {
+        EnsureOpen();
+    }
+
+    public void Cancel(string reason)
+    {
+        EnsureCanCancel();
+        CancellationReason = WmsText.Required(reason, nameof(reason));
+        foreach (var line in lines)
+        {
+            line.ClearInventoryReservation();
+        }
+
+        Status = OutboundOrderStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new OutboundOrderCancelledDomainEvent(this));
+    }
+
+    public void MarkInventoryReservationReleased(string inventoryReservationId)
+    {
+        var reservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
+        foreach (var line in lines.Where(x => x.InventoryReservationId == reservationId))
+        {
+            line.ClearInventoryReservation();
+        }
+    }
+
+    public void EnsureCanRetryInventoryPosting(IReadOnlyCollection<string> lineNos)
+    {
+        if (Status != OutboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new InvalidOperationException("Only outbound orders with failed Inventory posting can be retried.");
+        }
+
+        if (lineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed outbound line is required for Inventory posting retry.");
+        }
+
+        foreach (var lineNo in lineNos)
+        {
+            var line = FindLine(lineNo);
+            if (line.InventoryReservationId is not null)
+            {
+                throw new InvalidOperationException($"Outbound line '{lineNo}' still has an Inventory reservation and cannot be retried safely.");
+            }
+        }
+    }
+
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string?> inventoryReservationIds)
+    {
+        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureCanRetryInventoryPosting(inventoryReservationIds.Keys.ToArray());
+        Status = OutboundOrderStatus.Completed;
+        var retryLines = lines
+            .Where(line => inventoryReservationIds.ContainsKey(line.LineNo))
+            .OrderBy(line => line.LineNo, StringComparer.Ordinal)
+            .ToArray();
+        var singleLine = retryLines.Length == 1;
+        var requests = retryLines.Select(line =>
+            {
+                var inventoryReservationId = inventoryReservationIds[line.LineNo];
+                line.MarkInventoryReserved(inventoryReservationId);
+                return InventoryMovementRequest.Create(
+                    OrganizationId,
+                    EnvironmentId,
+                    "outbound",
+                    OutboundOrderNo,
+                    line.LineNo,
+                    singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                    line.SkuCode,
+                    line.UomCode,
+                    SiteCode,
+                    line.PickLocationCode,
+                    line.LotNo,
+                    line.SerialNo,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    line.RequestedQuantity,
+                    line.InventoryReservationId);
+            })
+            .ToArray();
+        return requests;
+    }
+
     private OutboundOrderLine FindLine(string lineNo)
     {
         return lines.SingleOrDefault(x => x.LineNo == lineNo)
@@ -261,5 +353,10 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         }
 
         InventoryReservationId = normalizedReservationId;
+    }
+
+    public void ClearInventoryReservation()
+    {
+        InventoryReservationId = null;
     }
 }

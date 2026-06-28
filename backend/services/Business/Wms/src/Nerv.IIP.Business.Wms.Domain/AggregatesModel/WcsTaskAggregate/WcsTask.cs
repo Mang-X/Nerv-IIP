@@ -10,6 +10,7 @@ public enum WcsTaskStatus
     Dispatched = 0,
     Completed = 1,
     Failed = 2,
+    Cancelled = 3,
 }
 
 public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
@@ -97,5 +98,16 @@ public sealed class WcsTask : Entity<WcsTaskId>, IAggregateRoot
         AttemptCount++;
         DispatchedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new WcsTaskDispatchedDomainEvent(this));
+    }
+
+    public void Cancel()
+    {
+        if (Status == WcsTaskStatus.Completed)
+        {
+            throw new InvalidOperationException("Completed WCS tasks cannot be cancelled.");
+        }
+
+        Status = WcsTaskStatus.Cancelled;
+        this.AddDomainEvent(new WcsTaskCancelledDomainEvent(this));
     }
 }

@@ -696,7 +696,10 @@ public sealed record MesMaterialIssueRequestRow(
     DateTimeOffset RequestedAtUtc,
     string? WorkOrderNo = null,
     string? OperationTaskNo = null,
-    string? MaterialCode = null);
+    string? MaterialCode = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
@@ -765,7 +768,10 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.RequestedAtUtc,
                 x.WorkOrderId,
                 x.OperationTaskId,
-                x.MaterialId))
+                x.MaterialId,
+                x.InventoryPostingFailureCode,
+                x.InventoryPostingFailureMessage,
+                x.InventoryPostingFailedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new MesMaterialIssueRequestListResponse(items, total);
     }

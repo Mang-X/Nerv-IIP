@@ -9,6 +9,9 @@ public partial record MrbReviewId : IGuidStronglyTypedId;
 
 public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggregateRoot
 {
+    private const string ScrapDisposition = "scrap";
+    private const string ConditionalReleaseDisposition = "conditional-release";
+
     private static readonly HashSet<string> SourceTypes =
     [
         "receiving",
@@ -20,9 +23,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     private static readonly HashSet<string> DispositionTypes =
     [
         "rework",
-        "scrap",
+        ScrapDisposition,
         "return-to-supplier",
-        "conditional-release",
+        ConditionalReleaseDisposition,
         "sort-and-screen",
     ];
 
@@ -41,7 +44,12 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         string defectReason,
         string? batchNo,
         string? serialNo,
-        IReadOnlyCollection<string> attachmentFileIds)
+        IReadOnlyCollection<string> attachmentFileIds,
+        string? uomCode = null,
+        string? siteCode = null,
+        string? locationCode = null,
+        string? ownerType = null,
+        string? ownerId = null)
     {
         Id = new NonconformanceReportId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
@@ -54,6 +62,11 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         DefectReason = Required(defectReason);
         BatchNo = Optional(batchNo);
         SerialNo = Optional(serialNo);
+        UomCode = Optional(uomCode);
+        SiteCode = Optional(siteCode);
+        LocationCode = Optional(locationCode);
+        OwnerType = Optional(ownerType)?.ToLowerInvariant();
+        OwnerId = Optional(ownerId);
         Status = "open";
         CreatedAtUtc = DateTime.UtcNow;
         UpdatedAtUtc = CreatedAtUtc;
@@ -71,6 +84,11 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public string DefectReason { get; private set; } = string.Empty;
     public string? BatchNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public string? UomCode { get; private set; }
+    public string? SiteCode { get; private set; }
+    public string? LocationCode { get; private set; }
+    public string? OwnerType { get; private set; }
+    public string? OwnerId { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public string? DispositionType { get; private set; }
     public string? DispositionApprovalChainId { get; private set; }
@@ -134,7 +152,12 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             defectReason,
             inspectionRecord.BatchNo,
             inspectionRecord.SerialNo,
-            attachmentFileIds);
+            attachmentFileIds,
+            inspectionRecord.UomCode,
+            inspectionRecord.SiteCode,
+            inspectionRecord.LocationCode,
+            inspectionRecord.OwnerType,
+            inspectionRecord.OwnerId);
         ncr.SourceInspectionRecordId = inspectionRecord.Id;
         return ncr;
     }
@@ -192,6 +215,10 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         Status = "disposition-in-progress";
         Touch();
         this.AddDomainEvent(new NonconformanceReportDispositionDecidedDomainEvent(this));
+        if (RequiresInventoryDispositionRequest(normalizedDisposition) && HasInventoryStockLocator())
+        {
+            this.AddDomainEvent(new NonconformanceReportInventoryDispositionRequestedDomainEvent(this));
+        }
     }
 
     public void Close(string? reworkWorkOrderId, string? scrapMovementId, string? returnDocumentId)
@@ -209,6 +236,42 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         Status = "closed";
         Touch();
         this.AddDomainEvent(new NonconformanceReportClosedDomainEvent(this));
+    }
+
+    public void CompleteScrapDisposition(string scrapMovementId)
+    {
+        var movementId = Required(scrapMovementId);
+        if (DispositionType != ScrapDisposition)
+        {
+            throw new InvalidOperationException("Only scrap NCR dispositions can be completed by an Inventory scrap movement.");
+        }
+
+        if (Status == "closed")
+        {
+            if (ScrapMovementId == movementId)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Closed NCR cannot change scrap movement id.");
+        }
+
+        Close(null, movementId, null);
+    }
+
+    public void CompleteConditionalReleaseDisposition()
+    {
+        if (DispositionType != ConditionalReleaseDisposition)
+        {
+            throw new InvalidOperationException("Only conditional-release NCR dispositions can be completed by an Inventory release movement.");
+        }
+
+        if (Status == "closed")
+        {
+            return;
+        }
+
+        Close(null, null, null);
     }
 
     private void EnsureClosureReferences()
@@ -232,6 +295,19 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     private static bool RequiresMrbReview(string dispositionType)
     {
         return RequiresCentralApproval(dispositionType);
+    }
+
+    private static bool RequiresInventoryDispositionRequest(string dispositionType)
+    {
+        return dispositionType is "rework" or "scrap" or "conditional-release";
+    }
+
+    private bool HasInventoryStockLocator()
+    {
+        return !string.IsNullOrWhiteSpace(UomCode)
+            && !string.IsNullOrWhiteSpace(SiteCode)
+            && !string.IsNullOrWhiteSpace(LocationCode)
+            && !string.IsNullOrWhiteSpace(OwnerType);
     }
 
     private void EnsureNotClosed()

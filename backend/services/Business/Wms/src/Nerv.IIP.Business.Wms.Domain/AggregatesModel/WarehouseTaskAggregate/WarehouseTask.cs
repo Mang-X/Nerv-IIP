@@ -12,6 +12,7 @@ public enum WarehouseTaskStatus
 {
     Open = 0,
     Completed = 1,
+    Cancelled = 2,
 }
 
 public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
@@ -101,6 +102,11 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
 
     public void RecordProgress(decimal executedQuantity)
     {
+        if (Status == WarehouseTaskStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Cancelled warehouse tasks cannot record progress.");
+        }
+
         if (executedQuantity < 0 || executedQuantity > PlannedQuantity)
         {
             throw new ArgumentOutOfRangeException(nameof(executedQuantity), executedQuantity, "Executed quantity must be within planned quantity.");
@@ -112,5 +118,15 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
             Status = WarehouseTaskStatus.Completed;
             CompletedAtUtc = DateTime.UtcNow;
         }
+    }
+
+    public void Cancel()
+    {
+        if (Status == WarehouseTaskStatus.Completed)
+        {
+            throw new InvalidOperationException("Completed warehouse tasks cannot be cancelled.");
+        }
+
+        Status = WarehouseTaskStatus.Cancelled;
     }
 }

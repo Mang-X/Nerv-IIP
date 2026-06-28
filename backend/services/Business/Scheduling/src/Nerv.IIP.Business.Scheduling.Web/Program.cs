@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
@@ -34,9 +35,19 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "MasterData:BaseUrl", "http://localhost:5107");
+    var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "ProductEngineering:BaseUrl", "http://localhost:5108");
     var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Mes:BaseUrl", "http://localhost:5111");
     var industrialTelemetryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "IndustrialTelemetry:BaseUrl", "http://localhost:5116");
     var maintenanceBaseAddress = ResolveServiceBaseAddress(builder.Configuration, "Maintenance:BaseUrl", "http://localhost:5117");
+    builder.Services.AddHttpClient<ISchedulingProblemMasterDataClient, HttpSchedulingProblemMasterDataClient>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<ISchedulingProblemProductEngineeringClient, HttpSchedulingProblemProductEngineeringClient>(client =>
+    {
+        client.BaseAddress = productEngineeringBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
     {
         client.BaseAddress = mesBaseAddress;
@@ -72,6 +83,7 @@ try
     builder.Services.AddNervIipLocalization();
     builder.Services.AddSingleton<FiniteCapacityScheduler>();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
     if (isTesting)
@@ -94,6 +106,12 @@ try
     builder.Services.AddSchedulingPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
+    builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)

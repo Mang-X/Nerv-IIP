@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
@@ -167,9 +168,8 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
 
     private static bool IsPayableQuality(string qualityStatus)
     {
-        var normalized = qualityStatus.Trim().ToLowerInvariant();
         // ERP has no Quality-pass retrigger consumer; AP accrual follows the receipt event for normal received states.
-        return normalized is "accepted" or "unrestricted" or "inspection" or "quality";
+        return ErpQualityStatusNormalizer.IsPayableReceiptQuality(qualityStatus);
     }
 
     private Task DeadLetterAsync(

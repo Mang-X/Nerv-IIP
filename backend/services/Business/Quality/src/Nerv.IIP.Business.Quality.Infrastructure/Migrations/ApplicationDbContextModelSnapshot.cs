@@ -745,6 +745,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the NCR was opened.");
 
+                    b.Property<string>("LocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Optional inventory location snapshot copied from the source inspection for NCR disposition stock movements.");
+
                     b.Property<string>("NcrCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -758,6 +764,18 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the NCR.");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Optional inventory owner id snapshot copied from the source inspection for NCR disposition stock movements.");
+
+                    b.Property<string>("OwnerType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Optional inventory owner type snapshot copied from the source inspection for NCR disposition stock movements.");
 
                     b.Property<string>("ReturnDocumentId")
                         .HasMaxLength(150)
@@ -782,6 +800,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("serial_no")
                         .HasComment("Optional serial number reference.");
+
+                    b.Property<string>("SiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Optional inventory site snapshot copied from the source inspection for NCR disposition stock movements.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()
@@ -815,6 +839,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("status")
                         .HasComment("NCR lifecycle status.");
+
+                    b.Property<string>("UomCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("uom_code")
+                        .HasComment("Optional inventory UOM snapshot copied from the source inspection for NCR disposition stock movements.");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")

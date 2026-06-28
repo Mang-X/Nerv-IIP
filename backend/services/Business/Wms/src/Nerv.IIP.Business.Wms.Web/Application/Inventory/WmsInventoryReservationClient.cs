@@ -24,10 +24,18 @@ public sealed record WmsInventoryReservationRequest(
 
 public sealed record WmsInventoryReservationResult(string ReservationId, decimal ReservedQuantity, decimal AvailableQuantity);
 
+public sealed record WmsInventoryReservationReleaseRequest(string ReservationId, decimal Quantity);
+
+public sealed record WmsInventoryReservationReleaseResult(string ReservationId, decimal OpenQuantity, decimal AvailableQuantity);
+
 public interface IWmsInventoryReservationClient
 {
     Task<WmsInventoryReservationResult> ReserveAsync(
         WmsInventoryReservationRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
+        WmsInventoryReservationReleaseRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -51,6 +59,27 @@ public sealed class HttpWmsInventoryReservationClient(
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
             throw new KnownException(envelope?.Message ?? "Inventory reservation was rejected without a response payload.");
+        }
+
+        return envelope.Data;
+    }
+
+    public async Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
+        WmsInventoryReservationReleaseRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/inventory/v1/reservations/{Uri.EscapeDataString(request.ReservationId)}/release")
+        {
+            Content = JsonContent.Create(request),
+        };
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationReleaseResult>>(cancellationToken);
+        if (envelope is null || !envelope.Success || envelope.Data is null)
+        {
+            throw new KnownException(envelope?.Message ?? "Inventory reservation release was rejected without a response payload.");
         }
 
         return envelope.Data;

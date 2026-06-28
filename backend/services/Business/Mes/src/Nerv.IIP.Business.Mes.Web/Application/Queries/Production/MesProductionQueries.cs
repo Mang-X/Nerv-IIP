@@ -32,7 +32,10 @@ public sealed record ProductionReportFact(
     string? ScrapReasonCode = null,
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -94,7 +97,31 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 x.ScrapReasonCode,
                 x.DefectRecordNo,
                 x.ProducedLotNo,
-                x.SerialNo))
+                x.SerialNo,
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailureCode)
+                    .FirstOrDefault(),
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailureMessage)
+                    .FirstOrDefault(),
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .FirstOrDefault()))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
     }
@@ -130,7 +157,10 @@ public sealed record FinishedGoodsReceiptRequestFact(
     string? ProducedLotNo = null,
     string? SerialNo = null,
     string? PostedInventoryMovementId = null,
-    DateTimeOffset? PostedAtUtc = null);
+    DateTimeOffset? PostedAtUtc = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListFinishedGoodsReceiptRequestsQuery, ListFinishedGoodsReceiptRequestsResponse>
@@ -197,7 +227,10 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.ProducedLotNo,
                 x.SerialNo,
                 x.PostedInventoryMovementId,
-                x.PostedAtUtc))
+                x.PostedAtUtc,
+                x.InventoryPostingFailureCode,
+                x.InventoryPostingFailureMessage,
+                x.InventoryPostingFailedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }
