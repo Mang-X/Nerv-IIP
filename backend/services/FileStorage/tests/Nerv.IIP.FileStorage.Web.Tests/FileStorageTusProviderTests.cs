@@ -7,9 +7,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.ServiceAuth;
 
@@ -293,7 +296,7 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteAndDownload_ReturnsUploadedBytes()
+    public async Task TusUploadEndpoint_CompleteAndDownload_PendingScanStatusReturnsNotFound()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -316,10 +319,49 @@ public sealed class FileStorageTusProviderTests
             var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
             Assert.NotNull(grant);
 
-            var downloadResponse = await client.GetAsync(grant.Download.Url);
+            using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(downloadRequest, grant.Download.Headers);
+            var downloadResponse = await client.SendAsync(downloadRequest);
 
-            downloadResponse.EnsureSuccessStatusCode();
-            Assert.Equal(uploadedBytes, await downloadResponse.Content.ReadAsByteArrayAsync());
+            Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadGrantContentEndpoint_CleanGrantWithTenantHeaders_ReturnsUploadedBytesOnce()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
+            var store = CreateTusStore(rootPath);
+            await using (var stream = new MemoryStream(uploadedBytes))
+            {
+                await store.AppendAsync("ups_clean", 0, stream, CancellationToken.None);
+            }
+
+            var fileStorage = new CleanDownloadGrantFileStorageService("dgr_clean", "ups_clean");
+            await using var factory = CreateFactoryWithTusProvider(rootPath, fileStorageService: fileStorage);
+            var client = CreateInternalServiceClient(factory);
+            using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/files/v1/download-grants/dgr_clean/content");
+            firstRequest.Headers.Add("X-Organization-Id", "org-001");
+            firstRequest.Headers.Add("X-Environment-Id", "prod");
+
+            var first = await client.SendAsync(firstRequest);
+
+            first.EnsureSuccessStatusCode();
+            Assert.Equal(uploadedBytes, await first.Content.ReadAsByteArrayAsync());
+
+            using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/files/v1/download-grants/dgr_clean/content");
+            secondRequest.Headers.Add("X-Organization-Id", "org-001");
+            secondRequest.Headers.Add("X-Environment-Id", "prod");
+            var second = await client.SendAsync(secondRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)second.StatusCode);
         }
         finally
         {
@@ -451,7 +493,8 @@ public sealed class FileStorageTusProviderTests
 
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
-        double? uploadSessionTtlSeconds = null)
+        double? uploadSessionTtlSeconds = null,
+        IFileStorageService? fileStorageService = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -465,6 +508,14 @@ public sealed class FileStorageTusProviderTests
                         ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     });
                 });
+                if (fileStorageService is not null)
+                {
+                    builder.ConfigureServices(services =>
+                    {
+                        services.RemoveAll<IFileStorageService>();
+                        services.AddSingleton(fileStorageService);
+                    });
+                }
             });
     }
 
@@ -527,6 +578,25 @@ public sealed class FileStorageTusProviderTests
         return request;
     }
 
+    private static void AddTransferHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (var header in headers)
+        {
+            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+    }
+
+    private static LocalTusFileStore CreateTusStore(string rootPath)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Tus:RootPath"] = rootPath
+            })
+            .Build();
+        return new LocalTusFileStore(configuration);
+    }
+
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
     {
         return client.SendAsync(new HttpRequestMessage(HttpMethod.Head, url));
@@ -558,5 +628,56 @@ public sealed class FileStorageTusProviderTests
         var json = JsonSerializer.Serialize(response, WebJsonOptions);
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("object_key", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed class CleanDownloadGrantFileStorageService(string grantId, string uploadSessionId)
+        : IFileStorageService, ILocalFileContentIndex
+    {
+        private bool consumed;
+
+        public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+            CreateUploadSessionRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
+            string uploadSessionId,
+            CompleteUploadSessionRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
+            string fileId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FileStorageResult<FileListResponse>> ListFilesAsync(
+            ListFilesRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+            string fileId,
+            CreateDownloadGrantRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+            string downloadGrantId,
+            string organizationId,
+            string environmentId,
+            CancellationToken cancellationToken)
+        {
+            if (consumed
+                || !string.Equals(downloadGrantId, grantId, StringComparison.Ordinal)
+                || !string.Equals(organizationId, "org-001", StringComparison.Ordinal)
+                || !string.Equals(environmentId, "prod", StringComparison.Ordinal))
+            {
+                return Task.FromResult<string?>(null);
+            }
+
+            consumed = true;
+            return Task.FromResult<string?>(uploadSessionId);
+        }
     }
 }

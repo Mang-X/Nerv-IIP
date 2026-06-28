@@ -229,6 +229,7 @@ public sealed class DownloadConsoleFileGrantContentEndpoint(
             async (_, cancellationToken) =>
                 await files.ProxyDownloadGrantContentAsync(
                     Route<string>("downloadGrantId")!,
+                    HttpContext.Request,
                     HttpContext.Response,
                     cancellationToken),
             ct);

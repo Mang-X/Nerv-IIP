@@ -26,13 +26,41 @@ public sealed class LocalTusFileStore
         return File.Exists(GetUploadPath(uploadSessionId));
     }
 
-    public void Delete(string uploadSessionId)
+    public bool Delete(string uploadSessionId)
     {
         var path = GetUploadPath(uploadSessionId);
         if (File.Exists(path))
         {
             File.Delete(path);
+            return true;
         }
+
+        return false;
+    }
+
+    public int DeleteFilesExcept(IEnumerable<string> uploadSessionIds)
+    {
+        if (!Directory.Exists(rootPath))
+        {
+            return 0;
+        }
+
+        var retainedFileNames = uploadSessionIds
+            .Select(uploadSessionId => Path.GetFileName(GetUploadPath(uploadSessionId)))
+            .ToHashSet(StringComparer.Ordinal);
+        var removed = 0;
+        foreach (var path in Directory.EnumerateFiles(rootPath, "*.bin"))
+        {
+            if (retainedFileNames.Contains(Path.GetFileName(path)))
+            {
+                continue;
+            }
+
+            File.Delete(path);
+            removed++;
+        }
+
+        return removed;
     }
 
     public async Task<string> ComputeSha256HexAsync(string uploadSessionId, CancellationToken cancellationToken)

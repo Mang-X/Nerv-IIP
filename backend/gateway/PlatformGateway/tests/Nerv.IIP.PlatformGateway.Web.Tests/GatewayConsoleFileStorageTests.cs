@@ -370,11 +370,16 @@ public sealed class GatewayConsoleFileStorageTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
         var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
         var context = new DefaultHttpContext();
+        context.Request.Headers["X-Organization-Id"] = "org-001";
+        context.Request.Headers["X-Environment-Id"] = "env-dev";
         await using var body = new MemoryStream();
         context.Response.Body = body;
 
-        await files.ProxyDownloadGrantContentAsync("download-grant-001", context.Response, CancellationToken.None);
+        await files.ProxyDownloadGrantContentAsync("download-grant-001", context.Request, context.Response, CancellationToken.None);
 
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
+        Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
         Assert.False(context.Response.Headers.ContainsKey("Transfer-Encoding"));
         Assert.False(context.Response.Headers.ContainsKey("Connection"));
         Assert.False(context.Response.Headers.ContainsKey("Keep-Alive"));
@@ -517,6 +522,7 @@ public sealed class GatewayConsoleFileStorageTests
 
         public async Task ProxyDownloadGrantContentAsync(
             string downloadGrantId,
+            HttpRequest request,
             HttpResponse response,
             CancellationToken cancellationToken)
         {
@@ -558,7 +564,14 @@ public sealed class GatewayConsoleFileStorageTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests.Add(new RecordedRequest(request.Method, request.RequestUri!, request.Headers.Authorization));
+            Requests.Add(new RecordedRequest(
+                request.Method,
+                request.RequestUri!,
+                request.Headers.Authorization,
+                request.Headers.ToDictionary(
+                    header => header.Key,
+                    header => string.Join(",", header.Value),
+                    StringComparer.OrdinalIgnoreCase)));
             return Task.FromResult(responseFactory(request));
         }
     }
@@ -566,7 +579,8 @@ public sealed class GatewayConsoleFileStorageTests
     private sealed record RecordedRequest(
         HttpMethod Method,
         Uri RequestUri,
-        AuthenticationHeaderValue? Authorization);
+        AuthenticationHeaderValue? Authorization,
+        IReadOnlyDictionary<string, string> Headers);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 

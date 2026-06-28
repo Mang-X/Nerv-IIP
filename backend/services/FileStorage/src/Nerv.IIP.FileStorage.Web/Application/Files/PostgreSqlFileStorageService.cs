@@ -11,6 +11,9 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
+    private const string CleanScanStatus = "clean";
+    private const string AvailableStatus = "available";
+
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
@@ -246,20 +249,36 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 $"/api/files/v1/download-grants/{grant.DownloadGrantId}/content",
                 new Dictionary<string, string>
                 {
-                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name
+                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name,
+                    [FileStorageTransferHeaders.OrganizationId] = file.OrganizationId,
+                    [FileStorageTransferHeaders.EnvironmentId] = file.EnvironmentId
                 })));
     }
 
     public async Task<string?> GetUploadSessionIdForDownloadGrantAsync(
         string downloadGrantId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         var grant = await dbContext.DownloadGrants.SingleOrDefaultAsync(x =>
             x.DownloadGrantId == downloadGrantId
+            && x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId
             && x.ExpiresAtUtc > now,
             cancellationToken);
         if (grant is null)
+        {
+            return null;
+        }
+
+        var file = await dbContext.StoredFiles.SingleOrDefaultAsync(
+            x => x.FileId == grant.FileId,
+            cancellationToken);
+        if (file is null
+            || !string.Equals(file.ScanStatus, CleanScanStatus, StringComparison.Ordinal)
+            || !string.Equals(file.Status, AvailableStatus, StringComparison.Ordinal))
         {
             return null;
         }
@@ -272,6 +291,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return null;
         }
 
+        dbContext.DownloadGrants.Remove(grant);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return session.UploadSessionId;
     }
 

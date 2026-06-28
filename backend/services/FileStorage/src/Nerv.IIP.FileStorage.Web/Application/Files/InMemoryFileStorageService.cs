@@ -36,7 +36,17 @@ public interface IFileStorageService
 
 public interface ILocalFileContentIndex
 {
-    Task<string?> GetUploadSessionIdForDownloadGrantAsync(string downloadGrantId, CancellationToken cancellationToken);
+    Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+        string downloadGrantId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken);
+}
+
+internal static class FileStorageTransferHeaders
+{
+    public const string OrganizationId = "X-Organization-Id";
+    public const string EnvironmentId = "X-Environment-Id";
 }
 
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
@@ -256,7 +266,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
         var grantId = NewId("dgr");
         var expiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(10);
-        downloadGrantFiles[grantId] = new DownloadGrantIndexEntry(file.FileId, expiresAtUtc);
+        downloadGrantFiles[grantId] = new DownloadGrantIndexEntry(file.FileId, file.OrganizationId, file.EnvironmentId, expiresAtUtc);
         var response = new DownloadGrantResponse(
             file.FileId,
             expiresAtUtc,
@@ -264,7 +274,9 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
                 $"/api/files/v1/download-grants/{grantId}/content",
                 new Dictionary<string, string>
                 {
-                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name
+                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name,
+                    [FileStorageTransferHeaders.OrganizationId] = file.OrganizationId,
+                    [FileStorageTransferHeaders.EnvironmentId] = file.EnvironmentId
                 }));
 
         return Task.FromResult(FileStorageResult<DownloadGrantResponse>.Ok(response));
@@ -272,17 +284,25 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
     public Task<string?> GetUploadSessionIdForDownloadGrantAsync(
         string downloadGrantId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!downloadGrantFiles.TryGetValue(downloadGrantId, out var grant)
             || grant.ExpiresAtUtc <= DateTimeOffset.UtcNow
+            || !string.Equals(grant.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(grant.EnvironmentId, environmentId, StringComparison.Ordinal)
+            || !files.TryGetValue(grant.FileId, out var file)
+            || !string.Equals(file.ScanStatus, "clean", StringComparison.Ordinal)
+            || !string.Equals(file.Status, "available", StringComparison.Ordinal)
             || !fileUploadSessions.TryGetValue(grant.FileId, out var mappedUploadSessionId))
         {
             return Task.FromResult<string?>(null);
         }
 
+        downloadGrantFiles.TryRemove(downloadGrantId, out _);
         return Task.FromResult<string?>(mappedUploadSessionId);
     }
 
@@ -379,7 +399,11 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     internal static int NormalizeTake(int? take) => take is > 0 ? Math.Min(take.Value, 200) : 50;
 }
 
-internal sealed record DownloadGrantIndexEntry(string FileId, DateTimeOffset ExpiresAtUtc);
+internal sealed record DownloadGrantIndexEntry(
+    string FileId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset ExpiresAtUtc);
 
 internal static class FileStorageRequestValidation
 {

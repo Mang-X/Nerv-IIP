@@ -45,6 +45,7 @@ public interface IGatewayFileStorageClient
 
     Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
+        HttpRequest request,
         HttpResponse response,
         CancellationToken cancellationToken);
 }
@@ -154,12 +155,13 @@ public sealed class HttpGatewayFileStorageClient(
 
     public Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
+        HttpRequest request,
         HttpResponse response,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Get,
             $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content",
-            null,
+            request,
             response,
             cancellationToken);
 
@@ -174,7 +176,7 @@ public sealed class HttpGatewayFileStorageClient(
         {
             using var request = new HttpRequestMessage(method, requestUri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
-            CopyTusRequestHeaders(sourceRequest, request);
+            CopyTransferRequestHeaders(sourceRequest, request);
             if (sourceRequest is not null && method == HttpMethod.Patch)
             {
                 request.Content = new StreamContent(sourceRequest.Body);
@@ -381,7 +383,7 @@ public sealed class HttpGatewayFileStorageClient(
         values.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
     }
 
-    private static void CopyTusRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)
+    private static void CopyTransferRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)
     {
         if (sourceRequest is null)
         {
@@ -391,6 +393,8 @@ public sealed class HttpGatewayFileStorageClient(
         CopyHeader(sourceRequest, targetRequest, "Tus-Resumable");
         CopyHeader(sourceRequest, targetRequest, "Upload-Offset");
         CopyHeader(sourceRequest, targetRequest, "Upload-Checksum");
+        CopyHeader(sourceRequest, targetRequest, "X-Organization-Id");
+        CopyHeader(sourceRequest, targetRequest, "X-Environment-Id");
     }
 
     private static void CopyHeader(HttpRequest sourceRequest, HttpRequestMessage targetRequest, string name)
