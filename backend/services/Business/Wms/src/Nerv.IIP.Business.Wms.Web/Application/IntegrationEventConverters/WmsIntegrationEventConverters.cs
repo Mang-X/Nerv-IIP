@@ -65,8 +65,10 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
                         order.SiteCode,
                         x.StagingLocationCode,
                         x.ReceivedQuantity,
-                        null))
-                    .ToArray()));
+                        x.QualityStatus))
+                    .ToArray(),
+                order.SourceDocumentType,
+                order.SourceDocumentId));
     }
 }
 
@@ -104,7 +106,9 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
                         x.PickLocationCode,
                         x.RequestedQuantity,
                         null))
-                    .ToArray()));
+                    .ToArray(),
+                order.SourceDocumentType,
+                order.SourceDocumentId));
     }
 }
 

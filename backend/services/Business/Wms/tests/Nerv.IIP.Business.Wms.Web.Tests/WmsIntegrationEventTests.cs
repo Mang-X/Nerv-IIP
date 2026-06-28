@@ -42,7 +42,9 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["LINE-001", "LINE-002"], lines.Select(x => x.LineReference).ToArray());
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([5m, 3m], lines.Select(x => x.Quantity).ToArray());
-        Assert.All(lines, x => Assert.Null(x.Status));
+        Assert.All(lines, x => Assert.Equal("qualified", x.Status));
+        Assert.Equal(inbound.SourceDocumentType, integrationEvent.Payload.SourceDocumentType);
+        Assert.Equal(inbound.SourceDocumentId, integrationEvent.Payload.SourceDocumentId);
     }
 
     [Fact]
@@ -62,6 +64,8 @@ public sealed class WmsIntegrationEventTests
         Assert.Equal(["SKU-FG-1000", "SKU-RM-2000"], lines.Select(x => x.SkuCode).ToArray());
         Assert.Equal([4m, 2m], lines.Select(x => x.Quantity).ToArray());
         Assert.All(lines, x => Assert.Null(x.Status));
+        Assert.Equal(outbound.SourceDocumentType, integrationEvent.Payload.SourceDocumentType);
+        Assert.Equal(outbound.SourceDocumentId, integrationEvent.Payload.SourceDocumentId);
     }
 
     [Fact]

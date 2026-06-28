@@ -35,7 +35,7 @@ public sealed class InspectionAggregateTests
             lowerSpecLimit: 9.5m,
             upperSpecLimit: 10.5m,
             unitCode: "mm",
-            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 3, acceptanceNumber: 0, rejectionNumber: 1));
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
         plan.Activate();
 
         var record = InspectionRecord.CreateFromPlan(
@@ -44,7 +44,7 @@ public sealed class InspectionAggregateTests
             "purchase-receipt",
             "RCV-001",
             "SKU-RM-1000",
-            inspectedQuantity: 3m,
+            inspectedQuantity: 20m,
             batchNo: "BATCH-001",
             serialNo: null,
             stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
@@ -78,7 +78,7 @@ public sealed class InspectionAggregateTests
             lowerSpecLimit: 9.5m,
             upperSpecLimit: 10.5m,
             unitCode: "mm",
-            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 3, acceptanceNumber: 0, rejectionNumber: 1));
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
         plan.Activate();
 
         var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.CreateFromPlan(
@@ -87,7 +87,7 @@ public sealed class InspectionAggregateTests
             "purchase-receipt",
             "RCV-001",
             "SKU-RM-1000",
-            inspectedQuantity: 3m,
+            inspectedQuantity: 20m,
             batchNo: "BATCH-001",
             serialNo: null,
             stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
@@ -117,7 +117,7 @@ public sealed class InspectionAggregateTests
             lowerSpecLimit: null,
             upperSpecLimit: null,
             unitCode: null,
-            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 5, acceptanceNumber: 1, rejectionNumber: 3));
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 200, acceptanceNumber: 5, rejectionNumber: 6));
         plan.Activate();
 
         var accepted = InspectionRecord.CreateFromPlan(
@@ -126,31 +126,31 @@ public sealed class InspectionAggregateTests
             "purchase-receipt",
             "RCV-001",
             "SKU-RM-1000",
-            inspectedQuantity: 5m,
+            inspectedQuantity: 10_000m,
             batchNo: "BATCH-001",
             serialNo: null,
             stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
-                InspectionResultLineInput.Attribute("appearance", observedText: "one minor scratch", defectReason: "scratch", defectQuantity: 1m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("appearance", observedText: "five minor scratches", defectReason: "scratch", defectQuantity: 5m, attachmentFileIds: []),
             ],
             dispositionReason: null,
             dispositionAttachmentFileIds: []);
-        var conditional = InspectionRecord.CreateFromPlan(
+        var rejectedAtThreshold = InspectionRecord.CreateFromPlan(
             plan,
             "receiving",
             "purchase-receipt",
             "RCV-002",
             "SKU-RM-1000",
-            inspectedQuantity: 5m,
+            inspectedQuantity: 10_000m,
             batchNo: "BATCH-002",
             serialNo: null,
             stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
-                InspectionResultLineInput.Attribute("appearance", observedText: "two defects", defectReason: "scratch", defectQuantity: 2m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("appearance", observedText: "six defects", defectReason: "scratch", defectQuantity: 6m, attachmentFileIds: []),
             ],
-            dispositionReason: "MRB conditional release review required",
+            dispositionReason: "AQL rejection number reached",
             dispositionAttachmentFileIds: []);
         var rejected = InspectionRecord.CreateFromPlan(
             plan,
@@ -158,20 +158,186 @@ public sealed class InspectionAggregateTests
             "purchase-receipt",
             "RCV-003",
             "SKU-RM-1000",
-            inspectedQuantity: 5m,
+            inspectedQuantity: 10_000m,
             batchNo: "BATCH-003",
             serialNo: null,
             stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
             resultLines:
             [
-                InspectionResultLineInput.Attribute("appearance", observedText: "three defects", defectReason: "scratch", defectQuantity: 3m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("appearance", observedText: "seven defects", defectReason: "scratch", defectQuantity: 7m, attachmentFileIds: []),
             ],
             dispositionReason: "AQL rejection number reached",
             dispositionAttachmentFileIds: []);
 
         Assert.Equal("passed", accepted.Result);
-        Assert.Equal("conditional-release", conditional.Result);
+        Assert.Equal("rejected", rejectedAtThreshold.Result);
         Assert.Equal("rejected", rejected.Result);
+    }
+
+    [Fact]
+    public void Aql_z14_sampling_plan_resolves_thresholds_from_lot_quantity_and_rejects_manual_thresholds()
+    {
+        var samplingPlan = InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 200, acceptanceNumber: 5, rejectionNumber: 6);
+
+        var resolved = samplingPlan.ResolveForLotSize(10_000m, "major");
+
+        Assert.Equal("L", resolved.CodeLetter);
+        Assert.Equal(200, resolved.SampleSize);
+        Assert.Equal(5, resolved.AcceptanceNumber);
+        Assert.Equal(6, resolved.RejectionNumber);
+        Assert.Throws<ArgumentException>(() =>
+            InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 5, acceptanceNumber: 4, rejectionNumber: 5));
+    }
+
+    [Fact]
+    public void Aql_z14_sampling_plan_follows_table_iia_arrow_rules_for_small_lots()
+    {
+        var aqlOne = InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1);
+        var aqlTwoPointFive = InspectionSamplingPlan.Create("general-ii", "2.5", sampleSize: 8, acceptanceNumber: 0, rejectionNumber: 1);
+
+        var aqlOneResolved = aqlOne.ResolveForLotSize(50m, "major");
+        var aqlTwoPointFiveResolved = aqlTwoPointFive.ResolveForLotSize(25m, "minor");
+
+        Assert.Equal("D", aqlOneResolved.CodeLetter);
+        Assert.Equal(20, aqlOneResolved.SampleSize);
+        Assert.Equal(0, aqlOneResolved.AcceptanceNumber);
+        Assert.Equal(1, aqlOneResolved.RejectionNumber);
+        Assert.Equal("C", aqlTwoPointFiveResolved.CodeLetter);
+        Assert.Equal(8, aqlTwoPointFiveResolved.SampleSize);
+        Assert.Equal(0, aqlTwoPointFiveResolved.AcceptanceNumber);
+        Assert.Equal(1, aqlTwoPointFiveResolved.RejectionNumber);
+        Assert.Throws<ArgumentException>(() =>
+            InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 8, acceptanceNumber: 0, rejectionNumber: 1));
+        Assert.Throws<ArgumentException>(() =>
+            InspectionSamplingPlan.Create("general-ii", "2.5", sampleSize: 5, acceptanceNumber: 0, rejectionNumber: 1));
+    }
+
+    [Fact]
+    public void Planned_record_sample_size_error_reports_resolved_z14_sample_size()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "appearance",
+            "Appearance",
+            "visual",
+            "major",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 200, acceptanceNumber: 5, rejectionNumber: 6));
+        plan.Activate();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-004",
+            "SKU-RM-1000",
+            inspectedQuantity: 10m,
+            batchNo: "BATCH-004",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Attribute("appearance", observedText: "one defect", defectReason: "scratch", defectQuantity: 1m, attachmentFileIds: []),
+            ],
+            dispositionReason: "AQL rejection number reached",
+            dispositionAttachmentFileIds: []));
+
+        Assert.Contains("requires sample size 20", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("requires sample size 200", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Planned_attribute_inspection_groups_defects_by_severity_and_rejects_any_critical_defect()
+    {
+        var plan = NewPlan();
+        var majorSampling = InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 200, acceptanceNumber: 5, rejectionNumber: 6);
+        var criticalSampling = InspectionSamplingPlan.Create("general-ii", "0.065", sampleSize: 200, acceptanceNumber: 0, rejectionNumber: 1);
+        plan.AddCharacteristic(
+            "appearance",
+            "Appearance",
+            "visual",
+            "major",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: majorSampling);
+        plan.AddCharacteristic(
+            "label",
+            "Label",
+            "visual",
+            "major",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: majorSampling);
+        plan.AddCharacteristic(
+            "safety",
+            "Safety",
+            "visual",
+            "critical",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Attribute,
+            nominalValue: null,
+            lowerSpecLimit: null,
+            upperSpecLimit: null,
+            unitCode: null,
+            samplingPlan: criticalSampling);
+        plan.Activate();
+
+        var majorRejected = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-004",
+            "SKU-RM-1000",
+            inspectedQuantity: 10_000m,
+            batchNo: "BATCH-004",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Attribute("appearance", observedText: "three scratches", defectReason: "scratch", defectQuantity: 3m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("label", observedText: "three label defects", defectReason: "label", defectQuantity: 3m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("safety", observedText: "no critical defect", defectReason: null, defectQuantity: 0m, attachmentFileIds: []),
+            ],
+            dispositionReason: "Major AQL rejection number reached",
+            dispositionAttachmentFileIds: []);
+        var criticalRejected = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-005",
+            "SKU-RM-1000",
+            inspectedQuantity: 10_000m,
+            batchNo: "BATCH-005",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Attribute("appearance", observedText: "no major defect", defectReason: null, defectQuantity: 0m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("label", observedText: "no major defect", defectReason: null, defectQuantity: 0m, attachmentFileIds: []),
+                InspectionResultLineInput.Attribute("safety", observedText: "sharp edge", defectReason: "sharp-edge", defectQuantity: 1m, attachmentFileIds: []),
+            ],
+            dispositionReason: "Critical defect observed",
+            dispositionAttachmentFileIds: []);
+
+        Assert.Equal("rejected", majorRejected.Result);
+        Assert.Equal("rejected", criticalRejected.Result);
     }
 
     [Fact]

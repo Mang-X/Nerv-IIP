@@ -202,6 +202,13 @@ public sealed record NcrDispositionDecidedPayload(
     IReadOnlyCollection<MrbReviewPayload>? MrbReviews = null)
 {
     public string? SourceDocumentId { get; init; }
+    public string? LotNo { get; init; }
+    public string? SerialNo { get; init; }
+    public string? UomCode { get; init; }
+    public string? SiteCode { get; init; }
+    public string? LocationCode { get; init; }
+    public string? OwnerType { get; init; }
+    public string? OwnerId { get; init; }
 }
 
 public sealed record MrbReviewPayload(

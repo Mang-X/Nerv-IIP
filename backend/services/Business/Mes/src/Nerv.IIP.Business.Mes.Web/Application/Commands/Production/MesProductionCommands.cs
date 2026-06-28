@@ -176,29 +176,45 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 x.WorkOrderIdValue == request.WorkOrderId,
             cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
-        try
+        var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.OperationTaskIdValue == request.OperationTaskId,
+            cancellationToken);
+        if (operationTask is null)
         {
-            workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
+            throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
         }
-        catch (InvalidOperationException exception)
+
+        var outputOperationSequence = await dbContext.OperationTasks
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .MaxAsync(x => x.OperationSequence, cancellationToken);
+        if (operationTask.OperationSequence == outputOperationSequence)
         {
-            throw new KnownException(exception.Message);
+            try
+            {
+                workOrder.RecordProductionProgress(request.GoodQuantity, request.ScrapQuantity, request.ReportedAtUtc);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new KnownException(exception.Message);
+            }
         }
 
         if (request.CompletesOperation)
         {
-            var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
-                x => x.OrganizationId == request.OrganizationId &&
-                    x.EnvironmentId == request.EnvironmentId &&
-                    x.WorkOrderId == request.WorkOrderId &&
-                    x.OperationTaskIdValue == request.OperationTaskId,
-                cancellationToken);
-            if (operationTask is null)
+            try
             {
-                throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+                operationTask.Complete(request.ReportedAtUtc);
             }
-
-            operationTask.Complete(request.ReportedAtUtc);
+            catch (InvalidOperationException exception)
+            {
+                throw new KnownException(exception.Message);
+            }
         }
 
         dbContext.ProductionReports.Add(report);

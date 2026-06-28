@@ -54,7 +54,9 @@ public sealed record WmsIntegrationPayload(
     string? Status,
     string? DiagnosticCode,
     string? DiagnosticMessage,
-    IReadOnlyCollection<WmsIntegrationPayloadLine>? Lines = null);
+    IReadOnlyCollection<WmsIntegrationPayloadLine>? Lines = null,
+    string? SourceDocumentType = null,
+    string? SourceDocumentId = null);
 
 public sealed record WmsIntegrationPayloadLine(
     string LineReference,
