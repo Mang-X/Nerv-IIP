@@ -110,6 +110,21 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Outbound_cancel_records_reason_and_raises_domain_event()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
+
+        outbound.Cancel("customer-cancelled");
+
+        Assert.Equal(OutboundOrderStatus.Cancelled, outbound.Status);
+        Assert.Equal("customer-cancelled", outbound.CancellationReason);
+        Assert.NotNull(outbound.CancelledAtUtc);
+        Assert.Null(outbound.Lines.Single().InventoryReservationId);
+        Assert.Contains(outbound.GetDomainEvents(), x => x is OutboundOrderCancelledDomainEvent);
+    }
+
+    [Fact]
     public void Warehouse_task_tracks_execution_bounds()
     {
         var task = WarehouseTask.CreatePutaway(

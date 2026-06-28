@@ -48,4 +48,15 @@ public sealed class WcsTaskAggregateTests
         Assert.Equal("blocked aisle", task.FailureMessage);
         Assert.Contains(task.GetDomainEvents(), x => x is WcsTaskFailedDomainEvent);
     }
+
+    [Fact]
+    public void Cancelled_task_raises_domain_event_for_adapter_compensation()
+    {
+        var task = WcsTask.Dispatch("org-001", "env-dev", new WarehouseTaskId(Guid.CreateVersion7()), "agv", "EXT-001", "{}");
+
+        task.Cancel();
+
+        Assert.Equal(WcsTaskStatus.Cancelled, task.Status);
+        Assert.Contains(task.GetDomainEvents(), x => x is WcsTaskCancelledDomainEvent);
+    }
 }
