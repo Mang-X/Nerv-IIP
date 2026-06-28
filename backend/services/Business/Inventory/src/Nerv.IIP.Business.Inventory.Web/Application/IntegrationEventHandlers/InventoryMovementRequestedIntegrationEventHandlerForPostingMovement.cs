@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -43,6 +44,12 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         var payload = integrationEvent.Payload;
         try
         {
+            if (string.Equals(payload.MovementType, InventoryMovementRequestTypes.StatusTransfer, StringComparison.OrdinalIgnoreCase))
+            {
+                await SendStatusTransferAsync(integrationEvent, cancellationToken);
+                return;
+            }
+
             await sender.Send(
                 new PostStockMovementCommand(
                     integrationEvent.OrganizationId,
@@ -91,6 +98,38 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.QualityStatus);
             await PublishPostingFailedAsync(integrationEvent, InventoryPostingFailureCodes.PostingRejected, ex.Message, cancellationToken);
         }
+    }
+
+    private Task SendStatusTransferAsync(InventoryMovementRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        if (string.IsNullOrWhiteSpace(payload.TargetQualityStatus))
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                "Inventory status-transfer movement request requires a target quality status.");
+        }
+
+        return sender.Send(
+            new PostStockStatusTransferCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                payload.QualityStatus,
+                payload.TargetQualityStatus,
+                payload.SourceService,
+                payload.SourceDocumentId,
+                payload.SourceDocumentLineId,
+                payload.IdempotencyKey,
+                payload.SkuCode,
+                payload.UomCode,
+                payload.SiteCode,
+                payload.LocationCode,
+                payload.LotNo,
+                payload.SerialNo,
+                payload.OwnerType,
+                payload.OwnerId,
+                Math.Abs(payload.Quantity)),
+            cancellationToken);
     }
 
     private Task PublishPostingFailedAsync(

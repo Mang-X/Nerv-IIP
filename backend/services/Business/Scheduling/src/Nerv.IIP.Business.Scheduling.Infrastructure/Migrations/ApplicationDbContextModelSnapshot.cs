@@ -303,6 +303,111 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanInvalidation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Schedule plan invalidation row id.");
+
+                    b.Property<string>("AffectedOperationId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("affected_operation_id")
+                        .HasComment("Affected operation id when available.");
+
+                    b.Property<string>("AffectedResourceId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("affected_resource_id")
+                        .HasComment("Affected resource or device asset id when the event targets equipment.");
+
+                    b.Property<string>("AffectedSkuCode")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("affected_sku_code")
+                        .HasComment("Affected SKU code when the event changes material readiness.");
+
+                    b.Property<string>("AffectedWorkOrderId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("affected_work_order_id")
+                        .HasComment("Affected work order id when the event targets a work order.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("UTC time when the source event occurred.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("PlanId")
+                        .IsRequired()
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("plan_id")
+                        .HasComment("Generated schedule plan invalidated by the upstream event.");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reason_code")
+                        .HasComment("Scheduling invalidation reason code.");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC time when BusinessScheduling recorded the invalidation.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("Source integration event identifier.");
+
+                    b.Property<string>("SourceEventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("source_event_type")
+                        .HasComment("Source integration event type.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_service")
+                        .HasComment("Service that produced the source event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PlanId", "RecordedAtUtc")
+                        .HasDatabaseName("ix_schedule_plan_invalidations_plan_recorded_at");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "PlanId", "SourceEventType", "SourceEventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_schedule_plan_invalidations_source_event");
+
+                    b.ToTable("schedule_plan_invalidations", "scheduling", t =>
+                        {
+                            t.HasComment("Event-driven Scheduling plan invalidation projection for APS replan decisions.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanResourceLoad", b =>
                 {
                     b.Property<Guid>("Id")
@@ -471,6 +576,165 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("schedule_problems", "scheduling", t =>
                         {
                             t.HasComment("BusinessScheduling normalized scheduling problem snapshots.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("BusinessScheduling integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("Deterministic BusinessScheduling idempotency key unique within a consumer.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time when BusinessScheduling processed the event.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "scheduling", t =>
+                        {
+                            t.HasComment("Integration events already processed by BusinessScheduling for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Dead-letter message id.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consumer_name")
+                        .HasComment("Integration event consumer name that rejected the message.");
+
+                    b.Property<DateTimeOffset>("DeadLetteredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dead_lettered_at_utc")
+                        .HasComment("UTC time when the service stored the dead-letter message.");
+
+                    b.Property<string>("EventClrType")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("event_clr_type")
+                        .HasComment("CLR contract type captured for replay diagnostics.");
+
+                    b.Property<string>("EventId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("event_id")
+                        .HasComment("Rejected integration event id when present.");
+
+                    b.Property<string>("EventJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("event_json")
+                        .HasComment("Serialized rejected integration event envelope and payload.");
+
+                    b.Property<string>("EventType")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("event_type")
+                        .HasComment("Rejected integration event type when present.");
+
+                    b.Property<int?>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("event_version")
+                        .HasComment("Rejected integration event envelope version when present.");
+
+                    b.Property<string>("FailureCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_code")
+                        .HasComment("Machine-readable reason the consumer rejected the message.");
+
+                    b.Property<string>("FailureMessage")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("failure_message")
+                        .HasComment("Operator-readable rejection detail.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Rejected integration event idempotency key when present.");
+
+                    b.Property<DateTimeOffset?>("ReplayedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replayed_at_utc")
+                        .HasComment("UTC time when the dead-letter message was marked replayed.");
+
+                    b.Property<string>("SourceService")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_service")
+                        .HasComment("Source service from the rejected event envelope when present.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Dead-letter status: Pending or Replayed.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId");
+
+                    b.HasIndex("ConsumerName", "Status", "DeadLetteredAtUtc");
+
+                    b.ToTable("integration_event_dead_letters", "scheduling", t =>
+                        {
+                            t.HasComment("Integration events rejected before business handling and retained for replay triage.");
                         });
                 });
 

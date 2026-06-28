@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.Quality.Domain.Tests;
@@ -51,6 +52,63 @@ public sealed class NonconformanceReportAggregateTests
         Assert.Contains("file-plan-001", ncr.AttachmentFileIds);
         Assert.Equal("qa-manager-001", Assert.Single(ncr.MrbReviews).ReviewerId);
         Assert.IsType<NonconformanceReportDispositionDecidedDomainEvent>(ncr.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void Open_from_inspection_copies_inventory_locator_for_disposition_routing()
+    {
+        var inspection = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            4m,
+            "LOT-001",
+            "SER-001",
+            [InspectionResultLineInput.Fail("coa", "mismatch", "wrong-spec", 4m, [])],
+            "Supplier certificate mismatch",
+            [],
+            StockReleaseDimension.Create("kg", "SITE-01", "IQC-HOLD", "quality", "company", "owner-001"));
+
+        var ncr = NonconformanceReport.OpenFromInspection("NCR-20260626-0001", inspection, "wrong-spec", []);
+
+        Assert.Equal("kg", ncr.UomCode);
+        Assert.Equal("SITE-01", ncr.SiteCode);
+        Assert.Equal("IQC-HOLD", ncr.LocationCode);
+        Assert.Equal("company", ncr.OwnerType);
+        Assert.Equal("owner-001", ncr.OwnerId);
+    }
+
+    [Theory]
+    [InlineData("rework")]
+    [InlineData("scrap")]
+    [InlineData("conditional-release")]
+    public void Inventory_routed_dispositions_raise_inventory_disposition_requested_event_when_locator_exists(string dispositionType)
+    {
+        var inspection = InspectionRecord.Create(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-001",
+            "SKU-RM-1000",
+            4m,
+            "LOT-001",
+            null,
+            [InspectionResultLineInput.Fail("coa", "mismatch", "wrong-spec", 4m, [])],
+            "Supplier certificate mismatch",
+            [],
+            StockReleaseDimension.Create("kg", "SITE-01", "IQC-HOLD", "quality", "company", null));
+        var ncr = NonconformanceReport.OpenFromInspection("NCR-20260626-0001", inspection, "wrong-spec", []);
+        ncr.ClearDomainEvents();
+
+        ncr.SubmitDisposition(dispositionType, "approval-chain-001", [], ApprovedMrbReview());
+
+        Assert.Contains(ncr.GetDomainEvents(), x => x is NonconformanceReportInventoryDispositionRequestedDomainEvent);
     }
 
     [Theory]
@@ -137,6 +195,7 @@ public sealed class NonconformanceReportAggregateTests
     {
         Assert.True(typeof(NonconformanceReportOpenedDomainEvent).IsSealed);
         Assert.True(typeof(NonconformanceReportDispositionDecidedDomainEvent).IsSealed);
+        Assert.True(typeof(NonconformanceReportInventoryDispositionRequestedDomainEvent).IsSealed);
         Assert.True(typeof(NonconformanceReportClosedDomainEvent).IsSealed);
     }
 

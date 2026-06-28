@@ -129,6 +129,82 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         Assert.Equal("business-inventory", deadLetter.SourceService);
     }
 
+    [Theory]
+    [InlineData(WmsIntegrationEventTypes.InboundOrderCompleted)]
+    [InlineData(WmsIntegrationEventTypes.CountExecutionCompleted)]
+    [InlineData(WmsIntegrationEventTypes.WcsTaskDispatched)]
+    [InlineData(WmsIntegrationEventTypes.WcsTaskFailed)]
+    [InlineData(WmsIntegrationEventTypes.WcsTaskCompleted)]
+    public async Task OutboundOrderCompletedHandler_IgnoresSharedWmsTopicEventsForOtherEventTypesWithoutDeadLetter(
+        string eventType)
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+        var integrationEvent = BuildWmsCompletedEvent("WMS-SHARED-TOPIC", "SO-SHARED-TOPIC", "LINE-001") with
+        {
+            EventType = eventType,
+            IdempotencyKey = $"wms:{eventType}:WMS-SHARED-TOPIC",
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(dbContext.AccountReceivables);
+        Assert.Empty(dbContext.JournalVouchers);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_IgnoresSharedWmsTopicEventWithOtherEventTypeBeforePayloadValidation()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+        var integrationEvent = BuildWmsCompletedEvent("WMS-SHARED-MISSING-PAYLOAD", "SO-SHARED-MISSING-PAYLOAD", "LINE-001") with
+        {
+            EventType = WmsIntegrationEventTypes.WcsTaskCompleted,
+            Payload = null!
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Empty(dbContext.AccountReceivables);
+        Assert.Empty(dbContext.JournalVouchers);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OutboundOrderCompletedHandler_DeadLettersUnsupportedOutboundVersionWithoutCreatingReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+        var integrationEvent = BuildWmsCompletedEvent("DO-AR-UNSUPPORTED-VERSION", "SO-AR-UNSUPPORTED-VERSION", "SO-LINE-001") with
+        {
+            EventVersion = WmsIntegrationEventVersions.V1 + 1,
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var deadLetter = await AssertDeadLetteredWithoutReceivableAsync(
+            dbContext,
+            deadLetters,
+            IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode);
+        Assert.Equal(WmsIntegrationEventTypes.OutboundOrderCompleted, deadLetter.EventType);
+        Assert.Equal(WmsIntegrationEventVersions.V1 + 1, deadLetter.EventVersion);
+    }
+
     [Fact]
     public async Task OutboundOrderCompletedHandler_DeadLettersMissingPublicReferenceWithoutCreatingReceivable()
     {
