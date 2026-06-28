@@ -78,6 +78,11 @@ if (!builder.Environment.IsDevelopment()
 {
     throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:Kid is required outside Development.");
 }
+if (!builder.Environment.IsDevelopment()
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Secrets:Pepper"]))
+{
+    throw new InvalidOperationException("Iam:Secrets:Pepper is required outside Development.");
+}
 var configuredAccessTokenMinutes = builder.Configuration.GetValue("Iam:Jwt:AccessTokenMinutes", 15);
 if (!builder.Environment.IsDevelopment()
     && (configuredAccessTokenMinutes < 1 || configuredAccessTokenMinutes > 60))

@@ -83,6 +83,8 @@ ExternalClient 和 ConnectorHostCredential 不与后台用户登录混用。
 4. Connector Host 调 AppHub 的注册、心跳、状态同步接口必须经过 IAM 授权，不能长期使用匿名入口。
 5. Sdk.Auth 只能封装 token 获取、刷新、凭证注入和认证错误归一化，不保存 IAM 授权事实，也不在客户端做最终授权判断。
 
+ExternalClient client secret、ConnectorHostCredential secret 和 refresh token 只保存 `hmac-sha256:v1:` 版本化 HMAC 摘要，不保存明文或裸 SHA-256。HMAC pepper 由 IAM 配置 `Iam:Secrets:Pepper` 提供；非 Development 环境必须显式配置。机器凭据校验必须通过恒定时间或等效安全比较完成，不能用普通字符串相等比较作为认证裁决。
+
 Connector Host 机器身份认证终态见 [Connector Host 机器身份认证终态](connector-host-machine-auth.md)：ConnectorHostCredential validation 只作为换发短期 access token 的前置校验，AppHub、Ops 和 Gateway 生产入口统一使用 bearer token，旧版 header-secret 只保留迁移窗口。
 
 ## Token 与 Claims

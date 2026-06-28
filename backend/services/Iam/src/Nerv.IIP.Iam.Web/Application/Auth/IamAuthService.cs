@@ -217,11 +217,20 @@ public sealed class PostgreSqlIamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var secretHash = tokenService.HashSecret(secret);
-        var credential = await connectorHostCredentialRepository.GetByConnectorHostAndSecretHashAsync(
+        var credentials = await connectorHostCredentialRepository.ListByConnectorHostIdAsync(
             connectorHostId,
-            secretHash,
             cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        ConnectorHostCredential? credential = null;
+        foreach (var candidate in credentials)
+        {
+            var secretMatches = tokenService.VerifySecret(secret, candidate.SecretHash);
+            if (credential is null && candidate.IsValidAt(now) && secretMatches)
+            {
+                credential = candidate;
+            }
+        }
+
         if (credential is null || !credential.IsValidAt(DateTimeOffset.UtcNow))
         {
             throw Unauthorized();
@@ -241,9 +250,10 @@ public sealed class PostgreSqlIamAuthService(
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var secretHash = tokenService.HashSecret(clientSecret);
         var externalClient = await externalClientRepository.GetByClientIdAsync(clientId, cancellationToken);
-        if (externalClient is null || !externalClient.CanAuthenticate(secretHash, now))
+        if (externalClient is null
+            || !externalClient.CanAuthenticate(now)
+            || !tokenService.VerifySecret(clientSecret, externalClient.SecretHash))
         {
             throw Unauthorized();
         }

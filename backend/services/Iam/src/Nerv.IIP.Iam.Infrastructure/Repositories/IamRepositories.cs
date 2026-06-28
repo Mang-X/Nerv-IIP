@@ -426,22 +426,21 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
 
 public interface IConnectorHostCredentialRepository : IRepository<ConnectorHostCredential, ConnectorHostCredentialId>
 {
-    Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    Task<IReadOnlyList<ConnectorHostCredential>> ListByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class ConnectorHostCredentialRepository(ApplicationDbContext context)
     : RepositoryBase<ConnectorHostCredential, ConnectorHostCredentialId, ApplicationDbContext>(context), IConnectorHostCredentialRepository
 {
-    public async Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    public async Task<IReadOnlyList<ConnectorHostCredential>> ListByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default)
     {
         return await DbContext.ConnectorHostCredentials
-            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
+            .Where(x => x.ConnectorHostId == connectorHostId)
+            .ToListAsync(cancellationToken);
     }
 }
 

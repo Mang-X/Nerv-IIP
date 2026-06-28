@@ -8,6 +8,7 @@ builder.AddDockerComposeEnvironment("compose");
 var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
 var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret: true);
 var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
+var iamSecretsPepper = builder.AddParameter("iam-secrets-pepper", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
@@ -116,6 +117,7 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
+    .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(iamDatabase, "IamDb")
     .WithReference(redis)

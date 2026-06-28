@@ -1,6 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -9,6 +11,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -24,6 +28,127 @@ namespace Nerv.IIP.Iam.Web.Tests;
 
 public sealed class IamTokenHardeningTests
 {
+    [Fact]
+    public void Machine_secret_hashes_are_versioned_hmac_values_and_verify_without_plain_sha256_storage()
+    {
+        var tokenService = CreateTokenService("test-pepper");
+        const string secret = "machine-secret-value";
+
+        var hash = tokenService.HashSecret(secret);
+        var bareSha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))).ToLowerInvariant();
+
+        Assert.StartsWith("hmac-sha256:v1:", hash, StringComparison.Ordinal);
+        Assert.NotEqual(bareSha256, hash);
+        Assert.True(tokenService.VerifySecret(secret, hash));
+        Assert.False(tokenService.VerifySecret("wrong-machine-secret-value", hash));
+    }
+
+    [Fact]
+    public async Task Client_credentials_authenticates_hmac_stored_secret_and_rejects_bare_sha256_storage()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateSqliteDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var tokenService = CreateTokenService("test-pepper");
+        var passwordService = new IamPasswordService();
+        const string secret = "external-client-secret";
+        var now = DateTimeOffset.UtcNow;
+        var hmacClient = new ExternalClient(
+            new ExternalClientId("external-client-hmac"),
+            "external-client-hmac",
+            "HMAC Client",
+            new OrganizationId("org-machine"),
+            new IamEnvironmentId("env-machine"),
+            tokenService.HashSecret(secret),
+            true,
+            1,
+            now.AddMinutes(-5),
+            null);
+        var shaClient = new ExternalClient(
+            new ExternalClientId("external-client-sha"),
+            "external-client-sha",
+            "SHA Client",
+            new OrganizationId("org-machine"),
+            new IamEnvironmentId("env-machine"),
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))).ToLowerInvariant(),
+            true,
+            1,
+            now.AddMinutes(-5),
+            null);
+        var auth = CreateAuthService(
+            db,
+            new FakeUserSessionRepository(),
+            passwordService,
+            tokenService,
+            new FakeExternalClientRepository(hmacClient, shaClient));
+
+        var issued = await auth.IssueClientCredentialsTokenAsync(
+            "external-client-hmac",
+            secret,
+            "ops.tasks.create",
+            CancellationToken.None);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            auth.IssueClientCredentialsTokenAsync(
+                "external-client-sha",
+                secret,
+                "ops.tasks.create",
+                CancellationToken.None));
+
+        Assert.Equal("Bearer", issued.TokenType);
+        Assert.Equal("ops.tasks.create", issued.Scope);
+    }
+
+    [Fact]
+    public async Task Connector_credentials_authenticate_hmac_stored_secret_and_reject_bare_sha256_storage()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateSqliteDbContext(connection);
+        await db.Database.EnsureCreatedAsync();
+        var tokenService = CreateTokenService("test-pepper");
+        var passwordService = new IamPasswordService();
+        var auth = CreateAuthService(db, new FakeUserSessionRepository(), passwordService, tokenService);
+        const string secret = "connector-secret";
+        var now = DateTimeOffset.UtcNow;
+
+        db.Organizations.Add(new Organization(new OrganizationId("org-connector"), "Connector", "active"));
+        db.Environments.Add(new IamEnvironment(new IamEnvironmentId("env-connector"), new OrganizationId("org-connector"), "Connector", "active"));
+        db.ConnectorHostCredentials.Add(new ConnectorHostCredential(
+            new ConnectorHostCredentialId("connector-hmac-credential"),
+            "connector-host-hmac",
+            new OrganizationId("org-connector"),
+            new IamEnvironmentId("env-connector"),
+            tokenService.HashSecret(secret),
+            now.AddMinutes(-5),
+            null,
+            ["connectors.registrations.write"]));
+        db.ConnectorHostCredentials.Add(new ConnectorHostCredential(
+            new ConnectorHostCredentialId("connector-sha-credential"),
+            "connector-host-sha",
+            new OrganizationId("org-connector"),
+            new IamEnvironmentId("env-connector"),
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))).ToLowerInvariant(),
+            now.AddMinutes(-5),
+            null,
+            ["connectors.registrations.write"]));
+        await db.SaveChangesAsync();
+
+        var principal = await auth.ValidateConnectorCredentialAsync(
+            "connector-host-hmac",
+            secret,
+            CancellationToken.None);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            auth.ValidateConnectorCredentialAsync(
+                "connector-host-sha",
+                secret,
+                CancellationToken.None));
+
+        Assert.Equal("connector-host", principal.PrincipalType);
+        Assert.Equal("org-connector", principal.OrganizationId);
+        Assert.Equal("env-connector", principal.EnvironmentId);
+    }
+
     [Fact]
     public async Task Refresh_replay_revokes_latest_session_in_same_token_family()
     {
@@ -95,23 +220,27 @@ public sealed class IamTokenHardeningTests
         return new ApplicationDbContext(options, new NoopMediator());
     }
 
-    private static IamTokenService CreateTokenService()
+    private static IamTokenService CreateTokenService(string? pepper = null)
     {
-        return new IamTokenService(new ConfigurationBuilder().Build(), new TestWebHostEnvironment());
+        var values = pepper is null
+            ? []
+            : new Dictionary<string, string?> { ["Iam:Secrets:Pepper"] = pepper };
+        return new IamTokenService(new ConfigurationBuilder().AddInMemoryCollection(values).Build(), new TestWebHostEnvironment());
     }
 
     private static PostgreSqlIamAuthService CreateAuthService(
         ApplicationDbContext db,
         IUserSessionRepository userSessionRepository,
         IamPasswordService passwordService,
-        IamTokenService tokenService)
+        IamTokenService tokenService,
+        IExternalClientRepository? externalClientRepository = null)
     {
         return new PostgreSqlIamAuthService(
             new UserRepository(db),
             userSessionRepository,
             new MembershipRepository(db),
             new ConnectorHostCredentialRepository(db),
-            new ExternalClientRepository(db),
+            externalClientRepository ?? new ExternalClientRepository(db),
             passwordService,
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
@@ -119,6 +248,60 @@ public sealed class IamTokenHardeningTests
             new InMemoryMfaChallengeStore(),
             NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
+    }
+
+    private sealed class FakeExternalClientRepository(params ExternalClient[] clients) : IExternalClientRepository
+    {
+        public Task<ExternalClient?> GetByClientIdAsync(string clientId, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(clients.SingleOrDefault(x => x.ClientId == clientId));
+        }
+
+        public Task<IReadOnlyList<string>> ListActiveGrantPermissionCodesAsync(
+            string clientId,
+            OrganizationId organizationId,
+            IamEnvironmentId environmentId,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default)
+        {
+            _ = organizationId;
+            _ = environmentId;
+            _ = now;
+            _ = cancellationToken;
+            IReadOnlyList<string> permissions = clientId == "external-client-hmac"
+                ? ["ops.tasks.create"]
+                : [];
+            return Task.FromResult(permissions);
+        }
+
+        public Task<bool> HasActiveGrantAsync(
+            string clientId,
+            OrganizationId organizationId,
+            IamEnvironmentId environmentId,
+            string permissionCode,
+            string? resourceType,
+            string? resourceId,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public IUnitOfWork UnitOfWork => throw new NotSupportedException();
+        public ExternalClient Add(ExternalClient entity) => throw new NotSupportedException();
+        public Task<ExternalClient> AddAsync(ExternalClient entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public void AddRange(IEnumerable<ExternalClient> entities) => throw new NotSupportedException();
+        public Task AddRangeAsync(IEnumerable<ExternalClient> entities, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public void Attach(ExternalClient entity) => throw new NotSupportedException();
+        public void AttachRange(IEnumerable<ExternalClient> entities) => throw new NotSupportedException();
+        public bool Delete(Entity entity) => throw new NotSupportedException();
+        public Task<bool> DeleteAsync(Entity entity) => throw new NotSupportedException();
+        public int DeleteById(ExternalClientId id) => throw new NotSupportedException();
+        public Task<int> DeleteByIdAsync(ExternalClientId id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ExternalClient Get(ExternalClientId id) => throw new NotSupportedException();
+        public Task<ExternalClient?> GetAsync(ExternalClientId id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public bool Remove(Entity entity) => throw new NotSupportedException();
+        public Task<bool> RemoveAsync(Entity entity) => throw new NotSupportedException();
+        public ExternalClient Update(ExternalClient entity) => throw new NotSupportedException();
+        public Task<ExternalClient> UpdateAsync(ExternalClient entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private static async Task<User> SeedUserWithMembershipAsync(ApplicationDbContext db, IamPasswordService passwordService)
