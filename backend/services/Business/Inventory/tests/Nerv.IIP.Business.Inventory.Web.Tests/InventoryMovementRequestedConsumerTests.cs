@@ -735,7 +735,38 @@ public sealed class InventoryMovementRequestedConsumerTests
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None);
         var deadLetter = Assert.Single(deadLetters);
-        Assert.Equal("unexpected-event-type", deadLetter.FailureCode);
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnexpectedEventTypeFailureCode, deadLetter.FailureCode);
+        Assert.Equal("quality.UnknownInspectionResult", deadLetter.EventType);
+        Assert.Equal(QualityIntegrationEventVersions.V1, deadLetter.EventVersion);
+    }
+
+    [Fact]
+    public async Task Quality_inspection_result_consumer_rejects_unsupported_version_to_dead_letter_store()
+    {
+        await using var dbContext = CreateContext();
+        var sender = new CommandExecutingSender(dbContext);
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = new QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer(
+            sender,
+            dbContext,
+            deadLetterStore);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionPassed) with
+            {
+                EventVersion = QualityIntegrationEventVersions.V1 + 1,
+            },
+            CancellationToken.None);
+
+        Assert.Empty(dbContext.StockMovements);
+        var deadLetters = await deadLetterStore.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None);
+        var deadLetter = Assert.Single(deadLetters);
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, deadLetter.FailureCode);
+        Assert.Equal(QualityIntegrationEventTypes.InspectionPassed, deadLetter.EventType);
+        Assert.Equal(QualityIntegrationEventVersions.V1 + 1, deadLetter.EventVersion);
     }
 
     [Fact]
