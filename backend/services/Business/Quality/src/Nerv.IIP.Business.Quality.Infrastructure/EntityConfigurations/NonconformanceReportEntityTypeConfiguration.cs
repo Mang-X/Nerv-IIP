@@ -20,6 +20,11 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.DefectReason).HasColumnName("defect_reason").IsRequired().HasMaxLength(200).HasComment("Defect reason code or normalized reason.");
         builder.Property(x => x.BatchNo).HasColumnName("batch_no").HasMaxLength(100).HasComment("Optional batch number reference.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number reference.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional inventory UOM snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Optional inventory site snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Optional inventory location snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.OwnerType).HasColumnName("owner_type").HasMaxLength(50).HasComment("Optional inventory owner type snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional inventory owner id snapshot copied from the source inspection for NCR disposition stock movements.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("NCR lifecycle status.");
         builder.Property(x => x.DispositionType).HasColumnName("disposition_type").HasMaxLength(50).HasComment("Chosen disposition type.");
         builder.Property(x => x.DispositionApprovalChainId).HasColumnName("disposition_approval_chain_id").HasMaxLength(150).HasComment("Approval chain id for disposition approval.");
