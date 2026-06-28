@@ -125,6 +125,7 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             request.EnvironmentId,
             request.CategoryCode,
             cancellationToken);
+        await EnsureCategoryIsNotReferencedAsync(request, cancellationToken);
         category.Disable(MasterDataArchiveReason.Normalize(request.Reason));
         var categories = await ListProductCategoriesQueryHandler.LoadCategoriesAsync(
             dbContext,
@@ -132,6 +133,31 @@ public sealed class ArchiveProductCategoryCommandHandler(ApplicationDbContext db
             request.EnvironmentId,
             cancellationToken);
         return ListProductCategoriesQueryHandler.ToItem(category, categories);
+    }
+
+    private async Task EnsureCategoryIsNotReferencedAsync(ArchiveProductCategoryCommand request, CancellationToken cancellationToken)
+    {
+        var hasActiveChild = await dbContext.ProductCategories.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            x.ParentCode == request.CategoryCode,
+            cancellationToken);
+        if (hasActiveChild)
+        {
+            throw new KnownException($"Product category '{request.CategoryCode}' cannot be archived because it has active child product category records.");
+        }
+
+        var referencedBySku = await dbContext.Skus.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            x.Category == request.CategoryCode,
+            cancellationToken);
+        if (referencedBySku)
+        {
+            throw new KnownException($"Product category '{request.CategoryCode}' cannot be archived because it is referenced by active SKU records.");
+        }
     }
 }
 
