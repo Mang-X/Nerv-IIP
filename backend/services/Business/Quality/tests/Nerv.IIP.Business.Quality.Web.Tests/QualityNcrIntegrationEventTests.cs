@@ -21,11 +21,11 @@ public sealed class QualityNcrIntegrationEventTests
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal(InventoryIntegrationEventSources.BusinessQuality, integrationEvent.SourceService);
-        Assert.Equal("adjustment", integrationEvent.Payload.MovementType);
-        Assert.Equal("quality", integrationEvent.Payload.SourceService);
+        Assert.Equal(InventoryMovementTypes.Adjustment, integrationEvent.Payload.MovementType);
+        Assert.Equal(InventoryMovementSourceServices.Quality, integrationEvent.Payload.SourceService);
         Assert.Equal(ncr.Id.ToString(), integrationEvent.Payload.SourceDocumentId);
         Assert.Equal(ncr.NcrCode, integrationEvent.Payload.SourceDocumentLineId);
-        Assert.Equal("blocked", integrationEvent.Payload.QualityStatus);
+        Assert.Equal(InventoryQualityStatuses.Blocked, integrationEvent.Payload.QualityStatus);
         Assert.Equal(-4m, integrationEvent.Payload.Quantity);
         Assert.Null(integrationEvent.Payload.TargetQualityStatus);
     }
@@ -40,9 +40,9 @@ public sealed class QualityNcrIntegrationEventTests
         var integrationEvent = new NcrInventoryDispositionRequestedIntegrationEventConverter(new StubQualityIntegrationEventContextAccessor())
             .Convert(domainEvent);
 
-        Assert.Equal("status-transfer", integrationEvent.Payload.MovementType);
-        Assert.Equal("blocked", integrationEvent.Payload.QualityStatus);
-        Assert.Equal(QualityStockReleaseTargetStatuses.Restricted, integrationEvent.Payload.TargetQualityStatus);
+        Assert.Equal(InventoryMovementRequestTypes.StatusTransfer, integrationEvent.Payload.MovementType);
+        Assert.Equal(InventoryQualityStatuses.Blocked, integrationEvent.Payload.QualityStatus);
+        Assert.Equal(InventoryQualityStatuses.Restricted, integrationEvent.Payload.TargetQualityStatus);
         Assert.Equal(4m, integrationEvent.Payload.Quantity);
         Assert.Equal("kg", integrationEvent.Payload.UomCode);
         Assert.Equal("SITE-01", integrationEvent.Payload.SiteCode);

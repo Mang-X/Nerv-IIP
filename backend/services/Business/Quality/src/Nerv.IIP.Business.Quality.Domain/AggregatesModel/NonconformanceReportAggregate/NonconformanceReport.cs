@@ -9,6 +9,9 @@ public partial record MrbReviewId : IGuidStronglyTypedId;
 
 public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggregateRoot
 {
+    private const string ScrapDisposition = "scrap";
+    private const string ConditionalReleaseDisposition = "conditional-release";
+
     private static readonly HashSet<string> SourceTypes =
     [
         "receiving",
@@ -20,9 +23,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     private static readonly HashSet<string> DispositionTypes =
     [
         "rework",
-        "scrap",
+        ScrapDisposition,
         "return-to-supplier",
-        "conditional-release",
+        ConditionalReleaseDisposition,
         "sort-and-screen",
     ];
 
@@ -230,7 +233,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     public void CompleteScrapDisposition(string scrapMovementId)
     {
         var movementId = Required(scrapMovementId);
-        if (DispositionType != "scrap")
+        if (DispositionType != ScrapDisposition)
         {
             throw new InvalidOperationException("Only scrap NCR dispositions can be completed by an Inventory scrap movement.");
         }
@@ -246,6 +249,21 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         }
 
         Close(null, movementId, null);
+    }
+
+    public void CompleteConditionalReleaseDisposition()
+    {
+        if (DispositionType != ConditionalReleaseDisposition)
+        {
+            throw new InvalidOperationException("Only conditional-release NCR dispositions can be completed by an Inventory release movement.");
+        }
+
+        if (Status == "closed")
+        {
+            return;
+        }
+
+        Close(null, null, null);
     }
 
     private void EnsureClosureReferences()

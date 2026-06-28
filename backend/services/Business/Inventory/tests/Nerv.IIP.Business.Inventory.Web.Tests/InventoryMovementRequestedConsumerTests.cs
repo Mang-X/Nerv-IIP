@@ -275,8 +275,8 @@ public sealed class InventoryMovementRequestedConsumerTests
             SourceService = InventoryIntegrationEventSources.BusinessQuality,
             Payload = CreateRequestedEvent("evt-status-transfer").Payload with
             {
-                MovementType = "status-transfer",
-                SourceService = "quality",
+                MovementType = InventoryMovementRequestTypes.StatusTransfer,
+                SourceService = InventoryMovementSourceServices.Quality,
                 SourceDocumentId = "NCR-001",
                 SourceDocumentLineId = "NCR-CODE-001",
                 IdempotencyKey = "quality:ncr-inventory-disposition:org-001:env-dev:NCR-CODE-001:rework",
@@ -288,7 +288,7 @@ public sealed class InventoryMovementRequestedConsumerTests
 
         Assert.Equal(2m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Blocked).OnHandQuantity);
         Assert.Equal(3m, dbContext.StockLedgers.Single(x => x.QualityStatus == StockQualityStatus.Restricted).OnHandQuantity);
-        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer", StringComparison.Ordinal)));
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith(InventoryMovementRequestTypes.StatusTransfer, StringComparison.Ordinal)));
     }
 
     [Fact]

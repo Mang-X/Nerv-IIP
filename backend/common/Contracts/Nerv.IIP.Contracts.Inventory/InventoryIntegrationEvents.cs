@@ -25,6 +25,31 @@ public static class InventoryIntegrationEventSources
     public const string BusinessQuality = "business-quality";
 }
 
+public static class InventoryMovementSourceServices
+{
+    public const string Quality = "quality";
+}
+
+public static class InventoryMovementRequestTypes
+{
+    public const string StatusTransfer = "status-transfer";
+}
+
+public static class InventoryMovementTypes
+{
+    public const string Adjustment = "adjustment";
+    public const string StatusTransferOut = "status-transfer-out";
+    public const string StatusTransferIn = "status-transfer-in";
+}
+
+public static class InventoryQualityStatuses
+{
+    public const string Quality = "quality";
+    public const string Unrestricted = "unrestricted";
+    public const string Blocked = "blocked";
+    public const string Restricted = "restricted";
+}
+
 public sealed record InventoryMovementRequestedIntegrationEvent(
     string EventId,
     string EventType,

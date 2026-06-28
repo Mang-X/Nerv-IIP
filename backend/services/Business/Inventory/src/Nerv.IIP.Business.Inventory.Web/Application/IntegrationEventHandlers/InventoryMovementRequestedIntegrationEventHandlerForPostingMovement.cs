@@ -44,7 +44,7 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
         var payload = integrationEvent.Payload;
         try
         {
-            if (string.Equals(payload.MovementType, "status-transfer", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(payload.MovementType, InventoryMovementRequestTypes.StatusTransfer, StringComparison.OrdinalIgnoreCase))
             {
                 await SendStatusTransferAsync(integrationEvent, cancellationToken);
                 return;

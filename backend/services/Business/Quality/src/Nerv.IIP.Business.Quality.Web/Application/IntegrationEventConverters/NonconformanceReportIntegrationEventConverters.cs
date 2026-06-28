@@ -98,8 +98,8 @@ public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQ
         var context = contextAccessor.GetContext();
         var dispositionType = ncr.DispositionType ?? throw new InvalidOperationException("NCR disposition type is required for inventory disposition routing.");
         var movementType = dispositionType == QualityNcrDispositionTypes.Scrap
-            ? "adjustment"
-            : "status-transfer";
+            ? InventoryMovementTypes.Adjustment
+            : InventoryMovementRequestTypes.StatusTransfer;
         var idempotencyKey = EventIds.Idempotency(
             "ncr-inventory-disposition",
             ncr.OrganizationId,
@@ -120,7 +120,7 @@ public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQ
             idempotencyKey,
             new InventoryMovementRequestedPayload(
                 movementType,
-                "quality",
+                InventoryMovementSourceServices.Quality,
                 ncr.Id.ToString(),
                 ncr.NcrCode,
                 idempotencyKey,
@@ -130,7 +130,7 @@ public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQ
                 Required(ncr.LocationCode, nameof(ncr.LocationCode)),
                 ncr.BatchNo,
                 ncr.SerialNo,
-                "blocked",
+                InventoryQualityStatuses.Blocked,
                 Required(ncr.OwnerType, nameof(ncr.OwnerType)),
                 ncr.OwnerId,
                 Quantity(ncr),
@@ -149,7 +149,7 @@ public sealed class NcrInventoryDispositionRequestedIntegrationEventConverter(IQ
     {
         return dispositionType switch
         {
-            QualityNcrDispositionTypes.Rework or QualityNcrDispositionTypes.ConditionalRelease => QualityStockReleaseTargetStatuses.Restricted,
+            QualityNcrDispositionTypes.Rework or QualityNcrDispositionTypes.ConditionalRelease => InventoryQualityStatuses.Restricted,
             QualityNcrDispositionTypes.Scrap => null,
             _ => throw new InvalidOperationException($"Unsupported inventory NCR disposition '{dispositionType}'."),
         };

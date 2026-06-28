@@ -1,16 +1,15 @@
 using DotNetCore.CAP;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
-using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Contracts.Inventory;
-using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent", ConsumerName)]
-public sealed class StockMovementPostedIntegrationEventHandlerForCloseQualityNcrScrap(
-    INonconformanceReportRepository repository,
+public sealed class StockMovementPostedIntegrationEventHandlerForCompleteQualityNcrInventoryDisposition(
+    ISender sender,
     IIntegrationEventDeadLetterStore deadLetterStore)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
@@ -38,7 +37,7 @@ public sealed class StockMovementPostedIntegrationEventHandlerForCloseQualityNcr
     private async Task HandleValidEventAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        if (!IsQualityScrapAdjustment(payload))
+        if (!string.Equals(payload.SourceService, InventoryMovementSourceServices.Quality, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -48,20 +47,13 @@ public sealed class StockMovementPostedIntegrationEventHandlerForCloseQualityNcr
             return;
         }
 
-        var ncr = await repository.GetAsync(new NonconformanceReportId(ncrGuid), cancellationToken);
-        if (ncr is null || ncr.DispositionType != QualityNcrDispositionTypes.Scrap)
-        {
-            return;
-        }
-
-        ncr.CompleteScrapDisposition(payload.InventoryMovementId);
-    }
-
-    private static bool IsQualityScrapAdjustment(StockMovementPostedPayload payload)
-    {
-        return string.Equals(payload.SourceService, "quality", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(payload.MovementType, "adjustment", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(payload.QualityStatus, "blocked", StringComparison.OrdinalIgnoreCase)
-            && payload.Quantity < 0;
+        await sender.Send(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                new NonconformanceReportId(ncrGuid),
+                payload.InventoryMovementId,
+                payload.MovementType,
+                payload.QualityStatus,
+                payload.Quantity),
+            cancellationToken);
     }
 }
