@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggre
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
+using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
@@ -434,6 +435,163 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Equal(ncr.Id.ToString(), record.NonconformanceReportId);
     }
 
+    [Fact]
+    public async Task Submit_ncr_high_risk_disposition_requires_approved_central_approval_chain()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-APPROVAL-001",
+            "receiving",
+            "RCV-001",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalStatusClient = new FixedApprovalChainStatusClient(false);
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approvalStatusClient);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SubmitNonconformanceReportDispositionCommand(
+                ncr.Id,
+                "scrap",
+                "approval-chain-pending",
+                [],
+                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
+            CancellationToken.None));
+
+        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("approval-chain-pending", approvalStatusClient.LastChainId);
+    }
+
+    [Fact]
+    public async Task Submit_ncr_high_risk_disposition_accepts_approved_central_approval_chain()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-APPROVAL-002",
+            "receiving",
+            "RCV-002",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalStatusClient = new FixedApprovalChainStatusClient(true);
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approvalStatusClient);
+
+        await handler.Handle(
+            new SubmitNonconformanceReportDispositionCommand(
+                ncr.Id,
+                "scrap",
+                "approval-chain-approved",
+                [],
+                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
+            CancellationToken.None);
+
+        Assert.Equal("approval-chain-approved", approvalStatusClient.LastChainId);
+        Assert.Equal("approval-chain-approved", ncr.DispositionApprovalChainId);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+    }
+
+    [Fact]
+    public async Task Submit_ncr_high_risk_disposition_rejects_approved_chain_for_other_document()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-APPROVAL-003",
+            "receiving",
+            "RCV-003",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalStatusClient = new FixedApprovalChainStatusClient(
+            true,
+            expectedNcrCode: "NCR-OTHER");
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approvalStatusClient);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SubmitNonconformanceReportDispositionCommand(
+                ncr.Id,
+                "scrap",
+                "approval-chain-other-document",
+                [],
+                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]),
+            CancellationToken.None));
+
+        Assert.Contains("approval", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("NCR-APPROVAL-003", approvalStatusClient.LastNcrCode);
+    }
+
+    [Fact]
+    public async Task Submit_ncr_sort_and_screen_disposition_does_not_call_central_approval()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-APPROVAL-004",
+            "receiving",
+            "RCV-004",
+            "SKU-RM-1000",
+            1m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalStatusClient = new FixedApprovalChainStatusClient(false);
+        var handler = new SubmitNonconformanceReportDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            approvalStatusClient);
+
+        await handler.Handle(
+            new SubmitNonconformanceReportDispositionCommand(
+                ncr.Id,
+                "sort-and-screen",
+                null,
+                [],
+                []),
+            CancellationToken.None);
+
+        Assert.Null(approvalStatusClient.LastChainId);
+        Assert.Equal("sort-and-screen", ncr.DispositionType);
+        Assert.Null(ncr.DispositionApprovalChainId);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -494,6 +652,25 @@ public sealed class QualityInspectionEndpointContractTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult("NCR-INS-001");
+        }
+    }
+
+    private sealed class FixedApprovalChainStatusClient(bool isApproved, string? expectedNcrCode = null) : IApprovalChainStatusClient
+    {
+        public string? LastChainId { get; private set; }
+        public string? LastNcrCode { get; private set; }
+
+        public Task<bool> IsApprovedForNcrDispositionAsync(
+            string chainId,
+            string organizationId,
+            string environmentId,
+            string ncrCode,
+            CancellationToken cancellationToken)
+        {
+            LastChainId = chainId;
+            LastNcrCode = ncrCode;
+            return Task.FromResult(isApproved
+                && (expectedNcrCode is null || string.Equals(expectedNcrCode, ncrCode, StringComparison.Ordinal)));
         }
     }
 }

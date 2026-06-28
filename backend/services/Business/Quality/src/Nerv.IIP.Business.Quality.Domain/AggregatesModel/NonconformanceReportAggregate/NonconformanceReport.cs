@@ -162,6 +162,14 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         return ncr;
     }
 
+    public static bool RequiresCentralApproval(string dispositionType)
+    {
+        var normalized = string.IsNullOrWhiteSpace(dispositionType)
+            ? string.Empty
+            : dispositionType.Trim().ToLowerInvariant();
+        return normalized is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
+    }
+
     private static string ToNcrSourceType(string inspectionSourceType)
     {
         return inspectionSourceType switch
@@ -286,7 +294,7 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
 
     private static bool RequiresMrbReview(string dispositionType)
     {
-        return dispositionType is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
+        return RequiresCentralApproval(dispositionType);
     }
 
     private static bool RequiresInventoryDispositionRequest(string dispositionType)

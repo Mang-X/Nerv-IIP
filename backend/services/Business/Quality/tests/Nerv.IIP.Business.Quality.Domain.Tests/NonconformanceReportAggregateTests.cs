@@ -124,6 +124,20 @@ public sealed class NonconformanceReportAggregateTests
             ncr.SubmitDisposition(dispositionType, "approval-chain-001", []));
 
         Assert.Contains("MRB", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(NonconformanceReport.RequiresCentralApproval(dispositionType));
+    }
+
+    [Fact]
+    public void Sort_and_screen_is_low_risk_and_does_not_require_central_approval()
+    {
+        var ncr = NewNcr();
+
+        ncr.SubmitDisposition("sort-and-screen", null, []);
+
+        Assert.False(NonconformanceReport.RequiresCentralApproval("sort-and-screen"));
+        Assert.Equal("disposition-in-progress", ncr.Status);
+        Assert.Empty(ncr.MrbReviews);
+        Assert.Null(ncr.DispositionApprovalChainId);
     }
 
     [Fact]
