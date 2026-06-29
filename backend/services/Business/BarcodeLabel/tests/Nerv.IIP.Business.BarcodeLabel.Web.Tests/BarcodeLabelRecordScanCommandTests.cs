@@ -117,6 +117,20 @@ public sealed class BarcodeLabelRecordScanCommandTests
         }
     }
 
+    [Fact]
+    public async Task Scan_record_non_unique_sqlite_constraint_failure_is_not_translated_as_duplicate_scan()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+        await using var dbContext = database.CreateDbContext();
+        var scan = NewInventoryScan("idem-scan-not-null-001");
+        dbContext.ScanRecords.Add(scan);
+        dbContext.Entry(scan).Property(nameof(ScanRecord.ScannedValue)).CurrentValue = null!;
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+
+        Assert.Contains("NOT NULL", exception.InnerException?.Message ?? exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey)
     {
         return new RecordScanCommand(

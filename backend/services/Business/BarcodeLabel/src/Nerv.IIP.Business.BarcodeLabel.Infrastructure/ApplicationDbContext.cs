@@ -131,9 +131,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
             return false;
         }
 
-        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
         var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
-        if (errorCode != 19 && extendedErrorCode is not (1555 or 2067))
+        if (extendedErrorCode is not (1555 or 2067))
         {
             return false;
         }
