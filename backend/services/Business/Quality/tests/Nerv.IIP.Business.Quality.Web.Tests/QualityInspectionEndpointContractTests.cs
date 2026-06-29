@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
@@ -717,7 +718,9 @@ public sealed class QualityInspectionEndpointContractTests
             [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
         dbContext.NonconformanceReports.Add(ncr);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(new NonconformanceReportRepository(dbContext));
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
 
         await handler.Handle(
             new CompleteNonconformanceReportInventoryDispositionCommand(
@@ -730,6 +733,91 @@ public sealed class QualityInspectionEndpointContractTests
 
         Assert.Equal("disposition-in-progress", ncr.Status);
         Assert.Null(ncr.ScrapMovementId);
+    }
+
+    [Fact]
+    public async Task Complete_ncr_scrap_disposition_records_movement_but_waits_for_effective_capa()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-WAIT-CAPA-001",
+            "receiving",
+            "RCV-SCRAP-WAIT-CAPA-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+
+        await handler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-WAIT-CAPA-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None);
+
+        Assert.Equal("disposition-in-progress", ncr.Status);
+        Assert.Equal("SM-FULL-WAIT-CAPA-001", ncr.ScrapMovementId);
+    }
+
+    [Fact]
+    public async Task Complete_ncr_scrap_disposition_closes_when_effective_capa_exists()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-CLOSE-CAPA-001",
+            "receiving",
+            "RCV-SCRAP-CLOSE-CAPA-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        dbContext.CorrectiveActions.Add(NewEffectiveCapa(ncr, "CAPA-SCRAP-CLOSE-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+
+        await handler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-CLOSE-CAPA-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None);
+
+        Assert.Equal("closed", ncr.Status);
+        Assert.Equal("SM-FULL-CLOSE-CAPA-001", ncr.ScrapMovementId);
     }
 
     [Fact]
@@ -800,6 +888,24 @@ public sealed class QualityInspectionEndpointContractTests
             workCenterId,
             deviceAssetId,
             documentType);
+    }
+
+    private static CorrectiveAction NewEffectiveCapa(NonconformanceReport ncr, string capaCode)
+    {
+        var capa = CorrectiveAction.OpenFromNcr(
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            capaCode,
+            ncr,
+            "Root cause confirmed",
+            "Contain affected material",
+            "qa-engineer-001",
+            DateTimeOffset.Parse("2026-06-30T00:00:00Z"));
+        capa.AddAction("corrective", "Fix supplier process", "supplier-quality-001", DateTimeOffset.Parse("2026-06-20T00:00:00Z"));
+        var action = capa.Actions.Single();
+        capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
+        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        return capa;
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

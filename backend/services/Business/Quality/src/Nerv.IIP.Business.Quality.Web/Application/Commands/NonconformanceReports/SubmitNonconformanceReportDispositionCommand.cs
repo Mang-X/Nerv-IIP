@@ -79,7 +79,8 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandValid
 }
 
 public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandler(
-    INonconformanceReportRepository repository)
+    INonconformanceReportRepository repository,
+    ICorrectiveActionRepository correctiveActionRepository)
     : ICommandHandler<CompleteNonconformanceReportInventoryDispositionCommand>
 {
     public async Task Handle(CompleteNonconformanceReportInventoryDispositionCommand request, CancellationToken cancellationToken)
@@ -94,6 +95,13 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandl
         {
             if (IsPostedScrapAdjustment(request) && IsFullDispositionQuantity(ncr, request.Quantity))
             {
+                if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
+                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+                {
+                    ncr.RecordScrapDispositionMovement(request.InventoryMovementId, request.Quantity);
+                    return;
+                }
+
                 ncr.CompleteScrapDisposition(request.InventoryMovementId, request.Quantity);
             }
 

@@ -293,6 +293,35 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         Close(null, movementId, null);
     }
 
+    public void RecordScrapDispositionMovement(string scrapMovementId, decimal quantity)
+    {
+        var movementId = Required(scrapMovementId);
+        if (DispositionType != ScrapDisposition)
+        {
+            throw new InvalidOperationException("Only scrap NCR dispositions can record an Inventory scrap movement.");
+        }
+
+        EnsureDispositionQuantityBalanced(quantity);
+
+        if (Status == "closed")
+        {
+            if (ScrapMovementId == movementId)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Closed NCR cannot change scrap movement id.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ScrapMovementId) && ScrapMovementId != movementId)
+        {
+            throw new InvalidOperationException("NCR scrap disposition already recorded a different scrap movement id.");
+        }
+
+        ScrapMovementId = movementId;
+        Touch();
+    }
+
     public void CompleteConditionalReleaseDisposition()
     {
         CompleteConditionalReleaseDisposition(DefectQuantity);
