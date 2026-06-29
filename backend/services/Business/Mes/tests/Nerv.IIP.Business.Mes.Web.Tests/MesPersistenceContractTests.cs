@@ -1219,6 +1219,19 @@ public sealed class MesPersistenceContractTests
                 TimeSpan.FromMinutes(45),
                 now,
                 null));
+            var materialIssue = MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-REPORT-COMPLETE-001",
+                "WO-REPORT-COMPLETE-001",
+                "OP-REPORT-COMPLETE-10",
+                "MAT-SCRAP",
+                "PCS",
+                10m,
+                now.AddMinutes(-10));
+            materialIssue.ConfirmLineSideReceipt(now.AddMinutes(-9), 10m, "LOT-SCRAP");
+            materialIssue.ClearDomainEvents();
+            dbContext.MaterialIssueRequests.Add(materialIssue);
             await dbContext.SaveChangesAsync();
 
             await new RecordProductionReportCommandHandler(dbContext).Handle(
@@ -1231,7 +1244,8 @@ public sealed class MesPersistenceContractTests
                     1m,
                     true,
                     now.AddMinutes(40),
-                    "report-complete-001"),
+                    "report-complete-001",
+                    [new ConsumedMaterialLotInput("MAT-SCRAP", "LOT-SCRAP", 1m, "MIR-REPORT-COMPLETE-001")]),
                 CancellationToken.None);
             await dbContext.SaveChangesAsync();
         }

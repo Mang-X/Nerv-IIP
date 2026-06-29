@@ -45,6 +45,7 @@ public sealed class MesSchemaConventionTests
             typeof(OperationTask),
             typeof(ProductionReport),
             typeof(ProductionReportMaterialConsumption),
+            typeof(OutputLotGenealogy),
             typeof(DefectRecord),
             typeof(QualityHoldContext),
             typeof(MaterialRequirement),
@@ -154,6 +155,9 @@ public sealed class MesSchemaConventionTests
         AssertForeignKey(model, typeof(ProductionReport), "fk_production_reports_work_orders", failures);
         AssertForeignKey(model, typeof(ProductionReport), "fk_production_reports_operation_tasks", failures);
         AssertForeignKey(model, typeof(ProductionReportMaterialConsumption), "fk_report_material_consumptions_reports", failures);
+        AssertForeignKey(model, typeof(OutputLotGenealogy), "fk_output_lot_genealogies_work_orders", failures);
+        AssertForeignKey(model, typeof(OutputLotGenealogy), "fk_output_lot_genealogies_operation_tasks", failures);
+        AssertForeignKey(model, typeof(OutputLotGenealogy), "fk_output_lot_genealogies_reports", failures);
         AssertForeignKey(model, typeof(DefectRecord), "fk_defect_records_work_orders", failures);
         AssertForeignKey(model, typeof(QualityHoldContext), "fk_quality_hold_contexts_work_orders", failures);
         AssertForeignKey(model, typeof(MaterialRequirement), "fk_material_requirements_work_orders", failures);

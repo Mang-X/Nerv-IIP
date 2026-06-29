@@ -30,6 +30,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await using var inventoryDb = CreateInventoryContext();
         SeedMesWorkOrder(mesDb, "WO-483", "SKU-FG-483");
         await mesDb.SaveChangesAsync();
+        await RecordMesOutputLotAsync(mesDb, "WO-483", "LOT-FG-483", 8m, DateTimeOffset.Parse("2026-06-23T07:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
         var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
         var requestedAtUtc = DateTimeOffset.Parse("2026-06-23T08:00:00Z");
@@ -346,6 +347,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         await using var inventoryDb = CreateInventoryContext();
         SeedMesWorkOrder(mesDb, "WO-541", "SKU-FG-541");
         await mesDb.SaveChangesAsync();
+        await RecordMesOutputLotAsync(mesDb, "WO-541", "LOT-FG-541", 8m, DateTimeOffset.Parse("2026-06-18T08:45:00Z"));
         var inventoryPublisher = new RecordingIntegrationEventPublisher();
         var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
         var failedConsumer = new StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed(
@@ -485,7 +487,7 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
         mesDb.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
-            "WO-446",
+            workOrderId,
             "OP-10",
             OperationTaskLifecycleStatus.Queued,
             10,
@@ -495,6 +497,28 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             TimeSpan.FromMinutes(30),
             null,
             null));
+    }
+
+    private static async Task RecordMesOutputLotAsync(
+        MesDbContext mesDb,
+        string workOrderId,
+        string producedLotNo,
+        decimal quantity,
+        DateTimeOffset reportedAtUtc)
+    {
+        await new RecordProductionReportCommandHandler(mesDb).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                workOrderId,
+                "OP-10",
+                quantity,
+                0m,
+                false,
+                reportedAtUtc,
+                ProducedLotNo: producedLotNo),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
     }
 
     private static MesDbContext CreateMesContext()

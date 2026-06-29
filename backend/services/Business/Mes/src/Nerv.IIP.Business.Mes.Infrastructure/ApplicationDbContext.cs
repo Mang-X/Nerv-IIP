@@ -26,6 +26,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProductionReportMaterialConsumption> ProductionReportMaterialConsumptions => Set<ProductionReportMaterialConsumption>();
 
+    public DbSet<OutputLotGenealogy> OutputLotGenealogies => Set<OutputLotGenealogy>();
+
     public DbSet<DefectRecord> DefectRecords => Set<DefectRecord>();
 
     public DbSet<QualityHoldContext> QualityHoldContexts => Set<QualityHoldContext>();

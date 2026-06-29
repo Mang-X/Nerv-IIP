@@ -153,6 +153,40 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailedAtUtc = failedAtUtc;
     }
 
+    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity, decimal consumedQuantity = 0m)
+    {
+        DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
+        DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
+
+        if (string.IsNullOrWhiteSpace(MaterialLotId))
+        {
+            throw new InvalidOperationException("Line-side material return requires a received material lot.");
+        }
+
+        var returnableQuantity = Math.Max(0m, ReceivedQuantity - consumedQuantity);
+        if (returnedQuantity > returnableQuantity)
+        {
+            throw new InvalidOperationException("退料数量不能超过当前线边可退数量。");
+        }
+
+        var returnedMaterialLotId = MaterialLotId;
+        ReceivedQuantity -= returnedQuantity;
+        if (ReceivedQuantity == 0m)
+        {
+            ReceivedAtUtc = null;
+            MaterialLotId = null;
+            Status = RequestedStatus;
+        }
+        else
+        {
+            ReceivedAtUtc = returnedAtUtc;
+            Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
+        }
+
+        AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+        AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+    }
+
     private static string NormalizeFailureMessage(string failureMessage)
     {
         var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));

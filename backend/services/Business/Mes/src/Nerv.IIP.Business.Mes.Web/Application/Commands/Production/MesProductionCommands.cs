@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -93,6 +94,42 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
         }
 
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == request.WorkOrderId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+        var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.OperationTaskIdValue == request.OperationTaskId,
+            cancellationToken);
+        if (operationTask is null)
+        {
+            throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
+        }
+
+        var outputOperationSequence = await dbContext.OperationTasks
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId)
+            .MaxAsync(x => x.OperationSequence, cancellationToken);
+        var isOutputOperation = operationTask.OperationSequence == outputOperationSequence;
+        var consumedMaterialLots = request.ConsumedMaterialLots ?? [];
+        if (request.ScrapQuantity > 0m && consumedMaterialLots.Count == 0)
+        {
+            throw new KnownException("报废报工必须引用耗料批次，以触发在制物料报废核销。");
+        }
+
+        var producedLotNo = request.ProducedLotNo;
+        if (isOutputOperation && request.GoodQuantity > 0m && string.IsNullOrWhiteSpace(producedLotNo))
+        {
+            producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
+        }
+
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -106,10 +143,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.ReworkQuantity,
             request.ScrapReasonCode,
             request.DefectRecordNo,
-            request.ProducedLotNo,
+            producedLotNo,
             request.SerialNo);
 
-        var duplicateLot = (request.ConsumedMaterialLots ?? [])
+        var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
             .FirstOrDefault(x => x.Count() > 1);
         if (duplicateLot is not null)
@@ -118,8 +155,24 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             throw new KnownException($"报工耗料批次重复，MaterialId = {lot.MaterialId}, MaterialLotId = {lot.MaterialLotId}");
         }
 
+        if (isOutputOperation && request.GoodQuantity > 0m)
+        {
+            var outputLotExists = await dbContext.OutputLotGenealogies
+                .AsNoTracking()
+                .AnyAsync(
+                    x =>
+                        x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.ProducedLotNo == producedLotNo,
+                    cancellationToken);
+            if (outputLotExists)
+            {
+                throw new KnownException($"产出批次已存在，ProducedLotNo = {producedLotNo}");
+            }
+        }
+
         var materialConsumptions = new List<ProductionReportMaterialConsumption>();
-        foreach (var lot in request.ConsumedMaterialLots ?? [])
+        foreach (var lot in consumedMaterialLots)
         {
             if (string.IsNullOrWhiteSpace(lot.MaterialIssueRequestNo))
             {
@@ -170,30 +223,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialIssueRequestNo));
         }
 
-        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderIdValue == request.WorkOrderId,
-            cancellationToken)
-            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
-        var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
-            x => x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.OperationTaskIdValue == request.OperationTaskId,
-            cancellationToken);
-        if (operationTask is null)
-        {
-            throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {request.WorkOrderId}, OperationTaskId = {request.OperationTaskId}");
-        }
-
-        var outputOperationSequence = await dbContext.OperationTasks
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
-            .MaxAsync(x => x.OperationSequence, cancellationToken);
-        if (operationTask.OperationSequence == outputOperationSequence)
+        if (isOutputOperation)
         {
             try
             {
@@ -207,6 +237,10 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
 
         if (request.CompletesOperation)
         {
+            await ChangeOperationTaskStateCommandHandler.EnsurePreviousOperationsCompletedAsync(
+                dbContext,
+                operationTask,
+                cancellationToken);
             try
             {
                 operationTask.Complete(request.ReportedAtUtc);
@@ -219,6 +253,20 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
 
         dbContext.ProductionReports.Add(report);
         dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
+        if (isOutputOperation && request.GoodQuantity > 0m)
+        {
+            dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                report.ReportNo,
+                report.ProducedLotNo!,
+                report.SerialNo,
+                request.GoodQuantity,
+                request.ReportedAtUtc));
+        }
+
         await Task.CompletedTask;
         return new ProductionReportCommandResult(report.Id, report.ReportNo);
     }
@@ -282,6 +330,39 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
                     x.RequestNo == allocation.Code,
                 cancellationToken);
             return new FinishedGoodsReceiptRequestCommandResult(existing.Id, existing.RequestNo);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ProducedLotNo))
+        {
+            throw new KnownException("完工入库申请必须引用 MES 已生成的产出批次。");
+        }
+
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == request.WorkOrderId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+        if (!string.Equals(workOrder.SkuId, request.SkuId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException($"完工入库 SKU 与工单不一致，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(workOrder.UomCode) &&
+            !string.Equals(workOrder.UomCode, request.UomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException($"完工入库 UoM 与工单不一致，WorkOrderId = {request.WorkOrderId}");
+        }
+
+        var outputLotExists = await dbContext.OutputLotGenealogies.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == request.WorkOrderId &&
+                x.ProducedLotNo == request.ProducedLotNo,
+            cancellationToken);
+        if (!outputLotExists)
+        {
+            throw new KnownException($"完工入库引用的产出批次不存在，ProducedLotNo = {request.ProducedLotNo}");
         }
 
         var receiptRequest = FinishedGoodsReceiptRequest.Create(

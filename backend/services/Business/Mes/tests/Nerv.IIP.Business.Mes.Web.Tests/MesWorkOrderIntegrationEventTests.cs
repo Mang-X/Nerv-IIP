@@ -32,11 +32,47 @@ public sealed class MesWorkOrderIntegrationEventTests
 
         Assert.Equal(MesIntegrationEventTypes.WorkOrderReleased, integrationEvent.EventType);
         Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
+        Assert.Equal(integrationEvent.IdempotencyKey, integrationEvent.CorrelationId);
+        Assert.Equal("WO-001", integrationEvent.CausationId);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
         Assert.Equal("SKU-001", integrationEvent.Payload.SkuCode);
         Assert.Equal(10, integrationEvent.Payload.PlannedQuantity);
         Assert.Equal(["OP-010", "OP-020"], integrationEvent.Payload.Operations.Select(x => x.OperationId));
+    }
+
+    [Fact]
+    public void Work_order_completed_and_closed_converters_emit_public_mes_events()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "SKU-001",
+            "PV-001",
+            10,
+            1,
+            new DateTimeOffset(2026, 6, 2, 8, 0, 0, TimeSpan.Zero),
+            "EA");
+        workOrder.MarkReleased();
+        workOrder.Start(new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero));
+        workOrder.RecordProductionProgress(9m, 1m, new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero));
+        workOrder.Close(new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero));
+
+        var completed = new WorkOrderCompletedIntegrationEventConverter()
+            .Convert(new WorkOrderCompletedDomainEvent(workOrder, new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero)));
+        var closed = new WorkOrderClosedIntegrationEventConverter()
+            .Convert(new WorkOrderClosedDomainEvent(workOrder, new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero)));
+
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderCompleted, completed.EventType);
+        Assert.Equal(completed.IdempotencyKey, completed.CorrelationId);
+        Assert.Equal("WO-001", completed.CausationId);
+        Assert.Equal(9m, completed.Payload.GoodQuantity);
+        Assert.Equal(1m, completed.Payload.ScrapQuantity);
+        Assert.Equal(MesIntegrationEventTypes.WorkOrderClosed, closed.EventType);
+        Assert.Equal(closed.IdempotencyKey, closed.CorrelationId);
+        Assert.Equal("WO-001", closed.CausationId);
+        Assert.Equal("WO-001", closed.Payload.WorkOrderId);
     }
 }

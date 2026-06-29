@@ -1,5 +1,6 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -61,6 +62,25 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
             return;
         }
 
+        if (!MatchesReceipt(receipt, integrationEvent.Payload))
+        {
+            return;
+        }
+
         receipt.MarkPosted(integrationEvent.Payload.InventoryMovementId, integrationEvent.Payload.PostedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool MatchesReceipt(
+        FinishedGoodsReceiptRequest receipt,
+        StockMovementPostedPayload payload)
+    {
+        // Inventory posts MES finished-goods receipt requests as a whole request.
+        // A partial or adjusted quantity must not close the MES receipt silently.
+        return string.Equals(receipt.SkuId, payload.SkuCode, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(receipt.UomCode, payload.UomCode, StringComparison.OrdinalIgnoreCase) &&
+            receipt.Quantity == payload.Quantity &&
+            (string.IsNullOrWhiteSpace(receipt.ProducedLotNo) ||
+                string.Equals(receipt.ProducedLotNo, payload.LotNo, StringComparison.OrdinalIgnoreCase));
     }
 }
