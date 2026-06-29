@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
@@ -258,6 +259,72 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Equal("quality", record.SourceQualityStatus);
         Assert.Equal("supplier", record.OwnerType);
         Assert.Equal("supplier-001", record.OwnerId);
+    }
+
+    [Fact]
+    public async Task Create_receiving_inspection_record_is_idempotent_by_source_document_scope()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext));
+        var command = new CreateInspectionRecordCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-IDEMPOTENT-001",
+            "SKU-RM-1000",
+            10m,
+            "LOT-IDEMPOTENT-001",
+            null,
+            [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+            null,
+            []);
+
+        var firstId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replayId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstId, replayId);
+        Assert.Single(dbContext.InspectionRecords);
+    }
+
+    [Fact]
+    public async Task Create_receiving_inspection_record_reconciles_source_receipt_sku_and_quantity()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            sourceDocumentVerifier: new FixedInspectionSourceDocumentVerifier(
+                new InspectionSourceDocumentVerification(true, "SKU-OTHER", 5m)));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateInspectionRecordCommand(
+                "org-001",
+                "env-dev",
+                null,
+                "receiving",
+                "purchase-receipt",
+                "RCV-MISMATCH-001",
+                "SKU-RM-1000",
+                10m,
+                "LOT-MISMATCH-001",
+                null,
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null,
+                []),
+            CancellationToken.None));
+
+        Assert.Contains("SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(dbContext.InspectionRecords);
     }
 
     [Fact]
@@ -592,6 +659,90 @@ public sealed class QualityInspectionEndpointContractTests
         Assert.Equal("disposition-in-progress", ncr.Status);
     }
 
+    [Fact]
+    public async Task Complete_ncr_scrap_disposition_rejects_partial_inventory_posting_quantity()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-QTY-001",
+            "receiving",
+            "RCV-SCRAP-QTY-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-PARTIAL-001",
+                "adjustment",
+                "blocked",
+                -1m),
+            CancellationToken.None));
+
+        Assert.Contains("quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+    }
+
+    [Fact]
+    public async Task Complete_ncr_scrap_disposition_requires_linked_effective_capa()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-CAPA-001",
+            "receiving",
+            "RCV-SCRAP-CAPA-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None));
+
+        Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+    }
+
     private static ServiceProvider CreateInMemoryProvider()
     {
         var services = new ServiceCollection();
@@ -671,6 +822,23 @@ public sealed class QualityInspectionEndpointContractTests
             LastNcrCode = ncrCode;
             return Task.FromResult(isApproved
                 && (expectedNcrCode is null || string.Equals(expectedNcrCode, ncrCode, StringComparison.Ordinal)));
+        }
+    }
+
+    private sealed class FixedInspectionSourceDocumentVerifier(InspectionSourceDocumentVerification verification)
+        : IInspectionSourceDocumentVerifier
+    {
+        public Task<InspectionSourceDocumentVerification> VerifyAsync(
+            string organizationId,
+            string environmentId,
+            string sourceType,
+            string sourceService,
+            string sourceDocumentId,
+            string skuCode,
+            decimal inspectedQuantity,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(verification);
         }
     }
 }

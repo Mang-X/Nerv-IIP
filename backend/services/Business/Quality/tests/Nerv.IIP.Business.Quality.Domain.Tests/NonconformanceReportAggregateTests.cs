@@ -128,6 +128,23 @@ public sealed class NonconformanceReportAggregateTests
     }
 
     [Fact]
+    public void Submit_disposition_requires_all_mrb_decisions_approved()
+    {
+        var ncr = NewNcr();
+
+        var exception = Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-001",
+            [],
+            [
+                MrbReviewInput.Approve("qa-manager-001", "MRB accepted disposition", DateTimeOffset.Parse("2026-06-16T08:00:00Z")),
+                new MrbReviewInput("production-manager-001", "rejected", "Disposition quantity not balanced", DateTimeOffset.Parse("2026-06-16T09:00:00Z")),
+            ]));
+
+        Assert.Contains("approved", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Sort_and_screen_is_low_risk_and_does_not_require_central_approval()
     {
         var ncr = NewNcr();
@@ -183,10 +200,32 @@ public sealed class NonconformanceReportAggregateTests
     }
 
     [Fact]
-    public void Closed_ncr_cannot_change_disposition()
+    public void Close_conditional_release_requires_waiver_evidence()
     {
         var ncr = NewNcr();
         ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview());
+
+        var exception = Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+
+        Assert.Contains("evidence", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Close_sort_and_screen_requires_screening_evidence()
+    {
+        var ncr = NewNcr();
+        ncr.SubmitDisposition("sort-and-screen", null, []);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+
+        Assert.Contains("evidence", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Closed_ncr_cannot_change_disposition()
+    {
+        var ncr = NewNcr();
+        ncr.SubmitDisposition("conditional-release", "approval-chain-001", ["file-waiver-001"], ApprovedMrbReview());
         ncr.Close(null, null, null);
 
         Assert.Equal("closed", ncr.Status);
@@ -220,7 +259,7 @@ public sealed class NonconformanceReportAggregateTests
 
         Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
 
-        ncr.SubmitDisposition("sort-and-screen", "approval-chain-001", []);
+        ncr.SubmitDisposition("sort-and-screen", "approval-chain-001", ["file-screening-result-001"]);
         ncr.ClearDomainEvents();
         ncr.Close(null, null, null);
 

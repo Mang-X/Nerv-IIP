@@ -39,11 +39,41 @@ public sealed class CorrectiveActionTests
         Assert.Equal(2, capa.Actions.Count);
         Assert.Throws<InvalidOperationException>(() => capa.Close("qa-manager-001"));
 
+        Assert.Throws<InvalidOperationException>(() =>
+            capa.VerifyEffectiveness("qa-manager-001", "No recurrence in three lots", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
+
+        foreach (var action in capa.Actions)
+        {
+            capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-07-01T00:00:00Z"));
+        }
+
         capa.VerifyEffectiveness("qa-manager-001", "No recurrence in three lots", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
         capa.Close("qa-manager-001");
 
         Assert.Equal("closed", capa.Status);
         Assert.Equal("qa-manager-001", capa.ClosedByUserId);
+    }
+
+    [Fact]
+    public void Capa_effectiveness_requires_all_corrective_and_preventive_actions_completed()
+    {
+        var capa = CorrectiveAction.OpenStandalone(
+            "org-001",
+            "env-dev",
+            "CAPA-20260616-0003",
+            "Recurring coating defects",
+            "Hold suspect coating batches",
+            ownerUserId: "qa-engineer-001",
+            dueAtUtc: DateTimeOffset.Parse("2026-06-30T00:00:00Z"));
+        capa.AddAction("corrective", "Adjust coating viscosity control", "process-owner-001", DateTimeOffset.Parse("2026-06-20T00:00:00Z"));
+        capa.AddAction("preventive", "Add incoming viscosity audit", "qa-engineer-001", DateTimeOffset.Parse("2026-06-25T00:00:00Z"));
+        var firstAction = capa.Actions[0];
+
+        capa.CompleteAction(firstAction.Id, firstAction.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z")));
+        Assert.Contains("complete", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

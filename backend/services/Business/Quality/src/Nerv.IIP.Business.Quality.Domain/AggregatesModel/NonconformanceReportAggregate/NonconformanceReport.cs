@@ -208,6 +208,12 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("MRB review is required before this NCR disposition can be submitted.");
         }
 
+        if (RequiresMrbReview(normalizedDisposition)
+            && mrbReviews.Any(x => !string.Equals(x.Decision, "approved", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("All MRB review decisions must be approved before this NCR disposition can be submitted.");
+        }
+
         DispositionType = normalizedDisposition;
         DispositionApprovalChainId = Optional(dispositionApprovalChainId);
         AddAttachments(attachmentFileIds);
@@ -240,11 +246,18 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
 
     public void CompleteScrapDisposition(string scrapMovementId)
     {
+        CompleteScrapDisposition(scrapMovementId, -DefectQuantity);
+    }
+
+    public void CompleteScrapDisposition(string scrapMovementId, decimal quantity)
+    {
         var movementId = Required(scrapMovementId);
         if (DispositionType != ScrapDisposition)
         {
             throw new InvalidOperationException("Only scrap NCR dispositions can be completed by an Inventory scrap movement.");
         }
+
+        EnsureDispositionQuantityBalanced(quantity);
 
         if (Status == "closed")
         {
@@ -261,10 +274,17 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
 
     public void CompleteConditionalReleaseDisposition()
     {
+        CompleteConditionalReleaseDisposition(DefectQuantity);
+    }
+
+    public void CompleteConditionalReleaseDisposition(decimal quantity)
+    {
         if (DispositionType != ConditionalReleaseDisposition)
         {
             throw new InvalidOperationException("Only conditional-release NCR dispositions can be completed by an Inventory release movement.");
         }
+
+        EnsureDispositionQuantityBalanced(quantity);
 
         if (Status == "closed")
         {
@@ -289,6 +309,19 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         if (DispositionType == "return-to-supplier" && string.IsNullOrWhiteSpace(ReturnDocumentId))
         {
             throw new InvalidOperationException("Return-to-supplier disposition requires a return document id before closing.");
+        }
+
+        if (DispositionType is "conditional-release" or "sort-and-screen" && AttachmentFileIds.Count == 0)
+        {
+            throw new InvalidOperationException($"{DispositionType} disposition requires closure evidence before closing.");
+        }
+    }
+
+    private void EnsureDispositionQuantityBalanced(decimal quantity)
+    {
+        if (Math.Abs(quantity) != DefectQuantity)
+        {
+            throw new InvalidOperationException("NCR disposition quantity must balance the full defect quantity before closing.");
         }
     }
 

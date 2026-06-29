@@ -108,12 +108,26 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
         Touch();
     }
 
+    public void CompleteAction(CorrectiveActionItemId actionItemId, string completedByUserId, DateTimeOffset completedAtUtc)
+    {
+        EnsureOpen();
+        var action = Actions.SingleOrDefault(x => x.Id == actionItemId)
+            ?? throw new InvalidOperationException($"CAPA action '{actionItemId}' was not found.");
+        action.Complete(completedByUserId, completedAtUtc);
+        Touch();
+    }
+
     public void VerifyEffectiveness(string verifiedByUserId, string result, DateTimeOffset verifiedAtUtc)
     {
         EnsureOpen();
         if (!Actions.Any(x => x.ActionType is "corrective" or "preventive"))
         {
             throw new InvalidOperationException("CAPA requires corrective or preventive action before effectiveness verification.");
+        }
+
+        if (Actions.Any(x => x.Status != "completed"))
+        {
+            throw new InvalidOperationException("CAPA effectiveness cannot be verified until all action items are completed.");
         }
 
         EffectivenessVerifiedByUserId = Required(verifiedByUserId);
@@ -197,6 +211,22 @@ public sealed class CorrectiveActionItem : Entity<CorrectiveActionItemId>
     public static CorrectiveActionItem Create(string actionType, string description, string ownerUserId, DateTimeOffset dueAtUtc)
     {
         return new CorrectiveActionItem(actionType, description, ownerUserId, dueAtUtc);
+    }
+
+    internal void Complete(string completedByUserId, DateTimeOffset completedAtUtc)
+    {
+        if (Status == "completed")
+        {
+            return;
+        }
+
+        _ = Required(completedByUserId);
+        if (completedAtUtc == default)
+        {
+            throw new ArgumentException("Action completion time is required.", nameof(completedAtUtc));
+        }
+
+        Status = "completed";
     }
 
     private static string Required(string value)

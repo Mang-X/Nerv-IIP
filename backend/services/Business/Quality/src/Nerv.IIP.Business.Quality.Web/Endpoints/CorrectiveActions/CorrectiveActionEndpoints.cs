@@ -24,6 +24,12 @@ public sealed record AddCorrectiveActionItemRequest(
     string OwnerUserId,
     DateTimeOffset DueAtUtc);
 
+public sealed record CompleteCorrectiveActionItemRequest(
+    CorrectiveActionId CorrectiveActionId,
+    CorrectiveActionItemId CorrectiveActionItemId,
+    string CompletedByUserId,
+    DateTimeOffset CompletedAtUtc);
+
 public sealed record VerifyCorrectiveActionEffectivenessRequest(
     CorrectiveActionId CorrectiveActionId,
     string VerifiedByUserId,
@@ -71,6 +77,25 @@ public sealed class AddCorrectiveActionItemEndpoint(ISender sender)
             req.Description,
             req.OwnerUserId,
             req.DueAtUtc), ct);
+        await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CompleteCorrectiveActionItemEndpoint(ISender sender)
+    : QualityEndpoint<CompleteCorrectiveActionItemRequest, ResponseData<AcceptedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityEndpointContracts.Get<CompleteCorrectiveActionItemEndpoint>());
+    }
+
+    public override async Task HandleAsync(CompleteCorrectiveActionItemRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CompleteCorrectiveActionItemCommand(
+            req.CorrectiveActionId,
+            req.CorrectiveActionItemId,
+            req.CompletedByUserId,
+            req.CompletedAtUtc), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

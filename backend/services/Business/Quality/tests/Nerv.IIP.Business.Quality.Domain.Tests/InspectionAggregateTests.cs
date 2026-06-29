@@ -63,6 +63,103 @@ public sealed class InspectionAggregateTests
     }
 
     [Fact]
+    public void Planned_variable_inspection_converts_measurement_to_plan_unit_before_spec_evaluation()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "length",
+            "Tube length",
+            "caliper",
+            "critical",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Variable,
+            nominalValue: 10m,
+            lowerSpecLimit: 9.5m,
+            upperSpecLimit: 10.5m,
+            unitCode: "mm",
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-UM-001",
+            "SKU-RM-1000",
+            inspectedQuantity: 20m,
+            batchNo: "BATCH-UM-001",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                InspectionResultLineInput.Measure("length", measuredValue: 10_400m, unitCode: "um", attachmentFileIds: []),
+            ],
+            dispositionReason: null,
+            dispositionAttachmentFileIds: [],
+            uomConversions:
+            [
+                InspectionUomConversion.Create("um", "mm", factor: 0.001m, offset: 0m, precision: 3, roundingMode: "half-up"),
+            ]);
+
+        var line = Assert.Single(record.ResultLines);
+        Assert.Equal("passed", record.Result);
+        Assert.Equal(10_400m, line.MeasuredValue);
+        Assert.Equal("10.4", line.ObservedValue);
+        Assert.Equal("mm", line.UnitCode);
+    }
+
+    [Fact]
+    public void Planned_variable_inspection_preserves_minor_waiver_as_conditional_release()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "length",
+            "Tube length",
+            "caliper",
+            "minor",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Variable,
+            nominalValue: 10m,
+            lowerSpecLimit: 9.5m,
+            upperSpecLimit: 10.5m,
+            unitCode: "mm",
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-WAIVER-001",
+            "SKU-RM-1000",
+            inspectedQuantity: 20m,
+            batchNo: "BATCH-WAIVER-001",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                new InspectionResultLineInput(
+                    "length",
+                    "10.7",
+                    "mm",
+                    InspectionLineResults.ConditionalRelease,
+                    "mrb-waiver-approved",
+                    1m,
+                    ["file-waiver-001"],
+                    MeasuredValue: 10.7m),
+            ],
+            dispositionReason: "MRB approved minor dimensional waiver",
+            dispositionAttachmentFileIds: ["file-waiver-001"]);
+
+        var line = Assert.Single(record.ResultLines);
+        Assert.Equal("conditional-release", record.Result);
+        Assert.Equal("conditional-release", line.Result);
+        Assert.Equal("mrb-waiver-approved", line.DefectReason);
+    }
+
+    [Fact]
     public void Planned_record_requires_all_required_characteristics()
     {
         var plan = NewPlan();

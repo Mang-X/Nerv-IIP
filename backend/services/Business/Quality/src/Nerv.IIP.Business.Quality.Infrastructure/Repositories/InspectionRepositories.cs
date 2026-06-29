@@ -42,10 +42,35 @@ public sealed class InspectionPlanRepository(ApplicationDbContext context)
 
 public interface IInspectionRecordRepository : IRepository<InspectionRecord, InspectionRecordId>
 {
+    Task<InspectionRecord?> FindBySourceDocumentAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class InspectionRecordRepository(ApplicationDbContext context)
-    : RepositoryBase<InspectionRecord, InspectionRecordId, ApplicationDbContext>(context), IInspectionRecordRepository;
+    : RepositoryBase<InspectionRecord, InspectionRecordId, ApplicationDbContext>(context), IInspectionRecordRepository
+{
+    public Task<InspectionRecord?> FindBySourceDocumentAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionRecords.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.SourceType == sourceType
+                && x.SourceService == sourceService
+                && x.SourceDocumentId == sourceDocumentId,
+            cancellationToken);
+    }
+}
 
 public interface IQualityReasonRepository : IRepository<QualityReason, QualityReasonId>
 {
