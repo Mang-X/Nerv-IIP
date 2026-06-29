@@ -7,8 +7,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
@@ -296,12 +294,12 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteAndDownload_PendingScanStatusReturnsNotFound()
+    public async Task TusUploadEndpoint_CompleteAndDownload_WithScannerEnabledPendingScanStatusReturnsNotFound()
     {
         var rootPath = CreateTempDirectory();
         try
         {
-            await using var factory = CreateFactoryWithTusProvider(rootPath);
+            await using var factory = CreateFactoryWithTusProvider(rootPath, scanningEnabled: true);
             var client = CreateInternalServiceClient(factory);
             var uploadedBytes = Encoding.UTF8.GetBytes("hello");
             var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
@@ -332,33 +330,39 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task DownloadGrantContentEndpoint_CleanGrantWithTenantHeaders_ReturnsUploadedBytesOnce()
+    public async Task DownloadGrantContentEndpoint_CleanFileWithTenantHeaders_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try
         {
-            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
-            var store = CreateTusStore(rootPath);
-            await using (var stream = new MemoryStream(uploadedBytes))
-            {
-                await store.AppendAsync("ups_clean", 0, stream, CancellationToken.None);
-            }
-
-            var fileStorage = new CleanDownloadGrantFileStorageService("dgr_clean", "ups_clean");
-            await using var factory = CreateFactoryWithTusProvider(rootPath, fileStorageService: fileStorage);
+            await using var factory = CreateFactoryWithTusProvider(rootPath);
             var client = CreateInternalServiceClient(factory);
-            using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/files/v1/download-grants/dgr_clean/content");
-            firstRequest.Headers.Add("X-Organization-Id", "org-001");
-            firstRequest.Headers.Add("X-Environment-Id", "prod");
+            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
+            completeResponse.EnsureSuccessStatusCode();
+
+            var grantResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/files/{created.FileId}/download-grants",
+                new CreateDownloadGrantRequest("org-001", "prod"));
+            grantResponse.EnsureSuccessStatusCode();
+            var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
+            Assert.NotNull(grant);
+
+            using var firstRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(firstRequest, grant.Download.Headers);
 
             var first = await client.SendAsync(firstRequest);
 
             first.EnsureSuccessStatusCode();
             Assert.Equal(uploadedBytes, await first.Content.ReadAsByteArrayAsync());
 
-            using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/files/v1/download-grants/dgr_clean/content");
-            secondRequest.Headers.Add("X-Organization-Id", "org-001");
-            secondRequest.Headers.Add("X-Environment-Id", "prod");
+            using var secondRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(secondRequest, grant.Download.Headers);
             var second = await client.SendAsync(secondRequest);
 
             Assert.Equal(StatusCodes.Status404NotFound, (int)second.StatusCode);
@@ -494,7 +498,7 @@ public sealed class FileStorageTusProviderTests
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
         double? uploadSessionTtlSeconds = null,
-        IFileStorageService? fileStorageService = null)
+        bool? scanningEnabled = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -505,17 +509,10 @@ public sealed class FileStorageTusProviderTests
                     {
                         ["FileStorage:UploadProvider"] = "tus",
                         ["FileStorage:Tus:RootPath"] = rootPath,
-                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["FileStorage:Scanning:Enabled"] = scanningEnabled?.ToString()
                     });
                 });
-                if (fileStorageService is not null)
-                {
-                    builder.ConfigureServices(services =>
-                    {
-                        services.RemoveAll<IFileStorageService>();
-                        services.AddSingleton(fileStorageService);
-                    });
-                }
             });
     }
 
@@ -628,56 +625,5 @@ public sealed class FileStorageTusProviderTests
         var json = JsonSerializer.Serialize(response, WebJsonOptions);
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("object_key", json, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private sealed class CleanDownloadGrantFileStorageService(string grantId, string uploadSessionId)
-        : IFileStorageService, ILocalFileContentIndex
-    {
-        private bool consumed;
-
-        public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
-            CreateUploadSessionRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(
-            string uploadSessionId,
-            CompleteUploadSessionRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
-            string fileId,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<FileStorageResult<FileListResponse>> ListFilesAsync(
-            ListFilesRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
-            string fileId,
-            CreateDownloadGrantRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public Task<string?> GetUploadSessionIdForDownloadGrantAsync(
-            string downloadGrantId,
-            string organizationId,
-            string environmentId,
-            CancellationToken cancellationToken)
-        {
-            if (consumed
-                || !string.Equals(downloadGrantId, grantId, StringComparison.Ordinal)
-                || !string.Equals(organizationId, "org-001", StringComparison.Ordinal)
-                || !string.Equals(environmentId, "prod", StringComparison.Ordinal))
-            {
-                return Task.FromResult<string?>(null);
-            }
-
-            consumed = true;
-            return Task.FromResult<string?>(uploadSessionId);
-        }
     }
 }

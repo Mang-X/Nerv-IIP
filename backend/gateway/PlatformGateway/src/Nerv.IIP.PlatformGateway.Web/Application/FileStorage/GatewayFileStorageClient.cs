@@ -45,7 +45,8 @@ public interface IGatewayFileStorageClient
 
     Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
-        HttpRequest request,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken);
 }
@@ -155,28 +156,36 @@ public sealed class HttpGatewayFileStorageClient(
 
     public Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
-        HttpRequest request,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
             HttpMethod.Get,
             $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content",
-            request,
+            null,
             response,
-            cancellationToken);
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            });
 
     private async Task ProxyRawAsync(
         HttpMethod method,
         string requestUri,
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? headers = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, requestUri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
             CopyTransferRequestHeaders(sourceRequest, request);
+            CopyHeaders(headers, request);
             if (sourceRequest is not null && method == HttpMethod.Patch)
             {
                 request.Content = new StreamContent(sourceRequest.Body);
@@ -393,8 +402,6 @@ public sealed class HttpGatewayFileStorageClient(
         CopyHeader(sourceRequest, targetRequest, "Tus-Resumable");
         CopyHeader(sourceRequest, targetRequest, "Upload-Offset");
         CopyHeader(sourceRequest, targetRequest, "Upload-Checksum");
-        CopyHeader(sourceRequest, targetRequest, "X-Organization-Id");
-        CopyHeader(sourceRequest, targetRequest, "X-Environment-Id");
     }
 
     private static void CopyHeader(HttpRequest sourceRequest, HttpRequestMessage targetRequest, string name)
@@ -402,6 +409,19 @@ public sealed class HttpGatewayFileStorageClient(
         if (sourceRequest.Headers.TryGetValue(name, out var values))
         {
             targetRequest.Headers.TryAddWithoutValidation(name, values.ToArray());
+        }
+    }
+
+    private static void CopyHeaders(IReadOnlyDictionary<string, string>? headers, HttpRequestMessage targetRequest)
+    {
+        if (headers is null)
+        {
+            return;
+        }
+
+        foreach (var header in headers)
+        {
+            targetRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
     }
 

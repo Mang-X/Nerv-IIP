@@ -31,14 +31,13 @@ public sealed class LocalTusFileStore
         var path = GetUploadPath(uploadSessionId);
         if (File.Exists(path))
         {
-            File.Delete(path);
-            return true;
+            return TryDeleteFile(path);
         }
 
         return false;
     }
 
-    public int DeleteFilesExcept(IEnumerable<string> uploadSessionIds)
+    public int DeleteFilesExcept(IEnumerable<string> uploadSessionIds, DateTimeOffset olderThanUtc)
     {
         if (!Directory.Exists(rootPath))
         {
@@ -51,13 +50,25 @@ public sealed class LocalTusFileStore
         var removed = 0;
         foreach (var path in Directory.EnumerateFiles(rootPath, "*.bin"))
         {
-            if (retainedFileNames.Contains(Path.GetFileName(path)))
+            try
             {
-                continue;
-            }
+                if (retainedFileNames.Contains(Path.GetFileName(path))
+                    || File.GetLastWriteTimeUtc(path) > olderThanUtc.UtcDateTime)
+                {
+                    continue;
+                }
 
-            File.Delete(path);
-            removed++;
+                if (TryDeleteFile(path))
+                {
+                    removed++;
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         return removed;
@@ -108,5 +119,22 @@ public sealed class LocalTusFileStore
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static bool TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

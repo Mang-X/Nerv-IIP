@@ -49,6 +49,32 @@ internal static class FileStorageTransferHeaders
     public const string EnvironmentId = "X-Environment-Id";
 }
 
+internal static class FileStorageScanPolicy
+{
+    public const string Clean = "clean";
+    public const string Pending = "pending";
+    public const string Available = "available";
+
+    public static string InitialScanStatus(IConfiguration? configuration)
+    {
+        return configuration?.GetValue<bool>("FileStorage:Scanning:Enabled") == true
+            ? Pending
+            : Clean;
+    }
+
+    public static bool CanDownload(string scanStatus, string status, IConfiguration? configuration)
+    {
+        if (!string.Equals(status, Available, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return configuration?.GetValue<bool?>("FileStorage:Scanning:RequireCleanForDownload") != false
+            ? string.Equals(scanStatus, Clean, StringComparison.Ordinal)
+            : true;
+    }
+}
+
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ConcurrentDictionary<string, UploadSession> uploadSessions = new(StringComparer.Ordinal);
@@ -57,6 +83,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     private readonly ConcurrentDictionary<string, DownloadGrantIndexEntry> downloadGrantFiles = new(StringComparer.Ordinal);
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
+    private readonly IConfiguration? configuration;
     private readonly TimeSpan uploadSessionTtl;
 
     public InMemoryFileStorageService()
@@ -71,6 +98,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
     {
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
+        this.configuration = configuration;
         uploadSessionTtl = ResolveUploadSessionTtl(configuration);
     }
 
@@ -183,8 +211,8 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             session.ExpectedSizeBytes,
             session.Checksum,
             BuildObjectKey(session.OrganizationId, session.FileId),
-            "pending",
-            "available",
+            FileStorageScanPolicy.InitialScanStatus(configuration),
+            FileStorageScanPolicy.Available,
             session.CreatedAtUtc,
             now);
 
@@ -295,15 +323,16 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             || !string.Equals(grant.OrganizationId, organizationId, StringComparison.Ordinal)
             || !string.Equals(grant.EnvironmentId, environmentId, StringComparison.Ordinal)
             || !files.TryGetValue(grant.FileId, out var file)
-            || !string.Equals(file.ScanStatus, "clean", StringComparison.Ordinal)
-            || !string.Equals(file.Status, "available", StringComparison.Ordinal)
+            || !FileStorageScanPolicy.CanDownload(file.ScanStatus, file.Status, configuration)
             || !fileUploadSessions.TryGetValue(grant.FileId, out var mappedUploadSessionId))
         {
             return Task.FromResult<string?>(null);
         }
 
-        downloadGrantFiles.TryRemove(downloadGrantId, out _);
-        return Task.FromResult<string?>(mappedUploadSessionId);
+        return Task.FromResult(
+            downloadGrantFiles.TryRemove(downloadGrantId, out _)
+                ? mappedUploadSessionId
+                : null);
     }
 
     public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)

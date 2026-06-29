@@ -94,7 +94,7 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal(4096, storedFile.SizeBytes);
         Assert.Equal("sha256:test", storedFile.Checksum);
         Assert.Equal(session.ObjectKey, storedFile.ObjectKey);
-        Assert.Equal("pending", storedFile.ScanStatus);
+        Assert.Equal("clean", storedFile.ScanStatus);
         Assert.Equal("available", storedFile.Status);
         AssertObjectKeyIsNotExposed(result.Value);
     }
@@ -444,8 +444,20 @@ public sealed class FileStoragePostgreSqlServiceTests
             await WriteTusBytesAsync(store, "ups_active");
             await WriteTusBytesAsync(store, "ups_completed");
             await WriteTusBytesAsync(store, "ups_orphan");
+            foreach (var path in Directory.EnumerateFiles(rootPath))
+            {
+                File.SetLastWriteTimeUtc(path, now.AddMinutes(-10).UtcDateTime);
+            }
 
-            var collector = new PostgreSqlFileStorageGarbageCollector(dbContext, new TestTusStoreAccessor(store));
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(store),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FileStorage:GarbageCollection:OrphanTusFileGraceSeconds"] = "60"
+                    })
+                    .Build());
 
             var result = await collector.CollectAsync(CancellationToken.None);
 
@@ -483,7 +495,7 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             "sha256:test",
             "org-001/file_123",
-            "pending",
+            "clean",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));

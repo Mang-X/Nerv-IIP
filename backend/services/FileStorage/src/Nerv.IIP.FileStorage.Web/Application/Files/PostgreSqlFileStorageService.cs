@@ -11,12 +11,10 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
-    private const string CleanScanStatus = "clean";
-    private const string AvailableStatus = "available";
-
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
+    private readonly IConfiguration? configuration;
 
     public PostgreSqlFileStorageService(ApplicationDbContext dbContext)
         : this(dbContext, new ServerProxyUploadProvider())
@@ -26,11 +24,13 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     public PostgreSqlFileStorageService(
         ApplicationDbContext dbContext,
         IFileStorageUploadProvider uploadProvider,
-        ILocalTusFileStoreAccessor? tusStoreAccessor = null)
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null,
+        IConfiguration? configuration = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
         this.tusStoreAccessor = tusStoreAccessor;
+        this.configuration = configuration;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -139,8 +139,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             session.ExpectedSizeBytes,
             session.Checksum,
             session.ObjectKey,
-            "pending",
-            "available",
+            FileStorageScanPolicy.InitialScanStatus(configuration),
+            FileStorageScanPolicy.Available,
             session.CreatedAtUtc,
             now);
 
@@ -277,8 +277,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             x => x.FileId == grant.FileId,
             cancellationToken);
         if (file is null
-            || !string.Equals(file.ScanStatus, CleanScanStatus, StringComparison.Ordinal)
-            || !string.Equals(file.Status, AvailableStatus, StringComparison.Ordinal))
+            || !FileStorageScanPolicy.CanDownload(file.ScanStatus, file.Status, configuration))
         {
             return null;
         }
@@ -291,9 +290,31 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return null;
         }
 
+        var consumed = dbContext.Database.IsRelational()
+            ? await dbContext.DownloadGrants
+                .Where(x => x.DownloadGrantId == downloadGrantId
+                    && x.OrganizationId == organizationId
+                    && x.EnvironmentId == environmentId
+                    && x.ExpiresAtUtc > now)
+                .ExecuteDeleteAsync(cancellationToken)
+            : await ConsumeGrantForNonRelationalTestStoreAsync(grant, cancellationToken);
+        return consumed == 1 ? session.UploadSessionId : null;
+    }
+
+    private async Task<int> ConsumeGrantForNonRelationalTestStoreAsync(
+        DownloadGrantRecord grant,
+        CancellationToken cancellationToken)
+    {
         dbContext.DownloadGrants.Remove(grant);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return session.UploadSessionId;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return 1;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return 0;
+        }
     }
 
     public Task<bool> CanAcceptTusUploadAsync(string uploadSessionId, CancellationToken cancellationToken)

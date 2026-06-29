@@ -215,22 +215,42 @@ public sealed class PatchConsoleTusUploadEndpoint(
 [GatewayOperationId("downloadConsoleFileGrantContent")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
 public sealed class DownloadConsoleFileGrantContentEndpoint(
-    IGatewayIamAuthClient iam,
     IGatewayAuthorizationClient auth,
     IGatewayFileStorageClient files)
     : EndpointWithoutRequest
 {
-    public override Task HandleAsync(CancellationToken ct) =>
-        AuthorizedProxyEndpointExecutor.ExecuteAsync(
-            HttpContext,
-            iam,
-            auth,
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        var organizationId = HttpContext.Request.Headers["X-Organization-Id"].ToString();
+        var environmentId = HttpContext.Request.Headers["X-Environment-Id"].ToString();
+        if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(
+                HttpContext,
+                StatusCodes.Status400BadRequest,
+                "X-Organization-Id and X-Environment-Id headers are required.",
+                ct);
+            return;
+        }
+
+        var downloadGrantId = Route<string>("downloadGrantId")!;
+        var requirement = new GatewayPermissionRequirement(
             GatewayPermissions.FilesRead,
-            async (_, cancellationToken) =>
-                await files.ProxyDownloadGrantContentAsync(
-                    Route<string>("downloadGrantId")!,
-                    HttpContext.Request,
-                    HttpContext.Response,
-                    cancellationToken),
+            organizationId,
+            environmentId,
+            "file-download-grant",
+            downloadGrantId);
+        var principal = await GatewayAuthorization.RequirePermissionAsync(HttpContext, auth, requirement, ct);
+        if (principal is null)
+        {
+            return;
+        }
+
+        await files.ProxyDownloadGrantContentAsync(
+            downloadGrantId,
+            organizationId,
+            environmentId,
+            HttpContext.Response,
             ct);
+    }
 }

@@ -11,7 +11,8 @@ public sealed record FileStorageGarbageCollectionResult(
 
 public sealed class PostgreSqlFileStorageGarbageCollector(
     ApplicationDbContext dbContext,
-    ILocalTusFileStoreAccessor tusStoreAccessor)
+    ILocalTusFileStoreAccessor tusStoreAccessor,
+    IConfiguration? configuration = null)
 {
     public async Task<FileStorageGarbageCollectionResult> CollectAsync(CancellationToken cancellationToken)
     {
@@ -22,6 +23,10 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
         var expiredDownloadGrants = await dbContext.DownloadGrants
             .Where(x => x.ExpiresAtUtc <= now)
             .ToArrayAsync(cancellationToken);
+
+        dbContext.UploadSessions.RemoveRange(expiredUploadSessions);
+        dbContext.DownloadGrants.RemoveRange(expiredDownloadGrants);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         var localTusFilesRemoved = 0;
         if (tusStoreAccessor.TryGet(out var store))
@@ -38,17 +43,23 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
                 .Where(x => x.Completed || x.ExpiresAtUtc > now)
                 .Select(x => x.UploadSessionId)
                 .ToArrayAsync(cancellationToken);
-            localTusFilesRemoved += store.DeleteFilesExcept(retainedTusUploadSessionIds);
+            localTusFilesRemoved += store.DeleteFilesExcept(
+                retainedTusUploadSessionIds,
+                now - ResolveOrphanGracePeriod(configuration));
         }
-
-        dbContext.UploadSessions.RemoveRange(expiredUploadSessions);
-        dbContext.DownloadGrants.RemoveRange(expiredDownloadGrants);
-        await dbContext.SaveChangesAsync(cancellationToken);
 
         return new FileStorageGarbageCollectionResult(
             expiredUploadSessions.Length,
             expiredDownloadGrants.Length,
             localTusFilesRemoved);
+    }
+
+    private static TimeSpan ResolveOrphanGracePeriod(IConfiguration? configuration)
+    {
+        var seconds = configuration?.GetValue<double?>("FileStorage:GarbageCollection:OrphanTusFileGraceSeconds");
+        return seconds is >= 0
+            ? TimeSpan.FromSeconds(seconds.Value)
+            : TimeSpan.FromMinutes(5);
     }
 }
 
