@@ -71,6 +71,23 @@ public sealed class AddCorrectiveActionItemCommandHandler(ICorrectiveActionRepos
     }
 }
 
+public sealed record CompleteCorrectiveActionItemCommand(
+    CorrectiveActionId CorrectiveActionId,
+    CorrectiveActionItemId CorrectiveActionItemId,
+    string CompletedByUserId,
+    DateTimeOffset CompletedAtUtc) : ICommand;
+
+public sealed class CompleteCorrectiveActionItemCommandHandler(ICorrectiveActionRepository repository)
+    : ICommandHandler<CompleteCorrectiveActionItemCommand>
+{
+    public async Task Handle(CompleteCorrectiveActionItemCommand request, CancellationToken cancellationToken)
+    {
+        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
+            ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
+        capa.CompleteAction(request.CorrectiveActionItemId, request.CompletedByUserId, request.CompletedAtUtc);
+    }
+}
+
 public sealed record VerifyCorrectiveActionEffectivenessCommand(
     CorrectiveActionId CorrectiveActionId,
     string VerifiedByUserId,

@@ -32,7 +32,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         CreatedAtUtc = DateTime.UtcNow;
         lines.AddRange(quotation.Lines.Select(line => SalesOrderLine.Create(line.LineNo, line.SkuCode, line.UomCode, line.Quantity, line.UnitPrice, line.RequiredDate)));
         TotalAmount = lines.Sum(x => x.LineAmount);
-        EnsureWithinCreditLimit(creditSnapshot);
+        ApplyCreditStatus(creditSnapshot);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -57,13 +57,33 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
 
     public SalesOrderLine RegisterDelivery(string lineNo, decimal quantity)
     {
+        if (!string.Equals(Status, "released", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only released sales orders can be delivered.");
+        }
+
         var line = lines.SingleOrDefault(x => x.LineNo == lineNo)
             ?? throw new InvalidOperationException($"Sales order line '{lineNo}' was not found.");
         line.RegisterDelivery(quantity);
         return line;
     }
 
-    private void EnsureWithinCreditLimit(CustomerCreditSnapshot? creditSnapshot)
+    public void ReleaseCreditHold()
+    {
+        if (Status == "released")
+        {
+            return;
+        }
+
+        if (Status != "credit-held")
+        {
+            throw new InvalidOperationException("Only credit-held sales orders can be released.");
+        }
+
+        Status = "released";
+    }
+
+    private void ApplyCreditStatus(CustomerCreditSnapshot? creditSnapshot)
     {
         if (creditSnapshot is null)
         {
@@ -78,7 +98,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         var exposureAfterOrder = creditSnapshot.OpenReceivableAmount + creditSnapshot.ActiveSalesOrderExposure + TotalAmount;
         if (exposureAfterOrder > creditSnapshot.CreditLimit)
         {
-            throw new InvalidOperationException("Customer credit limit would be exceeded by this sales order.");
+            Status = "credit-held";
         }
     }
 }

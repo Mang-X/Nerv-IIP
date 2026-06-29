@@ -42,10 +42,42 @@ public sealed class InspectionPlanRepository(ApplicationDbContext context)
 
 public interface IInspectionRecordRepository : IRepository<InspectionRecord, InspectionRecordId>
 {
+    Task<InspectionRecord?> FindBySourceDocumentAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string skuCode,
+        string sourceDocumentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class InspectionRecordRepository(ApplicationDbContext context)
-    : RepositoryBase<InspectionRecord, InspectionRecordId, ApplicationDbContext>(context), IInspectionRecordRepository;
+    : RepositoryBase<InspectionRecord, InspectionRecordId, ApplicationDbContext>(context), IInspectionRecordRepository
+{
+    public Task<InspectionRecord?> FindBySourceDocumentAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string skuCode,
+        string sourceDocumentId,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedSkuCode = skuCode.Trim();
+        var normalizedSourceDocumentId = sourceDocumentId.Trim();
+        return DbContext.InspectionRecords.SingleOrDefaultAsync(
+            x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.SourceType == normalizedSourceType
+                && x.SourceService == normalizedSourceService
+                && x.SkuCode == normalizedSkuCode
+                && x.SourceDocumentId == normalizedSourceDocumentId,
+            cancellationToken);
+    }
+}
 
 public interface IQualityReasonRepository : IRepository<QualityReason, QualityReasonId>
 {

@@ -96,7 +96,7 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
-    public void Sales_order_credit_check_blocks_limit_overrun_from_open_ar_and_released_orders()
+    public void Sales_order_credit_check_places_limit_overrun_on_hold_until_release()
     {
         var quotation = Quotation.Create(
             "org-001",
@@ -107,10 +107,14 @@ public sealed class ErpSalesFinanceAggregateTests
             [new QuotationLineDraft("L1", "SKU-FG", "ea", 2m, 10m, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20)))]);
         quotation.Approve();
 
-        Assert.Throws<InvalidOperationException>(() => SalesOrder.CreateFromQuotation(
+        var heldOrder = SalesOrder.CreateFromQuotation(
             "SO-CREDIT-001",
             quotation,
-            new CustomerCreditSnapshot("CUST-001", 25m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m)));
+            new CustomerCreditSnapshot("CUST-001", 25m, OpenReceivableAmount: 10m, ActiveSalesOrderExposure: 1m));
+        Assert.Equal("credit-held", heldOrder.Status);
+        Assert.Throws<InvalidOperationException>(() => heldOrder.RegisterDelivery("L1", 1m));
+        heldOrder.ReleaseCreditHold();
+        Assert.Equal("released", heldOrder.Status);
 
         var order = SalesOrder.CreateFromQuotation(
             "SO-CREDIT-002",
@@ -179,6 +183,27 @@ public sealed class ErpSalesFinanceAggregateTests
     }
 
     [Fact]
+    public void Journal_voucher_lines_capture_currency_rate_local_amounts_and_balance_in_local_currency()
+    {
+        var voucher = JournalVoucher.Post(
+            "org-001",
+            "env-dev",
+            "JV-FX-001",
+            new DateOnly(2026, 6, 20),
+            [
+                new JournalVoucherLineDraft("2202", 100m, 0m, "clear USD AP", "USD", 7.1m),
+                new JournalVoucherLineDraft("BANK-USD", 0m, 100m, "pay USD cash", "USD", 7.2m),
+                new JournalVoucherLineDraft("6603", 10m, 0m, "realized FX loss", "CNY", 1m),
+            ]);
+
+        Assert.Equal(720m, voucher.Lines.Sum(x => x.LocalDebitAmount));
+        Assert.Equal(720m, voucher.Lines.Sum(x => x.LocalCreditAmount));
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "2202" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.1m && x.LocalDebitAmount == 710m);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "BANK-USD" && x.CurrencyCode == "USD" && x.ExchangeRate == 7.2m && x.LocalCreditAmount == 720m);
+        Assert.Contains(voucher.Lines, x => x.AccountCode == "6603" && x.CurrencyCode == "CNY" && x.LocalDebitAmount == 10m);
+    }
+
+    [Fact]
     public void Payable_and_receivable_track_open_amount_after_partial_settlement()
     {
         var payable = AccountPayable.Create(
@@ -215,6 +240,25 @@ public sealed class ErpSalesFinanceAggregateTests
         Assert.Equal(new DateOnly(2026, 6, 15), receivable.DueDate);
         Assert.Equal("current", payable.GetAgingBucket(new DateOnly(2026, 6, 30)));
         Assert.Equal("1-30", receivable.GetAgingBucket(new DateOnly(2026, 7, 1)));
+    }
+
+    [Fact]
+    public void Payable_tracks_local_amount_at_document_exchange_rate()
+    {
+        var payable = AccountPayable.Create(
+            "org-001",
+            "env-dev",
+            "AP-USD-001",
+            "INV-USD-001",
+            "SUP-001",
+            100m,
+            "usd",
+            exchangeRate: 7.1m);
+
+        Assert.Equal("USD", payable.CurrencyCode);
+        Assert.Equal(7.1m, payable.ExchangeRate);
+        Assert.Equal(710m, payable.LocalAmount);
+        Assert.Equal(710m, payable.LocalOpenAmount);
     }
 
     [Fact]

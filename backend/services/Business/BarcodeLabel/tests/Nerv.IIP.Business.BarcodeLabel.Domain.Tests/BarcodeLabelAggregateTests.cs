@@ -2,6 +2,7 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelPrintBatchAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.LabelTemplateAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
+using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.TraceabilityAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.DomainEvents;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.Tests;
@@ -29,6 +30,49 @@ public sealed class BarcodeLabelAggregateTests
         Assert.Equal("LOT-A", parsed.LotNo);
         Assert.Equal("SN-0001", parsed.SerialNumber);
         Assert.Equal(2, parsed.Quantity);
+    }
+
+    [Fact]
+    public void Gs1_parser_skips_known_non_core_ais_and_keeps_serialized_identity()
+    {
+        var parsed = Gs1ApplicationIdentifierParser.Parse("0109506000134352112401011726123110LOT-A\u001D21SN-0001\u001D3103001234");
+
+        Assert.Equal("09506000134352", parsed.Gtin);
+        Assert.Equal("LOT-A", parsed.LotNo);
+        Assert.Equal("SN-0001", parsed.SerialNumber);
+    }
+
+    [Fact]
+    public void Gs1_parser_extracts_sscc_from_raw_and_parenthesized_values()
+    {
+        var raw = Gs1ApplicationIdentifierParser.Parse("00123456789012345675");
+        var parenthesized = Gs1ApplicationIdentifierParser.Parse("(00)123456789012345675");
+
+        Assert.Equal("123456789012345675", raw.Sscc);
+        Assert.Equal(raw.Sscc, parenthesized.Sscc);
+    }
+
+    [Fact]
+    public void Gs1_generation_inserts_fnc1_after_variable_length_ais()
+    {
+        var value = new Gs1BarcodeValue("09506000134352", "LOT-A", "SN-0001", 2);
+
+        var label = value.ToAiString();
+
+        Assert.Equal("(01)09506000134352(10)LOT-A\u001D(21)SN-0001\u001D(30)2", label);
+        var parsed = Gs1ApplicationIdentifierParser.Parse(label);
+        Assert.Equal("LOT-A", parsed.LotNo);
+        Assert.Equal("SN-0001", parsed.SerialNumber);
+        Assert.Equal(2, parsed.Quantity);
+    }
+
+    [Fact]
+    public void Gs1_sscc_generation_appends_mod10_check_digit()
+    {
+        var value = Gs1BarcodeValue.CreateSscc("12345678901234567");
+
+        Assert.Equal("123456789012345675", value.Sscc);
+        Assert.Equal("(00)123456789012345675", value.ToAiString());
     }
 
     [Fact]
@@ -79,7 +123,7 @@ public sealed class BarcodeLabelAggregateTests
         {
             Assert.Equal("09506000134352", item.Gtin);
             Assert.Equal("LOT-A", item.LotNo);
-            Assert.StartsWith("(01)09506000134352(10)LOT-A(21)SN-", item.LabelValue, StringComparison.Ordinal);
+            Assert.StartsWith("(01)09506000134352(10)LOT-A\u001D(21)SN-", item.LabelValue, StringComparison.Ordinal);
             Assert.StartsWith("urn:epc:id:sgtin:0950600.013435.", item.EpcUri, StringComparison.Ordinal);
         });
         Assert.Equal(2, batch.EpcisEvents.Count);
@@ -87,7 +131,7 @@ public sealed class BarcodeLabelAggregateTests
         {
             Assert.Equal("commissioning", epcisEvent.EventType);
             Assert.Equal("ADD", epcisEvent.Action);
-            Assert.Equal("commissioning", epcisEvent.BusinessStep);
+            Assert.Equal("urn:epcglobal:cbv:bizstep:commissioning", epcisEvent.BusinessStep);
         });
     }
 
@@ -275,7 +319,80 @@ public sealed class BarcodeLabelAggregateTests
         var epcisEvent = Assert.Single(scan.EpcisEvents);
         Assert.Equal("objectEvent", epcisEvent.EventType);
         Assert.Equal("OBSERVE", epcisEvent.Action);
-        Assert.Equal("inventory.receipt", epcisEvent.BusinessStep);
+        Assert.Equal("urn:epcglobal:cbv:bizstep:receiving", epcisEvent.BusinessStep);
+    }
+
+    [Fact]
+    public void Accepted_scan_with_sscc_and_sgtin_creates_epcis_aggregation_event()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(00)123456789012345675(01)09506000134352(10)LOT-A\u001D(21)SN-0001",
+            "wms.receiving",
+            "ASN-001",
+            "idem-scan-aggregation-001",
+            "accepted",
+            null);
+
+        Assert.Equal("123456789012345675", scan.Sscc);
+        var aggregation = Assert.Single(scan.EpcisEvents, x => x.EventType == "aggregationEvent");
+        Assert.Equal("ADD", aggregation.Action);
+        Assert.Equal("urn:epcglobal:cbv:bizstep:packing", aggregation.BusinessStep);
+        Assert.Equal("123456789012345675", aggregation.ParentSscc);
+        Assert.Equal(scan.Gtin, aggregation.Gtin);
+        Assert.Equal(scan.SerialNumber, aggregation.SerialNumber);
+    }
+
+    [Fact]
+    public void Epcis_disaggregation_event_preserves_parent_child_semantics()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(00)123456789012345675(01)09506000134352(10)LOT-A\u001D(21)SN-0001",
+            "wms.receiving",
+            "ASN-001",
+            "idem-scan-disaggregation-001",
+            "accepted",
+            null);
+
+        var disaggregation = EpcisEvent.Disaggregation("org-001", "env-dev", scan, "wms.receiving", "ASN-001");
+
+        Assert.Equal("aggregationEvent", disaggregation.EventType);
+        Assert.Equal("DELETE", disaggregation.Action);
+        Assert.Equal("urn:epcglobal:cbv:bizstep:unpacking", disaggregation.BusinessStep);
+        Assert.Equal("123456789012345675", disaggregation.ParentSscc);
+        Assert.Equal(scan.Gtin, disaggregation.Gtin);
+        Assert.Equal(scan.SerialNumber, disaggregation.SerialNumber);
+    }
+
+    [Fact]
+    public void Accepted_issue_scan_with_sscc_does_not_create_packing_aggregation_event()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(00)123456789012345675(01)09506000134352(21)SN-0001",
+            "inventory.issue",
+            "OUT-001",
+            "idem-scan-issue-aggregation-001",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            1);
+
+        Assert.DoesNotContain(scan.EpcisEvents, x => x.EventType == "aggregationEvent");
+        Assert.Single(scan.EpcisEvents, x => x.EventType == "objectEvent");
     }
 
     [Fact]
@@ -318,6 +435,30 @@ public sealed class BarcodeLabelAggregateTests
             null);
 
         Assert.Contains(scan.GetDomainEvents(), x => x is LabelScannedDomainEvent);
+        Assert.DoesNotContain(scan.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
+        Assert.Equal("wms-receiving-scan-observed", scan.BusinessAction);
+        Assert.NotNull(scan.DownstreamEventId);
+    }
+
+    [Theory]
+    [InlineData("production.report", "production-report-scan-observed")]
+    [InlineData("quality.inspection", "quality-inspection-scan-observed")]
+    [InlineData("inventory.count", "inventory-count-scan-observed")]
+    public void Accepted_non_movement_workflows_select_downstream_scan_action(string sourceWorkflow, string expectedAction)
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A\u001D(21)SN-0001",
+            sourceWorkflow,
+            "DOC-001",
+            $"idem-{sourceWorkflow}",
+            "accepted",
+            null);
+
+        Assert.Equal(expectedAction, scan.BusinessAction);
+        Assert.NotNull(scan.DownstreamEventId);
         Assert.DoesNotContain(scan.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
     }
 

@@ -91,6 +91,10 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
                 request.OwnerId,
                 request.Quantity);
         }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new KnownException(ex.Message, ex);
+        }
         catch (ArgumentException ex)
         {
             throw new KnownException(ex.Message, ex);
@@ -117,6 +121,26 @@ public sealed class RecordScanCommandHandler(ApplicationDbContext dbContext)
             }
 
             return existing.Id;
+        }
+
+        if (string.Equals(candidate.Result, "accepted", StringComparison.Ordinal))
+        {
+            var duplicateSerializedScan = await dbContext.ScanRecords.AnyAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.IdempotencyKey != request.IdempotencyKey
+                && (x.ScannedValue == candidate.ScannedValue
+                    || (!string.IsNullOrWhiteSpace(candidate.EpcUri) && x.EpcUri == candidate.EpcUri)
+                    || (!string.IsNullOrWhiteSpace(candidate.Gtin)
+                        && !string.IsNullOrWhiteSpace(candidate.SerialNumber)
+                        && x.Gtin == candidate.Gtin
+                        && x.LotNo == candidate.LotNo
+                        && x.SerialNumber == candidate.SerialNumber)),
+                cancellationToken);
+            if (duplicateSerializedScan)
+            {
+                throw new KnownException("Duplicate serialized barcode scan is not allowed.");
+            }
         }
 
         dbContext.ScanRecords.Add(candidate);

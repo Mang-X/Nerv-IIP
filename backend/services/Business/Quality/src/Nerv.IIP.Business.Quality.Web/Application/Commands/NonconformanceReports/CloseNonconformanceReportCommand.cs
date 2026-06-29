@@ -20,13 +20,21 @@ public sealed class CloseNonconformanceReportCommandValidator : AbstractValidato
     }
 }
 
-public sealed class CloseNonconformanceReportCommandHandler(INonconformanceReportRepository repository)
+public sealed class CloseNonconformanceReportCommandHandler(
+    INonconformanceReportRepository repository,
+    ICorrectiveActionRepository correctiveActionRepository)
     : ICommandHandler<CloseNonconformanceReportCommand>
 {
     public async Task Handle(CloseNonconformanceReportCommand request, CancellationToken cancellationToken)
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
+        if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
+            && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+        {
+            throw new KnownException("NCR requires a linked effective CAPA before closure.");
+        }
+
         ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId);
     }
 }

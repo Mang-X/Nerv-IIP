@@ -98,6 +98,9 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         InboundOrderLineEntityTypeConfiguration.AddLineColumns(builder, "requested_quantity", "Outbound requested quantity.");
         builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick location for outbound stock.");
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
+        builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
+        builder.Property(x => x.BackorderQuantity).HasColumnName("backorder_quantity").IsRequired().HasPrecision(18, 6).HasComment("Short-picked outbound quantity left as backorder.");
+        builder.Property(x => x.FulfillmentRecorded).HasColumnName("fulfillment_recorded").IsRequired().HasComment("Whether pack review recorded issued and backorder quantities for this outbound line.");
     }
 }
 
@@ -143,6 +146,7 @@ public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Expected count quantity provided by upstream boundary.");
         builder.Property(x => x.CountedQuantity).HasColumnName("counted_quantity").HasPrecision(18, 6).HasComment("Actual counted quantity.");
         builder.Property(x => x.VarianceQuantity).HasColumnName("variance_quantity").HasPrecision(18, 6).HasComment("Counted quantity minus expected quantity.");
+        builder.Property(x => x.InventoryCountTaskId).HasColumnName("inventory_count_task_id").HasMaxLength(150).HasComment("Public Inventory count task id used to freeze and confirm the counted ledger.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Count execution status.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");

@@ -17,7 +17,8 @@ public sealed record PurchaseReceiptLineDraft(
     decimal ReceivedQuantity,
     string QualityStatus,
     string? LocationCode = null,
-    string? LotNo = null);
+    string? LotNo = null,
+    bool FinalDelivery = false);
 
 public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
 {
@@ -27,7 +28,7 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     {
     }
 
-    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts)
+    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate)
     {
         ArgumentNullException.ThrowIfNull(order);
         OrganizationId = order.OrganizationId;
@@ -36,11 +37,13 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         PurchaseOrderNo = order.PurchaseOrderNo;
         SupplierCode = order.SupplierCode;
         SiteCode = order.SiteCode;
+        CurrencyCode = order.CurrencyCode;
+        ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
         Status = PurchaseReceiptStatus.Recorded;
         RecordedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
-            var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity);
+            var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
             var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
             lines.Add(line);
         }
@@ -65,14 +68,16 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     public string PurchaseOrderNo { get; private set; } = string.Empty;
     public string SupplierCode { get; private set; } = string.Empty;
     public string SiteCode { get; private set; } = string.Empty;
+    public string CurrencyCode { get; private set; } = string.Empty;
+    public decimal ExchangeRate { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
     public PurchaseReceiptStatus Status { get; private set; }
     public DateTime RecordedAtUtc { get; private set; }
     public IReadOnlyCollection<PurchaseReceiptLine> Lines => lines;
 
-    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines)
+    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m)
     {
-        return new PurchaseReceipt(order, purchaseReceiptNo, lines);
+        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate);
     }
 
     public void Cancel()

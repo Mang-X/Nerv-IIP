@@ -158,6 +158,17 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                         .HasColumnName("action_type")
                         .HasComment("CAPA action type: containment, corrective or preventive.");
 
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc")
+                        .HasComment("UTC time when this CAPA action item was completed.");
+
+                    b.Property<string>("CompletedByUserId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("completed_by_user_id")
+                        .HasComment("User id that completed this CAPA action item.");
+
                     b.Property<Guid>("CorrectiveActionId")
                         .HasColumnType("uuid")
                         .HasColumnName("corrective_action_id")
@@ -562,6 +573,10 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "Result");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceService", "SourceDocumentId", "SkuCode")
+                        .IsUnique()
+                        .HasDatabaseName("IX_inspection_records_organization_id_environment_id_source_t~1");
 
                     b.ToTable("inspection_records", "quality", t =>
                         {

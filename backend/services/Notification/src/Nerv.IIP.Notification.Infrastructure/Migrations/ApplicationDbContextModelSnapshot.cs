@@ -368,6 +368,10 @@ namespace Nerv.IIP.Notification.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasComment("Delivery attempt identifier.");
 
+                    b.Property<int>("AttemptNo")
+                        .HasColumnType("integer")
+                        .HasComment("One-based delivery attempt number for this message and channel.");
+
                     b.Property<DateTimeOffset>("AttemptedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasComment("UTC time when delivery was attempted.");
@@ -383,6 +387,10 @@ namespace Nerv.IIP.Notification.Infrastructure.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasComment("Optional provider failure reason.");
 
+                    b.Property<DateTimeOffset?>("NextRetryAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time when a failed attempt becomes eligible for retry; null after success or dead letter.");
+
                     b.Property<Guid>("NotificationMessageId")
                         .HasColumnType("uuid")
                         .HasComment("Notification message identifier targeted by the attempt.");
@@ -396,6 +404,8 @@ namespace Nerv.IIP.Notification.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("NotificationMessageId");
+
+                    b.HasIndex("Status", "NextRetryAtUtc");
 
                     b.HasIndex("Channel", "Status", "AttemptedAtUtc");
 
