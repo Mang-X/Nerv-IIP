@@ -235,6 +235,23 @@ public sealed record SchedulePlanReleasedIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record ScheduleConflictDetectedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    ScheduleConflictDetectedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
 public sealed record SchedulePlanLifecyclePayload(
     string PlanId,
     string ProblemId,

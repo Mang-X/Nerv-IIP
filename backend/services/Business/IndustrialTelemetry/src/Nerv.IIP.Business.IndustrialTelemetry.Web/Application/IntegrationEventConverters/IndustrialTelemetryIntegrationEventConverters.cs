@@ -54,7 +54,12 @@ public sealed class AlarmRaisedIntegrationEventConverter
                 alarm.AlarmCode,
                 alarm.Severity,
                 alarm.RaisedAtUtc,
-                alarm.ExternalAlarmId));
+                alarm.ExternalAlarmId,
+                alarm.Priority,
+                alarm.TagKey,
+                alarm.ObservedValue,
+                alarm.ThresholdValue,
+                alarm.UnitCode));
     }
 }
 

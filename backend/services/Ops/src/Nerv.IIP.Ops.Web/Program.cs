@@ -71,6 +71,8 @@ else
 builder.Services.AddOpsPersistence(builder.Configuration);
 builder.Services.Configure<OpsConnectorCredentialOptions>(
     builder.Configuration.GetSection(OpsConnectorCredentialOptions.SectionName));
+builder.Services.Configure<OperationLeaseReaperOptions>(
+    builder.Configuration.GetSection("Ops:LeaseReaper"));
 builder.Services.AddSingleton<ConfiguredOpsConnectorCredentialValidator>();
 var iamBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 builder.Services.AddHttpClient<IamOpsConnectorCredentialValidator>(client =>
@@ -82,6 +84,8 @@ if (usePostgreSql)
 {
     builder.Services.AddScoped<OpsDatabaseMigrationRunner>();
     builder.Services.AddScoped<IOperationTaskApplicationService, EfOperationTaskApplicationService>();
+    builder.Services.AddScoped<IOperationLeaseReaper, EfOperationLeaseReaper>();
+    builder.Services.AddHostedService<OperationLeaseReaperHostedService>();
     builder.Services.AddScoped<IOperationTemplateApplicationService, EfOperationTemplateApplicationService>();
 }
 else

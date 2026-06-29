@@ -51,6 +51,11 @@ public sealed record AlarmRuleListItem(
     decimal ThresholdValue,
     string UnitCode,
     bool IsEnabled,
+    decimal DeadbandValue,
+    int OnDelaySeconds,
+    int OffDelaySeconds,
+    int MinDurationSeconds,
+    string Priority,
     DateTimeOffset UpdatedAtUtc);
 
 public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
@@ -81,6 +86,11 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
                 x.ThresholdValue,
                 x.UnitCode,
                 x.IsEnabled,
+                x.DeadbandValue,
+                x.OnDelaySeconds,
+                x.OffDelaySeconds,
+                x.MinDurationSeconds,
+                x.Priority,
                 x.UpdatedAtUtc))
             .Skip(request.Skip)
             .Take(request.Take)
@@ -91,7 +101,7 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
 
 public sealed record ListAlarmEventsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
-public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
+public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Priority, string? TagKey, decimal? ObservedValue, decimal? ThresholdValue, string? UnitCode, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
 
 public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListAlarmEventsQuery, PagedListResponse<AlarmEventListItem>>
@@ -107,7 +117,7 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RaisedAtUtc)
-            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
+            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Priority, x.TagKey, x.ObservedValue, x.ThresholdValue, x.UnitCode, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
@@ -167,6 +177,7 @@ public sealed record OeeResponse(
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
     decimal AvailabilityRate,
+    decimal LoadingRate,
     decimal PerformanceRate,
     decimal QualityRate,
     decimal OeeRate,
@@ -190,6 +201,16 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     private static readonly HashSet<string> ProductiveRuntimeStates = new(StringComparer.OrdinalIgnoreCase)
     {
         "running",
+    };
+
+    private static readonly HashSet<string> PlannedDownStates = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "planned-down",
+        "planned-stop",
+        "planned-maintenance",
+        "maintenance-window",
+        "scheduled-maintenance",
+        "pm",
     };
 
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
@@ -217,10 +238,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             ? inWindowStates
             : [carryInState, .. inWindowStates];
 
-        var productiveRuntimeRate = CalculateProductiveRuntimeRate(states, request.WindowStartUtc, request.WindowEndUtc);
+        var runtimeRates = CalculateRuntimeRates(states, request.WindowStartUtc, request.WindowEndUtc);
         var performanceRate = states.Length > 0 ? 1m : 0m;
         var qualityRate = states.Length > 0 ? 1m : 0m;
-        var oeeRate = productiveRuntimeRate * performanceRate * qualityRate;
+        var oeeRate = runtimeRates.AvailabilityRate * performanceRate * qualityRate;
 
         return new OeeResponse(
             request.OrganizationId,
@@ -229,7 +250,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(productiveRuntimeRate, 6),
+            Math.Round(runtimeRates.AvailabilityRate, 6),
+            Math.Round(runtimeRates.LoadingRate, 6),
             performanceRate,
             qualityRate,
             Math.Round(oeeRate, 6),
@@ -237,19 +259,15 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             true);
     }
 
-    private static decimal CalculateProductiveRuntimeRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
+    private static OeeRuntimeRates CalculateRuntimeRates(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
     {
         if (states.Count == 0)
         {
-            return 0m;
+            return new OeeRuntimeRates(0m, 0m);
         }
 
         var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
-        if (totalTicks <= 0)
-        {
-            return 0m;
-        }
-
+        var loadingTicks = 0L;
         var productiveRuntimeTicks = 0L;
         for (var i = 0; i < states.Count; i++)
         {
@@ -260,21 +278,53 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
                 segmentEnd = windowEndUtc;
             }
 
-            if (segmentEnd <= segmentStart || !IsProductiveRuntimeState(states[i].State))
+            if (segmentEnd <= segmentStart || IsPlannedDownState(states[i].State))
             {
                 continue;
             }
 
-            productiveRuntimeTicks += segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            var segmentTicks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            loadingTicks += segmentTicks;
+            if (IsProductiveRuntimeState(states[i].State))
+            {
+                productiveRuntimeTicks += segmentTicks;
+            }
         }
 
-        return decimal.Divide(productiveRuntimeTicks, totalTicks);
+        if (loadingTicks <= 0)
+        {
+            return new OeeRuntimeRates(0m, 0m);
+        }
+
+        var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
+        var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
+        return new OeeRuntimeRates(availabilityRate, loadingRate);
     }
 
     private static bool IsProductiveRuntimeState(string state)
     {
-        return ProductiveRuntimeStates.Contains(state);
+        return ProductiveRuntimeStates.Contains(NormalizeStateKey(state));
     }
+
+    private static bool IsPlannedDownState(string state)
+    {
+        return PlannedDownStates.Contains(NormalizeStateKey(state));
+    }
+
+    private static string NormalizeStateKey(string state)
+    {
+        var normalized = state.Trim().ToLowerInvariant()
+            .Replace('_', '-')
+            .Replace(' ', '-');
+        while (normalized.Contains("--", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        return normalized;
+    }
+
+    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
 }

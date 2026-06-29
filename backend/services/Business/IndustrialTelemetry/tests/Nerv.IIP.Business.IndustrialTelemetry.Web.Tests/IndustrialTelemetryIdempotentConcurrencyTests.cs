@@ -116,6 +116,40 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     }
 
     [Fact]
+    public async Task Duplicate_alarm_same_external_id_ignores_continuous_measurement_values()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var first = new RaiseAlarmCommand(
+            "org-001",
+            "env-dev",
+            "DEV-RACE-04",
+            "TEMP_HIGH",
+            "critical",
+            new DateTimeOffset(2026, 6, 1, 12, 30, 0, TimeSpan.Zero),
+            "race-alarm-continuous-001",
+            "p1",
+            "temperature",
+            96.5m,
+            90m,
+            "celsius");
+        var replayWithFreshReading = first with
+        {
+            ObservedValue = 97.25m,
+            ThresholdValue = 90.000001m
+        };
+        var handler = new RaiseAlarmCommandHandler(context);
+
+        var firstAlarmId = await handler.Handle(first, CancellationToken.None);
+        await context.SaveChangesAsync();
+        var replayAlarmId = await handler.Handle(replayWithFreshReading, CancellationToken.None);
+        await context.SaveChangesAsync();
+
+        Assert.Equal(firstAlarmId, replayAlarmId);
+        Assert.Equal(1, await context.AlarmEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Duplicate_sample_save_conflict_with_different_payload_still_raises_known_conflict_after_retry()
     {
         await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();

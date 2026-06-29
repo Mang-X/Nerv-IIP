@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -27,8 +28,9 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(18, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceWorkOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "createMaintenancePlan");
@@ -37,6 +39,10 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenanceInspections");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceSpareParts");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceSparePart");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceDowntimeReason");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceDowntimeReasons");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/maintenance/downtime-reasons/{reasonCode}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "updateMaintenanceDowntimeReason");
+        Assert.Contains(contracts, x => x.HttpMethod == "DELETE" && x.Route == "/api/business/v1/maintenance/downtime-reasons/{reasonCode}" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "deleteMaintenanceDowntimeReason");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "getMaintenanceAssetAvailabilityWindows");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/availability-windows" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "queryMaintenanceAvailabilityWindows");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/plans/generate-due" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "generateDueMaintenanceWorkOrders");
@@ -542,7 +548,7 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
-    public async Task Generate_due_maintenance_work_orders_creates_one_idempotent_work_order_per_due_plan()
+    public async Task Generate_due_maintenance_work_orders_creates_idempotent_catch_up_work_orders_per_due_plan()
     {
         await using var dbContext = CreateDbContext();
         dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-WEEKLY", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
@@ -555,14 +561,155 @@ public sealed class MaintenanceEndpointContractTests
         var second = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
-        Assert.Equal(1, first.GeneratedCount);
+        Assert.Equal(2, first.GeneratedCount);
         Assert.Equal(0, second.GeneratedCount);
-        var workOrder = Assert.Single(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
-        Assert.Equal("DEV-CNC-01", workOrder.DeviceAssetId);
-        Assert.Equal("PM-WEEKLY", workOrder.SourcePlanCode);
+        var workOrders = await dbContext.MaintenanceWorkOrders.ToArrayAsync();
+        Assert.Equal(2, workOrders.Length);
+        Assert.All(workOrders, workOrder =>
+        {
+            Assert.Equal("DEV-CNC-01", workOrder.DeviceAssetId);
+            Assert.Equal("PM-WEEKLY", workOrder.SourcePlanCode);
+        });
         var plan = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-WEEKLY");
         Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
         Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+    }
+
+    [Fact]
+    public async Task Generate_due_maintenance_work_orders_catches_up_missed_periods_and_usage_thresholds()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-WEEKLY", "P7D", new DateOnly(2026, 6, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-RUNTIME", "P30D", new DateOnly(2026, 7, 1), "maintenance", runtimeHourInterval: 100m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(125m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 22), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(5, result.GeneratedCount);
+        Assert.Equal(4, await dbContext.MaintenanceWorkOrders.CountAsync(x => x.DeviceAssetId == "DEV-CNC-01"));
+        Assert.Equal(1, await dbContext.MaintenanceWorkOrders.CountAsync(x => x.DeviceAssetId == "DEV-CNC-02"));
+        var weekly = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-WEEKLY");
+        var runtime = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-RUNTIME");
+        Assert.Equal(new DateOnly(2026, 6, 29), weekly.NextDueOn);
+        Assert.Equal(125m, runtime.LastGeneratedRuntimeHours);
+        Assert.Equal(200m, runtime.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public async Task Generate_due_maintenance_work_orders_caps_backlog_catch_up_per_run()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-DAILY", "P1D", new DateOnly(2025, 1, 1), "maintenance"));
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-RUNTIME", "P30D", new DateOnly(2026, 7, 1), "maintenance", runtimeHourInterval: 1m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(1000m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(MaintenancePlan.MaxCatchUpOccurrencesPerRun * 2, result.GeneratedCount);
+        Assert.Equal(MaintenancePlan.MaxCatchUpOccurrencesPerRun, await dbContext.MaintenanceWorkOrders.CountAsync(x => x.DeviceAssetId == "DEV-CNC-01"));
+        Assert.Equal(MaintenancePlan.MaxCatchUpOccurrencesPerRun, await dbContext.MaintenanceWorkOrders.CountAsync(x => x.DeviceAssetId == "DEV-CNC-02"));
+        var daily = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-DAILY");
+        var runtime = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-RUNTIME");
+        Assert.Equal(new DateOnly(2025, 1, 31), daily.LastGeneratedOn);
+        Assert.Equal(new DateOnly(2025, 2, 1), daily.NextDueOn);
+        Assert.Equal(MaintenancePlan.MaxCatchUpOccurrencesPerRun + 1, runtime.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public async Task Runtime_catch_up_work_orders_reference_crossed_thresholds()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-RUNTIME-TRACE", "P30D", new DateOnly(2026, 7, 1), "maintenance", runtimeHourInterval: 100m));
+        await dbContext.SaveChangesAsync();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(350m, AssetRuntimeSources.Oee, HasRuntimeSamples: true)));
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 22), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(3, result.GeneratedCount);
+        var sourceReferences = await dbContext.MaintenanceWorkOrders
+            .OrderBy(x => x.SourceReferenceId)
+            .Select(x => x.SourceReferenceId!)
+            .ToArrayAsync();
+        Assert.Equal(
+            [
+                "PM-RUNTIME-TRACE:runtime:100:1",
+                "PM-RUNTIME-TRACE:runtime:200:2",
+                "PM-RUNTIME-TRACE:runtime:300:3",
+            ],
+            sourceReferences);
+        var runtime = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-RUNTIME-TRACE");
+        Assert.Equal(350m, runtime.LastGeneratedRuntimeHours);
+        Assert.Equal(400m, runtime.NextDueRuntimeHours);
+    }
+
+    [Fact]
+    public async Task Complete_work_order_requires_existing_downtime_reason_and_keeps_reason_classification()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure"));
+        await dbContext.SaveChangesAsync();
+        var handler = new CompleteMaintenanceWorkOrderCommandHandler(dbContext);
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "unknown-reason", 10, []),
+            CancellationToken.None));
+
+        await handler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", " equipment-failure ", 10, []), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reason = await dbContext.DowntimeReasons.SingleAsync();
+        Assert.Equal("breakdown", reason.ReasonCategory);
+        Assert.Equal("equipment-failure", reason.LossCategory);
+        Assert.Equal("equipment-failure", workOrder.DowntimeReasonCode);
+    }
+
+    [Fact]
+    public async Task Downtime_reason_commands_update_delete_and_protect_referenced_reasons()
+    {
+        await using var dbContext = CreateDbContext();
+        var createHandler = new CreateDowntimeReasonCommandHandler(dbContext);
+        var updateHandler = new UpdateDowntimeReasonCommandHandler(dbContext);
+        var deleteHandler = new DeleteDowntimeReasonCommandHandler(dbContext);
+        var completeHandler = new CompleteMaintenanceWorkOrderCommandHandler(dbContext);
+
+        await createHandler.Handle(new CreateDowntimeReasonCommand("org-001", "env-dev", "adjustment", "Initial", "planned", "scheduled-loss"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await updateHandler.Handle(new UpdateDowntimeReasonCommand("org-001", "env-dev", "adjustment", "Updated", "micro-stop", "availability-loss"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var updated = await dbContext.DowntimeReasons.SingleAsync(x => x.ReasonCode == "adjustment");
+        Assert.Equal("Updated", updated.Description);
+        Assert.Equal("micro-stop", updated.ReasonCategory);
+        Assert.Equal("availability-loss", updated.LossCategory);
+
+        await deleteHandler.Handle(new DeleteDowntimeReasonCommand("org-001", "env-dev", "adjustment"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.False(await dbContext.DowntimeReasons.AnyAsync(x => x.ReasonCode == "adjustment"));
+
+        var referenced = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        dbContext.DowntimeReasons.Add(referenced);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+
+        await completeHandler.Handle(new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => deleteHandler.Handle(new DeleteDowntimeReasonCommand("org-001", "env-dev", "equipment-failure"), CancellationToken.None));
     }
 
     [Fact]
@@ -593,6 +740,58 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(120m, response.MttrMinutes);
         Assert.Equal(AssetRuntimeSources.Fallback, response.MtbfRuntimeSource);
         Assert.False(response.MtbfRuntimeHasSamples);
+    }
+
+    [Fact]
+    public async Task Reliability_query_uses_effective_repair_segment_and_counts_inspection_faults()
+    {
+        await using var dbContext = CreateDbContext();
+        var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddHours(24);
+        var alarmFault = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        dbContext.MaintenanceWorkOrders.Add(alarmFault);
+        dbContext.Entry(alarmFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
+        await dbContext.SaveChangesAsync();
+        await new StartMaintenanceRepairCommandHandler(dbContext).Handle(
+            new StartMaintenanceRepairCommand(alarmFault.Id, windowStart.AddHours(3)),
+            CancellationToken.None);
+        alarmFault.Complete("fixed", "equipment-failure", 120, []);
+        var inspectionFault = MaintenanceWorkOrder.OpenFromInspection(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            new MaintenanceInspectionId(Guid.CreateVersion7()),
+            "bearing vibration failed");
+        dbContext.MaintenanceWorkOrders.Add(inspectionFault);
+        dbContext.Entry(alarmFault).Property(x => x.CompletedAtUtc).CurrentValue = windowStart.AddHours(4);
+        dbContext.Entry(inspectionFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(10);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryAssetReliabilityQueryHandler(
+                dbContext,
+                new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(24m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)))
+            .Handle(
+                new QueryAssetReliabilityQuery("org-001", "env-dev", "DEV-CNC-01", windowStart, windowEnd),
+                CancellationToken.None);
+
+        Assert.Equal(2, response.FailureCount);
+        Assert.Equal(1, response.RepairCount);
+        Assert.Equal(60m, response.MttrMinutes);
+    }
+
+    [Fact]
+    public async Task Start_repair_rejects_repair_time_before_work_order_opened_time()
+    {
+        await using var dbContext = CreateDbContext();
+        var openedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        dbContext.Entry(workOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => new StartMaintenanceRepairCommandHandler(dbContext).Handle(
+            new StartMaintenanceRepairCommand(workOrder.Id, openedAtUtc.AddMinutes(-1)),
+            CancellationToken.None));
     }
 
     [Fact]

@@ -60,10 +60,28 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Document exchange rate to local currency.");
+
                     b.Property<DateOnly>("InvoiceDate")
                         .HasColumnType("date")
                         .HasColumnName("invoice_date")
                         .HasComment("Supplier invoice date.");
+
+                    b.Property<decimal>("LocalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_amount")
+                        .HasComment("Local currency amount at document exchange rate.");
+
+                    b.Property<decimal>("LocalPaidAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_paid_amount")
+                        .HasComment("Local currency paid amount at document exchange rate.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -167,10 +185,28 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Document exchange rate to local currency.");
+
                     b.Property<DateOnly>("InvoiceDate")
                         .HasColumnType("date")
                         .HasColumnName("invoice_date")
                         .HasComment("Customer invoice date.");
+
+                    b.Property<decimal>("LocalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_amount")
+                        .HasComment("Local currency amount at document exchange rate.");
+
+                    b.Property<decimal>("LocalCollectedAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_collected_amount")
+                        .HasComment("Local currency collected amount at document exchange rate.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -249,6 +285,18 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Candidate exchange rate to local currency.");
+
+                    b.Property<decimal>("LocalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_amount")
+                        .HasComment("Candidate amount in local currency.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -471,16 +519,41 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("credit_amount")
                         .HasComment("Credit amount.");
 
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Voucher line currency code.");
+
                     b.Property<decimal>("DebitAmount")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("debit_amount")
                         .HasComment("Debit amount.");
 
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Voucher line exchange rate to local currency.");
+
                     b.Property<Guid>("JournalVoucherId")
                         .HasColumnType("uuid")
                         .HasColumnName("journal_voucher_id")
                         .HasComment("Owning journal voucher id.");
+
+                    b.Property<decimal>("LocalCreditAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_credit_amount")
+                        .HasComment("Credit amount in local currency.");
+
+                    b.Property<decimal>("LocalDebitAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_debit_amount")
+                        .HasComment("Debit amount in local currency.");
 
                     b.Property<string>("Memo")
                         .IsRequired()
@@ -582,6 +655,13 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC creation time.");
 
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Purchase order currency code.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -648,6 +728,11 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Purchase order line id.");
 
+                    b.Property<bool>("FinalDelivery")
+                        .HasColumnType("boolean")
+                        .HasColumnName("final_delivery")
+                        .HasComment("Whether final delivery was declared and the line is closed despite remaining quantity.");
+
                     b.Property<string>("LineNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -660,6 +745,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("ordered_quantity")
                         .HasComment("Ordered quantity.");
+
+                    b.Property<decimal>("OverReceiptTolerancePercent")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)")
+                        .HasColumnName("over_receipt_tolerance_percent")
+                        .HasComment("Allowed over receipt tolerance percent for the line.");
 
                     b.Property<DateOnly>("PromisedDate")
                         .HasColumnType("date")
@@ -683,6 +774,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_code")
                         .HasComment("MasterData SKU code.");
+
+                    b.Property<decimal>("UnderReceiptTolerancePercent")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)")
+                        .HasColumnName("under_receipt_tolerance_percent")
+                        .HasComment("Allowed under receipt tolerance percent for final delivery close.");
 
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(18, 6)
@@ -714,12 +811,25 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Purchase receipt aggregate id.");
 
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("currency_code")
+                        .HasComment("Receipt currency code copied from purchase order.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
+
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Receipt exchange rate to local currency.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -1384,6 +1494,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<decimal>("ExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("exchange_rate")
+                        .HasComment("Invoice exchange rate to local currency.");
+
                     b.Property<DateOnly>("InvoiceDate")
                         .HasColumnType("date")
                         .HasColumnName("invoice_date")
@@ -1395,6 +1511,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("invoice_no")
                         .HasComment("Supplier invoice number.");
+
+                    b.Property<decimal>("LocalTotalAmount")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("local_total_amount")
+                        .HasComment("Matched invoice total amount in local currency.");
 
                     b.Property<string>("MatchStatus")
                         .IsRequired()

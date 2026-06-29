@@ -16,6 +16,7 @@ public enum MaintenanceWorkOrderStatus
 public static class MaintenanceWorkOrderSourceTypes
 {
     public const string Alarm = "alarm";
+    public const string Plan = "plan";
     public const string Inspection = "inspection";
 }
 
@@ -44,7 +45,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string? sourcePlanCode = null,
         string? sourceType = null,
         string? sourceReferenceId = null,
-        string? diagnosticDescription = null)
+        string? diagnosticDescription = null,
+        string? failureModeCode = null,
+        string? failureCauseCode = null)
     {
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
@@ -56,6 +59,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         SourceType = MaintenanceText.Optional(sourceType);
         SourceReferenceId = MaintenanceText.Optional(sourceReferenceId);
         DiagnosticDescription = MaintenanceText.Optional(diagnosticDescription);
+        FailureModeCode = MaintenanceText.Optional(failureModeCode);
+        FailureCauseCode = MaintenanceText.Optional(failureCauseCode);
         OpenedBy = MaintenanceText.Required(openedBy, nameof(openedBy));
         Status = MaintenanceWorkOrderStatus.Open;
         OpenedAtUtc = DateTimeOffset.UtcNow;
@@ -71,6 +76,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? SourceType { get; private set; }
     public string? SourceReferenceId { get; private set; }
     public string? DiagnosticDescription { get; private set; }
+    public string? FailureModeCode { get; private set; }
+    public string? FailureCauseCode { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
     public MaintenanceWorkOrderStatus Status { get; private set; }
     public DateTimeOffset OpenedAtUtc { get; private set; }
@@ -82,6 +89,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? CompletionResult { get; private set; }
     public string? DowntimeReasonCode { get; private set; }
     public int? DowntimeMinutes { get; private set; }
+    public DateTimeOffset? RepairStartedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public IReadOnlyCollection<SparePartLine> SparePartLines => sparePartLines;
 
@@ -100,8 +108,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string environmentId,
         string deviceAssetId,
         string planCode,
-        string openedBy)
+        string openedBy,
+        string? sourceReferenceId = null)
     {
+        var normalizedPlanCode = MaintenanceText.Required(planCode, nameof(planCode));
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
@@ -109,7 +119,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             "planned",
             null,
             openedBy,
-            MaintenanceText.Required(planCode, nameof(planCode)));
+            normalizedPlanCode,
+            sourceType: MaintenanceWorkOrderSourceTypes.Plan,
+            sourceReferenceId: sourceReferenceId ?? normalizedPlanCode);
     }
 
     public static MaintenanceWorkOrder OpenFromAlarm(
@@ -118,7 +130,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string deviceAssetId,
         string sourceAlarmId,
         string priority,
-        string openedBy = "industrialTelemetry")
+        string openedBy = "industrialTelemetry",
+        string? diagnosticDescription = null,
+        string? failureModeCode = null,
+        string? failureCauseCode = null)
     {
         var normalizedAlarmId = MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId));
         return new MaintenanceWorkOrder(
@@ -129,7 +144,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             normalizedAlarmId,
             openedBy,
             sourceType: MaintenanceWorkOrderSourceTypes.Alarm,
-            sourceReferenceId: normalizedAlarmId);
+            sourceReferenceId: normalizedAlarmId,
+            diagnosticDescription: diagnosticDescription,
+            failureModeCode: failureModeCode,
+            failureCauseCode: failureCauseCode);
     }
 
     public static MaintenanceWorkOrder OpenFromInspection(
@@ -150,7 +168,29 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             openedBy,
             sourceType: MaintenanceWorkOrderSourceTypes.Inspection,
             sourceReferenceId: inspectionId.ToString(),
-            diagnosticDescription: diagnosticDescription);
+            diagnosticDescription: diagnosticDescription,
+            failureModeCode: "inspection-failed",
+            failureCauseCode: "inspection");
+    }
+
+    public void MarkRepairStarted(DateTimeOffset repairStartedAtUtc)
+    {
+        EnsureOpen();
+        if (RepairStartedAtUtc is not null)
+        {
+            return;
+        }
+
+        var normalizedRepairStartedAtUtc = repairStartedAtUtc.ToUniversalTime();
+        if (normalizedRepairStartedAtUtc < OpenedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(repairStartedAtUtc),
+                repairStartedAtUtc,
+                "Repair start cannot be before work order opened time.");
+        }
+
+        RepairStartedAtUtc = normalizedRepairStartedAtUtc;
     }
 
     public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)
@@ -209,6 +249,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         EnsureOpen();
         var line = SparePartLine.Create(draft);
         sparePartLines.Add(line);
+        this.AddDomainEvent(new MaintenanceSparePartIssuedDomainEvent(this, line));
         return line;
     }
 
