@@ -571,6 +571,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("backorder_quantity")
                         .HasComment("Short-picked outbound quantity left as backorder.");
 
+                    b.Property<bool>("FulfillmentRecorded")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fulfillment_recorded")
+                        .HasComment("Whether pack review recorded issued and backorder quantities for this outbound line.");
+
                     b.Property<string>("InventoryReservationId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")

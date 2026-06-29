@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
@@ -80,7 +81,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
         var order = domainEvent.OutboundOrder;
         var line = order.Lines.First();
         var status = order.Status.ToString();
-        var publicQuantity = line.IssuedQuantity > 0 ? line.IssuedQuantity : line.RequestedQuantity;
+        var publicQuantity = PublicOutboundQuantity(line);
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
@@ -105,12 +106,15 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
                         x.UomCode,
                         order.SiteCode,
                         x.PickLocationCode,
-                        x.IssuedQuantity > 0 ? x.IssuedQuantity : x.RequestedQuantity,
+                        PublicOutboundQuantity(x),
                         null))
                     .ToArray(),
                 order.SourceDocumentType,
                 order.SourceDocumentId));
     }
+
+    private static decimal PublicOutboundQuantity(OutboundOrderLine line)
+        => line.FulfillmentRecorded ? line.IssuedQuantity : line.RequestedQuantity;
 }
 
 public sealed class OutboundOrderCancelledIntegrationEventConverter

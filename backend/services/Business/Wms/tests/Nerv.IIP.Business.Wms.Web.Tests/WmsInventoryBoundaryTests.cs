@@ -659,6 +659,74 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(WarehouseTaskStatus.Open, warehouseTask.Status);
     }
 
+    [Fact]
+    public async Task Complete_wcs_task_is_idempotent_when_callback_is_repeated()
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-IDEM-001",
+            "OUT-WCS-IDEM-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
+            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-IDEM-001", """{"step":1}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CompleteWcsTaskCommandHandler(dbContext);
+
+        await handler.Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-IDEM-001", """{"actualQuantity":10}"""),
+            CancellationToken.None);
+        await handler.Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-IDEM-001", """{"actualQuantity":10}"""),
+            CancellationToken.None);
+
+        Assert.Equal(10m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Completed, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
+    }
+
+    [Fact]
+    public async Task Complete_wcs_task_without_explicit_executed_quantity_does_not_advance_warehouse_progress()
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-MISSING-QTY-001",
+            "OUT-WCS-MISSING-QTY-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
+            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-MISSING-QTY-001", """{"step":1}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-MISSING-QTY-001", """{"ok":true,"quantity":10}"""),
+            CancellationToken.None);
+
+        Assert.Equal(0m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Open, warehouseTask.Status);
+        Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
+    }
+
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

@@ -202,12 +202,12 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             return line.RequestedQuantity;
         }
 
-        if (executedQuantity < 0 || executedQuantity > line.RequestedQuantity)
+        if (executedQuantity < 0)
         {
             throw new InvalidOperationException($"Executed quantity for outbound line '{line.LineNo}' must be within requested quantity.");
         }
 
-        return executedQuantity;
+        return Math.Min(executedQuantity, line.RequestedQuantity);
     }
 
     public void MarkInventoryPostingFailed()
@@ -370,6 +370,7 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string? InventoryReservationId { get; private set; }
     public decimal IssuedQuantity { get; private set; }
     public decimal BackorderQuantity { get; private set; }
+    public bool FulfillmentRecorded { get; private set; }
 
     public static OutboundOrderLine Create(OutboundOrderLineDraft draft)
     {
@@ -406,6 +407,7 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
 
         IssuedQuantity = issuedQuantity;
         BackorderQuantity = RequestedQuantity - issuedQuantity;
+        FulfillmentRecorded = true;
     }
 
     public void ClearInventoryReservation()

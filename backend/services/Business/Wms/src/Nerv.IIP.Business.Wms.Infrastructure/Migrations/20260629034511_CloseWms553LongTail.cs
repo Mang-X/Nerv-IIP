@@ -32,6 +32,15 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                 defaultValue: 0m,
                 comment: "Actual outbound quantity issued after picking and pack review.");
 
+            migrationBuilder.AddColumn<bool>(
+                name: "fulfillment_recorded",
+                schema: "wms",
+                table: "outbound_order_lines",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false,
+                comment: "Whether pack review recorded issued and backorder quantities for this outbound line.");
+
             migrationBuilder.AddColumn<string>(
                 name: "inventory_count_task_id",
                 schema: "wms",
@@ -52,6 +61,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
             migrationBuilder.DropColumn(
                 name: "issued_quantity",
+                schema: "wms",
+                table: "outbound_order_lines");
+
+            migrationBuilder.DropColumn(
+                name: "fulfillment_recorded",
                 schema: "wms",
                 table: "outbound_order_lines");
 

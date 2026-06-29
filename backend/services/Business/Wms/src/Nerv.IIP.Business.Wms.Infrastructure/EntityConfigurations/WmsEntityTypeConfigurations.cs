@@ -100,6 +100,7 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
         builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
         builder.Property(x => x.BackorderQuantity).HasColumnName("backorder_quantity").IsRequired().HasPrecision(18, 6).HasComment("Short-picked outbound quantity left as backorder.");
+        builder.Property(x => x.FulfillmentRecorded).HasColumnName("fulfillment_recorded").IsRequired().HasComment("Whether pack review recorded issued and backorder quantities for this outbound line.");
     }
 }
 

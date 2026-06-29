@@ -687,10 +687,21 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
                     && x.ExternalTaskId == request.ExternalTaskId,
                 cancellationToken)
             ?? throw new KnownException($"WCS task was not found: {request.ExternalTaskId}");
+        if (task.Status == WcsTaskStatus.Completed)
+        {
+            return;
+        }
+
+        var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson);
         task.Complete(request.CompletionPayloadJson);
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
-        warehouseTask.RecordProgress(ExtractExecutedQuantity(request.CompletionPayloadJson) ?? warehouseTask.PlannedQuantity);
+        if (executedQuantity is null || warehouseTask.Status == WarehouseTaskStatus.Completed)
+        {
+            return;
+        }
+
+        warehouseTask.RecordProgress(executedQuantity.Value);
     }
 
     private static decimal? ExtractExecutedQuantity(string completionPayloadJson)
@@ -699,7 +710,7 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
         {
             using var document = JsonDocument.Parse(completionPayloadJson);
             var root = document.RootElement;
-            foreach (var propertyName in new[] { "actualQuantity", "executedQuantity", "quantity" })
+            foreach (var propertyName in new[] { "actualQuantity", "executedQuantity" })
             {
                 if (root.TryGetProperty(propertyName, out var property) && property.TryGetDecimal(out var quantity))
                 {

@@ -194,6 +194,28 @@ public sealed class WmsExecutionAggregateTests
         Assert.Equal(8m, line.IssuedQuantity);
         Assert.Equal(2m, line.BackorderQuantity);
     }
+
+    [Fact]
+    public void Outbound_pack_review_clamps_cumulative_pick_execution_to_requested_quantity()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder(requestedQuantity: 10m);
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 7m, "res-001");
+        outbound.CreatePickingTask("TASK-OUT-002", "LINE-001", "LOC-A-01", "PACK-01", 6m, "res-001");
+
+        var request = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["LINE-001"] = 13m,
+            }));
+
+        var line = outbound.Lines.Single();
+        Assert.Equal(10m, request.Quantity);
+        Assert.Equal(10m, line.IssuedQuantity);
+        Assert.Equal(0m, line.BackorderQuantity);
+    }
 }
 
 internal static class DomainWmsFactory
