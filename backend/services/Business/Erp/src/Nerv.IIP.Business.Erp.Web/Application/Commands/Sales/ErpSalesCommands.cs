@@ -176,24 +176,52 @@ public sealed class CreateSalesOrderCommandHandler(ApplicationDbContext dbContex
                 x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.CustomerCode == quotation.CustomerCode
-                && x.Status == "released")
+                && (x.Status == "released" || x.Status == "credit-held"))
             .ToListAsync(cancellationToken))
             .SelectMany(x => x.Lines)
             .Sum(x => x.OpenQuantity * x.UnitPrice);
         var creditSnapshot = new CustomerCreditSnapshot(quotation.CustomerCode, creditProfile.CreditLimit, openReceivables, activeSalesOrders);
 
-        SalesOrder order;
-        try
-        {
-            order = SalesOrder.CreateFromQuotation(allocation.Code, quotation, creditSnapshot);
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new KnownException(ex.Message);
-        }
+        var order = SalesOrder.CreateFromQuotation(allocation.Code, quotation, creditSnapshot);
 
         dbContext.SalesOrders.Add(order);
         return order.Id;
+    }
+}
+
+public sealed record ReleaseSalesOrderCreditHoldCommand(string OrganizationId, string EnvironmentId, string SalesOrderNo) : ICommand;
+
+public sealed class ReleaseSalesOrderCreditHoldCommandValidator : AbstractValidator<ReleaseSalesOrderCreditHoldCommand>
+{
+    public ReleaseSalesOrderCreditHoldCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.SalesOrderNo).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class ReleaseSalesOrderCreditHoldCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ReleaseSalesOrderCreditHoldCommand>
+{
+    public async Task Handle(ReleaseSalesOrderCreditHoldCommand request, CancellationToken cancellationToken)
+    {
+        var order = await dbContext.SalesOrders
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.SalesOrderNo == request.SalesOrderNo,
+                cancellationToken)
+            ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
+
+        try
+        {
+            order.ReleaseCreditHold();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
     }
 }
 
@@ -244,10 +272,19 @@ public sealed class ReleaseDeliveryOrderCommandHandler(ApplicationDbContext dbCo
                 && x.SalesOrderNo == request.SalesOrderNo,
                 cancellationToken)
             ?? throw new KnownException($"Sales order '{request.SalesOrderNo}' was not found.");
-        var delivery = DeliveryOrder.Release(
-            order,
-            allocation.Code,
-            request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo)));
+        DeliveryOrder delivery;
+        try
+        {
+            delivery = DeliveryOrder.Release(
+                order,
+                allocation.Code,
+                request.Lines.Select(x => new DeliveryOrderLineDraft(x.SalesOrderLineNo, x.Quantity, x.LocationCode, x.LotNo)));
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
         dbContext.DeliveryOrders.Add(delivery);
         return delivery.Id;
     }
