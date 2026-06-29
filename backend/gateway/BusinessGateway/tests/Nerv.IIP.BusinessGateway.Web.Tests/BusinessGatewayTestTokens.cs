@@ -48,7 +48,8 @@ yKndmINUKXFRt+mFo0HU2Ec=
         string organizationId = "org-001",
         string environmentId = "env-dev",
         bool includeOrganizationId = true,
-        bool includeEnvironmentId = true)
+        bool includeEnvironmentId = true,
+        int permissionVersion = 7)
     {
         var now = DateTimeOffset.UtcNow;
         var claims = new List<Claim>
@@ -59,7 +60,7 @@ yKndmINUKXFRt+mFo0HU2Ec=
             new("loginName", "admin"),
             new("email", "admin@nerv.local"),
             new("securityStamp", "security-stamp-001"),
-            new("permissionVersion", "7"),
+            new("permissionVersion", permissionVersion.ToString()),
             new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
         };
         if (includeOrganizationId)

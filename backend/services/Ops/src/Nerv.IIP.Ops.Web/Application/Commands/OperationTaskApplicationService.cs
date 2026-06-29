@@ -3,8 +3,10 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application;
+using Microsoft.EntityFrameworkCore;
 
 namespace Nerv.IIP.Ops.Web.Application.Commands;
 
@@ -19,6 +21,18 @@ public interface IOperationTaskApplicationService
     Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+}
+
+public sealed record OperationLeaseReaperResult(int RequeuedCount, int FailedCount);
+
+public interface IOperationLeaseReaper
+{
+    Task<OperationLeaseReaperResult> ReapExpiredLeasesAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store) : IOperationTaskApplicationService
@@ -71,7 +85,8 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
 
 public sealed class EfOperationTaskApplicationService(
     IOperationTaskRepository repository,
-    IOperationTemplateRepository operationTemplateRepository) : IOperationTaskApplicationService
+    IOperationTemplateRepository operationTemplateRepository,
+    ApplicationDbContext dbContext) : IOperationTaskApplicationService
 {
     public async Task<OperationTaskResponse> CreateAsync(CreateOperationTaskRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -93,6 +108,18 @@ public sealed class EfOperationTaskApplicationService(
         task.AssignPendingAuditIds(pendingAuditIds);
         await AssignAuditChainAsync(task, pendingAuditIds, cancellationToken);
         await repository.AddAsync(task, cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateTaskConflict(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var duplicate = await repository.GetByIdempotencyScopeAsync(idempotencyScope, cancellationToken)
+                ?? RethrowDuplicateConflict(exception);
+            return duplicate.ToDetailFact().ToContract();
+        }
+
         return task.ToDetailFact().ToContract();
     }
 
@@ -287,6 +314,144 @@ public sealed class EfOperationTaskApplicationService(
         }
 
         throw new InvalidOperationTaskRequestException($"Unsupported operation code: {operationCode}");
+    }
+
+    private bool IsDuplicateTaskConflict(DbUpdateException exception)
+    {
+        return dbContext.ChangeTracker.Entries<OperationTask>().Any(x => x.State == EntityState.Added)
+            && OpsUniqueConflictDetector.IsUniqueConflict(exception, dbContext);
+    }
+
+    private static OperationTask RethrowDuplicateConflict(DbUpdateException exception)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
+    }
+}
+
+internal static class OpsUniqueConflictDetector
+{
+    public static bool IsUniqueConflict(Exception exception, DbContext dbContext)
+    {
+        var providerName = dbContext.Database.ProviderName ?? string.Empty;
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (IsPostgreSqlUniqueConflict(current)
+                || IsSqliteUniqueConflict(providerName, current))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsPostgreSqlUniqueConflict(Exception exception)
+    {
+        if (!string.Equals(exception.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string == "23505";
+    }
+
+    private static bool IsSqliteUniqueConflict(string providerName, Exception exception)
+    {
+        var typeName = exception.GetType().FullName ?? string.Empty;
+        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
+            && !typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
+        var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
+        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
+    }
+
+    private static int? GetIntProperty(Exception exception, string propertyName)
+    {
+        var value = exception.GetType().GetProperty(propertyName)?.GetValue(exception);
+        return value switch
+        {
+            int intValue => intValue,
+            uint uintValue when uintValue <= int.MaxValue => (int)uintValue,
+            _ => null
+        };
+    }
+}
+
+public sealed class EfOperationLeaseReaper(
+    IOperationTaskRepository repository,
+    ApplicationDbContext dbContext) : IOperationLeaseReaper
+{
+    public async Task<OperationLeaseReaperResult> ReapExpiredLeasesAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var expiredTasks = await repository.GetExpiredLeasesAsync(
+            organizationId,
+            environmentId,
+            Math.Clamp(take, 1, 100),
+            now,
+            cancellationToken);
+        if (expiredTasks.Count == 0)
+        {
+            return new OperationLeaseReaperResult(0, 0);
+        }
+
+        await repository.LockAuditChainAsync(organizationId, environmentId, cancellationToken);
+        var chainHead = await repository.GetAuditChainHeadAsync(organizationId, environmentId, cancellationToken);
+        var requeued = 0;
+        var failed = 0;
+        foreach (var task in expiredTasks)
+        {
+            var beforeStatus = task.Status;
+            var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+            var auditCount = task.AuditRecords.Count;
+            task.AbandonExpiredLease(auditId, now);
+            if (task.AuditRecords.Count == auditCount)
+            {
+                continue;
+            }
+
+            chainHead = AssignAuditChainStamp(task, [auditId], chainHead);
+            if (string.Equals(task.Status, "queued", StringComparison.Ordinal))
+            {
+                requeued++;
+            }
+            else if (!string.Equals(task.Status, beforeStatus, StringComparison.Ordinal))
+            {
+                failed++;
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new OperationLeaseReaperResult(requeued, failed);
+    }
+
+    private static AuditChainHead? AssignAuditChainStamp(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
+    {
+        if (auditRecordIds.Count == 0)
+        {
+            return head;
+        }
+
+        var sequenceNo = head?.SequenceNo ?? 0;
+        var previousHash = head?.IntegrityHash ?? string.Empty;
+
+        foreach (var auditRecordId in auditRecordIds)
+        {
+            sequenceNo++;
+            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
+            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
+        }
+
+        return new AuditChainHead(sequenceNo, previousHash);
     }
 }
 

@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
@@ -17,7 +18,8 @@ namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 public sealed class OperationTaskCompletedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<OpsNotificationRecipientOptions> recipientOptions)
     : IIntegrationEventHandler<OperationTaskCompletedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-task-completed";
@@ -50,6 +52,7 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForNotification
             NotificationContractConstants.SeverityInfo,
             "Operation completed",
             $"Operation {payload.OperationCode} completed for {payload.InstanceKey}.",
+            recipientOptions.Value.ResolveDefaultRecipientRefs(),
             cancellationToken);
     }
 }
@@ -58,7 +61,8 @@ public sealed class OperationTaskCompletedIntegrationEventHandlerForNotification
 public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<OpsNotificationRecipientOptions> recipientOptions)
     : IIntegrationEventHandler<OperationApprovalRequestedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-requested";
@@ -81,7 +85,6 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
     private async Task HandleValidEventAsync(OperationApprovalRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload ?? throw new KnownException("Operation approval requested payload is required.");
-        // TODO: Resolve approver recipients from ApprovalPolicy or OperationTemplate instead of the MVP ops-admin fallback.
         await OpsNotificationConsumer.SubmitOnceAsync(
             sender,
             dbContext,
@@ -92,6 +95,7 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
             NotificationContractConstants.SeverityWarning,
             "Operation approval required",
             $"Operation {payload.OperationCode} for {payload.InstanceKey} requires approval.",
+            recipientOptions.Value.ResolveDefaultRecipientRefs(),
             cancellationToken);
     }
 }
@@ -100,7 +104,8 @@ public sealed class OperationApprovalRequestedIntegrationEventHandlerForNotifica
 public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<OpsNotificationRecipientOptions> recipientOptions)
     : IIntegrationEventHandler<OperationApprovalApprovedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-approved";
@@ -133,6 +138,7 @@ public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotificat
             NotificationContractConstants.SeverityInfo,
             "Operation approved",
             $"Operation {payload.OperationCode} for {payload.InstanceKey} was approved by {payload.DecidedBy}.",
+            recipientOptions.Value.ResolveDefaultRecipientRefs(),
             cancellationToken);
     }
 }
@@ -141,7 +147,8 @@ public sealed class OperationApprovalApprovedIntegrationEventHandlerForNotificat
 public sealed class OperationApprovalRejectedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<OpsNotificationRecipientOptions> recipientOptions)
     : IIntegrationEventHandler<OperationApprovalRejectedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-approval-rejected";
@@ -174,14 +181,13 @@ public sealed class OperationApprovalRejectedIntegrationEventHandlerForNotificat
             NotificationContractConstants.SeverityWarning,
             "Operation rejected",
             $"Operation {payload.OperationCode} for {payload.InstanceKey} was rejected by {payload.DecidedBy}.",
+            recipientOptions.Value.ResolveDefaultRecipientRefs(),
             cancellationToken);
     }
 }
 
 internal static class OpsNotificationConsumer
 {
-    private const string DefaultRecipientRef = "role:ops-admin";
-
     public static async Task SubmitOnceAsync(
         ISender sender,
         ApplicationDbContext dbContext,
@@ -192,6 +198,7 @@ internal static class OpsNotificationConsumer
         string severity,
         string title,
         string summary,
+        IReadOnlyCollection<string> recipientRefs,
         CancellationToken cancellationToken)
     {
         var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
@@ -222,7 +229,7 @@ internal static class OpsNotificationConsumer
             Resource: new NotificationResourceRef("operation-task", operationTaskId, null),
             Title: title,
             Summary: summary,
-            SuggestedRecipientRefs: [DefaultRecipientRef]);
+            SuggestedRecipientRefs: recipientRefs);
 
         await sender.Send(new SubmitNotificationIntentCommand(
             organizationId,

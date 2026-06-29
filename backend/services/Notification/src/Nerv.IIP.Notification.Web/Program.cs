@@ -67,6 +67,8 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration);
+builder.Services.Configure<OpsNotificationRecipientOptions>(
+    builder.Configuration.GetSection(OpsNotificationRecipientOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddNervIipObservability(builder.Configuration, "notification");
 builder.Services.AddNervIipLocalization();

@@ -1,8 +1,11 @@
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
+using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.Repositories;
 using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.Primitives;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 
@@ -12,7 +15,9 @@ public sealed record SubmitNotificationIntentCommand(
     SubmitNotificationIntentRequest Request,
     DateTimeOffset Now) : ICommand<NotificationIntentResponse>;
 
-public sealed class SubmitNotificationIntentCommandHandler(INotificationIntentRepository repository)
+public sealed class SubmitNotificationIntentCommandHandler(
+    INotificationIntentRepository repository,
+    ApplicationDbContext dbContext)
     : ICommandHandler<SubmitNotificationIntentCommand, NotificationIntentResponse>
 {
     public async Task<NotificationIntentResponse> Handle(SubmitNotificationIntentCommand command, CancellationToken cancellationToken)
@@ -48,6 +53,44 @@ public sealed class SubmitNotificationIntentCommandHandler(INotificationIntentRe
             command.Now);
 
         await repository.AddAsync(intent, cancellationToken);
+        foreach (var message in intent.Messages)
+        {
+            dbContext.DeliveryAttempts.Add(DeliveryAttempt.Succeeded(
+                message.Id,
+                NotificationDeliveryChannels.InApp,
+                command.Now));
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateIntentConflict(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            var duplicate = await repository.GetByDedupeKeyAsync(
+                command.OrganizationId,
+                command.EnvironmentId,
+                request.SourceService,
+                request.SourceEventType,
+                request.DedupeKey,
+                cancellationToken)
+                ?? RethrowDuplicateConflict(exception);
+            return duplicate.ToResponse(duplicate: true);
+        }
+
         return intent.ToResponse(duplicate: false);
+    }
+
+    private bool IsDuplicateIntentConflict(DbUpdateException exception)
+    {
+        return dbContext.ChangeTracker.Entries<NotificationIntent>().Any(x => x.State == EntityState.Added)
+            && ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, constraintOrIndexName: null);
+    }
+
+    private static NotificationIntent RethrowDuplicateConflict(DbUpdateException exception)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
     }
 }

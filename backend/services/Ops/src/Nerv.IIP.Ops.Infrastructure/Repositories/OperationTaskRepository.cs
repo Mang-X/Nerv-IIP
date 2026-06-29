@@ -8,11 +8,15 @@ using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Ops.Infrastructure.Repositories;
 
+public sealed record ExpiredOperationLeaseScope(string OrganizationId, string EnvironmentId);
+
 public interface IOperationTaskRepository : IRepository<OperationTask, OperationTaskId>
 {
     Task<OperationTask?> GetByIdAsync(string operationTaskId, CancellationToken cancellationToken = default);
     Task<OperationTask?> GetByIdempotencyScopeAsync(string idempotencyScope, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OperationTask>> GetClaimableAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ExpiredOperationLeaseScope>> GetExpiredLeaseScopesAsync(int take, DateTimeOffset now, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<OperationTask>> GetExpiredLeasesAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default);
     Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default);
     Task<OperationAttemptId> NextAttemptIdAsync(CancellationToken cancellationToken = default);
     Task<AuditRecordId> NextAuditRecordIdAsync(CancellationToken cancellationToken = default);
@@ -76,6 +80,109 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<OperationTask>> GetExpiredLeasesAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        var cappedTake = Math.Clamp(take, 1, 100);
+        if (string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        {
+            return await DbContext.OperationTasks
+                .FromSqlInterpolated($"""
+                    SELECT t.*
+                    FROM ops.operation_tasks AS t
+                    WHERE t."OrganizationId" = {organizationId}
+                      AND t."EnvironmentId" = {environmentId}
+                      AND t."Status" = 'dispatched'
+                      AND EXISTS (
+                        SELECT 1
+                        FROM ops.operation_attempts AS a
+                        WHERE a."OperationTaskId" = t."Id"
+                          AND a."Status" = 'started'
+                          AND a."LeaseId" IS NOT NULL
+                          AND a."LeasedAtUtc" IS NOT NULL
+                          AND a."LeasedUntilUtc" IS NOT NULL
+                          AND a."AttemptNo" IS NOT NULL
+                          AND a."MaxAttempts" IS NOT NULL
+                          AND a."LeasedUntilUtc" <= {now}
+                      )
+                    ORDER BY t."RequestedAtUtc", t."Id"
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT {cappedTake}
+                    """)
+                .Include(x => x.Attempts)
+                .Include(x => x.AuditRecords)
+                .ToListAsync(cancellationToken);
+        }
+
+        var candidates = await DbContext.OperationTasks
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Status == "dispatched")
+            .Include(x => x.Attempts)
+            .Include(x => x.AuditRecords)
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(x => x.Attempts.Any(a =>
+                a.Status == "started"
+                && a.LeaseId is not null
+                && a.LeasedAtUtc.HasValue
+                && a.LeasedUntilUtc.HasValue
+                && a.AttemptNo.HasValue
+                && a.MaxAttempts.HasValue
+                && a.LeasedUntilUtc <= now))
+            .OrderBy(x => x.RequestedAtUtc)
+            .ThenBy(x => x.Id.Id)
+            .Take(cappedTake)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ExpiredOperationLeaseScope>> GetExpiredLeaseScopesAsync(int take, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        var cappedTake = Math.Clamp(take, 1, 100);
+        if (string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        {
+            return await DbContext.Database.SqlQuery<ExpiredOperationLeaseScope>($"""
+                SELECT DISTINCT t."OrganizationId", t."EnvironmentId"
+                FROM ops.operation_tasks AS t
+                WHERE t."Status" = 'dispatched'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM ops.operation_attempts AS a
+                    WHERE a."OperationTaskId" = t."Id"
+                      AND a."Status" = 'started'
+                      AND a."LeaseId" IS NOT NULL
+                      AND a."LeasedAtUtc" IS NOT NULL
+                      AND a."LeasedUntilUtc" IS NOT NULL
+                      AND a."AttemptNo" IS NOT NULL
+                      AND a."MaxAttempts" IS NOT NULL
+                      AND a."LeasedUntilUtc" <= {now}
+                  )
+                ORDER BY t."OrganizationId", t."EnvironmentId"
+                LIMIT {cappedTake}
+                """)
+                .ToListAsync(cancellationToken);
+        }
+
+        var candidates = await DbContext.OperationTasks
+            .Where(x => x.Status == "dispatched")
+            .Include(x => x.Attempts)
+            .ToListAsync(cancellationToken);
+
+        return candidates
+            .Where(x => x.Attempts.Any(a =>
+                a.Status == "started"
+                && a.LeaseId is not null
+                && a.LeasedAtUtc.HasValue
+                && a.LeasedUntilUtc.HasValue
+                && a.AttemptNo.HasValue
+                && a.MaxAttempts.HasValue
+                && a.LeasedUntilUtc <= now))
+            .Select(x => new ExpiredOperationLeaseScope(x.OrganizationId, x.EnvironmentId))
+            .Distinct()
+            .OrderBy(x => x.OrganizationId)
+            .ThenBy(x => x.EnvironmentId)
+            .Take(cappedTake)
+            .ToList();
+    }
+
     public Task<OperationTaskId> NextTaskIdAsync(CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
@@ -94,7 +201,8 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
 
     public async Task LockAuditChainAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
-        if (!DbContext.Database.IsRelational())
+        if (!DbContext.Database.IsRelational()
+            || !string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
             return;
         }
@@ -111,7 +219,6 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
             .OrderByDescending(x => x.SequenceNo)
-            .ThenByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.Id)
             .Select(x => new AuditChainHead(x.SequenceNo, x.IntegrityHash))
             .FirstOrDefaultAsync(cancellationToken);
