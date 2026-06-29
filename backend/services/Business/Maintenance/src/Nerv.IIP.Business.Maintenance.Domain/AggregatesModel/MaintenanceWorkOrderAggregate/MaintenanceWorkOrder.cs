@@ -181,7 +181,16 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             return;
         }
 
-        RepairStartedAtUtc = repairStartedAtUtc.ToUniversalTime();
+        var normalizedRepairStartedAtUtc = repairStartedAtUtc.ToUniversalTime();
+        if (normalizedRepairStartedAtUtc < OpenedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(repairStartedAtUtc),
+                repairStartedAtUtc,
+                "Repair start cannot be before work order opened time.");
+        }
+
+        RepairStartedAtUtc = normalizedRepairStartedAtUtc;
     }
 
     public void MarkAlarmCleared(DateTimeOffset clearedAtUtc)

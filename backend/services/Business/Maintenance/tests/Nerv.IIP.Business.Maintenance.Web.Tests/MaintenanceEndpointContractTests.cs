@@ -750,6 +750,7 @@ public sealed class MaintenanceEndpointContractTests
         var windowEnd = windowStart.AddHours(24);
         var alarmFault = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
         dbContext.MaintenanceWorkOrders.Add(alarmFault);
+        dbContext.Entry(alarmFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
         await dbContext.SaveChangesAsync();
         await new StartMaintenanceRepairCommandHandler(dbContext).Handle(
             new StartMaintenanceRepairCommand(alarmFault.Id, windowStart.AddHours(3)),
@@ -762,7 +763,6 @@ public sealed class MaintenanceEndpointContractTests
             new MaintenanceInspectionId(Guid.CreateVersion7()),
             "bearing vibration failed");
         dbContext.MaintenanceWorkOrders.Add(inspectionFault);
-        dbContext.Entry(alarmFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
         dbContext.Entry(alarmFault).Property(x => x.CompletedAtUtc).CurrentValue = windowStart.AddHours(4);
         dbContext.Entry(inspectionFault).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(10);
         await dbContext.SaveChangesAsync();
@@ -777,6 +777,21 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(2, response.FailureCount);
         Assert.Equal(1, response.RepairCount);
         Assert.Equal(60m, response.MttrMinutes);
+    }
+
+    [Fact]
+    public async Task Start_repair_rejects_repair_time_before_work_order_opened_time()
+    {
+        await using var dbContext = CreateDbContext();
+        var openedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        dbContext.Entry(workOrder).Property(x => x.OpenedAtUtc).CurrentValue = openedAtUtc;
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => new StartMaintenanceRepairCommandHandler(dbContext).Handle(
+            new StartMaintenanceRepairCommand(workOrder.Id, openedAtUtc.AddMinutes(-1)),
+            CancellationToken.None));
     }
 
     [Fact]

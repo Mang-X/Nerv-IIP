@@ -54,6 +54,14 @@ public sealed class MaintenanceAggregateTests
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is AssetRestoredDomainEvent);
     }
 
+    [Fact]
+    public void Repair_start_cannot_be_before_work_order_opened_time()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => workOrder.MarkRepairStarted(workOrder.OpenedAtUtc.AddMinutes(-1)));
+    }
+
     [Theory]
     [InlineData("", "equipment-failure", 10)]
     [InlineData("fixed", "", 10)]
