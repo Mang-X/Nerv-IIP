@@ -23,6 +23,7 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("GS1 lot or batch parsed from an accepted scan value.");
         builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("GS1 serial number parsed from an accepted scan value.");
         builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI derived from parsed GTIN and serial number.");
+        builder.Property(x => x.Sscc).HasColumnName("sscc").HasMaxLength(18).HasComment("GS1 SSCC-18 logistic unit identifier parsed from AI 00 when present.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Quantity parsed from GS1 AI 30 or supplied by the scan workflow.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(100).HasComment("SKU code supplied by scan context for downstream business action routing.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Unit of measure supplied by scan context for downstream business action routing.");
@@ -40,8 +41,14 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceCode, x.ScannedAtUtc });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EpcUri })
+            .IsUnique()
+            .HasFilter("epc_uri IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkflow, x.SourceDocumentId });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber })
+            .IsUnique()
+            .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Sscc });
     }
 }

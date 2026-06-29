@@ -23,6 +23,8 @@ public sealed class EpcisEvent : Entity<EpcisEventId>
         string? lotNo,
         string? serialNumber,
         string? epcUri,
+        string? parentSscc,
+        string? parentEpcUri,
         string sourceWorkflow,
         string sourceDocumentId,
         LabelPrintBatchId? labelPrintBatchId,
@@ -41,6 +43,8 @@ public sealed class EpcisEvent : Entity<EpcisEventId>
         LotNo = BarcodeLabelText.Optional(lotNo);
         SerialNumber = BarcodeLabelText.Optional(serialNumber);
         EpcUri = BarcodeLabelText.Optional(epcUri);
+        ParentSscc = BarcodeLabelText.Optional(parentSscc);
+        ParentEpcUri = BarcodeLabelText.Optional(parentEpcUri);
         SourceWorkflow = BarcodeLabelText.Required(sourceWorkflow, nameof(sourceWorkflow));
         SourceDocumentId = BarcodeLabelText.Required(sourceDocumentId, nameof(sourceDocumentId));
         LabelPrintBatchId = labelPrintBatchId;
@@ -60,6 +64,8 @@ public sealed class EpcisEvent : Entity<EpcisEventId>
     public string? LotNo { get; private set; }
     public string? SerialNumber { get; private set; }
     public string? EpcUri { get; private set; }
+    public string? ParentSscc { get; private set; }
+    public string? ParentEpcUri { get; private set; }
     public string SourceWorkflow { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
     public LabelPrintBatchId? LabelPrintBatchId { get; private set; }
@@ -79,13 +85,15 @@ public sealed class EpcisEvent : Entity<EpcisEventId>
             environmentId,
             "commissioning",
             "ADD",
-            "commissioning",
+            CbvBusinessStep("commissioning"),
             "active",
             item.LabelValue,
             item.Gtin,
             item.LotNo,
             item.SerialNumber,
             item.EpcUri,
+            null,
+            null,
             sourceWorkflow,
             sourceDocumentId,
             null,
@@ -103,17 +111,89 @@ public sealed class EpcisEvent : Entity<EpcisEventId>
             environmentId,
             "objectEvent",
             "OBSERVE",
-            scanRecord.SourceWorkflow,
+            CbvBusinessStep(scanRecord.SourceWorkflow),
             "in_progress",
             scanRecord.ScannedValue,
             scanRecord.Gtin,
             scanRecord.LotNo,
             scanRecord.SerialNumber,
             scanRecord.EpcUri,
+            null,
+            null,
             scanRecord.SourceWorkflow,
             scanRecord.SourceDocumentId,
             null,
             null,
             scanRecord.Id);
+    }
+
+    public static EpcisEvent Aggregation(
+        string organizationId,
+        string environmentId,
+        ScanRecord scanRecord,
+        string sourceWorkflow,
+        string sourceDocumentId)
+    {
+        return AggregationCore(organizationId, environmentId, scanRecord, sourceWorkflow, sourceDocumentId, "ADD", CbvBusinessStep("aggregation"));
+    }
+
+    public static EpcisEvent Disaggregation(
+        string organizationId,
+        string environmentId,
+        ScanRecord scanRecord,
+        string sourceWorkflow,
+        string sourceDocumentId)
+    {
+        return AggregationCore(organizationId, environmentId, scanRecord, sourceWorkflow, sourceDocumentId, "DELETE", CbvBusinessStep("disaggregation"));
+    }
+
+    private static EpcisEvent AggregationCore(
+        string organizationId,
+        string environmentId,
+        ScanRecord scanRecord,
+        string sourceWorkflow,
+        string sourceDocumentId,
+        string action,
+        string businessStep)
+    {
+        var parentSscc = BarcodeLabelText.Required(scanRecord.Sscc ?? string.Empty, nameof(scanRecord.Sscc));
+        _ = BarcodeLabelText.Required(scanRecord.SerialNumber ?? string.Empty, nameof(scanRecord.SerialNumber));
+
+        return new EpcisEvent(
+            organizationId,
+            environmentId,
+            "aggregationEvent",
+            action,
+            businessStep,
+            action == "DELETE" ? "inactive" : "in_progress",
+            parentSscc,
+            scanRecord.Gtin,
+            scanRecord.LotNo,
+            scanRecord.SerialNumber,
+            scanRecord.EpcUri,
+            parentSscc,
+            null,
+            sourceWorkflow,
+            sourceDocumentId,
+            null,
+            null,
+            scanRecord.Id);
+    }
+
+    private static string CbvBusinessStep(string sourceWorkflow)
+    {
+        return sourceWorkflow.ToLowerInvariant() switch
+        {
+            "commissioning" => "urn:epcglobal:cbv:bizstep:commissioning",
+            "aggregation" => "urn:epcglobal:cbv:bizstep:packing",
+            "disaggregation" => "urn:epcglobal:cbv:bizstep:unpacking",
+            "wms.receiving" or "inventory.receipt" => "urn:epcglobal:cbv:bizstep:receiving",
+            "inventory.issue" => "urn:epcglobal:cbv:bizstep:shipping",
+            "inventory.adjustment" => "urn:epcglobal:cbv:bizstep:storing",
+            "inventory.count" => "urn:epcglobal:cbv:bizstep:stock_taking",
+            "quality.inspection" => "urn:epcglobal:cbv:bizstep:inspecting",
+            "production.report" => "urn:epcglobal:cbv:bizstep:commissioning",
+            _ => "urn:epcglobal:cbv:bizstep:accepting",
+        };
     }
 }

@@ -488,6 +488,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("serial_number")
                         .HasComment("GS1 serial number parsed from an accepted scan value.");
 
+                    b.Property<string>("Sscc")
+                        .HasMaxLength(18)
+                        .HasColumnType("character varying(18)")
+                        .HasColumnName("sscc")
+                        .HasComment("GS1 SSCC-18 logistic unit identifier parsed from AI 00 when present.");
+
                     b.Property<string>("SiteCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -525,13 +531,22 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                     b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
                         .IsUnique();
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "ScannedValue");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EpcUri")
+                        .IsUnique()
+                        .HasFilter("epc_uri IS NOT NULL");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ScannedValue")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Sscc");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceCode", "ScannedAtUtc");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "LotNo", "SerialNumber");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "LotNo", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("scan_records", "barcode", t =>
                         {
@@ -621,6 +636,18 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .HasColumnName("occurred_at_utc")
                         .HasComment("UTC time when the EPCIS event occurred.");
 
+                    b.Property<string>("ParentEpcUri")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("parent_epc_uri")
+                        .HasComment("Parent EPC URI for aggregation events when a standards-compliant parent URI is available.");
+
+                    b.Property<string>("ParentSscc")
+                        .HasMaxLength(18)
+                        .HasColumnType("character varying(18)")
+                        .HasColumnName("parent_sscc")
+                        .HasComment("Parent SSCC-18 logistic unit for EPCIS aggregation or disaggregation events.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -661,9 +688,17 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("ScanRecordId");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ParentSscc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "EpcUri")
+                        .IsUnique()
+                        .HasFilter("epc_uri IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "LotNo", "SerialNumber");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "Gtin", "LotNo", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("epcis_events", "barcode", t =>
                         {
