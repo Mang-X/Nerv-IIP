@@ -332,10 +332,12 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
 
         var failed = characteristic.LowerSpecLimit.HasValue && measuredValueInPlanUnit < characteristic.LowerSpecLimit.Value
             || characteristic.UpperSpecLimit.HasValue && measuredValueInPlanUnit > characteristic.UpperSpecLimit.Value;
-        var conditionalRelease = failed && input.Result == InspectionLineResults.ConditionalRelease;
+        var conditionalRelease = failed
+            && input.Result == InspectionLineResults.ConditionalRelease
+            && !string.Equals(characteristic.Severity, "critical", StringComparison.OrdinalIgnoreCase);
         return input with
         {
-            ObservedValue = measuredValueInPlanUnit.ToString("0.############", System.Globalization.CultureInfo.InvariantCulture),
+            ObservedValue = measuredValueInPlanUnit.ToString(System.Globalization.CultureInfo.InvariantCulture),
             UnitCode = resultUnitCode,
             Result = failed
                 ? conditionalRelease ? InspectionLineResults.ConditionalRelease : InspectionLineResults.Failed

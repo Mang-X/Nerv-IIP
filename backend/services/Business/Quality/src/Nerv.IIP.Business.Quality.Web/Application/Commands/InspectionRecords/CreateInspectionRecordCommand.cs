@@ -81,14 +81,14 @@ public sealed class CreateInspectionRecordCommandHandler(
             request.EnvironmentId,
             request.SourceType.Trim().ToLowerInvariant(),
             request.SourceService.Trim().ToLowerInvariant(),
+            request.SkuCode.Trim(),
             request.SourceDocumentId.Trim(),
             cancellationToken);
         if (existing is not null)
         {
-            if (!string.Equals(existing.SkuCode, request.SkuCode, StringComparison.OrdinalIgnoreCase)
-                || existing.InspectedQuantity != request.InspectedQuantity)
+            if (existing.InspectedQuantity != request.InspectedQuantity)
             {
-                throw new KnownException("Inspection source document already has a record with a different SKU or inspected quantity.");
+                throw new KnownException("Inspection source document and SKU already have a record with a different inspected quantity.");
             }
 
             return existing.Id;

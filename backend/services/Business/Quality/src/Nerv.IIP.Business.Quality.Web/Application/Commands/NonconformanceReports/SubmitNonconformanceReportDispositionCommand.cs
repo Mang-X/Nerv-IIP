@@ -79,8 +79,7 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandValid
 }
 
 public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandler(
-    INonconformanceReportRepository repository,
-    ICorrectiveActionRepository correctiveActionRepository)
+    INonconformanceReportRepository repository)
     : ICommandHandler<CompleteNonconformanceReportInventoryDispositionCommand>
 {
     public async Task Handle(CompleteNonconformanceReportInventoryDispositionCommand request, CancellationToken cancellationToken)
@@ -93,41 +92,23 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandl
 
         if (ncr.DispositionType == QualityNcrDispositionTypes.Scrap)
         {
-            if (IsPostedScrapAdjustment(request))
+            if (IsPostedScrapAdjustment(request) && IsFullDispositionQuantity(ncr, request.Quantity))
             {
-                EnsureQuantityBalanced(ncr, request.Quantity);
-                await EnsureEffectiveCapaAsync(ncr, correctiveActionRepository, cancellationToken);
                 ncr.CompleteScrapDisposition(request.InventoryMovementId, request.Quantity);
             }
 
             return;
         }
 
-        if (ncr.DispositionType == QualityNcrDispositionTypes.ConditionalRelease && IsPostedConditionalReleaseInbound(request))
+        if (ncr.DispositionType == QualityNcrDispositionTypes.ConditionalRelease
+            && IsPostedConditionalReleaseInbound(request)
+            && IsFullDispositionQuantity(ncr, request.Quantity))
         {
-            EnsureQuantityBalanced(ncr, request.Quantity);
             ncr.CompleteConditionalReleaseDisposition(request.Quantity);
         }
     }
 
-    private static void EnsureQuantityBalanced(NonconformanceReport ncr, decimal quantity)
-    {
-        if (Math.Abs(quantity) != ncr.DefectQuantity)
-        {
-            throw new KnownException("NCR disposition quantity must balance the full defect quantity before closing.");
-        }
-    }
-
-    private static async Task EnsureEffectiveCapaAsync(
-        NonconformanceReport ncr,
-        ICorrectiveActionRepository correctiveActionRepository,
-        CancellationToken cancellationToken)
-    {
-        if (!await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
-        {
-            throw new KnownException("NCR requires a linked effective CAPA before closure.");
-        }
-    }
+    private static bool IsFullDispositionQuantity(NonconformanceReport ncr, decimal quantity) => Math.Abs(quantity) == ncr.DefectQuantity;
 
     private static bool IsPostedScrapAdjustment(CompleteNonconformanceReportInventoryDispositionCommand request)
     {

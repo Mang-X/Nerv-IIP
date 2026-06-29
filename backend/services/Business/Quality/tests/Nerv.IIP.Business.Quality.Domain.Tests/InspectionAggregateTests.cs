@@ -105,7 +105,7 @@ public sealed class InspectionAggregateTests
         var line = Assert.Single(record.ResultLines);
         Assert.Equal("passed", record.Result);
         Assert.Equal(10_400m, line.MeasuredValue);
-        Assert.Equal("10.4", line.ObservedValue);
+        Assert.Equal("10.400", line.ObservedValue);
         Assert.Equal("mm", line.UnitCode);
     }
 
@@ -156,6 +156,56 @@ public sealed class InspectionAggregateTests
         var line = Assert.Single(record.ResultLines);
         Assert.Equal("conditional-release", record.Result);
         Assert.Equal("conditional-release", line.Result);
+        Assert.Equal("mrb-waiver-approved", line.DefectReason);
+    }
+
+    [Fact]
+    public void Planned_variable_inspection_rejects_critical_out_of_spec_even_when_input_requests_conditional_release()
+    {
+        var plan = NewPlan();
+        plan.AddCharacteristic(
+            "length",
+            "Tube length",
+            "caliper",
+            "critical",
+            required: true,
+            samplingRule: "aql-general-ii",
+            characteristicType: InspectionCharacteristicTypes.Variable,
+            nominalValue: 10m,
+            lowerSpecLimit: 9.5m,
+            upperSpecLimit: 10.5m,
+            unitCode: "mm",
+            samplingPlan: InspectionSamplingPlan.Create("general-ii", "1.0", sampleSize: 20, acceptanceNumber: 0, rejectionNumber: 1));
+        plan.Activate();
+
+        var record = InspectionRecord.CreateFromPlan(
+            plan,
+            "receiving",
+            "purchase-receipt",
+            "RCV-CRITICAL-WAIVER-001",
+            "SKU-RM-1000",
+            inspectedQuantity: 20m,
+            batchNo: "BATCH-CRITICAL-WAIVER-001",
+            serialNo: null,
+            stockRelease: StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            resultLines:
+            [
+                new InspectionResultLineInput(
+                    "length",
+                    "10.7",
+                    "mm",
+                    InspectionLineResults.ConditionalRelease,
+                    "mrb-waiver-approved",
+                    1m,
+                    ["file-waiver-001"],
+                    MeasuredValue: 10.7m),
+            ],
+            dispositionReason: "Critical dimensional miss",
+            dispositionAttachmentFileIds: ["file-evidence-001"]);
+
+        var line = Assert.Single(record.ResultLines);
+        Assert.Equal("rejected", record.Result);
+        Assert.Equal("failed", line.Result);
         Assert.Equal("mrb-waiver-approved", line.DefectReason);
     }
 

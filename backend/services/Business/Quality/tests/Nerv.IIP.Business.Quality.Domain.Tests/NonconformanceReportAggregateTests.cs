@@ -106,7 +106,7 @@ public sealed class NonconformanceReportAggregateTests
         var ncr = NonconformanceReport.OpenFromInspection("NCR-20260626-0001", inspection, "wrong-spec", []);
         ncr.ClearDomainEvents();
 
-        ncr.SubmitDisposition(dispositionType, "approval-chain-001", [], ApprovedMrbReview());
+        ncr.SubmitDisposition(dispositionType, "approval-chain-001", ["file-disposition-evidence-001"], ApprovedMrbReview());
 
         Assert.Contains(ncr.GetDomainEvents(), x => x is NonconformanceReportInventoryDispositionRequestedDomainEvent);
     }
@@ -149,7 +149,7 @@ public sealed class NonconformanceReportAggregateTests
     {
         var ncr = NewNcr();
 
-        ncr.SubmitDisposition("sort-and-screen", null, []);
+        ncr.SubmitDisposition("sort-and-screen", null, ["file-screening-plan-001"]);
 
         Assert.False(NonconformanceReport.RequiresCentralApproval("sort-and-screen"));
         Assert.Equal("disposition-in-progress", ncr.Status);
@@ -200,25 +200,26 @@ public sealed class NonconformanceReportAggregateTests
     }
 
     [Fact]
-    public void Close_conditional_release_requires_waiver_evidence()
+    public void Submit_conditional_release_requires_waiver_evidence()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview());
 
-        var exception = Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview()));
 
         Assert.Contains("evidence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("open", ncr.Status);
     }
 
     [Fact]
-    public void Close_sort_and_screen_requires_screening_evidence()
+    public void Submit_sort_and_screen_requires_screening_evidence()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("sort-and-screen", null, []);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => ncr.Close(null, null, null));
+        var exception = Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("sort-and-screen", null, []));
 
         Assert.Contains("evidence", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("open", ncr.Status);
     }
 
     [Fact]
@@ -236,7 +237,7 @@ public sealed class NonconformanceReportAggregateTests
     public void Disposition_in_progress_ncr_cannot_replace_existing_disposition()
     {
         var ncr = NewNcr();
-        ncr.SubmitDisposition("conditional-release", "approval-chain-001", [], ApprovedMrbReview());
+        ncr.SubmitDisposition("conditional-release", "approval-chain-001", ["file-waiver-001"], ApprovedMrbReview());
 
         Assert.Throws<InvalidOperationException>(() => ncr.SubmitDisposition("scrap", "approval-chain-002", [], ApprovedMrbReview()));
         Assert.Equal("conditional-release", ncr.DispositionType);

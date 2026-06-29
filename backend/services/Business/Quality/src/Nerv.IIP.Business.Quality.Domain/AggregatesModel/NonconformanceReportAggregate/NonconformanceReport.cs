@@ -11,6 +11,8 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
 {
     private const string ScrapDisposition = "scrap";
     private const string ConditionalReleaseDisposition = "conditional-release";
+    private const string ReturnToSupplierDisposition = "return-to-supplier";
+    private const string SortAndScreenDisposition = "sort-and-screen";
 
     private static readonly HashSet<string> SourceTypes =
     [
@@ -24,9 +26,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
     [
         "rework",
         ScrapDisposition,
-        "return-to-supplier",
+        ReturnToSupplierDisposition,
         ConditionalReleaseDisposition,
-        "sort-and-screen",
+        SortAndScreenDisposition,
     ];
 
     private NonconformanceReport()
@@ -167,7 +169,19 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
         var normalized = string.IsNullOrWhiteSpace(dispositionType)
             ? string.Empty
             : dispositionType.Trim().ToLowerInvariant();
-        return normalized is "rework" or "scrap" or "return-to-supplier" or "conditional-release";
+        return normalized is "rework" or ScrapDisposition or ReturnToSupplierDisposition or ConditionalReleaseDisposition;
+    }
+
+    public static bool RequiresEffectiveCapa(string sourceType, string? dispositionType)
+    {
+        var normalizedSourceType = string.IsNullOrWhiteSpace(sourceType)
+            ? string.Empty
+            : sourceType.Trim().ToLowerInvariant();
+        var normalizedDisposition = string.IsNullOrWhiteSpace(dispositionType)
+            ? string.Empty
+            : dispositionType.Trim().ToLowerInvariant();
+        return normalizedSourceType == "customer-return"
+            || normalizedDisposition is ScrapDisposition or ReturnToSupplierDisposition;
     }
 
     private static string ToNcrSourceType(string inspectionSourceType)
@@ -212,6 +226,13 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             && mrbReviews.Any(x => !string.Equals(x.Decision, "approved", StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException("All MRB review decisions must be approved before this NCR disposition can be submitted.");
+        }
+
+        if (RequiresDispositionEvidence(normalizedDisposition)
+            && AttachmentFileIds.Count == 0
+            && attachmentFileIds.Count == 0)
+        {
+            throw new InvalidOperationException($"{normalizedDisposition} disposition requires evidence before it can be submitted.");
         }
 
         DispositionType = normalizedDisposition;
@@ -306,14 +327,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("Scrap disposition requires a scrap stock movement id before closing.");
         }
 
-        if (DispositionType == "return-to-supplier" && string.IsNullOrWhiteSpace(ReturnDocumentId))
+        if (DispositionType == ReturnToSupplierDisposition && string.IsNullOrWhiteSpace(ReturnDocumentId))
         {
             throw new InvalidOperationException("Return-to-supplier disposition requires a return document id before closing.");
-        }
-
-        if (DispositionType is "conditional-release" or "sort-and-screen" && AttachmentFileIds.Count == 0)
-        {
-            throw new InvalidOperationException($"{DispositionType} disposition requires closure evidence before closing.");
         }
     }
 
@@ -332,7 +348,12 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
 
     private static bool RequiresInventoryDispositionRequest(string dispositionType)
     {
-        return dispositionType is "rework" or "scrap" or "conditional-release";
+        return dispositionType is "rework" or ScrapDisposition or ConditionalReleaseDisposition;
+    }
+
+    private static bool RequiresDispositionEvidence(string dispositionType)
+    {
+        return dispositionType is ConditionalReleaseDisposition or SortAndScreenDisposition;
     }
 
     private bool HasInventoryStockLocator()

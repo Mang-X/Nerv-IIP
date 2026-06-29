@@ -206,6 +206,8 @@ public sealed class CorrectiveActionItem : Entity<CorrectiveActionItemId>
     public string OwnerUserId { get; private set; } = string.Empty;
     public DateTimeOffset DueAtUtc { get; private set; }
     public string Status { get; private set; } = string.Empty;
+    public string? CompletedByUserId { get; private set; }
+    public DateTimeOffset? CompletedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static CorrectiveActionItem Create(string actionType, string description, string ownerUserId, DateTimeOffset dueAtUtc)
@@ -220,12 +222,13 @@ public sealed class CorrectiveActionItem : Entity<CorrectiveActionItemId>
             return;
         }
 
-        _ = Required(completedByUserId);
+        CompletedByUserId = Required(completedByUserId);
         if (completedAtUtc == default)
         {
             throw new ArgumentException("Action completion time is required.", nameof(completedAtUtc));
         }
 
+        CompletedAtUtc = completedAtUtc;
         Status = "completed";
     }
 

@@ -210,7 +210,7 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         ncr.SubmitDisposition(
             QualityNcrDispositionTypes.ConditionalRelease,
             "approval-chain-001",
-            [],
+            ["file-waiver-001"],
             ApprovedMrbReview());
         var inventoryRequest = new NcrInventoryDispositionRequestedIntegrationEventConverter(new FixedQualityIntegrationEventContextAccessor())
             .Convert(ncr.GetDomainEvents().OfType<NonconformanceReportInventoryDispositionRequestedDomainEvent>().Single());

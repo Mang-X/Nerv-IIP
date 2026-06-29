@@ -295,6 +295,39 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Create_receiving_inspection_record_allows_distinct_skus_in_same_source_document()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext));
+        var first = new CreateInspectionRecordCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "receiving",
+            "purchase-receipt",
+            "RCV-MULTI-SKU-001",
+            "SKU-RM-1000",
+            10m,
+            "LOT-MULTI-SKU-001",
+            null,
+            [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+            null,
+            []);
+        var second = first with { SkuCode = "SKU-RM-2000" };
+
+        var firstId = await handler.Handle(first, CancellationToken.None);
+        var secondId = await handler.Handle(second, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEqual(firstId, secondId);
+        Assert.Equal(2, dbContext.InspectionRecords.Count());
+    }
+
+    [Fact]
     public async Task Create_receiving_inspection_record_reconciles_source_receipt_sku_and_quantity()
     {
         await using var provider = CreateInMemoryProvider();
@@ -649,7 +682,7 @@ public sealed class QualityInspectionEndpointContractTests
                 ncr.Id,
                 "sort-and-screen",
                 null,
-                [],
+                ["file-screening-result-001"],
                 []),
             CancellationToken.None);
 
@@ -660,7 +693,7 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
-    public async Task Complete_ncr_scrap_disposition_rejects_partial_inventory_posting_quantity()
+    public async Task Complete_ncr_scrap_disposition_ignores_partial_inventory_posting_quantity()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -684,25 +717,23 @@ public sealed class QualityInspectionEndpointContractTests
             [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
         dbContext.NonconformanceReports.Add(ncr);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
-            new NonconformanceReportRepository(dbContext),
-            new CorrectiveActionRepository(dbContext));
+        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(new NonconformanceReportRepository(dbContext));
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+        await handler.Handle(
             new CompleteNonconformanceReportInventoryDispositionCommand(
                 ncr.Id,
                 "SM-PARTIAL-001",
                 "adjustment",
                 "blocked",
                 -1m),
-            CancellationToken.None));
+            CancellationToken.None);
 
-        Assert.Contains("quantity", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("disposition-in-progress", ncr.Status);
+        Assert.Null(ncr.ScrapMovementId);
     }
 
     [Fact]
-    public async Task Complete_ncr_scrap_disposition_requires_linked_effective_capa()
+    public async Task Close_ncr_scrap_disposition_requires_linked_effective_capa()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -726,17 +757,16 @@ public sealed class QualityInspectionEndpointContractTests
             [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
         dbContext.NonconformanceReports.Add(ncr);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+        var handler = new CloseNonconformanceReportCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new CorrectiveActionRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new CompleteNonconformanceReportInventoryDispositionCommand(
+            new CloseNonconformanceReportCommand(
                 ncr.Id,
+                null,
                 "SM-FULL-001",
-                "adjustment",
-                "blocked",
-                -10m),
+                null),
             CancellationToken.None));
 
         Assert.Contains("CAPA", exception.Message, StringComparison.OrdinalIgnoreCase);

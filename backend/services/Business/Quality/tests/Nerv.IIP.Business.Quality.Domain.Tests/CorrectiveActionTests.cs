@@ -45,6 +45,8 @@ public sealed class CorrectiveActionTests
         foreach (var action in capa.Actions)
         {
             capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-07-01T00:00:00Z"));
+            Assert.Equal(action.OwnerUserId, action.CompletedByUserId);
+            Assert.Equal(DateTimeOffset.Parse("2026-07-01T00:00:00Z"), action.CompletedAtUtc);
         }
 
         capa.VerifyEffectiveness("qa-manager-001", "No recurrence in three lots", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));

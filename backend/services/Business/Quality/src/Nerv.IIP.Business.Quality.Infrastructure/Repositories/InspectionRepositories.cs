@@ -47,6 +47,7 @@ public interface IInspectionRecordRepository : IRepository<InspectionRecord, Ins
         string environmentId,
         string sourceType,
         string sourceService,
+        string skuCode,
         string sourceDocumentId,
         CancellationToken cancellationToken = default);
 }
@@ -59,15 +60,21 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
         string environmentId,
         string sourceType,
         string sourceService,
+        string skuCode,
         string sourceDocumentId,
         CancellationToken cancellationToken = default)
     {
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedSkuCode = skuCode.Trim();
+        var normalizedSourceDocumentId = sourceDocumentId.Trim();
         return DbContext.InspectionRecords.SingleOrDefaultAsync(
             x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
-                && x.SourceType == sourceType
-                && x.SourceService == sourceService
-                && x.SourceDocumentId == sourceDocumentId,
+                && x.SourceType == normalizedSourceType
+                && x.SourceService == normalizedSourceService
+                && x.SkuCode == normalizedSkuCode
+                && x.SourceDocumentId == normalizedSourceDocumentId,
             cancellationToken);
     }
 }

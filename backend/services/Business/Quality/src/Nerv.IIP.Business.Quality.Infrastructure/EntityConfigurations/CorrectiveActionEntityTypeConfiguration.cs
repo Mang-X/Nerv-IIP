@@ -50,6 +50,8 @@ public sealed class CorrectiveActionItemEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.OwnerUserId).HasColumnName("owner_user_id").IsRequired().HasMaxLength(150).HasComment("Action owner user public id.");
         builder.Property(x => x.DueAtUtc).HasColumnName("due_at_utc").IsRequired().HasComment("UTC due time for this CAPA action.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("CAPA action item status.");
+        builder.Property(x => x.CompletedByUserId).HasColumnName("completed_by_user_id").HasMaxLength(150).HasComment("User id that completed this CAPA action item.");
+        builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC time when this CAPA action item was completed.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when this action item was created.");
         builder.HasIndex(x => new { x.CorrectiveActionId, x.ActionType });
     }

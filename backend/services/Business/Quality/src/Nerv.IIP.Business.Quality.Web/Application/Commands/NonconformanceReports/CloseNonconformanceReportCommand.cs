@@ -29,18 +29,12 @@ public sealed class CloseNonconformanceReportCommandHandler(
     {
         var ncr = await repository.GetAsync(request.NcrId, cancellationToken)
             ?? throw new KnownException($"NCR '{request.NcrId}' was not found.");
-        if (RequiresEffectiveCapa(ncr)
+        if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
             && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
         {
             throw new KnownException("NCR requires a linked effective CAPA before closure.");
         }
 
         ncr.Close(request.ReworkWorkOrderId, request.ScrapMovementId, request.ReturnDocumentId);
-    }
-
-    private static bool RequiresEffectiveCapa(NonconformanceReport ncr)
-    {
-        return ncr.SourceType == "customer-return"
-            || ncr.DispositionType is "scrap" or "return-to-supplier";
     }
 }
