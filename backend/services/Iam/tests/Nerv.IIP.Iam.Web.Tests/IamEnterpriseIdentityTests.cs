@@ -169,6 +169,48 @@ public sealed class IamEnterpriseIdentityTests
     }
 
     [Fact]
+    public async Task Production_oidc_callback_rejects_body_claims_even_with_callback_secret()
+    {
+        await using var factory = ProductionEnterpriseFactory("prod-demo", requireMfa: false);
+        var client = factory.CreateClient();
+
+        var callback = await client.PostAsJsonAsync(
+            "/api/iam/v1/auth/oidc/callback",
+            new
+            {
+                provider = "prod-demo",
+                subject = "entra-user-admin",
+                email = "admin@nerv-iip.local",
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                callbackSecret = "oidc-callback-secret"
+            });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, callback.StatusCode);
+    }
+
+    [Fact]
+    public async Task Production_mfa_verify_rejects_development_code_even_when_challenge_exists()
+    {
+        await using var factory = ProductionEnterpriseFactory("prod-mfa", requireMfa: true);
+        var challengeStore = factory.Services.GetRequiredService<IMfaChallengeStore>();
+        var challengeId = challengeStore.Create(new MfaChallengeContext(
+            "user-admin",
+            "prod-mfa",
+            "entra-user-admin",
+            "org-001",
+            "env-dev",
+            DateTimeOffset.UtcNow.AddMinutes(5)));
+        var client = factory.CreateClient();
+
+        var verified = await client.PostAsJsonAsync(
+            $"/api/iam/v1/auth/mfa/challenges/{challengeId}/verify",
+            new { code = "654321" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, verified.StatusCode);
+    }
+
+    [Fact]
     public async Task Oidc_callback_rejects_invalid_callback_secret()
     {
         await using var factory = EnterpriseFactory("demo-secret", requireMfa: false);
@@ -240,6 +282,21 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseSetting($"Iam:EnterpriseIdentity:OidcProviders:{provider}:AllowedEmailDomain", "nerv-iip.local");
                 builder.UseSetting("Iam:EnterpriseIdentity:Mfa:DevelopmentCode", "654321");
         });
+    }
+
+    private static WebApplicationFactory<Program> ProductionEnterpriseFactory(string provider, bool requireMfa)
+    {
+        return EnterpriseFactory(provider, requireMfa)
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting("ConnectionStrings:IamDb", "Host=localhost;Port=1;Database=nerv_iip_iam_unreachable;Username=nerv;Password=nerv");
+            });
     }
 
     private sealed record EnterpriseAuthResponse(bool MfaRequired, string? MfaChallengeId, AuthResponse? Session);
