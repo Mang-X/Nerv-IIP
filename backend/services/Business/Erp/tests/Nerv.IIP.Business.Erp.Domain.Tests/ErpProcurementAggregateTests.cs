@@ -120,6 +120,48 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
+    public void Purchase_receipt_rejects_final_delivery_when_shortage_exceeds_under_receipt_tolerance()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m, underReceiptTolerancePercent: 5m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 9.4m, "accepted", FinalDelivery: true)]));
+    }
+
+    [Fact]
+    public void Purchase_receipt_allows_final_delivery_when_shortage_is_within_under_receipt_tolerance()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m, underReceiptTolerancePercent: 5m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 9.5m, "accepted", FinalDelivery: true)]);
+
+        Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
+        Assert.Equal(PurchaseOrderStatus.Closed, order.Status);
+        Assert.Equal(0m, order.Lines.Single().OpenQuantity);
+    }
+
+    [Fact]
     public void Purchase_order_requires_business_approval_before_release_and_receipt()
     {
         var order = PurchaseOrder.Create(
@@ -359,8 +401,8 @@ public sealed class ErpProcurementAggregateTests
         return new RfqLineDraft("LINE-001", "SKU-RM-1000", "kg", 25m, "SITE-01", new DateOnly(2026, 6, 1));
     }
 
-    private static PurchaseOrderLineDraft NewPurchaseOrderLine(decimal quantity, decimal overReceiptTolerancePercent = 0m)
+    private static PurchaseOrderLineDraft NewPurchaseOrderLine(decimal quantity, decimal overReceiptTolerancePercent = 0m, decimal underReceiptTolerancePercent = 0m)
     {
-        return new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", quantity, 12.5m, new DateOnly(2026, 6, 3), overReceiptTolerancePercent);
+        return new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", quantity, 12.5m, new DateOnly(2026, 6, 3), overReceiptTolerancePercent, underReceiptTolerancePercent);
     }
 }

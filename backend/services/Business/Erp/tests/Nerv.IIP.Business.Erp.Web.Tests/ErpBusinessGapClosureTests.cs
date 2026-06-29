@@ -227,6 +227,75 @@ public sealed class ErpBusinessGapClosureTests
     }
 
     [Fact]
+    public async Task Foreign_currency_purchase_receipt_and_supplier_invoice_post_local_amounts_with_exchange_rate()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var approvalClient = new CapturingPurchaseOrderApprovalClient();
+        await new CreatePurchaseOrderCommandHandler(dbContext, approvalClient: approvalClient).Handle(
+            new CreatePurchaseOrderCommand(
+                "org-001",
+                "env-dev",
+                "PO-FX-001",
+                "SUP-001",
+                "SITE-01",
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 5m, 12.5m, new DateOnly(2026, 6, 5))],
+                CurrencyCode: "USD"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder(dbContext, new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(
+            ApprovedPurchaseOrderEvent("PO-FX-001", approvalClient.LastRequest!.ChainId),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-FX-001",
+                "PO-FX-001",
+                [new PurchaseReceiptCommandLine("LINE-001", 2m, "accepted", "RAW-A-01", "LOT-001")],
+                ExchangeRate: 7.1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var receipt = dbContext.PurchaseReceipts.Single(x => x.PurchaseReceiptNo == "RCV-FX-001");
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore())
+            .HandleAsync(new PurchaseReceiptRecordedIntegrationEventConverter().Convert(new PurchaseReceiptRecordedDomainEvent(receipt)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RecordSupplierInvoiceCommandHandler(dbContext).Handle(
+            new RecordSupplierInvoiceCommand(
+                "org-001",
+                "env-dev",
+                "INV-FX-001",
+                "PO-FX-001",
+                "RCV-FX-001",
+                new DateOnly(2026, 6, 10),
+                new DateOnly(2026, 7, 10),
+                "USD",
+                0m,
+                0m,
+                [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 12.5m)],
+                ExchangeRate: 7.1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var payable = Assert.Single(dbContext.AccountPayables);
+        Assert.Equal("USD", payable.CurrencyCode);
+        Assert.Equal(7.1m, payable.ExchangeRate);
+        Assert.Equal(25m, payable.Amount);
+        Assert.Equal(177.5m, payable.LocalAmount);
+        Assert.Equal(2, dbContext.JournalVouchers.Count());
+        Assert.All(dbContext.JournalVouchers.SelectMany(x => x.Lines), line => Assert.Equal("USD", line.CurrencyCode));
+        Assert.Equal(177.5m, LocalAccountBalance(dbContext, "1401"));
+        Assert.Equal(0m, LocalAccountBalance(dbContext, "GR-IR"));
+        Assert.Equal(-177.5m, LocalAccountBalance(dbContext, "2202"));
+    }
+
+    [Fact]
     public async Task Supplier_invoice_price_variance_leaves_gr_ir_balance_for_later_reconciliation()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
@@ -641,6 +710,9 @@ public sealed class ErpBusinessGapClosureTests
         await new CreateAccountReceivableCommandHandler(dbContext).Handle(
             new CreateAccountReceivableCommand("org-001", "env-dev", "AR-USD-001", "DO-USD-001", "CUST-001", 20m, "USD", ExchangeRate: 7m),
             CancellationToken.None);
+        await new CreateCostCandidateCommandHandler(dbContext).Handle(
+            new CreateCostCandidateCommand("org-001", "env-dev", "COST-USD-001", "production-report", "RPT-USD-001", 10m, "USD", ExchangeRate: 7m),
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var summary = await new GetFinanceSummaryQueryHandler(dbContext).Handle(
@@ -650,6 +722,7 @@ public sealed class ErpBusinessGapClosureTests
         Assert.Contains(summary.PayablesByCurrency, x => x.CurrencyCode == "CNY" && x.OpenAmount == 100m && x.LocalOpenAmount == 100m);
         Assert.Contains(summary.PayablesByCurrency, x => x.CurrencyCode == "USD" && x.OpenAmount == 10m && x.LocalOpenAmount == 70m);
         Assert.Contains(summary.ReceivablesByCurrency, x => x.CurrencyCode == "USD" && x.OpenAmount == 20m && x.LocalOpenAmount == 140m);
+        Assert.Contains(summary.CostCandidatesByCurrency, x => x.CurrencyCode == "USD" && x.OpenAmount == 10m && x.LocalOpenAmount == 70m);
     }
 
     [Fact]
@@ -730,6 +803,14 @@ public sealed class ErpBusinessGapClosureTests
             .SelectMany(x => x.Lines)
             .Where(x => x.AccountCode == accountCode)
             .Sum(x => x.DebitAmount - x.CreditAmount);
+    }
+
+    private static decimal LocalAccountBalance(Infrastructure.ApplicationDbContext dbContext, string accountCode)
+    {
+        return dbContext.JournalVouchers
+            .SelectMany(x => x.Lines)
+            .Where(x => x.AccountCode == accountCode)
+            .Sum(x => x.LocalDebitAmount - x.LocalCreditAmount);
     }
 
     private sealed class CapturingPurchaseOrderApprovalClient : IPurchaseOrderApprovalClient

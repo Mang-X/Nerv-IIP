@@ -204,6 +204,8 @@ public sealed class CostCandidateEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SourceDocumentNo).HasColumnName("source_document_no").IsRequired().HasMaxLength(100).HasComment("Public source document number.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Candidate amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Candidate exchange rate to local currency.");
+        builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Candidate amount in local currency.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CandidateNo }).IsUnique();
     }

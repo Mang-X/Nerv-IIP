@@ -106,7 +106,7 @@ public sealed class CreateAccountReceivableCommandHandler(ApplicationDbContext d
     }
 }
 
-public sealed record CreateCostCandidateCommand(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null) : ICommand<CostCandidateId>;
+public sealed record CreateCostCandidateCommand(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null, decimal ExchangeRate = 1m) : ICommand<CostCandidateId>;
 
 public sealed class CreateCostCandidateCommandValidator : AbstractValidator<CreateCostCandidateCommand>
 {
@@ -119,6 +119,7 @@ public sealed class CreateCostCandidateCommandValidator : AbstractValidator<Crea
         RuleFor(x => x.SourceDocumentNo).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Amount).GreaterThan(0);
         RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
+        RuleFor(x => x.ExchangeRate).GreaterThan(0);
     }
 }
 
@@ -128,13 +129,13 @@ public sealed class CreateCostCandidateCommandHandler(ApplicationDbContext dbCon
 
     public async Task<CostCandidateId> Handle(CreateCostCandidateCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "cost-candidate", request.CandidateNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode), cancellationToken);
+        var allocation = await _codingService.AllocateAsync(request.OrganizationId, request.EnvironmentId, "cost-candidate", request.CandidateNo, request.IdempotencyKey, ErpCodingService.Fingerprint(request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode, request.ExchangeRate), cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
             return (await dbContext.CostCandidates.SingleAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.CandidateNo == allocation.Code, cancellationToken)).Id;
         }
 
-        var candidate = CostCandidate.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode);
+        var candidate = CostCandidate.Create(request.OrganizationId, request.EnvironmentId, allocation.Code, request.SourceType, request.SourceDocumentNo, request.Amount, request.CurrencyCode, request.ExchangeRate);
         dbContext.CostCandidates.Add(candidate);
         dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForCostCandidate(candidate));
         return candidate.Id;
@@ -393,8 +394,8 @@ public static class FinanceVoucherFactory
             voucherNo,
             DateOnly.FromDateTime(receipt.RecordedAtUtc),
             [
-                LocalDebit(InventoryAccountCode, amount, "CNY", 1m, $"Goods receipt {receipt.PurchaseReceiptNo}"),
-                LocalCredit(GoodsReceiptInvoiceReceiptAccountCode, amount, "CNY", 1m, $"GR/IR accrual {receipt.PurchaseReceiptNo}"),
+                LocalDebit(InventoryAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"Goods receipt {receipt.PurchaseReceiptNo}"),
+                LocalCredit(GoodsReceiptInvoiceReceiptAccountCode, amount, receipt.CurrencyCode, receipt.ExchangeRate, $"GR/IR accrual {receipt.PurchaseReceiptNo}"),
             ]);
     }
 
@@ -445,8 +446,8 @@ public static class FinanceVoucherFactory
             $"JV-COST-{candidate.CandidateNo}",
             DateOnly.FromDateTime(candidate.CreatedAtUtc),
             [
-                new JournalVoucherLineDraft("5001", candidate.Amount, 0m, $"Cost candidate {candidate.SourceDocumentNo}"),
-                new JournalVoucherLineDraft("1401", 0m, candidate.Amount, $"Cost source {candidate.SourceType}"),
+                LocalDebit("5001", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost candidate {candidate.SourceDocumentNo}"),
+                LocalCredit("1401", candidate.Amount, candidate.CurrencyCode, candidate.ExchangeRate, $"Cost source {candidate.SourceType}"),
             ]);
     }
 

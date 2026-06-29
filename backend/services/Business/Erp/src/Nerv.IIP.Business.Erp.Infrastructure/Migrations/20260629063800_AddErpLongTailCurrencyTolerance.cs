@@ -10,6 +10,49 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<decimal>(
+                name: "exchange_rate",
+                schema: "erp",
+                table: "supplier_invoices",
+                type: "numeric(18,8)",
+                precision: 18,
+                scale: 8,
+                nullable: false,
+                defaultValue: 1m,
+                comment: "Invoice exchange rate to local currency.");
+
+            migrationBuilder.AddColumn<decimal>(
+                name: "local_total_amount",
+                schema: "erp",
+                table: "supplier_invoices",
+                type: "numeric(18,6)",
+                precision: 18,
+                scale: 6,
+                nullable: false,
+                defaultValue: 0m,
+                comment: "Matched invoice total amount in local currency.");
+
+            migrationBuilder.AddColumn<string>(
+                name: "currency_code",
+                schema: "erp",
+                table: "purchase_receipts",
+                type: "character varying(10)",
+                maxLength: 10,
+                nullable: false,
+                defaultValue: "CNY",
+                comment: "Receipt currency code copied from purchase order.");
+
+            migrationBuilder.AddColumn<decimal>(
+                name: "exchange_rate",
+                schema: "erp",
+                table: "purchase_receipts",
+                type: "numeric(18,8)",
+                precision: 18,
+                scale: 8,
+                nullable: false,
+                defaultValue: 1m,
+                comment: "Receipt exchange rate to local currency.");
+
             migrationBuilder.AddColumn<string>(
                 name: "currency_code",
                 schema: "erp",
@@ -97,6 +140,28 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
             migrationBuilder.AddColumn<decimal>(
                 name: "exchange_rate",
                 schema: "erp",
+                table: "cost_candidates",
+                type: "numeric(18,8)",
+                precision: 18,
+                scale: 8,
+                nullable: false,
+                defaultValue: 1m,
+                comment: "Candidate exchange rate to local currency.");
+
+            migrationBuilder.AddColumn<decimal>(
+                name: "local_amount",
+                schema: "erp",
+                table: "cost_candidates",
+                type: "numeric(18,6)",
+                precision: 18,
+                scale: 6,
+                nullable: false,
+                defaultValue: 0m,
+                comment: "Candidate amount in local currency.");
+
+            migrationBuilder.AddColumn<decimal>(
+                name: "exchange_rate",
+                schema: "erp",
                 table: "account_receivables",
                 type: "numeric(18,8)",
                 precision: 18,
@@ -161,20 +226,58 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 comment: "Local currency paid amount at document exchange rate.");
 
             migrationBuilder.Sql("""
+                UPDATE erp.purchase_orders
+                SET currency_code = 'CNY'
+                """);
+
+            migrationBuilder.Sql("""
+                UPDATE erp.purchase_receipts receipt
+                SET currency_code = COALESCE(po.currency_code, 'CNY'),
+                    exchange_rate = 1
+                FROM erp.purchase_orders po
+                WHERE receipt.organization_id = po.organization_id
+                  AND receipt.environment_id = po.environment_id
+                  AND receipt.purchase_order_no = po.purchase_order_no
+                """);
+
+            migrationBuilder.Sql("""
+                UPDATE erp.purchase_receipts
+                SET currency_code = 'CNY',
+                    exchange_rate = 1
+                WHERE currency_code = ''
+                """);
+
+            migrationBuilder.Sql("""
+                UPDATE erp.supplier_invoices
+                SET exchange_rate = 1,
+                    local_total_amount = total_amount
+                """);
+
+            migrationBuilder.Sql("""
                 UPDATE erp.journal_voucher_lines
-                SET local_debit_amount = debit_amount,
+                SET currency_code = 'CNY',
+                    exchange_rate = 1,
+                    local_debit_amount = debit_amount,
                     local_credit_amount = credit_amount
                 """);
 
             migrationBuilder.Sql("""
+                UPDATE erp.cost_candidates
+                SET exchange_rate = 1,
+                    local_amount = amount
+                """);
+
+            migrationBuilder.Sql("""
                 UPDATE erp.account_receivables
-                SET local_amount = amount,
+                SET exchange_rate = 1,
+                    local_amount = amount,
                     local_collected_amount = collected_amount
                 """);
 
             migrationBuilder.Sql("""
                 UPDATE erp.account_payables
-                SET local_amount = amount,
+                SET exchange_rate = 1,
+                    local_amount = amount,
                     local_paid_amount = paid_amount
                 """);
         }
@@ -182,6 +285,26 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropColumn(
+                name: "exchange_rate",
+                schema: "erp",
+                table: "supplier_invoices");
+
+            migrationBuilder.DropColumn(
+                name: "local_total_amount",
+                schema: "erp",
+                table: "supplier_invoices");
+
+            migrationBuilder.DropColumn(
+                name: "currency_code",
+                schema: "erp",
+                table: "purchase_receipts");
+
+            migrationBuilder.DropColumn(
+                name: "exchange_rate",
+                schema: "erp",
+                table: "purchase_receipts");
+
             migrationBuilder.DropColumn(
                 name: "currency_code",
                 schema: "erp",
@@ -221,6 +344,16 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                 name: "local_debit_amount",
                 schema: "erp",
                 table: "journal_voucher_lines");
+
+            migrationBuilder.DropColumn(
+                name: "exchange_rate",
+                schema: "erp",
+                table: "cost_candidates");
+
+            migrationBuilder.DropColumn(
+                name: "local_amount",
+                schema: "erp",
+                table: "cost_candidates");
 
             migrationBuilder.DropColumn(
                 name: "exchange_rate",

@@ -18,7 +18,8 @@ public sealed class CostCandidate : Entity<CostCandidateId>, IAggregateRoot
         string sourceType,
         string sourceDocumentNo,
         decimal amount,
-        string currencyCode)
+        string currencyCode,
+        decimal exchangeRate)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
@@ -27,6 +28,8 @@ public sealed class CostCandidate : Entity<CostCandidateId>, IAggregateRoot
         SourceDocumentNo = ErpText.Required(sourceDocumentNo, nameof(sourceDocumentNo));
         Amount = ErpText.Positive(amount, nameof(amount));
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
+        LocalAmount = Amount * ExchangeRate;
         CreatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new CostCandidateCreatedDomainEvent(this));
     }
@@ -38,10 +41,12 @@ public sealed class CostCandidate : Entity<CostCandidateId>, IAggregateRoot
     public string SourceDocumentNo { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
+    public decimal ExchangeRate { get; private set; }
+    public decimal LocalAmount { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
 
-    public static CostCandidate Create(string organizationId, string environmentId, string candidateNo, string sourceType, string sourceDocumentNo, decimal amount, string currencyCode)
+    public static CostCandidate Create(string organizationId, string environmentId, string candidateNo, string sourceType, string sourceDocumentNo, decimal amount, string currencyCode, decimal exchangeRate = 1m)
     {
-        return new CostCandidate(organizationId, environmentId, candidateNo, sourceType, sourceDocumentNo, amount, currencyCode);
+        return new CostCandidate(organizationId, environmentId, candidateNo, sourceType, sourceDocumentNo, amount, currencyCode, exchangeRate);
     }
 }

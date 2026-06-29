@@ -66,7 +66,7 @@ public sealed record CreateAccountReceivableRequest(
     string? IdempotencyKey = null,
     decimal ExchangeRate = 1m);
 public sealed record CreateAccountReceivableResponse(AccountReceivableId AccountReceivableId);
-public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
+public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null, decimal ExchangeRate = 1m);
 public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId);
 public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string? VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
@@ -222,7 +222,7 @@ public sealed class CreateCostCandidateEndpoint(ISender sender) : ErpEndpoint<Cr
 
     public override async Task HandleAsync(CreateCostCandidateRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode, req.IdempotencyKey, req.ExchangeRate), ct);
         await Send.OkAsync(new CreateCostCandidateResponse(id).AsResponseData(), cancellation: ct);
     }
 }

@@ -215,13 +215,20 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
     public void RegisterReceipt(decimal quantity, bool finalDelivery = false)
     {
         _ = ErpText.Positive(quantity, nameof(quantity));
+        var newReceivedQuantity = ReceivedQuantity + quantity;
         var maxReceivableQuantity = OrderedQuantity * (1m + OverReceiptTolerancePercent / 100m);
-        if (ReceivedQuantity + quantity > maxReceivableQuantity)
+        if (newReceivedQuantity > maxReceivableQuantity)
         {
             throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Receipt quantity cannot exceed over-receipt tolerance.");
         }
 
-        ReceivedQuantity += quantity;
+        var minFinalDeliveryQuantity = OrderedQuantity * (1m - UnderReceiptTolerancePercent / 100m);
+        if (finalDelivery && newReceivedQuantity < minFinalDeliveryQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Final delivery shortage cannot exceed under-receipt tolerance.");
+        }
+
+        ReceivedQuantity = newReceivedQuantity;
         if (finalDelivery)
         {
             FinalDelivery = true;

@@ -88,7 +88,8 @@ public sealed record RecordPurchaseReceiptRequest(
     string? PurchaseReceiptNo,
     string PurchaseOrderNo,
     IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    decimal ExchangeRate = 1m);
 
 public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
 
@@ -106,7 +107,8 @@ public sealed record RecordSupplierInvoiceRequest(
     IReadOnlyCollection<SupplierInvoiceCommandLine> Lines,
     string? PayableNo = null,
     string? IdempotencyKey = null,
-    decimal? PriceTolerancePercent = null);
+    decimal? PriceTolerancePercent = null,
+    decimal ExchangeRate = 1m);
 
 public sealed record RecordSupplierInvoiceResponse(SupplierInvoiceId SupplierInvoiceId);
 
@@ -237,7 +239,7 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordPurchaseReceiptRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey), ct);
+        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey, req.ExchangeRate), ct);
         await Send.OkAsync(new RecordPurchaseReceiptResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -266,7 +268,8 @@ public sealed class RecordSupplierInvoiceEndpoint(ISender sender)
             req.Lines,
             req.PayableNo,
             req.IdempotencyKey,
-            req.PriceTolerancePercent), ct);
+            req.PriceTolerancePercent,
+            req.ExchangeRate), ct);
         await Send.OkAsync(new RecordSupplierInvoiceResponse(id).AsResponseData(), cancellation: ct);
     }
 }

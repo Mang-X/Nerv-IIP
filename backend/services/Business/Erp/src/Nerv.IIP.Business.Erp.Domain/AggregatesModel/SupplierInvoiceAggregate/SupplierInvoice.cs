@@ -36,6 +36,7 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         DateOnly invoiceDate,
         DateOnly dueDate,
         string currencyCode,
+        decimal exchangeRate,
         decimal quantityTolerance,
         decimal amountTolerance,
         decimal? priceTolerancePercent,
@@ -68,6 +69,7 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(priceTolerancePercent), priceTolerancePercent, "Price tolerance percent cannot be negative.");
         }
 
+        ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
         MatchedAtUtc = DateTime.UtcNow;
 
         var held = false;
@@ -100,6 +102,7 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         }
 
         TotalAmount = lines.Sum(x => x.LineAmount);
+        LocalTotalAmount = TotalAmount * ExchangeRate;
         MatchStatus = held ? SupplierInvoiceMatchStatus.PaymentHeld : SupplierInvoiceMatchStatus.Matched;
         if (MatchStatus == SupplierInvoiceMatchStatus.Matched)
         {
@@ -116,7 +119,9 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
+    public decimal ExchangeRate { get; private set; }
     public decimal TotalAmount { get; private set; }
+    public decimal LocalTotalAmount { get; private set; }
     public SupplierInvoiceMatchStatus MatchStatus { get; private set; }
     public DateTime MatchedAtUtc { get; private set; }
     public IReadOnlyCollection<SupplierInvoiceLine> Lines => lines;
@@ -131,9 +136,10 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal quantityTolerance,
         decimal amountTolerance,
         IEnumerable<SupplierInvoiceLineDraft> lines,
-        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null)
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
+        decimal exchangeRate = 1m)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, null, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, null, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
     }
 
     public static SupplierInvoice Match(
@@ -147,9 +153,10 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal amountTolerance,
         decimal priceTolerancePercent,
         IEnumerable<SupplierInvoiceLineDraft> lines,
-        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null)
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
+        decimal exchangeRate = 1m)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, priceTolerancePercent, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, priceTolerancePercent, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
     }
 
     public void ReleasePaymentHold()
