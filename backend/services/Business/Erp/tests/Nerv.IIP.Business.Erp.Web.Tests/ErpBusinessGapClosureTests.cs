@@ -279,20 +279,24 @@ public sealed class ErpBusinessGapClosureTests
                 0m,
                 0m,
                 [new SupplierInvoiceCommandLine("LINE-001", "LINE-001", 2m, 12.5m)],
-                ExchangeRate: 7.1m),
+                ExchangeRate: 7.2m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var payable = Assert.Single(dbContext.AccountPayables);
         Assert.Equal("USD", payable.CurrencyCode);
-        Assert.Equal(7.1m, payable.ExchangeRate);
+        Assert.Equal(7.2m, payable.ExchangeRate);
         Assert.Equal(25m, payable.Amount);
-        Assert.Equal(177.5m, payable.LocalAmount);
+        Assert.Equal(180m, payable.LocalAmount);
         Assert.Equal(2, dbContext.JournalVouchers.Count());
-        Assert.All(dbContext.JournalVouchers.SelectMany(x => x.Lines), line => Assert.Equal("USD", line.CurrencyCode));
+        Assert.Contains(dbContext.JournalVouchers.SelectMany(x => x.Lines), line =>
+            line.AccountCode == FinanceVoucherFactory.RealizedExchangeLossAccountCode
+            && line.CurrencyCode == "CNY"
+            && line.LocalDebitAmount == 2.5m);
         Assert.Equal(177.5m, LocalAccountBalance(dbContext, "1401"));
         Assert.Equal(0m, LocalAccountBalance(dbContext, "GR-IR"));
-        Assert.Equal(-177.5m, LocalAccountBalance(dbContext, "2202"));
+        Assert.Equal(-180m, LocalAccountBalance(dbContext, "2202"));
+        Assert.Equal(2.5m, LocalAccountBalance(dbContext, FinanceVoucherFactory.RealizedExchangeLossAccountCode));
     }
 
     [Fact]

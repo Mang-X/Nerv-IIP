@@ -399,17 +399,36 @@ public static class FinanceVoucherFactory
             ]);
     }
 
-    public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable)
+    public static JournalVoucher ForSupplierInvoiceGrIrClearing(SupplierInvoice invoice, AccountPayable payable, decimal grIrExchangeRate)
     {
+        if (grIrExchangeRate <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(grIrExchangeRate), grIrExchangeRate, "GR/IR exchange rate must be positive.");
+        }
+
+        var lines = new List<JournalVoucherLineDraft>
+        {
+            LocalDebit(GoodsReceiptInvoiceReceiptAccountCode, invoice.TotalAmount, invoice.CurrencyCode, grIrExchangeRate, $"Clear GR/IR for receipt {invoice.PurchaseReceiptNo}"),
+            LocalCredit(AccountsPayableAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"AP {payable.PayableNo}"),
+        };
+        var grIrLocalDebit = invoice.TotalAmount * grIrExchangeRate;
+        var payableLocalCredit = payable.Amount * payable.ExchangeRate;
+        var exchangeDifference = payableLocalCredit - grIrLocalDebit;
+        if (exchangeDifference > 0)
+        {
+            lines.Add(LocalDebit(RealizedExchangeLossAccountCode, exchangeDifference, "CNY", 1m, "Realized GR/IR exchange loss"));
+        }
+        else if (exchangeDifference < 0)
+        {
+            lines.Add(LocalCredit(RealizedExchangeGainAccountCode, Math.Abs(exchangeDifference), "CNY", 1m, "Realized GR/IR exchange gain"));
+        }
+
         return JournalVoucher.Post(
             invoice.OrganizationId,
             invoice.EnvironmentId,
             $"JV-AP-{payable.PayableNo}",
             invoice.InvoiceDate,
-            [
-                LocalDebit(GoodsReceiptInvoiceReceiptAccountCode, invoice.TotalAmount, invoice.CurrencyCode, payable.ExchangeRate, $"Clear GR/IR for receipt {invoice.PurchaseReceiptNo}"),
-                LocalCredit(AccountsPayableAccountCode, payable.Amount, payable.CurrencyCode, payable.ExchangeRate, $"AP {payable.PayableNo}"),
-            ]);
+            lines);
     }
 
     public static JournalVoucher ForAccountPayable(AccountPayable payable)

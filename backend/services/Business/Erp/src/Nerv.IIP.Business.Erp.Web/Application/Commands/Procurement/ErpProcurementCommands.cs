@@ -561,7 +561,7 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             "MATCHED",
             request.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
         return invoice.Id;
     }
 }
@@ -644,6 +644,12 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             throw new KnownException(exception.Message, exception);
         }
 
+        var receipt = await dbContext.PurchaseReceipts.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseReceiptNo == invoice.PurchaseReceiptNo,
+            cancellationToken)
+            ?? throw new KnownException($"Purchase receipt '{invoice.PurchaseReceiptNo}' was not found.");
         var payable = AccountPayable.Create(
             request.OrganizationId,
             request.EnvironmentId,
@@ -657,7 +663,7 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             "MATCHED",
             invoice.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
         return invoice.Id;
     }
 }
