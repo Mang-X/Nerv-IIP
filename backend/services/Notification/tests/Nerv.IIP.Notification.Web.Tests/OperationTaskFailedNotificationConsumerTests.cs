@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
@@ -261,6 +262,132 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_schedule_conflict_detected_creates_planner_notification_task()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Scheduling:ConflictNotification:RecipientRefs:0"] = "role:scheduler",
+        });
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict",
+            "scheduling-conflict:plan-001:conflict-001"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        var processed = await dbContext.ProcessedIntegrationEvents.SingleAsync();
+
+        Assert.Equal("business-scheduling", intent.SourceService);
+        Assert.Equal(SchedulingIntegrationEventTypes.ScheduleConflictDetected, intent.SourceEventType);
+        Assert.Equal("event-schedule-conflict", intent.SourceEventId);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("schedule-plan", intent.ResourceType);
+        Assert.Equal("plan-001", intent.ResourceId);
+        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+        Assert.Equal(ScheduleConflictDetectedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
+        Assert.Equal("event-schedule-conflict", processed.EventId);
+        Assert.Equal("scheduling-conflict:plan-001:conflict-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_uses_default_recipient_when_configuration_missing()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-default-recipient",
+            "scheduling-conflict:plan-001:conflict-default"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("role:production-planner", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("role:production-planner", Assert.Single(intent.Tasks).RecipientRef);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_error_severity_creates_critical_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-error",
+            "scheduling-conflict:plan-001:conflict-error",
+            conflictSeverity: "error"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
+    }
+
+    [Fact]
+    public async Task Handle_same_schedule_conflict_event_twice_does_not_create_duplicate_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-duplicate",
+            "scheduling-conflict:plan-001:conflict-duplicate");
+
+        await HandleScheduleConflictDetectedAsync(factory, integrationEvent);
+        await HandleScheduleConflictDetectedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Equal(1, await dbContext.NotificationIntents.CountAsync());
+        Assert.Equal(1, await dbContext.NotificationMessages.CountAsync());
+        Assert.Equal(1, await dbContext.NotificationTasks.CountAsync());
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_rejects_missing_severity_without_marking_processed()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-missing-severity",
+            "scheduling-conflict:plan-001:conflict-missing-severity",
+            conflictSeverity: null!);
+
+        await Assert.ThrowsAsync<KnownException>(() => HandleScheduleConflictDetectedAsync(factory, integrationEvent));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_omits_work_order_summary_when_work_order_missing()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-no-work-order",
+            "scheduling-conflict:plan-001:conflict-no-work-order",
+            workOrderId: " "));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal("Schedule plan plan-001 has conflict conflict-001 (dueDate).", intent.Summary);
+    }
+
+    [Fact]
     public async Task Handle_same_event_twice_does_not_create_duplicate_notification()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -434,6 +561,16 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         using var scope = factory.Services.CreateScope();
         IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent> handler =
             ActivatorUtilities.CreateInstance<ApprovalActionRecordedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleScheduleConflictDetectedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ScheduleConflictDetectedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ScheduleConflictDetectedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ScheduleConflictDetectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
@@ -659,6 +796,39 @@ public sealed class OperationTaskFailedNotificationConsumerTests
             DocumentType: "engineering-change-order",
             DocumentId: "ECO-1001",
             DocumentLineId: null);
+    }
+
+    private static ScheduleConflictDetectedIntegrationEvent CreateScheduleConflictDetectedEvent(
+        string eventId,
+        string idempotencyKey,
+        string? conflictSeverity = "warning",
+        string? workOrderId = "wo-001")
+    {
+        return new ScheduleConflictDetectedIntegrationEvent(
+            EventId: eventId,
+            EventType: SchedulingIntegrationEventTypes.ScheduleConflictDetected,
+            EventVersion: SchedulingIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T09:00:00Z"),
+            SourceService: SchedulingIntegrationEventSources.BusinessScheduling,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "plan-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-scheduling",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ScheduleConflictDetectedPayload(
+                PlanId: "plan-001",
+                ProblemId: "problem-001",
+                ContractVersion: 1,
+                AlgorithmVersion: "aps-lite-v1",
+                ProblemFingerprint: "fingerprint-001",
+                PlanStatus: "generated",
+                ConflictId: "conflict-001",
+                ConflictReasonCode: "dueDate",
+                ConflictSeverity: conflictSeverity!,
+                WorkOrderId: workOrderId!,
+                OperationId: "op-001",
+                ResourceId: "res-001"));
     }
 
     private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
