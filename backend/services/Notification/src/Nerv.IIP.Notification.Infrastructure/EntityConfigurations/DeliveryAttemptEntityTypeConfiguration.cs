@@ -19,10 +19,13 @@ public sealed class DeliveryAttemptEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Channel).IsRequired().HasMaxLength(64).HasComment("Delivery channel name.");
         builder.Property(x => x.Status).IsRequired().HasMaxLength(32).HasComment("Delivery attempt status.");
         builder.Property(x => x.AttemptedAtUtc).HasComment("UTC time when delivery was attempted.");
+        builder.Property(x => x.AttemptNo).HasComment("One-based delivery attempt number for this message and channel.");
+        builder.Property(x => x.NextRetryAtUtc).HasComment("UTC time when a failed attempt becomes eligible for retry; null after success or dead letter.");
         builder.Property(x => x.FailureReason).HasMaxLength(1000).HasComment("Optional provider failure reason.");
 
         builder.HasIndex(x => x.NotificationMessageId);
         builder.HasIndex(x => new { x.Channel, x.Status, x.AttemptedAtUtc });
+        builder.HasIndex(x => new { x.Status, x.NextRetryAtUtc });
         builder.HasOne<NotificationMessage>().WithMany().HasForeignKey(x => x.NotificationMessageId).OnDelete(DeleteBehavior.Cascade);
     }
 }
