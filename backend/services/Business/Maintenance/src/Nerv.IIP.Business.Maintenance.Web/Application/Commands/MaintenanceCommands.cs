@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggrega
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
@@ -111,21 +112,45 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
     {
         var workOrder = await dbContext.MaintenanceWorkOrders.Include(x => x.SparePartLines).SingleOrDefaultAsync(x => x.Id == request.WorkOrderId, cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        var downtimeReasonCode = MaintenanceText.Required(request.DowntimeReasonCode, nameof(request.DowntimeReasonCode));
         var downtimeReasonExists = await dbContext.DowntimeReasons.AnyAsync(
             x => x.OrganizationId == workOrder.OrganizationId
                 && x.EnvironmentId == workOrder.EnvironmentId
-                && x.ReasonCode == request.DowntimeReasonCode,
+                && x.ReasonCode == downtimeReasonCode,
             cancellationToken);
         if (!downtimeReasonExists)
         {
-            throw new KnownException($"Downtime reason was not found: {request.DowntimeReasonCode}");
+            throw new KnownException($"Downtime reason was not found: {downtimeReasonCode}");
         }
 
         workOrder.Complete(
             request.Result,
-            request.DowntimeReasonCode,
+            downtimeReasonCode,
             request.DowntimeMinutes,
             request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)));
+    }
+}
+
+public sealed record StartMaintenanceRepairCommand(
+    MaintenanceWorkOrderId WorkOrderId,
+    DateTimeOffset RepairStartedAtUtc) : ICommand;
+
+public sealed class StartMaintenanceRepairCommandValidator : AbstractValidator<StartMaintenanceRepairCommand>
+{
+    public StartMaintenanceRepairCommandValidator()
+    {
+        RuleFor(x => x.WorkOrderId).NotEmpty();
+    }
+}
+
+public sealed class StartMaintenanceRepairCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<StartMaintenanceRepairCommand>
+{
+    public async Task Handle(StartMaintenanceRepairCommand request, CancellationToken cancellationToken)
+    {
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(x => x.Id == request.WorkOrderId, cancellationToken)
+            ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        workOrder.MarkRepairStarted(request.RepairStartedAtUtc);
     }
 }
 
@@ -242,10 +267,10 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
                 continue;
             }
 
-            var runtimeDueCount = plan.ConsumeRuntimeDue(runtime.RuntimeHours);
-            for (var i = 0; i < runtimeDueCount; i++)
+            var runtimeThresholds = plan.ConsumeRuntimeDue(runtime.RuntimeHours).ToArray();
+            for (var i = 0; i < runtimeThresholds.Length; i++)
             {
-                AddPlanWorkOrder(plan, request.OpenedBy, $"runtime:{plan.LastGeneratedRuntimeHours:0.######}:{i + 1}", workOrderIds);
+                AddPlanWorkOrder(plan, request.OpenedBy, $"runtime:{runtimeThresholds[i]:0.######}:{i + 1}", workOrderIds);
             }
         }
 

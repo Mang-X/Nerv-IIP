@@ -122,8 +122,6 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
             && Severity == other.Severity
             && Priority == other.Priority
             && TagKey == other.TagKey
-            && ObservedValue == other.ObservedValue
-            && ThresholdValue == other.ThresholdValue
             && UnitCode == other.UnitCode
             && RaisedAtUtc == other.RaisedAtUtc;
     }

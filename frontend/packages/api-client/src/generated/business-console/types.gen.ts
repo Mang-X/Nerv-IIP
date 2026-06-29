@@ -604,6 +604,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     windowEndUtc?: string;
     stateSampleCount?: number;
     availabilityRate?: number;
+    loadingRate?: number;
     performanceRate?: number;
     qualityRate?: number;
     oeeRate?: number;

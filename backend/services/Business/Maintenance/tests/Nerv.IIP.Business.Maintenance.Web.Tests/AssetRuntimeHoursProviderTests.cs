@@ -48,6 +48,47 @@ public sealed class AssetRuntimeHoursProviderTests
     }
 
     [Fact]
+    public async Task Http_runtime_provider_multiplies_oee_availability_by_loading_hours()
+    {
+        var fallback = new CountingFallbackProvider(new AssetRuntimeHoursResult(99m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false));
+        var provider = CreateProvider(fallback, """
+            {
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "deviceAssetId": "DEV-CNC-01",
+                "windowStartUtc": "2026-06-08T00:00:00Z",
+                "windowEndUtc": "2026-06-08T06:00:00Z",
+                "stateSampleCount": 3,
+                "availabilityRate": 0.5,
+                "loadingRate": 0.5,
+                "performanceRate": 1,
+                "qualityRate": 1,
+                "oeeRate": 0.5,
+                "performanceRateEstimated": true,
+                "qualityRateEstimated": true
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """);
+
+        var result = await provider.CalculateAsync(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            DateTimeOffset.Parse("2026-06-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-06-08T06:00:00Z"),
+            CancellationToken.None);
+
+        Assert.Equal(1.5m, result.RuntimeHours);
+        Assert.Equal(AssetRuntimeSources.Oee, result.RuntimeSource);
+        Assert.True(result.HasRuntimeSamples);
+        Assert.Equal(0, fallback.CallCount);
+    }
+
+    [Fact]
     public async Task Runtime_source_fields_make_oee_and_fallback_denominator_difference_explicit()
     {
         var oeeProvider = CreateProvider(

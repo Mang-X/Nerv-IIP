@@ -209,6 +209,37 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
     }
 
     [Fact]
+    public async Task RecordTelemetrySample_tolerates_missing_bucket_inside_debounce_window()
+    {
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_tolerates_missing_bucket_inside_debounce_window));
+        dbContext.AlarmRules.Add(AlarmRule.Configure(
+            "org-001",
+            "env-dev",
+            "DEV-PUMP-08",
+            "TEMP_RULE",
+            "TEMP_HIGH",
+            "warning",
+            "temperature",
+            ">=",
+            90m,
+            "celsius",
+            true,
+            onDelaySeconds: 120));
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        var firstBucketEndUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+
+        await handler.Handle(CreateSample("DEV-PUMP-08", firstBucketEndUtc, 95m, "sample-008-1"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-08", firstBucketEndUtc.AddMinutes(3), 96m, "sample-008-3"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var alarm = Assert.Single(dbContext.AlarmEvents);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
+        Assert.Equal(firstBucketEndUtc.AddMinutes(3), alarm.RaisedAtUtc);
+    }
+
+    [Fact]
     public async Task RecordTelemetrySample_ignores_late_return_to_normal_bucket_before_active_alarm()
     {
         await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_ignores_late_return_to_normal_bucket_before_active_alarm));

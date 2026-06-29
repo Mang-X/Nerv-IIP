@@ -309,6 +309,9 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .DistinctBy(x => x.Id)
             .Where(alarm => ruleCodes.Any(ruleCode => IsAlarmForRule(alarm, ruleCode)))
             .ToArray();
+        var previousSummaries = rules.Any(rule => rule.RequiredTriggerSeconds > 0 || rule.OffDelaySeconds > 0)
+            ? await LoadPreviousSummariesAsync(request, normalizedTagKey, cancellationToken)
+            : [];
         foreach (var rule in rules)
         {
             var ruleActiveAlarms = activeAlarms
@@ -320,7 +323,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             {
                 if (ruleActiveAlarms.Length == 0)
                 {
-                    if (await HasSatisfiedTriggerDelayAsync(rule, request, cancellationToken))
+                    if (HasSatisfiedTriggerDelay(rule, request, previousSummaries))
                     {
                         dbContext.AlarmEvents.Add(AlarmEvent.Raise(
                             request.OrganizationId,
@@ -353,7 +356,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
             foreach (var activeAlarm in ruleActiveAlarms)
             {
-                if (await HasSatisfiedReturnToNormalDelayAsync(rule, request, activeAlarm.RaisedAtUtc, cancellationToken))
+                if (HasSatisfiedReturnToNormalDelay(rule, request, activeAlarm.RaisedAtUtc, previousSummaries))
                 {
                     TryClearRuleAlarm(activeAlarm, request.BucketEndUtc, "return-to-normal");
                 }
@@ -361,10 +364,37 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         }
     }
 
-    private async Task<bool> HasSatisfiedTriggerDelayAsync(
+    private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var previousPersistedSummaries = await dbContext.TelemetrySummaries
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .Take(100)
+            .ToArrayAsync(cancellationToken);
+        return previousPersistedSummaries
+            .Concat(dbContext.TelemetrySummaries.Local
+                .Where(x => x.OrganizationId == request.OrganizationId)
+                .Where(x => x.EnvironmentId == request.EnvironmentId)
+                .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+                .Where(x => x.TagKey == normalizedTagKey)
+                .Where(x => x.BucketEndUtc <= request.BucketStartUtc))
+            .DistinctBy(x => x.Id)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .Take(100)
+            .ToArray();
+    }
+
+    private static bool HasSatisfiedTriggerDelay(
         AlarmRule rule,
         RecordTelemetrySampleCommand request,
-        CancellationToken cancellationToken)
+        IReadOnlyCollection<TelemetrySummary> previousSummaries)
     {
         var requiredSeconds = rule.RequiredTriggerSeconds;
         if (requiredSeconds <= 0)
@@ -372,19 +402,19 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return true;
         }
 
-        var conditionStartUtc = await CalculateConsecutiveConditionStartAsync(
+        var conditionStartUtc = CalculateConsecutiveConditionStart(
             rule,
-            request,
+            previousSummaries,
             static (rule, summary) => rule.Evaluate(summary.AverageValue, summary.MaxValue),
-            cancellationToken);
+            request.BucketStartUtc);
         return (request.BucketEndUtc - conditionStartUtc).TotalSeconds >= requiredSeconds;
     }
 
-    private async Task<bool> HasSatisfiedReturnToNormalDelayAsync(
+    private static bool HasSatisfiedReturnToNormalDelay(
         AlarmRule rule,
         RecordTelemetrySampleCommand request,
         DateTimeOffset raisedAtUtc,
-        CancellationToken cancellationToken)
+        IReadOnlyCollection<TelemetrySummary> previousSummaries)
     {
         if (request.BucketEndUtc < raisedAtUtc)
         {
@@ -396,41 +426,29 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return true;
         }
 
-        var conditionStartUtc = await CalculateConsecutiveConditionStartAsync(
+        var conditionStartUtc = CalculateConsecutiveConditionStart(
             rule,
-            request,
+            previousSummaries,
             static (rule, summary) => rule.IsReturnToNormal(summary.AverageValue, summary.MaxValue),
-            cancellationToken);
+            request.BucketStartUtc);
         return (request.BucketEndUtc - conditionStartUtc).TotalSeconds >= rule.OffDelaySeconds;
     }
 
-    private async Task<DateTimeOffset> CalculateConsecutiveConditionStartAsync(
+    private static DateTimeOffset CalculateConsecutiveConditionStart(
         AlarmRule rule,
-        RecordTelemetrySampleCommand request,
+        IReadOnlyCollection<TelemetrySummary> previousSummaries,
         Func<AlarmRule, TelemetrySummary, bool> predicate,
-        CancellationToken cancellationToken)
+        DateTimeOffset defaultStartUtc)
     {
-        var previousSummaries = await dbContext.TelemetrySummaries
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => x.TagKey == rule.TagKey)
-            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
-            .OrderByDescending(x => x.BucketEndUtc)
-            .Take(100)
-            .ToArrayAsync(cancellationToken);
-
-        var conditionStartUtc = request.BucketStartUtc;
-        var expectedEndUtc = request.BucketStartUtc;
+        var conditionStartUtc = defaultStartUtc;
         foreach (var summary in previousSummaries)
         {
-            if (summary.BucketEndUtc != expectedEndUtc || !predicate(rule, summary))
+            if (!predicate(rule, summary))
             {
                 break;
             }
 
             conditionStartUtc = summary.BucketStartUtc;
-            expectedEndUtc = summary.BucketStartUtc;
         }
 
         return conditionStartUtc;

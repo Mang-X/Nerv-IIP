@@ -6,6 +6,8 @@ public partial record MaintenancePlanId : IGuidStronglyTypedId;
 
 public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
 {
+    public const int MaxCatchUpOccurrencesPerRun = 31;
+
     private MaintenancePlan()
     {
     }
@@ -103,7 +105,7 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
     {
         var dueDates = new List<DateOnly>();
         var intervalDays = ParseIsoDayInterval(Interval);
-        while (NextDueOn <= businessDate)
+        while (NextDueOn <= businessDate && dueDates.Count < MaxCatchUpOccurrencesPerRun)
         {
             dueDates.Add(NextDueOn);
             LastGeneratedOn = NextDueOn;
@@ -113,22 +115,24 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         return dueDates;
     }
 
-    public int ConsumeRuntimeDue(decimal runtimeHours)
+    public IReadOnlyCollection<decimal> ConsumeRuntimeDue(decimal runtimeHours)
     {
         if (RuntimeHourInterval is null || NextDueRuntimeHours is null || runtimeHours < NextDueRuntimeHours)
         {
-            return 0;
+            return [];
         }
 
-        var generatedCount = 0;
-        while (NextDueRuntimeHours is not null && runtimeHours >= NextDueRuntimeHours)
+        var thresholds = new List<decimal>();
+        while (NextDueRuntimeHours is not null
+            && runtimeHours >= NextDueRuntimeHours
+            && thresholds.Count < MaxCatchUpOccurrencesPerRun)
         {
-            generatedCount++;
+            thresholds.Add(NextDueRuntimeHours.Value);
             NextDueRuntimeHours += RuntimeHourInterval.Value;
         }
 
         LastGeneratedRuntimeHours = runtimeHours;
-        return generatedCount;
+        return thresholds;
     }
 
     private static int ParseIsoDayInterval(string interval)

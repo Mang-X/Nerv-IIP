@@ -131,6 +131,7 @@ public sealed record BusinessConsoleTelemetryOeeResponse(
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
     decimal AvailabilityRate,
+    decimal LoadingRate,
     decimal PerformanceRate,
     decimal QualityRate,
     decimal OeeRate,

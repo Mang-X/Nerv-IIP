@@ -230,17 +230,19 @@ public sealed class IndustrialTelemetryEndpointContractTests
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
         await PostSampleAsync(client, "DEV-OEE-LOAD", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-001");
-        await PostSampleAsync(client, "DEV-OEE-LOAD", "planned-down", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-002");
-        await PostSampleAsync(client, "DEV-OEE-LOAD", "stopped", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-003");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "planned_down", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-002");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "planned maintenance", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-003");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "stopped", new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-004");
 
-        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-LOAD&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T11:00:00Z");
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-LOAD&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T12:00:00Z");
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var document = JsonDocument.Parse(body);
         var data = document.RootElement.GetProperty("data");
-        Assert.Equal(3, data.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
         Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0.5m, data.GetProperty("loadingRate").GetDecimal());
         Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
     }
 

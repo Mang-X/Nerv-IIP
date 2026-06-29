@@ -177,6 +177,7 @@ public sealed record OeeResponse(
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
     decimal AvailabilityRate,
+    decimal LoadingRate,
     decimal PerformanceRate,
     decimal QualityRate,
     decimal OeeRate,
@@ -205,10 +206,11 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     private static readonly HashSet<string> PlannedDownStates = new(StringComparer.OrdinalIgnoreCase)
     {
         "planned-down",
-        "planned_stop",
         "planned-stop",
+        "planned-maintenance",
         "maintenance-window",
         "scheduled-maintenance",
+        "pm",
     };
 
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
@@ -236,10 +238,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             ? inWindowStates
             : [carryInState, .. inWindowStates];
 
-        var productiveRuntimeRate = CalculateProductiveRuntimeRate(states, request.WindowStartUtc, request.WindowEndUtc);
+        var runtimeRates = CalculateRuntimeRates(states, request.WindowStartUtc, request.WindowEndUtc);
         var performanceRate = states.Length > 0 ? 1m : 0m;
         var qualityRate = states.Length > 0 ? 1m : 0m;
-        var oeeRate = productiveRuntimeRate * performanceRate * qualityRate;
+        var oeeRate = runtimeRates.AvailabilityRate * performanceRate * qualityRate;
 
         return new OeeResponse(
             request.OrganizationId,
@@ -248,7 +250,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(productiveRuntimeRate, 6),
+            Math.Round(runtimeRates.AvailabilityRate, 6),
+            Math.Round(runtimeRates.LoadingRate, 6),
             performanceRate,
             qualityRate,
             Math.Round(oeeRate, 6),
@@ -256,13 +259,14 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             true);
     }
 
-    private static decimal CalculateProductiveRuntimeRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
+    private static OeeRuntimeRates CalculateRuntimeRates(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
     {
         if (states.Count == 0)
         {
-            return 0m;
+            return new OeeRuntimeRates(0m, 0m);
         }
 
+        var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
         var loadingTicks = 0L;
         var productiveRuntimeTicks = 0L;
         for (var i = 0; i < states.Count; i++)
@@ -289,21 +293,38 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
         if (loadingTicks <= 0)
         {
-            return 0m;
+            return new OeeRuntimeRates(0m, 0m);
         }
 
-        return decimal.Divide(productiveRuntimeTicks, loadingTicks);
+        var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
+        var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
+        return new OeeRuntimeRates(availabilityRate, loadingRate);
     }
 
     private static bool IsProductiveRuntimeState(string state)
     {
-        return ProductiveRuntimeStates.Contains(state);
+        return ProductiveRuntimeStates.Contains(NormalizeStateKey(state));
     }
 
     private static bool IsPlannedDownState(string state)
     {
-        return PlannedDownStates.Contains(state);
+        return PlannedDownStates.Contains(NormalizeStateKey(state));
     }
+
+    private static string NormalizeStateKey(string state)
+    {
+        var normalized = state.Trim().ToLowerInvariant()
+            .Replace('_', '-')
+            .Replace(' ', '-');
+        while (normalized.Contains("--", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        return normalized;
+    }
+
+    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
 }

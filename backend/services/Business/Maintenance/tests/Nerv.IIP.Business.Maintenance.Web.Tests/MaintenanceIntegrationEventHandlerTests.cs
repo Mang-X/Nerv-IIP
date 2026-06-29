@@ -28,6 +28,7 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var workOrders = await dbContext.MaintenanceWorkOrders.ToArrayAsync();
         Assert.Single(workOrders);
         Assert.Equal("alarm-001", workOrders[0].SourceAlarmId);
+        Assert.Equal("p1", workOrders[0].Priority);
         Assert.Equal("OVER_TEMP", workOrders[0].FailureModeCode);
         Assert.Equal("temperature", workOrders[0].FailureCauseCode);
         Assert.Contains("96.5", workOrders[0].DiagnosticDescription, StringComparison.Ordinal);

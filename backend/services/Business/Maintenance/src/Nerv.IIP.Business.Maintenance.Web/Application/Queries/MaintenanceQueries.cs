@@ -409,7 +409,8 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             }
 
             var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
-            return new AssetRuntimeHoursResult(Math.Round(windowHours * data.AvailabilityRate, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
+            var loadingRate = data.LoadingRate ?? 1m;
+            return new AssetRuntimeHoursResult(Math.Round(windowHours * loadingRate * data.AvailabilityRate, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
         }
         catch (HttpRequestException exception)
         {
@@ -458,6 +459,7 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
         DateTimeOffset WindowEndUtc,
         int StateSampleCount,
         decimal AvailabilityRate,
+        decimal? LoadingRate,
         decimal PerformanceRate,
         decimal QualityRate,
         decimal OeeRate,

@@ -58,6 +58,10 @@ public sealed record CompleteMaintenanceWorkOrderRequest(
     int DowntimeMinutes,
     IReadOnlyCollection<MaintenanceSparePartInput> SpareParts);
 
+public sealed record StartMaintenanceRepairRequest(
+    MaintenanceWorkOrderId WorkOrderId,
+    DateTimeOffset RepairStartedAtUtc);
+
 public sealed record ListMaintenanceWorkOrdersRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
 
 public sealed record CreateMaintenancePlanRequest(
@@ -174,6 +178,18 @@ public sealed class CompleteMaintenanceWorkOrderEndpoint(ISender sender)
     public override async Task HandleAsync(CompleteMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
         await sender.Send(new CompleteMaintenanceWorkOrderCommand(req.WorkOrderId, req.Result, req.DowntimeReasonCode, req.DowntimeMinutes, req.SpareParts), ct);
+        await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class StartMaintenanceRepairEndpoint(ISender sender)
+    : MaintenanceEndpoint<StartMaintenanceRepairRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<StartMaintenanceRepairEndpoint>());
+
+    public override async Task HandleAsync(StartMaintenanceRepairRequest req, CancellationToken ct)
+    {
+        await sender.Send(new StartMaintenanceRepairCommand(req.WorkOrderId, req.RepairStartedAtUtc), ct);
         await Send.OkAsync(((object)new { }).AsResponseData(), cancellation: ct);
     }
 }
@@ -380,6 +396,7 @@ public static class MaintenanceEndpointContracts
     public static readonly IReadOnlyCollection<MaintenanceEndpointContract> All =
     [
         new(typeof(CreateMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceWorkOrder"),
+        new(typeof(StartMaintenanceRepairEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "startMaintenanceRepair"),
         new(typeof(CompleteMaintenanceWorkOrderEndpoint), "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "completeMaintenanceWorkOrder"),
         new(typeof(ListMaintenanceWorkOrdersEndpoint), "GET", "/api/business/v1/maintenance/work-orders", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceWorkOrders"),
         new(typeof(CreateMaintenancePlanEndpoint), "POST", "/api/business/v1/maintenance/plans", MaintenancePermissionCodes.PlansManage, InternalServiceAuthorizationPolicy.Name, "createMaintenancePlan"),

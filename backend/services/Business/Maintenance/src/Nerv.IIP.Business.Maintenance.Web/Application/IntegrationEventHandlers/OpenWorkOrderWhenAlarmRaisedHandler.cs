@@ -50,7 +50,7 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 integrationEvent.Payload.DeviceAssetId,
-                integrationEvent.Payload.Severity,
+                string.IsNullOrWhiteSpace(integrationEvent.Payload.Priority) ? integrationEvent.Payload.Severity : integrationEvent.Payload.Priority,
                 integrationEvent.Payload.ExternalAlarmId,
                 IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
                 integrationEvent.Payload.AlarmCode,
