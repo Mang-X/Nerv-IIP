@@ -43,38 +43,6 @@ public interface ILocalFileContentIndex
         CancellationToken cancellationToken);
 }
 
-internal static class FileStorageTransferHeaders
-{
-    public const string OrganizationId = "X-Organization-Id";
-    public const string EnvironmentId = "X-Environment-Id";
-}
-
-internal static class FileStorageScanPolicy
-{
-    public const string Clean = "clean";
-    public const string Pending = "pending";
-    public const string Available = "available";
-
-    public static string InitialScanStatus(IConfiguration? configuration)
-    {
-        return configuration?.GetValue<bool>("FileStorage:Scanning:Enabled") == true
-            ? Pending
-            : Clean;
-    }
-
-    public static bool CanDownload(string scanStatus, string status, IConfiguration? configuration)
-    {
-        if (!string.Equals(status, Available, StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return configuration?.GetValue<bool?>("FileStorage:Scanning:RequireCleanForDownload") != false
-            ? string.Equals(scanStatus, Clean, StringComparison.Ordinal)
-            : true;
-    }
-}
-
 public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFileContentIndex, ILocalTusUploadSessionIndex
 {
     private readonly ConcurrentDictionary<string, UploadSession> uploadSessions = new(StringComparer.Ordinal);
