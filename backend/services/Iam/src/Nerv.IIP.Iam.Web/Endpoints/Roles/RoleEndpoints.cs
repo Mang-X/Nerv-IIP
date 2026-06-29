@@ -89,7 +89,6 @@ public sealed class PatchRolePermissionsEndpoint(
     }
 }
 
-
 [HttpGet("/api/iam/v1/permissions")]
 [AllowAnonymous]
 public sealed class ListPermissionCatalogEndpoint(IIamPermissionAuthorizer authorizer)
