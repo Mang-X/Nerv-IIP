@@ -68,12 +68,15 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkMesReceiptP
         }
 
         receipt.MarkPosted(integrationEvent.Payload.InventoryMovementId, integrationEvent.Payload.PostedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static bool MatchesReceipt(
         FinishedGoodsReceiptRequest receipt,
         StockMovementPostedPayload payload)
     {
+        // Inventory posts MES finished-goods receipt requests as a whole request.
+        // A partial or adjusted quantity must not close the MES receipt silently.
         return string.Equals(receipt.SkuId, payload.SkuCode, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(receipt.UomCode, payload.UomCode, StringComparison.OrdinalIgnoreCase) &&
             receipt.Quantity == payload.Quantity &&

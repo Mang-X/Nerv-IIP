@@ -194,13 +194,13 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
     public InventoryMovementRequestedIntegrationEvent Convert(MaterialLineSideReturnRequestedDomainEvent domainEvent)
     {
         var request = domainEvent.MaterialIssueRequest;
-        var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        var occurredAtUtc = domainEvent.ReturnedAtUtc;
         var idempotencyKey = EventIds.Idempotency(
             "line-side-return-outbound",
             request.OrganizationId,
             request.EnvironmentId,
             request.RequestNo,
-            request.MaterialLotId,
+            domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
             occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
@@ -215,7 +215,7 @@ public sealed class MaterialLineSideReturnRequestedIntegrationEventConverter
             request.UomCode,
             "production",
             "line-side",
-            request.MaterialLotId,
+            domainEvent.MaterialLotId,
             -Math.Abs(domainEvent.ReturnedQuantity),
             occurredAtUtc);
     }
@@ -227,13 +227,13 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
     public InventoryMovementRequestedIntegrationEvent Convert(MaterialReturnedToWarehouseDomainEvent domainEvent)
     {
         var request = domainEvent.MaterialIssueRequest;
-        var occurredAtUtc = request.ReceivedAtUtc ?? DateTimeOffset.UtcNow;
+        var occurredAtUtc = domainEvent.ReturnedAtUtc;
         var idempotencyKey = EventIds.Idempotency(
             "line-side-return-warehouse-inbound",
             request.OrganizationId,
             request.EnvironmentId,
             request.RequestNo,
-            request.MaterialLotId,
+            domainEvent.MaterialLotId,
             domainEvent.ReturnedQuantity.ToString("0.######", CultureInfo.InvariantCulture),
             occurredAtUtc.ToString("O", CultureInfo.InvariantCulture));
         EventIds.ThrowIfUnsupportedUom(request.UomCode, request.RequestNo);
@@ -248,7 +248,7 @@ public sealed class MaterialReturnedToWarehouseIntegrationEventConverter
             request.UomCode,
             "warehouse",
             "line-side",
-            request.MaterialLotId,
+            domainEvent.MaterialLotId,
             Math.Abs(domainEvent.ReturnedQuantity),
             occurredAtUtc);
     }
@@ -340,7 +340,7 @@ public sealed class WorkOrderCompletedIntegrationEventConverter
             MesIntegrationEventVersions.V1,
             domainEvent.CompletedAtUtc,
             MesIntegrationEventSources.BusinessMes,
-            workOrder.WorkOrderId,
+            idempotencyKey,
             workOrder.WorkOrderId,
             workOrder.OrganizationId,
             workOrder.EnvironmentId,
@@ -373,7 +373,7 @@ public sealed class WorkOrderClosedIntegrationEventConverter
             MesIntegrationEventVersions.V1,
             domainEvent.ClosedAtUtc,
             MesIntegrationEventSources.BusinessMes,
-            workOrder.WorkOrderId,
+            idempotencyKey,
             workOrder.WorkOrderId,
             workOrder.OrganizationId,
             workOrder.EnvironmentId,

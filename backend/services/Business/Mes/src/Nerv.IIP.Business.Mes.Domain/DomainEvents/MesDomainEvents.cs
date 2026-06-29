@@ -23,9 +23,17 @@ public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest Mate
 
 public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;
 
-public sealed record MaterialLineSideReturnRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReturnedQuantity) : IDomainEvent;
+public sealed record MaterialLineSideReturnRequestedDomainEvent(
+    MaterialIssueRequest MaterialIssueRequest,
+    decimal ReturnedQuantity,
+    string MaterialLotId,
+    DateTimeOffset ReturnedAtUtc) : IDomainEvent;
 
-public sealed record MaterialReturnedToWarehouseDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReturnedQuantity) : IDomainEvent;
+public sealed record MaterialReturnedToWarehouseDomainEvent(
+    MaterialIssueRequest MaterialIssueRequest,
+    decimal ReturnedQuantity,
+    string MaterialLotId,
+    DateTimeOffset ReturnedAtUtc) : IDomainEvent;
 
 public sealed record FinishedGoodsReceiptRequestedDomainEvent(FinishedGoodsReceiptRequest FinishedGoodsReceiptRequest) : IDomainEvent;
 

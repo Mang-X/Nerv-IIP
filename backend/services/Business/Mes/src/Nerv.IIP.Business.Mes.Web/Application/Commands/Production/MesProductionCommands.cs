@@ -155,6 +155,22 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             throw new KnownException($"报工耗料批次重复，MaterialId = {lot.MaterialId}, MaterialLotId = {lot.MaterialLotId}");
         }
 
+        if (isOutputOperation && request.GoodQuantity > 0m)
+        {
+            var outputLotExists = await dbContext.OutputLotGenealogies
+                .AsNoTracking()
+                .AnyAsync(
+                    x =>
+                        x.OrganizationId == request.OrganizationId &&
+                        x.EnvironmentId == request.EnvironmentId &&
+                        x.ProducedLotNo == producedLotNo,
+                    cancellationToken);
+            if (outputLotExists)
+            {
+                throw new KnownException($"产出批次已存在，ProducedLotNo = {producedLotNo}");
+            }
+        }
+
         var materialConsumptions = new List<ProductionReportMaterialConsumption>();
         foreach (var lot in consumedMaterialLots)
         {

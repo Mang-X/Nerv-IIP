@@ -703,7 +703,16 @@ public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext db
 
         try
         {
-            materialRequest.ReturnLineSideMaterial(request.ReturnedAtUtc, request.ReturnedQuantity);
+            var consumedQuantity = await dbContext.ProductionReportMaterialConsumptions
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == materialRequest.OrganizationId &&
+                    x.EnvironmentId == materialRequest.EnvironmentId &&
+                    x.MaterialIssueRequestNo == materialRequest.RequestNo &&
+                    x.MaterialId == materialRequest.MaterialId &&
+                    x.MaterialLotId == materialRequest.MaterialLotId)
+                .SumAsync(x => x.ConsumedQuantity, cancellationToken);
+            materialRequest.ReturnLineSideMaterial(request.ReturnedAtUtc, request.ReturnedQuantity, consumedQuantity);
         }
         catch (InvalidOperationException exception)
         {

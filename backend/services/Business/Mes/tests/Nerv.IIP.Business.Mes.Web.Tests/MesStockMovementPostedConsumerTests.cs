@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -98,6 +99,47 @@ public sealed class MesStockMovementPostedConsumerTests
         Assert.Null(receipt.PostedInventoryMovementId);
     }
 
+    [Fact]
+    public async Task Stock_movement_posted_consumer_persists_posted_status_without_external_save_changes()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        await using (var seedContext = CreateDbContext(
+            nameof(Stock_movement_posted_consumer_persists_posted_status_without_external_save_changes),
+            databaseRoot))
+        {
+            seedContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+                "org-001",
+                "env-dev",
+                "FGR-001",
+                "WO-001",
+                "SKU-FG",
+                8m,
+                "PCS",
+                DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+                "LOT-FG-001",
+                null));
+            await seedContext.SaveChangesAsync();
+        }
+
+        await using (var handlerContext = CreateDbContext(
+            nameof(Stock_movement_posted_consumer_persists_posted_status_without_external_save_changes),
+            databaseRoot))
+        {
+            var handler = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+                handlerContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+
+            await handler.HandleAsync(CreatePostedEvent("FGR-001"), CancellationToken.None);
+        }
+
+        await using var assertionContext = CreateDbContext(
+            nameof(Stock_movement_posted_consumer_persists_posted_status_without_external_save_changes),
+            databaseRoot);
+        var receipt = await assertionContext.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal(FinishedGoodsReceiptRequest.PostedStatus, receipt.Status);
+        Assert.Equal("INV-MOV-001", receipt.PostedInventoryMovementId);
+    }
+
     private static StockMovementPostedIntegrationEvent CreatePostedEvent(
         string sourceDocumentId,
         string payloadSourceService = "business-mes",
@@ -139,8 +181,13 @@ public sealed class MesStockMovementPostedConsumerTests
 
     private static ApplicationDbContext CreateDbContext(string databaseName)
     {
+        return CreateDbContext(databaseName, new InMemoryDatabaseRoot());
+    }
+
+    private static ApplicationDbContext CreateDbContext(string databaseName, InMemoryDatabaseRoot databaseRoot)
+    {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(databaseName)
+            .UseInMemoryDatabase(databaseName, databaseRoot)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

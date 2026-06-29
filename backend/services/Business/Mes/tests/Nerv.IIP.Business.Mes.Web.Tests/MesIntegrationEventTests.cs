@@ -184,9 +184,9 @@ public sealed class MesIntegrationEventTests
         request.ReturnLineSideMaterial(DateTimeOffset.Parse("2026-06-15T10:00:00Z"), 1m);
 
         var productionOutbound = new MaterialLineSideReturnRequestedIntegrationEventConverter()
-            .Convert(new MaterialLineSideReturnRequestedDomainEvent(request, 1m));
+            .Convert(new MaterialLineSideReturnRequestedDomainEvent(request, 1m, "LOT-MAT-001", DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
         var warehouseInbound = new MaterialReturnedToWarehouseIntegrationEventConverter()
-            .Convert(new MaterialReturnedToWarehouseDomainEvent(request, 1m));
+            .Convert(new MaterialReturnedToWarehouseDomainEvent(request, 1m, "LOT-MAT-001", DateTimeOffset.Parse("2026-06-01T08:30:00Z")));
 
         Assert.Equal("outbound", productionOutbound.Payload.MovementType);
         Assert.Equal("production", productionOutbound.Payload.SiteCode);

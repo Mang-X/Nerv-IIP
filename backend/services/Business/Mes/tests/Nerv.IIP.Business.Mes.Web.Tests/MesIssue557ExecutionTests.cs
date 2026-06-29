@@ -1,6 +1,8 @@
 using MediatR;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -125,7 +127,106 @@ public sealed class MesIssue557ExecutionTests
 
         var report = await dbContext.ProductionReports.SingleAsync(x => x.Id == result.Id);
         Assert.False(string.IsNullOrWhiteSpace(report.ProducedLotNo));
-        Assert.Contains(dbContext.Model.GetEntityTypes(), x => x.ClrType.Name == "OutputLotGenealogy");
+        var genealogy = await dbContext.OutputLotGenealogies.SingleAsync();
+        Assert.Equal("WO-001", genealogy.WorkOrderId);
+        Assert.Equal("OP-10", genealogy.OperationTaskId);
+        Assert.Equal(report.ReportNo, genealogy.ReportNo);
+        Assert.Equal(report.ProducedLotNo, genealogy.ProducedLotNo);
+        Assert.Equal(2m, genealogy.Quantity);
+    }
+
+    [Fact]
+    public async Task Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint()
+    {
+        await using var dbContext = CreateDbContext(nameof(Output_operation_report_rejects_duplicate_explicit_output_lot_before_database_unique_constraint));
+        SeedStartedOutputOperation(dbContext);
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordProductionReportCommandHandler(dbContext);
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                GoodQuantity: 1m,
+                ScrapQuantity: 0m,
+                CompletesOperation: false,
+                ReportedAtUtc: Utc("2026-06-29T10:00:00Z"),
+                ProducedLotNo: "LOT-DUP"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-001",
+                "OP-10",
+                GoodQuantity: 1m,
+                ScrapQuantity: 0m,
+                CompletesOperation: false,
+                ReportedAtUtc: Utc("2026-06-29T10:10:00Z"),
+                ProducedLotNo: "LOT-DUP"),
+            CancellationToken.None));
+
+        Assert.Contains("产出批次", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Output_lot_genealogy_relational_constraints_reject_duplicate_lots()
+    {
+        await using var connection = await CreateOpenSqliteConnectionAsync();
+        await using var dbContext = CreateSqliteDbContext(connection);
+        await dbContext.Database.EnsureCreatedAsync();
+        SeedStartedOutputOperation(dbContext);
+        await dbContext.SaveChangesAsync();
+        var firstReport = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "RPT-001",
+            "WO-001",
+            "OP-10",
+            1m,
+            0m,
+            true,
+            Utc("2026-06-29T10:00:00Z"),
+            0m,
+            producedLotNo: "LOT-DUP");
+        var secondReport = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "RPT-002",
+            "WO-001",
+            "OP-10",
+            1m,
+            0m,
+            false,
+            Utc("2026-06-29T10:10:00Z"),
+            0m,
+            producedLotNo: "LOT-DUP");
+        dbContext.ProductionReports.AddRange(firstReport, secondReport);
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            "RPT-001",
+            "LOT-DUP",
+            null,
+            1m,
+            Utc("2026-06-29T10:00:00Z")));
+        dbContext.OutputLotGenealogies.Add(OutputLotGenealogy.Create(
+            "org-001",
+            "env-dev",
+            "WO-001",
+            "OP-10",
+            "RPT-002",
+            "LOT-DUP",
+            null,
+            1m,
+            Utc("2026-06-29T10:10:00Z")));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
     }
 
     [Fact]
@@ -188,6 +289,60 @@ public sealed class MesIssue557ExecutionTests
         Assert.Contains("MaterialReturnedToWarehouseDomainEvent", eventNames);
     }
 
+    [Fact]
+    public async Task Return_line_side_material_rejects_quantity_already_consumed_by_production_report()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_rejects_quantity_already_consumed_by_production_report));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+            "org-001",
+            "env-dev",
+            "RPT-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "LOT-MAT-001",
+            "PCS",
+            3m,
+            "MIR-001"));
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001",
+                "env-dev",
+                "MIR-001",
+                Utc("2026-06-29T09:00:00Z"),
+                3m),
+            CancellationToken.None));
+
+        Assert.Contains("可退", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(5m, materialRequest.ReceivedQuantity);
+    }
+
+    [Fact]
+    public async Task Return_line_side_material_clears_lot_when_return_reduces_received_quantity_to_zero()
+    {
+        await using var dbContext = CreateDbContext(nameof(Return_line_side_material_clears_lot_when_return_reduces_received_quantity_to_zero));
+        var materialRequest = SeedReceivedMaterialIssue(dbContext, receivedQuantity: 5m);
+        await dbContext.SaveChangesAsync();
+        var handler = new ReturnLineSideMaterialCommandHandler(dbContext);
+
+        await handler.Handle(
+            new ReturnLineSideMaterialCommand(
+                "org-001",
+                "env-dev",
+                "MIR-001",
+                Utc("2026-06-29T09:00:00Z"),
+                5m),
+            CancellationToken.None);
+
+        Assert.Equal(0m, materialRequest.ReceivedQuantity);
+        Assert.Null(materialRequest.MaterialLotId);
+        Assert.Null(materialRequest.ReceivedAtUtc);
+    }
+
     private static void SeedReleasedWorkOrderWithTwoOperations(ApplicationDbContext dbContext, OperationTaskLifecycleStatus secondStatus)
     {
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");
@@ -242,6 +397,24 @@ public sealed class MesIssue557ExecutionTests
             null));
     }
 
+    private static MaterialIssueRequest SeedReceivedMaterialIssue(ApplicationDbContext dbContext, decimal receivedQuantity)
+    {
+        var materialRequest = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-06-29T08:00:00Z"));
+        materialRequest.ConfirmLineSideReceipt(Utc("2026-06-29T08:30:00Z"), receivedQuantity, "LOT-MAT-001");
+        materialRequest.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(materialRequest);
+        return materialRequest;
+    }
+
     private static TimeSpan ReadTimeSpan(OperationTask task, string propertyName)
     {
         var property = typeof(OperationTask).GetProperty(propertyName);
@@ -255,6 +428,21 @@ public sealed class MesIssue557ExecutionTests
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName)
+            .Options;
+        return new ApplicationDbContext(options, new NoopMediator());
+    }
+
+    private static async Task<SqliteConnection> CreateOpenSqliteConnectionAsync()
+    {
+        var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    private static ApplicationDbContext CreateSqliteDbContext(SqliteConnection connection)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection)
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

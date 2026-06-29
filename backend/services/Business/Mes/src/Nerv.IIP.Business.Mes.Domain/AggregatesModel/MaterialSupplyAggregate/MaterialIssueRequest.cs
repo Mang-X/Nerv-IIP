@@ -153,29 +153,38 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailedAtUtc = failedAtUtc;
     }
 
-    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity)
+    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity, decimal consumedQuantity = 0m)
     {
         DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
-        if (returnedQuantity > ReceivedQuantity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(returnedQuantity), "Returned quantity cannot exceed line-side received quantity.");
-        }
+        DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
 
         if (string.IsNullOrWhiteSpace(MaterialLotId))
         {
             throw new InvalidOperationException("Line-side material return requires a received material lot.");
         }
 
-        ReceivedQuantity -= returnedQuantity;
-        ReceivedAtUtc = returnedAtUtc;
-        Status = ReceivedQuantity == 0m
-            ? RequestedStatus
-            : ReceivedQuantity >= RequestedQuantity
-                ? ReceivedStatus
-                : PartiallyReceivedStatus;
+        var returnableQuantity = Math.Max(0m, ReceivedQuantity - consumedQuantity);
+        if (returnedQuantity > returnableQuantity)
+        {
+            throw new InvalidOperationException("退料数量不能超过当前线边可退数量。");
+        }
 
-        AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity));
-        AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity));
+        var returnedMaterialLotId = MaterialLotId;
+        ReceivedQuantity -= returnedQuantity;
+        if (ReceivedQuantity == 0m)
+        {
+            ReceivedAtUtc = null;
+            MaterialLotId = null;
+            Status = RequestedStatus;
+        }
+        else
+        {
+            ReceivedAtUtc = returnedAtUtc;
+            Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
+        }
+
+        AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+        AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
     }
 
     private static string NormalizeFailureMessage(string failureMessage)

@@ -32,6 +32,8 @@ public sealed class MesWorkOrderIntegrationEventTests
 
         Assert.Equal(MesIntegrationEventTypes.WorkOrderReleased, integrationEvent.EventType);
         Assert.Equal(MesIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
+        Assert.Equal(integrationEvent.IdempotencyKey, integrationEvent.CorrelationId);
+        Assert.Equal("WO-001", integrationEvent.CausationId);
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
@@ -64,9 +66,13 @@ public sealed class MesWorkOrderIntegrationEventTests
             .Convert(new WorkOrderClosedDomainEvent(workOrder, new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero)));
 
         Assert.Equal(MesIntegrationEventTypes.WorkOrderCompleted, completed.EventType);
+        Assert.Equal(completed.IdempotencyKey, completed.CorrelationId);
+        Assert.Equal("WO-001", completed.CausationId);
         Assert.Equal(9m, completed.Payload.GoodQuantity);
         Assert.Equal(1m, completed.Payload.ScrapQuantity);
         Assert.Equal(MesIntegrationEventTypes.WorkOrderClosed, closed.EventType);
+        Assert.Equal(closed.IdempotencyKey, closed.CorrelationId);
+        Assert.Equal("WO-001", closed.CausationId);
         Assert.Equal("WO-001", closed.Payload.WorkOrderId);
     }
 }
