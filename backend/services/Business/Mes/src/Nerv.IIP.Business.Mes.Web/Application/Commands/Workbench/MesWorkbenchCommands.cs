@@ -667,6 +667,57 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(ApplicationDbCo
     }
 }
 
+public sealed record ReturnLineSideMaterialCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string RequestId,
+    DateTimeOffset ReturnedAtUtc,
+    decimal ReturnedQuantity) : ICommand<MesAcceptedResponse>;
+
+public sealed class ReturnLineSideMaterialCommandValidator : AbstractValidator<ReturnLineSideMaterialCommand>
+{
+    public ReturnLineSideMaterialCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RequestId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReturnedQuantity).GreaterThan(0);
+    }
+}
+
+public sealed class ReturnLineSideMaterialCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<ReturnLineSideMaterialCommand, MesAcceptedResponse>
+{
+    public async Task<MesAcceptedResponse> Handle(ReturnLineSideMaterialCommand request, CancellationToken cancellationToken)
+    {
+        var scopedQuery = dbContext.MaterialIssueRequests.Where(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId);
+        var materialRequest = Guid.TryParse(request.RequestId, out var requestGuid)
+            ? await scopedQuery.SingleOrDefaultAsync(x => x.Id.Id == requestGuid, cancellationToken)
+            : await scopedQuery.SingleOrDefaultAsync(x => x.RequestNo == request.RequestId, cancellationToken);
+        if (materialRequest is null)
+        {
+            throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
+        }
+
+        try
+        {
+            materialRequest.ReturnLineSideMaterial(request.ReturnedAtUtc, request.ReturnedQuantity);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+
+        return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReturnedAtUtc);
+    }
+}
+
 public sealed record AssignDispatchTaskCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -737,6 +788,8 @@ public sealed class ChangeOperationTaskStateCommandHandler(
 
         if (request.Action == "start")
         {
+            await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
+
             var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
                 dbContext,
                 request.OrganizationId,
@@ -800,12 +853,13 @@ public sealed class ChangeOperationTaskStateCommandHandler(
         switch (request.Action)
         {
             case "pause":
-                task.Pause();
+                task.Pause(request.ChangedAtUtc);
                 break;
             case "resume":
                 task.Resume(request.ChangedAtUtc);
                 break;
             case "complete":
+                await EnsurePreviousOperationsCompletedAsync(dbContext, task, cancellationToken);
                 task.Complete(request.ChangedAtUtc);
                 break;
             default:
@@ -813,6 +867,28 @@ public sealed class ChangeOperationTaskStateCommandHandler(
         }
 
         return new MesOperationActionResponse(task.OperationTaskIdValue, task.Status.ToString(), request.ChangedAtUtc);
+    }
+
+    internal static async Task EnsurePreviousOperationsCompletedAsync(
+        ApplicationDbContext dbContext,
+        OperationTask task,
+        CancellationToken cancellationToken)
+    {
+        var blockingOperations = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == task.OrganizationId &&
+                x.EnvironmentId == task.EnvironmentId &&
+                x.WorkOrderId == task.WorkOrderId &&
+                x.OperationSequence < task.OperationSequence &&
+                x.Status != OperationTaskLifecycleStatus.Completed)
+            .OrderBy(x => x.OperationSequence)
+            .Select(x => x.OperationTaskIdValue)
+            .ToArrayAsync(cancellationToken);
+        if (blockingOperations.Length > 0)
+        {
+            throw new KnownException($"前序工序尚未完成，OperationTaskId = {task.OperationTaskIdValue}, BlockingOperations = {string.Join(',', blockingOperations)}");
+        }
     }
 }
 

@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
@@ -22,7 +23,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(41, MesEndpointContracts.All.Count);
+        Assert.Equal(42, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -109,6 +110,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-receipts"
             && x.PermissionCode == MesPermissionCodes.MaterialsManage
             && x.OperationId == "confirmBusinessMesLineSideMaterialReceipt");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/material-issue-requests/{requestId}/line-side-returns"
+            && x.PermissionCode == MesPermissionCodes.MaterialsManage
+            && x.OperationId == "returnBusinessMesLineSideMaterial");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/dispatch-tasks"
@@ -337,9 +343,10 @@ public sealed class MesEndpointContractTests
             ]);
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
+        var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-001", "OP-10", "MIR-WIP-SCRAP", dueUtc.AddMinutes(-20), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new RecordProductionReportCommandHandler(dbContext).Handle(
-            new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 8m, 1m, false, dueUtc),
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 8m, 1m, false, dueUtc, ConsumedMaterialLots: scrapLots),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -409,9 +416,11 @@ public sealed class MesEndpointContractTests
             ]);
         workOrder.Start(reportedAt.AddMinutes(-20));
         tasks.Single(x => x.OperationTaskId == "OP-10").Start(reportedAt.AddMinutes(-15));
+        tasks.Single(x => x.OperationTaskId == "OP-20").Start(reportedAt.AddMinutes(10));
         tasks.Single(x => x.OperationTaskId == "OP-30").Start(reportedAt.AddMinutes(25));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
+        var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-OUTPUT", "OP-30", "MIR-OUTPUT-SCRAP", reportedAt.AddMinutes(20), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var handler = new RecordProductionReportCommandHandler(dbContext);
@@ -427,14 +436,18 @@ public sealed class MesEndpointContractTests
             tasks.Single(x => x.OperationTaskId == "OP-10").Status);
 
         await handler.Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-20", 0m, 0m, true, reportedAt.AddMinutes(20), ReworkQuantity: 1m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await handler.Handle(
             new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-30", 40m, 0m, false, reportedAt.AddMinutes(30)),
             CancellationToken.None);
         await handler.Handle(
-            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-30", 60m, 1m, true, reportedAt.AddMinutes(45)),
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-OUTPUT", "OP-30", 59m, 1m, true, reportedAt.AddMinutes(45), ConsumedMaterialLots: scrapLots),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Equal(100m, workOrder.CompletedQuantity);
+        Assert.Equal(99m, workOrder.CompletedQuantity);
         Assert.Equal(1m, workOrder.ScrapQuantity);
         Assert.Equal(WorkOrder.CompletedStatus, workOrder.Status);
     }
@@ -1133,12 +1146,15 @@ public sealed class MesEndpointContractTests
         tasks.Single().Start(reportedAt.AddMinutes(-10));
         dbContext.WorkOrders.Add(workOrder);
         dbContext.OperationTasks.AddRange(tasks);
+        var scrapLots = SeedReceivedMaterialIssue(dbContext, "WO-001", "OP-10", "MIR-PUBLIC-SCRAP", reportedAt.AddMinutes(-5), 1m);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        await new RecordProductionReportCommandHandler(dbContext).Handle(
-            new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt),
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommand("org-001", "env-dev", "WO-001", "OP-10", 9m, 1m, true, reportedAt, ConsumedMaterialLots: scrapLots),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var producedLotNo = (await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == reportResult.ReportNo, CancellationToken.None)).ProducedLotNo;
         await new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext).Handle(
-            new CreateFinishedGoodsReceiptRequestCommand("org-001", "env-dev", "WO-001", "SKU-FG-1000", 9m, "PCS", reportedAt.AddMinutes(15), 12.34m),
+            new CreateFinishedGoodsReceiptRequestCommand("org-001", "env-dev", "WO-001", "SKU-FG-1000", 9m, "PCS", reportedAt.AddMinutes(15), 12.34m, ProducedLotNo: producedLotNo),
             CancellationToken.None);
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
@@ -1253,6 +1269,30 @@ public sealed class MesEndpointContractTests
     public static IEnumerable<object[]> EndpointTypes()
     {
         return MesEndpointContracts.All.Select(x => new object[] { x.EndpointType });
+    }
+
+    private static IReadOnlyCollection<ConsumedMaterialLotInput> SeedReceivedMaterialIssue(
+        Infrastructure.ApplicationDbContext dbContext,
+        string workOrderId,
+        string operationTaskId,
+        string requestNo,
+        DateTimeOffset requestedAtUtc,
+        decimal consumedQuantity)
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            requestNo,
+            workOrderId,
+            operationTaskId,
+            "MAT-SCRAP",
+            "PCS",
+            10m,
+            requestedAtUtc);
+        request.ConfirmLineSideReceipt(requestedAtUtc.AddMinutes(1), 10m, "LOT-SCRAP");
+        request.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(request);
+        return [new ConsumedMaterialLotInput("MAT-SCRAP", "LOT-SCRAP", consumedQuantity, requestNo)];
     }
 
     private static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> InvokeOperationTaskEntityQuery(

@@ -12,6 +12,9 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.HasKey(x => x.Id);
         builder.Ignore(x => x.OperationTaskId);
         builder.Ignore(x => x.Duration);
+        builder.Ignore(x => x.PausedDuration);
+        builder.Ignore(x => x.LaborTime);
+        builder.Ignore(x => x.MachineTime);
         builder.Ignore(x => x.AlternativeWorkCenterIdList);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Operation task aggregate id.");
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").IsRequired().HasMaxLength(100).HasComment("Organization tenant id.");
@@ -26,6 +29,10 @@ public sealed class OperationTaskEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.DurationTicks).HasColumnName("duration_ticks").IsRequired().HasComment("Operation duration stored as .NET ticks for deterministic scheduler reconstruction.");
         builder.Property(x => x.ExistingStartUtc).HasColumnName("existing_start_utc").HasComment("Existing UTC start time for in-progress operation preservation.");
         builder.Property(x => x.ExistingEndUtc).HasColumnName("existing_end_utc").HasComment("Existing UTC end time for in-progress operation preservation.");
+        builder.Property(x => x.PausedAtUtc).HasColumnName("paused_at_utc").HasComment("UTC time when the operation entered its current paused interval, if any.");
+        builder.Property(x => x.PausedDurationTicks).HasColumnName("paused_duration_ticks").IsRequired().HasDefaultValue(0L).HasComment("Accumulated paused duration stored as .NET ticks and excluded from actual work time.");
+        builder.Property(x => x.LaborTimeTicks).HasColumnName("labor_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
+        builder.Property(x => x.MachineTimeTicks).HasColumnName("machine_time_ticks").IsRequired().HasDefaultValue(0L).HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
         builder.Property(x => x.AssignedUserId).HasColumnName("assigned_user_id").HasMaxLength(100).HasComment("Assigned operator or person public id captured by MES dispatch.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Assigned MasterData device asset public id captured by MES dispatch.");
         builder.Property(x => x.ShiftId).HasColumnName("shift_id").HasMaxLength(100).HasComment("Assigned MasterData shift public id captured by MES dispatch.");

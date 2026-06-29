@@ -69,9 +69,39 @@ public sealed class MesStockMovementPostedConsumerTests
         Assert.Null(receipt.PostedInventoryMovementId);
     }
 
+    [Fact]
+    public async Task Stock_movement_posted_consumer_rejects_mismatched_receipt_payload()
+    {
+        await using var dbContext = CreateDbContext(nameof(Stock_movement_posted_consumer_rejects_mismatched_receipt_payload));
+        dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-001",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreatePostedEvent("FGR-001", quantity: 3m), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var receipt = await dbContext.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal(FinishedGoodsReceiptRequest.RequestedStatus, receipt.Status);
+        Assert.Null(receipt.PostedInventoryMovementId);
+    }
+
     private static StockMovementPostedIntegrationEvent CreatePostedEvent(
         string sourceDocumentId,
-        string payloadSourceService = "business-mes")
+        string payloadSourceService = "business-mes",
+        decimal quantity = 8m)
     {
         return new StockMovementPostedIntegrationEvent(
             "evt-inventory-posted-001",
@@ -101,7 +131,7 @@ public sealed class MesStockMovementPostedConsumerTests
                 "Unrestricted",
                 "production",
                 null,
-                8m,
+                quantity,
                 DateTimeOffset.Parse("2026-06-15T09:05:00Z"),
                 null,
                 null));

@@ -165,6 +165,40 @@ public sealed class MesIntegrationEventTests
     }
 
     [Fact]
+    public void Line_side_return_converters_emit_inventory_reversal_requests()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-001",
+            "WO-001",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            3m,
+            DateTimeOffset.Parse("2026-06-15T07:45:00Z"));
+        request.ConfirmLineSideReceipt(
+            DateTimeOffset.Parse("2026-06-15T08:15:00Z"),
+            3m,
+            "LOT-OIL-A");
+        request.ReturnLineSideMaterial(DateTimeOffset.Parse("2026-06-15T10:00:00Z"), 1m);
+
+        var productionOutbound = new MaterialLineSideReturnRequestedIntegrationEventConverter()
+            .Convert(new MaterialLineSideReturnRequestedDomainEvent(request, 1m));
+        var warehouseInbound = new MaterialReturnedToWarehouseIntegrationEventConverter()
+            .Convert(new MaterialReturnedToWarehouseDomainEvent(request, 1m));
+
+        Assert.Equal("outbound", productionOutbound.Payload.MovementType);
+        Assert.Equal("production", productionOutbound.Payload.SiteCode);
+        Assert.Equal("line-side", productionOutbound.Payload.LocationCode);
+        Assert.Equal(-1m, productionOutbound.Payload.Quantity);
+        Assert.Equal("inbound", warehouseInbound.Payload.MovementType);
+        Assert.Equal("warehouse", warehouseInbound.Payload.SiteCode);
+        Assert.Equal("line-side", warehouseInbound.Payload.LocationCode);
+        Assert.Equal(1m, warehouseInbound.Payload.Quantity);
+    }
+
+    [Fact]
     public void Defect_converter_emits_quality_defect_raised_event()
     {
         var defect = DefectRecord.Create(

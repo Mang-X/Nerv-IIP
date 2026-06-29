@@ -281,7 +281,7 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
-    public void WorkOrder_allows_scrap_without_consuming_good_quantity_target()
+    public void WorkOrder_rejects_good_plus_scrap_beyond_overreceipt_tolerance()
     {
         var workOrder = WorkOrder.Create(
             "org-001",
@@ -296,17 +296,34 @@ public sealed class MesAggregateTests
         workOrder.MarkReleased();
         workOrder.Start(DateTimeOffset.Parse("2026-05-23T08:00:00Z"));
 
-        workOrder.RecordProductionProgress(95m, 10m, DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            workOrder.RecordProductionProgress(95m, 10m, DateTimeOffset.Parse("2026-05-23T09:00:00Z")));
 
-        Assert.Equal(WorkOrder.StartedStatus, workOrder.Status);
-        Assert.Equal(95m, workOrder.CompletedQuantity);
-        Assert.Equal(10m, workOrder.ScrapQuantity);
+        Assert.Contains("tolerance", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
 
-        workOrder.RecordProductionProgress(5m, 0m, DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+    [Fact]
+    public void WorkOrder_emits_completed_and_closed_domain_events()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-COMPLETE-EVENT",
+            "SKU-001",
+            "PV-001",
+            10m,
+            10,
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+        workOrder.MarkReleased();
+        workOrder.Start(DateTimeOffset.Parse("2026-05-23T08:00:00Z"));
+        workOrder.ClearDomainEvents();
 
-        Assert.Equal(WorkOrder.CompletedStatus, workOrder.Status);
-        Assert.Equal(100m, workOrder.CompletedQuantity);
-        Assert.Equal(10m, workOrder.ScrapQuantity);
+        workOrder.RecordProductionProgress(10m, 0m, DateTimeOffset.Parse("2026-05-23T09:00:00Z"));
+        workOrder.Close(DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
+
+        var eventNames = workOrder.GetDomainEvents().Select(x => x.GetType().Name).ToArray();
+        Assert.Contains("WorkOrderCompletedDomainEvent", eventNames);
+        Assert.Contains("WorkOrderClosedDomainEvent", eventNames);
     }
 
     [Fact]

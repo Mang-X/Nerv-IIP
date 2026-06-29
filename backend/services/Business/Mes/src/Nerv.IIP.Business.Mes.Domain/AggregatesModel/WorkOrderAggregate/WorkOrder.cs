@@ -252,14 +252,19 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         var maxQuantity = Quantity * (1m + OverReceiptTolerancePercent / 100m);
-        if (CompletedQuantity + goodQuantity > maxQuantity)
+        if (CompletedQuantity + ScrapQuantity + goodQuantity + scrapQuantity > maxQuantity)
         {
             throw new InvalidOperationException("Reported quantity exceeds work order tolerance.");
         }
 
         CompletedQuantity += goodQuantity;
         ScrapQuantity += scrapQuantity;
-        Status = CompletedQuantity >= Quantity ? CompletedStatus : StartedStatus;
+        var wasCompleted = Status == CompletedStatus;
+        Status = CompletedQuantity + ScrapQuantity >= Quantity ? CompletedStatus : StartedStatus;
+        if (!wasCompleted && Status == CompletedStatus)
+        {
+            AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
+        }
     }
 
     public void Close(DateTimeOffset closedAtUtc)
@@ -271,5 +276,6 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ClosedStatus;
         ClosedAtUtc = closedAtUtc;
+        AddDomainEvent(new WorkOrderClosedDomainEvent(this, closedAtUtc));
     }
 }

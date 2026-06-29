@@ -153,6 +153,31 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         InventoryPostingFailedAtUtc = failedAtUtc;
     }
 
+    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity)
+    {
+        DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
+        if (returnedQuantity > ReceivedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(returnedQuantity), "Returned quantity cannot exceed line-side received quantity.");
+        }
+
+        if (string.IsNullOrWhiteSpace(MaterialLotId))
+        {
+            throw new InvalidOperationException("Line-side material return requires a received material lot.");
+        }
+
+        ReceivedQuantity -= returnedQuantity;
+        ReceivedAtUtc = returnedAtUtc;
+        Status = ReceivedQuantity == 0m
+            ? RequestedStatus
+            : ReceivedQuantity >= RequestedQuantity
+                ? ReceivedStatus
+                : PartiallyReceivedStatus;
+
+        AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity));
+        AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity));
+    }
+
     private static string NormalizeFailureMessage(string failureMessage)
     {
         var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));

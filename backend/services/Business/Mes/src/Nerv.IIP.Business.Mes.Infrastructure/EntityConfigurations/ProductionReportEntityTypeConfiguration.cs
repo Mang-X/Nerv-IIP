@@ -26,6 +26,8 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number for genealogy.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
+            .HasName("ak_production_reports_scope_report_no");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

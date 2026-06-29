@@ -11,6 +11,10 @@ public sealed record WorkOrderCreatedDomainEvent(WorkOrder WorkOrder) : IDomainE
 
 public sealed record WorkOrderReleasedDomainEvent(WorkOrder WorkOrder, IReadOnlyCollection<OperationTask> OperationTasks) : IDomainEvent;
 
+public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTimeOffset CompletedAtUtc) : IDomainEvent;
+
+public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOffset ClosedAtUtc) : IDomainEvent;
+
 public sealed record ProductionReportRecordedDomainEvent(ProductionReport ProductionReport) : IDomainEvent;
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;
@@ -18,6 +22,10 @@ public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMater
 public sealed record MaterialIssueRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal IssuedQuantity) : IDomainEvent;
 
 public sealed record MaterialLineSideReceiptConfirmedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReceivedQuantity) : IDomainEvent;
+
+public sealed record MaterialLineSideReturnRequestedDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReturnedQuantity) : IDomainEvent;
+
+public sealed record MaterialReturnedToWarehouseDomainEvent(MaterialIssueRequest MaterialIssueRequest, decimal ReturnedQuantity) : IDomainEvent;
 
 public sealed record FinishedGoodsReceiptRequestedDomainEvent(FinishedGoodsReceiptRequest FinishedGoodsReceiptRequest) : IDomainEvent;
 
