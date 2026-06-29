@@ -524,6 +524,22 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
+    public void Production_iam_requires_secret_pepper()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Iam:Secrets:Pepper", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Production_iam_rejects_long_access_token_lifetime()
     {
         using var factory = new WebApplicationFactory<Program>()
@@ -532,12 +548,31 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
                 builder.UseSetting("Iam:Jwt:AccessTokenMinutes", "120");
             });
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
 
         Assert.Contains("AccessTokenMinutes", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Production_iam_rejects_inmemory_persistence_profile()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
+                builder.UseSetting("Iam:EnterpriseIdentity:Mfa:DevelopmentCode", "654321");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Persistence:Provider=PostgreSQL", exception.Message, StringComparison.Ordinal);
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);

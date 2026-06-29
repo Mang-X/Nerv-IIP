@@ -6,6 +6,8 @@ namespace Nerv.IIP.Iam.Infrastructure;
 
 public sealed class InMemoryIamStore
 {
+    private const string SecretHashPrefix = "hmac-sha256:v1:";
+    private const string DevelopmentSecretPepper = "nerv-iip-development-secret-pepper";
     private readonly IInMemoryIamAccessTokenIssuer _accessTokenIssuer;
     private readonly object _gate = new();
     private readonly List<OrganizationFact> _organizations = [];
@@ -49,7 +51,7 @@ public sealed class InMemoryIamStore
                 throw new UnauthorizedAccessException("Invalid login.");
             }
 
-            if (user.PasswordHash != Hash(password))
+            if (!Verify(password, user.PasswordHash))
             {
                 var failedLoginCount = user.FailedLoginCount + 1;
                 var updated = user with
@@ -131,7 +133,7 @@ public sealed class InMemoryIamStore
     {
         lock (_gate)
         {
-            var credential = _connectorHostCredentials.SingleOrDefault(x => x.ConnectorHostId == connectorHostId && x.SecretHash == Hash(secret) && x.ValidFromUtc <= DateTimeOffset.UtcNow && (x.ValidToUtc is null || x.ValidToUtc > DateTimeOffset.UtcNow))
+            var credential = _connectorHostCredentials.SingleOrDefault(x => x.ConnectorHostId == connectorHostId && Verify(secret, x.SecretHash) && x.ValidFromUtc <= DateTimeOffset.UtcNow && (x.ValidToUtc is null || x.ValidToUtc > DateTimeOffset.UtcNow))
                 ?? throw new UnauthorizedAccessException("Invalid Connector Host credential.");
             return new ConnectorPrincipal("connector-host", credential.OrganizationId, credential.EnvironmentId, credential.ConnectorHostId);
         }
@@ -144,7 +146,7 @@ public sealed class InMemoryIamStore
             var now = DateTimeOffset.UtcNow;
             var client = _externalClients.SingleOrDefault(x =>
                     x.ClientId == clientId
-                    && x.SecretHash == Hash(clientSecret)
+                    && Verify(clientSecret, x.SecretHash)
                     && x.Enabled
                     && x.ValidFromUtc <= now
                     && (x.ValidToUtc is null || x.ValidToUtc > now))
@@ -604,7 +606,24 @@ public sealed class InMemoryIamStore
         }
     }
 
-    private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    private static string Hash(string value)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(DevelopmentSecretPepper));
+        return $"{SecretHashPrefix}{Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(value))).ToLowerInvariant()}";
+    }
+
+    private static bool Verify(string value, string storedHash)
+    {
+        if (!storedHash.StartsWith(SecretHashPrefix, StringComparison.Ordinal)
+            || storedHash.Length != SecretHashPrefix.Length + 64)
+        {
+            return false;
+        }
+
+        var leftHash = SHA256.HashData(Encoding.UTF8.GetBytes(Hash(value)));
+        var rightHash = SHA256.HashData(Encoding.UTF8.GetBytes(storedHash));
+        return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
+    }
 
     private static HashSet<string> SplitScope(string? scope)
     {

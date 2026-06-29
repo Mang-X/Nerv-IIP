@@ -121,7 +121,8 @@ public sealed class IamSeedService(
         }
         else
         {
-            if (!seedAlreadyApplied && !string.Equals(credential.SecretHash, connectorSecretHash, StringComparison.Ordinal))
+            if (!tokenService.IsCurrentSecretHash(credential.SecretHash)
+                || (!seedAlreadyApplied && !tokenService.VerifySecret(seed.ConnectorHostSecret, credential.SecretHash)))
             {
                 credential.ReplaceSecretHash(connectorSecretHash);
             }
@@ -151,7 +152,8 @@ public sealed class IamSeedService(
                     now.AddDays(-1),
                     null));
             }
-            else if (!seedAlreadyApplied && !string.Equals(externalClient.SecretHash, externalClientSecretHash, StringComparison.Ordinal))
+            else if (!tokenService.IsCurrentSecretHash(externalClient.SecretHash)
+                || (!seedAlreadyApplied && !tokenService.VerifySecret(seed.ExternalClientSecret, externalClient.SecretHash)))
             {
                 externalClient.ReplaceSecretHash(externalClientSecretHash);
             }

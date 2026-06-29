@@ -58,6 +58,8 @@ yKndmINUKXFRt+mFo0HU2Ec=
 """;
     private const string DefaultIssuer = "nerv-iip-iam";
     private const string DefaultAudience = "nerv-iip-api";
+    private const string SecretHashPrefix = "hmac-sha256:v1:";
+    private const string DevelopmentSecretPepper = "nerv-iip-development-secret-pepper";
     private readonly Lazy<JwtKeyMaterial> keyMaterial = new(
         () => BuildKeyMaterial(configuration, environment),
         LazyThreadSafetyMode.ExecutionAndPublication);
@@ -298,7 +300,24 @@ yKndmINUKXFRt+mFo0HU2Ec=
 
     public string HashSecret(string value)
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(GetSecretPepper()));
+        return $"{SecretHashPrefix}{Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(value))).ToLowerInvariant()}";
+    }
+
+    public bool VerifySecret(string value, string storedHash)
+    {
+        if (!IsCurrentSecretHash(storedHash))
+        {
+            return false;
+        }
+
+        return FixedTimeEquals(HashSecret(value), storedHash);
+    }
+
+    public bool IsCurrentSecretHash(string storedHash)
+    {
+        return storedHash.StartsWith(SecretHashPrefix, StringComparison.Ordinal)
+            && storedHash.Length == SecretHashPrefix.Length + 64;
     }
 
     public string GetJwksJson()
@@ -415,6 +434,29 @@ yKndmINUKXFRt+mFo0HU2Ec=
         }
 
         return minutes;
+    }
+
+    private string GetSecretPepper()
+    {
+        var pepper = configuration["Iam:Secrets:Pepper"];
+        if (!string.IsNullOrWhiteSpace(pepper))
+        {
+            return pepper;
+        }
+
+        if (environment.IsDevelopment())
+        {
+            return DevelopmentSecretPepper;
+        }
+
+        throw new InvalidOperationException("Iam:Secrets:Pepper is required outside Development.");
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        var leftHash = SHA256.HashData(Encoding.UTF8.GetBytes(left));
+        var rightHash = SHA256.HashData(Encoding.UTF8.GetBytes(right));
+        return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
     }
 
     private static void AddIfPresent(List<Claim> claims, string type, string? value)

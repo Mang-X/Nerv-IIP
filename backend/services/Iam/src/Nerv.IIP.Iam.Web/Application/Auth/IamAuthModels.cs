@@ -50,8 +50,6 @@ public interface IIamAuthService
 
     Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken);
 
-    Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken);
-
     Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,

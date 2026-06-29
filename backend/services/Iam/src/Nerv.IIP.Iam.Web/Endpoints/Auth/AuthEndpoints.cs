@@ -1,6 +1,8 @@
 using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using NetCorePal.Extensions.Dto;
 
@@ -88,10 +90,15 @@ public sealed class JwksEndpoint(IamTokenService tokenService) : EndpointWithout
 
 [HttpPost("/api/iam/v1/auth/oidc/callback")]
 [AllowAnonymous]
-public sealed class OidcLoginCallbackEndpoint(IMediator mediator) : Endpoint<OidcLoginCallbackRequest, ResponseData<EnterpriseAuthResponse>>
+public sealed class OidcLoginCallbackEndpoint(IMediator mediator, IWebHostEnvironment environment) : Endpoint<OidcLoginCallbackRequest, ResponseData<EnterpriseAuthResponse>>
 {
     public override async Task HandleAsync(OidcLoginCallbackRequest req, CancellationToken ct)
     {
+        if (await IamEndpointResults.RejectEnterpriseIdentityStubOutsideDevelopmentAsync(HttpContext, environment, ct))
+        {
+            return;
+        }
+
         await IamEndpointResults.WriteAuthCommandResultAsync(
             HttpContext,
             () => mediator.Send(new OidcLoginCallbackCommand(req, UserAgent(), RemoteIp()), ct),
@@ -104,10 +111,15 @@ public sealed class OidcLoginCallbackEndpoint(IMediator mediator) : Endpoint<Oid
 
 [HttpPost("/api/iam/v1/auth/mfa/challenges/{challengeId}/verify")]
 [AllowAnonymous]
-public sealed class VerifyMfaChallengeEndpoint(IMediator mediator) : Endpoint<MfaChallengeVerifyRequest, ResponseData<EnterpriseAuthResponse>>
+public sealed class VerifyMfaChallengeEndpoint(IMediator mediator, IWebHostEnvironment environment) : Endpoint<MfaChallengeVerifyRequest, ResponseData<EnterpriseAuthResponse>>
 {
     public override async Task HandleAsync(MfaChallengeVerifyRequest req, CancellationToken ct)
     {
+        if (await IamEndpointResults.RejectEnterpriseIdentityStubOutsideDevelopmentAsync(HttpContext, environment, ct))
+        {
+            return;
+        }
+
         await IamEndpointResults.WriteAuthCommandResultAsync(
             HttpContext,
             () => mediator.Send(new VerifyMfaChallengeCommand(Route<string>("challengeId")!, req.Code, UserAgent(), RemoteIp()), ct),
@@ -137,6 +149,24 @@ public sealed class GetMeEndpoint(IIamAuthService auth) : EndpointWithoutRequest
 
 internal static class IamEndpointResults
 {
+    public static async Task<bool> RejectEnterpriseIdentityStubOutsideDevelopmentAsync(
+        HttpContext context,
+        IWebHostEnvironment environment,
+        CancellationToken cancellationToken)
+    {
+        if (environment.IsDevelopment())
+        {
+            return false;
+        }
+
+        await ResponseDataEndpointResults.WriteErrorAsync(
+            context,
+            StatusCodes.Status401Unauthorized,
+            "Unauthorized.",
+            cancellationToken);
+        return true;
+    }
+
     public static async Task WriteAuthCommandResultAsync<T>(
         HttpContext context,
         Func<Task<AuthCommandResult<T>>> action,
