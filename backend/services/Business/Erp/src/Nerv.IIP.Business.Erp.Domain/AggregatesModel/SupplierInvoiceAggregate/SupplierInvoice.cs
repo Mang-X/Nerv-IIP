@@ -36,8 +36,10 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         DateOnly invoiceDate,
         DateOnly dueDate,
         string currencyCode,
+        decimal exchangeRate,
         decimal quantityTolerance,
         decimal amountTolerance,
+        decimal? priceTolerancePercent,
         IEnumerable<SupplierInvoiceLineDraft> lineDrafts,
         IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo)
     {
@@ -57,6 +59,17 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         InvoiceDate = invoiceDate;
         DueDate = dueDate;
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        if (!string.Equals(CurrencyCode, order.CurrencyCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Supplier invoice currency must match purchase order currency.");
+        }
+
+        if (priceTolerancePercent < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(priceTolerancePercent), priceTolerancePercent, "Price tolerance percent cannot be negative.");
+        }
+
+        ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
         MatchedAtUtc = DateTime.UtcNow;
 
         var held = false;
@@ -74,7 +87,7 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
 
             var alreadyInvoicedQuantity = alreadyInvoicedQuantitiesByReceiptLineNo?.GetValueOrDefault(draft.PurchaseReceiptLineNo) ?? 0m;
             var currentInvoiceQuantity = currentInvoiceQuantitiesByReceiptLineNo.GetValueOrDefault(draft.PurchaseReceiptLineNo);
-            if (!IsWithinTolerance(draft, poLine, receiptLine, alreadyInvoicedQuantity + currentInvoiceQuantity, quantityTolerance, amountTolerance))
+            if (!IsWithinTolerance(draft, poLine, receiptLine, alreadyInvoicedQuantity + currentInvoiceQuantity, quantityTolerance, amountTolerance, priceTolerancePercent))
             {
                 held = true;
             }
@@ -89,6 +102,7 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         }
 
         TotalAmount = lines.Sum(x => x.LineAmount);
+        LocalTotalAmount = TotalAmount * ExchangeRate;
         MatchStatus = held ? SupplierInvoiceMatchStatus.PaymentHeld : SupplierInvoiceMatchStatus.Matched;
         if (MatchStatus == SupplierInvoiceMatchStatus.Matched)
         {
@@ -105,7 +119,9 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
+    public decimal ExchangeRate { get; private set; }
     public decimal TotalAmount { get; private set; }
+    public decimal LocalTotalAmount { get; private set; }
     public SupplierInvoiceMatchStatus MatchStatus { get; private set; }
     public DateTime MatchedAtUtc { get; private set; }
     public IReadOnlyCollection<SupplierInvoiceLine> Lines => lines;
@@ -120,9 +136,27 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal quantityTolerance,
         decimal amountTolerance,
         IEnumerable<SupplierInvoiceLineDraft> lines,
-        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null)
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
+        decimal exchangeRate = 1m)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, quantityTolerance, amountTolerance, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, null, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+    }
+
+    public static SupplierInvoice Match(
+        PurchaseOrder order,
+        PurchaseReceipt receipt,
+        string invoiceNo,
+        DateOnly invoiceDate,
+        DateOnly dueDate,
+        string currencyCode,
+        decimal quantityTolerance,
+        decimal amountTolerance,
+        decimal priceTolerancePercent,
+        IEnumerable<SupplierInvoiceLineDraft> lines,
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
+        decimal exchangeRate = 1m)
+    {
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, priceTolerancePercent, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
     }
 
     public void ReleasePaymentHold()
@@ -162,7 +196,8 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         PurchaseReceiptLine receiptLine,
         decimal alreadyInvoicedQuantity,
         decimal quantityTolerance,
-        decimal amountTolerance)
+        decimal amountTolerance,
+        decimal? priceTolerancePercent)
     {
         var invoiceQuantity = ErpText.Positive(draft.InvoiceQuantity, nameof(draft.InvoiceQuantity));
         var unitPrice = ErpText.Positive(draft.UnitPrice, nameof(draft.UnitPrice));
@@ -172,7 +207,18 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         }
 
         var priceDeltaAmount = Math.Abs(unitPrice - poLine.UnitPrice) * invoiceQuantity;
-        return priceDeltaAmount <= amountTolerance;
+        if (priceDeltaAmount > amountTolerance)
+        {
+            return false;
+        }
+
+        if (priceTolerancePercent.HasValue)
+        {
+            var priceDeltaPercent = Math.Abs(unitPrice - poLine.UnitPrice) / poLine.UnitPrice * 100m;
+            return priceDeltaPercent <= priceTolerancePercent.Value;
+        }
+
+        return true;
     }
 }
 

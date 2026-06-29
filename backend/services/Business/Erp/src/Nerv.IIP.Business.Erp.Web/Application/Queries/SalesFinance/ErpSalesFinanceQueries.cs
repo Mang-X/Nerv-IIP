@@ -534,7 +534,15 @@ public sealed record JournalVoucherListItem(
     IReadOnlyCollection<JournalVoucherLineListItem> Lines,
     DateTime PostedAtUtc);
 
-public sealed record JournalVoucherLineListItem(string AccountCode, decimal DebitAmount, decimal CreditAmount, string Memo);
+public sealed record JournalVoucherLineListItem(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    string Memo,
+    string CurrencyCode,
+    decimal ExchangeRate,
+    decimal LocalDebitAmount,
+    decimal LocalCreditAmount);
 
 public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListJournalVouchersQuery, ListJournalVouchersResponse>
@@ -575,7 +583,7 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
                 x.Lines.Sum(line => line.CreditAmount),
                 x.Lines
                     .OrderBy(line => line.AccountCode)
-                    .Select(line => new JournalVoucherLineListItem(line.AccountCode, line.DebitAmount, line.CreditAmount, line.Memo))
+                    .Select(line => new JournalVoucherLineListItem(line.AccountCode, line.DebitAmount, line.CreditAmount, line.Memo, line.CurrencyCode, line.ExchangeRate, line.LocalDebitAmount, line.LocalCreditAmount))
                     .ToArray(),
                 x.PostedAtUtc))
             .ToArrayAsync(cancellationToken);
@@ -585,29 +593,46 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
 }
 
 public sealed record GetFinanceSummaryQuery(string OrganizationId, string EnvironmentId) : IQuery<FinanceSummaryResponse>;
-public sealed record FinanceSummaryResponse(decimal OpenPayableAmount, decimal OpenReceivableAmount, decimal CostCandidateAmount, int PostedVoucherCount);
+public sealed record CurrencyAmountSummary(string CurrencyCode, decimal OpenAmount, decimal LocalOpenAmount);
+public sealed record FinanceSummaryResponse(
+    decimal OpenPayableAmount,
+    decimal OpenReceivableAmount,
+    decimal CostCandidateAmount,
+    int PostedVoucherCount,
+    IReadOnlyCollection<CurrencyAmountSummary> PayablesByCurrency = null!,
+    IReadOnlyCollection<CurrencyAmountSummary> ReceivablesByCurrency = null!,
+    IReadOnlyCollection<CurrencyAmountSummary> CostCandidatesByCurrency = null!);
 
 public sealed class GetFinanceSummaryQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetFinanceSummaryQuery, FinanceSummaryResponse>
 {
     public async Task<FinanceSummaryResponse> Handle(GetFinanceSummaryQuery request, CancellationToken cancellationToken)
     {
-        var payables = await dbContext.AccountPayables
+        var payablesByCurrency = await dbContext.AccountPayables
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount - x.PaidAmount, cancellationToken);
-        var receivables = await dbContext.AccountReceivables
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount - line.PaidAmount), x.Sum(line => line.LocalAmount - line.LocalPaidAmount)))
+            .ToArrayAsync(cancellationToken);
+        var receivablesByCurrency = await dbContext.AccountReceivables
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount - x.CollectedAmount, cancellationToken);
-        var costCandidates = await dbContext.CostCandidates
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount - line.CollectedAmount), x.Sum(line => line.LocalAmount - line.LocalCollectedAmount)))
+            .ToArrayAsync(cancellationToken);
+        var costCandidatesByCurrency = await dbContext.CostCandidates
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount, cancellationToken);
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount), x.Sum(line => line.LocalAmount)))
+            .ToArrayAsync(cancellationToken);
         var vouchers = await dbContext.JournalVouchers
             .AsNoTracking()
             .CountAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId, cancellationToken);
-        return new FinanceSummaryResponse(payables, receivables, costCandidates, vouchers);
+        var payables = payablesByCurrency.Sum(x => x.OpenAmount);
+        var receivables = receivablesByCurrency.Sum(x => x.OpenAmount);
+        var costCandidates = costCandidatesByCurrency.Sum(x => x.OpenAmount);
+        return new FinanceSummaryResponse(payables, receivables, costCandidates, vouchers, payablesByCurrency, receivablesByCurrency, costCandidatesByCurrency);
     }
 }
 
