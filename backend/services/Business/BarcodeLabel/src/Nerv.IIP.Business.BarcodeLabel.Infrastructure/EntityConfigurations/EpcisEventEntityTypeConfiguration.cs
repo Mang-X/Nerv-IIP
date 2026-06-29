@@ -21,13 +21,27 @@ public sealed class EpcisEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Lot or batch associated with the event.");
         builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Serialized unit associated with the event.");
         builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI associated with the serialized event.");
+        builder.Property(x => x.ParentSscc).HasColumnName("parent_sscc").HasMaxLength(18).HasComment("Parent SSCC-18 logistic unit for EPCIS aggregation or disaggregation events.");
+        builder.Property(x => x.ParentEpcUri).HasColumnName("parent_epc_uri").HasMaxLength(300).HasComment("Parent EPC URI for aggregation events when a standards-compliant parent URI is available.");
         builder.Property(x => x.SourceWorkflow).HasColumnName("source_workflow").IsRequired().HasMaxLength(100).HasComment("Source workflow that created the event.");
         builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("Source business document public id associated with the event.");
         builder.Property(x => x.LabelPrintBatchId).HasColumnName("label_print_batch_id").HasComment("Optional label print batch id that owns commissioning events.");
         builder.Property(x => x.LabelPrintItemId).HasColumnName("label_print_item_id").HasComment("Optional label print item id that caused a commissioning event.");
         builder.Property(x => x.ScanRecordId).HasColumnName("scan_record_id").HasComment("Optional scan record id that caused an object event.");
         builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").IsRequired().HasComment("UTC time when the EPCIS event occurred.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.Gtin, x.LotNo, x.SerialNumber })
+            .IsUnique()
+            .HasDatabaseName("UX_epcis_events_gtin_lot_serial")
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.Gtin, x.SerialNumber })
+            .IsUnique()
+            .HasDatabaseName("UX_epcis_events_gtin_serial_no_lot")
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.EpcUri })
+            .IsUnique()
+            .HasDatabaseName("UX_epcis_events_epc_uri")
+            .HasFilter("epc_uri IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ParentSscc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkflow, x.SourceDocumentId });
         builder.HasIndex(x => x.LabelPrintBatchId);
         builder.HasIndex(x => x.LabelPrintItemId);

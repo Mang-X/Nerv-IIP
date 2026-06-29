@@ -10,7 +10,16 @@ public partial record ScanRecordId : IGuidStronglyTypedId;
 public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
 {
     private static readonly HashSet<string> SupportedResults = ["accepted", "rejected"];
-    private static readonly HashSet<string> SupportedAcceptedWorkflows = ["wms.receiving", "inventory.receipt", "inventory.issue", "inventory.adjustment"];
+    private static readonly HashSet<string> SupportedAcceptedWorkflows =
+    [
+        "wms.receiving",
+        "inventory.receipt",
+        "inventory.issue",
+        "inventory.adjustment",
+        "inventory.count",
+        "production.report",
+        "quality.inspection",
+    ];
 
     private ScanRecord()
     {
@@ -73,6 +82,11 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
                 EpcisEvents.Add(EpcisEvent.ObjectEvent(OrganizationId, EnvironmentId, this));
             }
 
+            if (SourceWorkflow == "wms.receiving" && !string.IsNullOrWhiteSpace(Sscc) && !string.IsNullOrWhiteSpace(SerialNumber))
+            {
+                EpcisEvents.Add(EpcisEvent.Aggregation(OrganizationId, EnvironmentId, this, SourceWorkflow, SourceDocumentId));
+            }
+
             this.AddDomainEvent(new LabelScannedDomainEvent(this));
             if (BusinessAction == "inventory-movement-requested")
             {
@@ -94,6 +108,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
     public string? LotNo { get; private set; }
     public string? SerialNumber { get; private set; }
     public string? EpcUri { get; private set; }
+    public string? Sscc { get; private set; }
     public decimal? Quantity { get; private set; }
     public string? SkuCode { get; private set; }
     public string? UomCode { get; private set; }
@@ -190,9 +205,13 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
     private void ParseGs1ValueIfPresent()
     {
         if (!ScannedValue.StartsWith("(01)", StringComparison.Ordinal)
+            && !ScannedValue.StartsWith("(00)", StringComparison.Ordinal)
             && !(ScannedValue.Length >= 16
                 && ScannedValue.StartsWith("01", StringComparison.Ordinal)
-                && ScannedValue.Skip(2).Take(14).All(char.IsDigit)))
+                && ScannedValue.Skip(2).Take(14).All(char.IsDigit))
+            && !(ScannedValue.Length >= 20
+                && ScannedValue.StartsWith("00", StringComparison.Ordinal)
+                && ScannedValue.Skip(2).Take(18).All(char.IsDigit)))
         {
             return;
         }
@@ -201,12 +220,28 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         Gtin = parsed.Gtin;
         LotNo = parsed.LotNo;
         SerialNumber = parsed.SerialNumber;
-        EpcUri = parsed.EpcUri;
+        EpcUri = BarcodeLabelText.Optional(parsed.EpcUri);
+        Sscc = parsed.Sscc;
     }
 
     private void ConfigureBusinessAction()
     {
-        if (!SourceWorkflow.StartsWith("inventory.", StringComparison.Ordinal))
+        BusinessAction = SourceWorkflow switch
+        {
+            "wms.receiving" => "wms-receiving-scan-observed",
+            "production.report" => "production-report-scan-observed",
+            "quality.inspection" => "quality-inspection-scan-observed",
+            "inventory.count" => "inventory-count-scan-observed",
+            "inventory.receipt" or "inventory.issue" or "inventory.adjustment" => "inventory-movement-requested",
+            _ => BusinessAction,
+        };
+
+        if (BusinessAction is not null)
+        {
+            DownstreamEventId = $"evt-{Guid.CreateVersion7():N}";
+        }
+
+        if (BusinessAction != "inventory-movement-requested")
         {
             return;
         }
@@ -222,7 +257,5 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(Quantity), "Quantity must be positive for inventory scan workflows.");
         }
 
-        BusinessAction = "inventory-movement-requested";
-        DownstreamEventId = $"evt-{Guid.CreateVersion7():N}";
     }
 }
