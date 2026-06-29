@@ -201,13 +201,39 @@ public sealed class GatewayConsoleFileStorageTests
         var auth = FakeGatewayAuthorizationClient.Allowed();
         await using var factory = CreateFactory(files, auth);
         using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/download-grants/download-grant-001/content");
+        AddTenantHeaders(request);
 
         var response = await factory.CreateClient().SendAsync(request);
 
         response.EnsureSuccessStatusCode();
         Assert.Equal("hello", await response.Content.ReadAsStringAsync());
         Assert.Equal("download-grant-001", files.LastDownloadContentGrantId);
+        Assert.Equal("org-001", files.LastDownloadContentOrganizationId);
+        Assert.Equal("env-dev", files.LastDownloadContentEnvironmentId);
         Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("org-001", auth.LastRequirement.OrganizationId);
+        Assert.Equal("env-dev", auth.LastRequirement.EnvironmentId);
+        Assert.Equal("file-download-grant", auth.LastRequirement.ResourceType);
+        Assert.Equal("download-grant-001", auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
+    public async Task Download_grant_content_requires_explicit_tenant_headers()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/download-grants/download-grant-001/content");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<object>>();
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        Assert.Equal("X-Organization-Id and X-Environment-Id headers are required.", envelope.Message);
+        Assert.Null(files.LastDownloadContentGrantId);
+        Assert.Null(auth.LastRequirement);
     }
 
     [Fact]
@@ -370,11 +396,21 @@ public sealed class GatewayConsoleFileStorageTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://files.local") };
         var files = new HttpGatewayFileStorageClient(httpClient, new TestInternalServiceTokenProvider("internal-test-token"));
         var context = new DefaultHttpContext();
+        context.Request.Headers["X-Organization-Id"] = "org-001";
+        context.Request.Headers["X-Environment-Id"] = "env-dev";
         await using var body = new MemoryStream();
         context.Response.Body = body;
 
-        await files.ProxyDownloadGrantContentAsync("download-grant-001", context.Response, CancellationToken.None);
+        await files.ProxyDownloadGrantContentAsync(
+            "download-grant-001",
+            "org-001",
+            "env-dev",
+            context.Response,
+            CancellationToken.None);
 
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("org-001", request.Headers["X-Organization-Id"]);
+        Assert.Equal("env-dev", request.Headers["X-Environment-Id"]);
         Assert.False(context.Response.Headers.ContainsKey("Transfer-Encoding"));
         Assert.False(context.Response.Headers.ContainsKey("Connection"));
         Assert.False(context.Response.Headers.ContainsKey("Keep-Alive"));
@@ -434,6 +470,8 @@ public sealed class GatewayConsoleFileStorageTests
         public string? LastTusHeadUploadSessionId { get; private set; }
         public string? LastTusPatchUploadSessionId { get; private set; }
         public string? LastDownloadContentGrantId { get; private set; }
+        public string? LastDownloadContentOrganizationId { get; private set; }
+        public string? LastDownloadContentEnvironmentId { get; private set; }
         public Exception? ExceptionToThrow { get; init; }
 
         public Task<CreateUploadSessionResponse> CreateUploadSessionAsync(
@@ -517,11 +555,15 @@ public sealed class GatewayConsoleFileStorageTests
 
         public async Task ProxyDownloadGrantContentAsync(
             string downloadGrantId,
+            string organizationId,
+            string environmentId,
             HttpResponse response,
             CancellationToken cancellationToken)
         {
             ThrowIfConfigured();
             LastDownloadContentGrantId = downloadGrantId;
+            LastDownloadContentOrganizationId = organizationId;
+            LastDownloadContentEnvironmentId = environmentId;
             response.ContentType = "text/plain";
             await response.WriteAsync("hello", cancellationToken);
         }
@@ -558,7 +600,14 @@ public sealed class GatewayConsoleFileStorageTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests.Add(new RecordedRequest(request.Method, request.RequestUri!, request.Headers.Authorization));
+            Requests.Add(new RecordedRequest(
+                request.Method,
+                request.RequestUri!,
+                request.Headers.Authorization,
+                request.Headers.ToDictionary(
+                    header => header.Key,
+                    header => string.Join(",", header.Value),
+                    StringComparer.OrdinalIgnoreCase)));
             return Task.FromResult(responseFactory(request));
         }
     }
@@ -566,7 +615,8 @@ public sealed class GatewayConsoleFileStorageTests
     private sealed record RecordedRequest(
         HttpMethod Method,
         Uri RequestUri,
-        AuthenticationHeaderValue? Authorization);
+        AuthenticationHeaderValue? Authorization,
+        IReadOnlyDictionary<string, string> Headers);
 
     private sealed record TestInternalServiceTokenProvider(string BearerToken) : IInternalServiceTokenProvider;
 

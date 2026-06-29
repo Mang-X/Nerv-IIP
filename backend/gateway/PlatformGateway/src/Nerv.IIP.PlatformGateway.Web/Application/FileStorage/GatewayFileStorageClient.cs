@@ -45,6 +45,8 @@ public interface IGatewayFileStorageClient
 
     Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken);
 }
@@ -154,6 +156,8 @@ public sealed class HttpGatewayFileStorageClient(
 
     public Task ProxyDownloadGrantContentAsync(
         string downloadGrantId,
+        string organizationId,
+        string environmentId,
         HttpResponse response,
         CancellationToken cancellationToken) =>
         ProxyRawAsync(
@@ -161,20 +165,27 @@ public sealed class HttpGatewayFileStorageClient(
             $"/api/files/v1/download-grants/{Uri.EscapeDataString(downloadGrantId)}/content",
             null,
             response,
-            cancellationToken);
+            cancellationToken,
+            new Dictionary<string, string>
+            {
+                ["X-Organization-Id"] = organizationId,
+                ["X-Environment-Id"] = environmentId
+            });
 
     private async Task ProxyRawAsync(
         HttpMethod method,
         string requestUri,
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? headers = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, requestUri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
-            CopyTusRequestHeaders(sourceRequest, request);
+            CopyTransferRequestHeaders(sourceRequest, request);
+            CopyHeaders(headers, request);
             if (sourceRequest is not null && method == HttpMethod.Patch)
             {
                 request.Content = new StreamContent(sourceRequest.Body);
@@ -381,7 +392,7 @@ public sealed class HttpGatewayFileStorageClient(
         values.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
     }
 
-    private static void CopyTusRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)
+    private static void CopyTransferRequestHeaders(HttpRequest? sourceRequest, HttpRequestMessage targetRequest)
     {
         if (sourceRequest is null)
         {
@@ -398,6 +409,19 @@ public sealed class HttpGatewayFileStorageClient(
         if (sourceRequest.Headers.TryGetValue(name, out var values))
         {
             targetRequest.Headers.TryAddWithoutValidation(name, values.ToArray());
+        }
+    }
+
+    private static void CopyHeaders(IReadOnlyDictionary<string, string>? headers, HttpRequestMessage targetRequest)
+    {
+        if (headers is null)
+        {
+            return;
+        }
+
+        foreach (var header in headers)
+        {
+            targetRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
     }
 

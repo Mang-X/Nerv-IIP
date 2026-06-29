@@ -26,13 +26,52 @@ public sealed class LocalTusFileStore
         return File.Exists(GetUploadPath(uploadSessionId));
     }
 
-    public void Delete(string uploadSessionId)
+    public bool Delete(string uploadSessionId)
     {
         var path = GetUploadPath(uploadSessionId);
         if (File.Exists(path))
         {
-            File.Delete(path);
+            return TryDeleteFile(path);
         }
+
+        return false;
+    }
+
+    public int DeleteFilesExcept(IEnumerable<string> uploadSessionIds, DateTimeOffset olderThanUtc)
+    {
+        if (!Directory.Exists(rootPath))
+        {
+            return 0;
+        }
+
+        var retainedFileNames = uploadSessionIds
+            .Select(uploadSessionId => Path.GetFileName(GetUploadPath(uploadSessionId)))
+            .ToHashSet(StringComparer.Ordinal);
+        var removed = 0;
+        foreach (var path in Directory.EnumerateFiles(rootPath, "*.bin"))
+        {
+            try
+            {
+                if (retainedFileNames.Contains(Path.GetFileName(path))
+                    || File.GetLastWriteTimeUtc(path) > olderThanUtc.UtcDateTime)
+                {
+                    continue;
+                }
+
+                if (TryDeleteFile(path))
+                {
+                    removed++;
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return removed;
     }
 
     public async Task<string> ComputeSha256HexAsync(string uploadSessionId, CancellationToken cancellationToken)
@@ -80,5 +119,22 @@ public sealed class LocalTusFileStore
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
         return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static bool TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }
