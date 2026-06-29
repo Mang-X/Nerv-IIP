@@ -248,6 +248,7 @@ public static class QualityEndpointContracts
         new(typeof(CloseNonconformanceReportEndpoint), "POST", "/api/business/v1/quality/ncrs/{ncrId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityNcr"),
         new(typeof(OpenCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas", BusinessPermissionCodes.QualityNcrManage, "openBusinessQualityCapa"),
         new(typeof(AddCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions", BusinessPermissionCodes.QualityNcrManage, "addBusinessQualityCapaAction"),
+        new(typeof(CompleteCorrectiveActionItemEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete", BusinessPermissionCodes.QualityNcrManage, "completeBusinessQualityCapaAction"),
         new(typeof(VerifyCorrectiveActionEffectivenessEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/effectiveness", BusinessPermissionCodes.QualityNcrManage, "verifyBusinessQualityCapaEffectiveness"),
         new(typeof(CloseCorrectiveActionEndpoint), "POST", "/api/business/v1/quality/capas/{correctiveActionId}/close", BusinessPermissionCodes.QualityNcrManage, "closeBusinessQualityCapa"),
     ];

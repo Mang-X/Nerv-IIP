@@ -223,7 +223,8 @@ public sealed record CreatePurchaseOrderCommand(
     string SupplierCode,
     string SiteCode,
     IReadOnlyCollection<PurchaseOrderCommandLine> Lines,
-    string? IdempotencyKey = null) : ICommand<PurchaseOrderId>;
+    string? IdempotencyKey = null,
+    string CurrencyCode = "CNY") : ICommand<PurchaseOrderId>;
 
 public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<CreatePurchaseOrderCommand>
 {
@@ -234,6 +235,7 @@ public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<Crea
         RuleFor(x => x.PurchaseOrderNo).MaximumLength(100);
         RuleFor(x => x.SupplierCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -263,7 +265,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
             request.EnvironmentId, "purchase-order",
             request.PurchaseOrderNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
+            ErpCodingService.Fingerprint(request.SupplierCode, request.SiteCode, request.CurrencyCode, request.Lines.Select(x => $"{x.LineNo}:{x.SkuCode}:{x.Quantity}:{x.UnitPrice}:{x.PromisedDate}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -280,6 +282,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
             allocation.Code,
             request.SupplierCode,
             request.SiteCode,
+            request.CurrencyCode,
             request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
@@ -319,7 +322,8 @@ public sealed record PurchaseReceiptCommandLine(
     decimal ReceivedQuantity,
     string QualityStatus,
     string? LocationCode = null,
-    string? LotNo = null);
+    string? LotNo = null,
+    bool FinalDelivery = false);
 
 public sealed record RecordPurchaseReceiptCommand(
     string OrganizationId,
@@ -327,7 +331,8 @@ public sealed record RecordPurchaseReceiptCommand(
     string? PurchaseReceiptNo,
     string PurchaseOrderNo,
     IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
-    string? IdempotencyKey = null) : ICommand<PurchaseReceiptId>;
+    string? IdempotencyKey = null,
+    decimal ExchangeRate = 1m) : ICommand<PurchaseReceiptId>;
 
 public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<RecordPurchaseReceiptCommand>
 {
@@ -337,6 +342,7 @@ public sealed class RecordPurchaseReceiptCommandValidator : AbstractValidator<Re
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.PurchaseReceiptNo).MaximumLength(100);
         RuleFor(x => x.PurchaseOrderNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ExchangeRate).GreaterThan(0);
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -359,7 +365,7 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
             request.EnvironmentId, "purchase-receipt",
             request.PurchaseReceiptNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}")),
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -385,9 +391,10 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
             receipt = PurchaseReceipt.Record(
                 order,
                 allocation.Code,
-                request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo)));
+                request.Lines.Select(x => new PurchaseReceiptLineDraft(x.PurchaseOrderLineNo, x.ReceivedQuantity, x.QualityStatus, x.LocationCode, x.LotNo, x.FinalDelivery)),
+                request.ExchangeRate);
         }
-        catch (InvalidOperationException exception)
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
         {
             throw new KnownException(exception.Message, exception);
         }
@@ -416,7 +423,9 @@ public sealed record RecordSupplierInvoiceCommand(
     decimal AmountTolerance,
     IReadOnlyCollection<SupplierInvoiceCommandLine> Lines,
     string? PayableNo = null,
-    string? IdempotencyKey = null) : ICommand<SupplierInvoiceId>;
+    string? IdempotencyKey = null,
+    decimal? PriceTolerancePercent = null,
+    decimal ExchangeRate = 1m) : ICommand<SupplierInvoiceId>;
 
 public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<RecordSupplierInvoiceCommand>
 {
@@ -430,8 +439,10 @@ public sealed class RecordSupplierInvoiceCommandValidator : AbstractValidator<Re
         RuleFor(x => x.InvoiceDate).NotEqual(default(DateOnly));
         RuleFor(x => x.DueDate).NotEqual(default(DateOnly));
         RuleFor(x => x.CurrencyCode).NotEmpty().MaximumLength(10);
+        RuleFor(x => x.ExchangeRate).GreaterThan(0);
         RuleFor(x => x.QuantityTolerance).GreaterThanOrEqualTo(0);
         RuleFor(x => x.AmountTolerance).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.PriceTolerancePercent).GreaterThanOrEqualTo(0).When(x => x.PriceTolerancePercent.HasValue);
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
@@ -456,7 +467,7 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             "supplier-invoice",
             request.InvoiceNo,
             request.IdempotencyKey,
-            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.QuantityTolerance, request.AmountTolerance, request.PayableNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
+            ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.PurchaseReceiptNo, request.InvoiceDate, request.DueDate, request.CurrencyCode, request.ExchangeRate, request.QuantityTolerance, request.AmountTolerance, request.PriceTolerancePercent, request.PayableNo, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.PurchaseReceiptLineNo}:{x.InvoiceQuantity}:{x.UnitPrice}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -495,17 +506,33 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             .GroupBy(x => x.PurchaseReceiptLineNo, StringComparer.Ordinal)
             .ToDictionary(x => x.Key, x => x.Sum(line => line.InvoiceQuantity), StringComparer.Ordinal);
 
-        var invoice = SupplierInvoice.Match(
-            order,
-            receipt,
-            allocation.Code,
-            request.InvoiceDate,
-            request.DueDate,
-            request.CurrencyCode,
-            request.QuantityTolerance,
-            request.AmountTolerance,
-            request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice)),
-            alreadyInvoicedQuantitiesByReceiptLineNo);
+        var invoiceLines = request.Lines.Select(x => new SupplierInvoiceLineDraft(x.PurchaseOrderLineNo, x.PurchaseReceiptLineNo, x.InvoiceQuantity, x.UnitPrice));
+        var invoice = request.PriceTolerancePercent is { } priceTolerancePercent
+            ? SupplierInvoice.Match(
+                order,
+                receipt,
+                allocation.Code,
+                request.InvoiceDate,
+                request.DueDate,
+                request.CurrencyCode,
+                request.QuantityTolerance,
+                request.AmountTolerance,
+                priceTolerancePercent,
+                invoiceLines,
+                alreadyInvoicedQuantitiesByReceiptLineNo,
+                request.ExchangeRate)
+            : SupplierInvoice.Match(
+                order,
+                receipt,
+                allocation.Code,
+                request.InvoiceDate,
+                request.DueDate,
+                request.CurrencyCode,
+                request.QuantityTolerance,
+                request.AmountTolerance,
+                invoiceLines,
+                alreadyInvoicedQuantitiesByReceiptLineNo,
+                request.ExchangeRate);
         dbContext.SupplierInvoices.Add(invoice);
 
         if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
@@ -531,9 +558,10 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
             invoice.CurrencyCode,
             invoice.InvoiceDate,
             invoice.DueDate,
-            "MATCHED");
+            "MATCHED",
+            request.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
         return invoice.Id;
     }
 }
@@ -594,7 +622,7 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             "account-payable",
             request.PayableNo,
             $"{request.IdempotencyKey}:account-payable",
-            ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.InvoiceDate, invoice.DueDate, "HELD-RELEASE"),
+            ErpCodingService.Fingerprint(invoice.InvoiceNo, invoice.SupplierCode, invoice.TotalAmount, invoice.CurrencyCode, invoice.ExchangeRate, invoice.InvoiceDate, invoice.DueDate, "HELD-RELEASE"),
             cancellationToken);
         var existingPayable = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
@@ -616,6 +644,12 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             throw new KnownException(exception.Message, exception);
         }
 
+        var receipt = await dbContext.PurchaseReceipts.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseReceiptNo == invoice.PurchaseReceiptNo,
+            cancellationToken)
+            ?? throw new KnownException($"Purchase receipt '{invoice.PurchaseReceiptNo}' was not found.");
         var payable = AccountPayable.Create(
             request.OrganizationId,
             request.EnvironmentId,
@@ -626,9 +660,10 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
             invoice.CurrencyCode,
             invoice.InvoiceDate,
             invoice.DueDate,
-            "MATCHED");
+            "MATCHED",
+            invoice.ExchangeRate);
         dbContext.AccountPayables.Add(payable);
-        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable));
+        dbContext.JournalVouchers.Add(FinanceVoucherFactory.ForSupplierInvoiceGrIrClearing(invoice, payable, receipt.ExchangeRate));
         return invoice.Id;
     }
 }

@@ -772,6 +772,7 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             0m,
             0m,
             0m,
+            0m,
             false,
             false));
     }

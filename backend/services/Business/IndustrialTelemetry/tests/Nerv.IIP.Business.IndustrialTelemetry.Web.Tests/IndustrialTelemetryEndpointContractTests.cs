@@ -223,6 +223,30 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Oee_endpoint_uses_loading_time_denominator_and_excludes_planned_down_time()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-001");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "planned_down", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-002");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "planned maintenance", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-003");
+        await PostSampleAsync(client, "DEV-OEE-LOAD", "stopped", new DateTimeOffset(2026, 6, 1, 11, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "oee-load-004");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/oee?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-OEE-LOAD&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T12:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(4, data.GetProperty("stateSampleCount").GetInt32());
+        Assert.Equal(0.5m, data.GetProperty("availabilityRate").GetDecimal());
+        Assert.Equal(0.5m, data.GetProperty("loadingRate").GetDecimal());
+        Assert.Equal(0.5m, data.GetProperty("oeeRate").GetDecimal());
+    }
+
+    [Fact]
     public async Task Oee_endpoint_does_not_treat_productive_as_a_runtime_state_value()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();

@@ -20,6 +20,8 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(50).HasComment("Work order source type such as alarm, plan or inspection.");
         builder.Property(x => x.SourceReferenceId).HasColumnName("source_reference_id").HasMaxLength(150).HasComment("Source fact reference id for source-type idempotency and traceability.");
         builder.Property(x => x.DiagnosticDescription).HasColumnName("diagnostic_description").HasMaxLength(1000).HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
+        builder.Property(x => x.FailureModeCode).HasColumnName("failure_mode_code").HasMaxLength(100).HasComment("Structured failure mode code captured from alarm or inspection context.");
+        builder.Property(x => x.FailureCauseCode).HasColumnName("failure_cause_code").HasMaxLength(100).HasComment("Structured failure cause code captured from alarm or inspection context.");
         builder.Property(x => x.OpenedBy).HasColumnName("opened_by").IsRequired().HasMaxLength(150).HasComment("Actor or source that opened the work order.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Maintenance work order lifecycle status.");
         builder.Property(x => x.OpenedAtUtc).HasColumnName("opened_at_utc").IsRequired().HasComment("UTC time when work order was opened.");
@@ -31,6 +33,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.CompletionResult).HasColumnName("completion_result").HasMaxLength(1000).HasComment("Maintenance completion result.");
         builder.Property(x => x.DowntimeReasonCode).HasColumnName("downtime_reason_code").HasMaxLength(100).HasComment("Downtime reason attribution code.");
         builder.Property(x => x.DowntimeMinutes).HasColumnName("downtime_minutes").HasComment("Attributed downtime minutes.");
+        builder.Property(x => x.RepairStartedAtUtc).HasColumnName("repair_started_at_utc").HasComment("UTC time when effective repair work started.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.HasMany(x => x.SparePartLines).WithOne().HasForeignKey("MaintenanceWorkOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.SparePartLines).UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -80,6 +83,9 @@ public sealed class MaintenancePlanEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Owner).HasColumnName("owner").IsRequired().HasMaxLength(150).HasComment("Plan owner or team.");
         builder.Property(x => x.WindowStartUtc).HasColumnName("window_start_utc").HasComment("UTC start of the optional runtime availability maintenance window.");
         builder.Property(x => x.WindowEndUtc).HasColumnName("window_end_utc").HasComment("UTC end of the optional runtime availability maintenance window.");
+        builder.Property(x => x.RuntimeHourInterval).HasColumnName("runtime_hour_interval").HasPrecision(18, 6).HasComment("Optional runtime-hour interval for usage-triggered preventive maintenance.");
+        builder.Property(x => x.LastGeneratedRuntimeHours).HasColumnName("last_generated_runtime_hours").HasPrecision(18, 6).HasComment("Last cumulative runtime-hour reading used to generate a PM work order.");
+        builder.Property(x => x.NextDueRuntimeHours).HasColumnName("next_due_runtime_hours").HasPrecision(18, 6).HasComment("Next cumulative runtime-hour threshold for usage-triggered PM generation.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PlanCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.WindowStartUtc, x.WindowEndUtc });
@@ -112,6 +118,8 @@ public sealed class DowntimeReasonEntityTypeConfiguration : IEntityTypeConfigura
         MaintenanceWorkOrderEntityTypeConfiguration.AddTenantColumns(builder);
         builder.Property(x => x.ReasonCode).HasColumnName("reason_code").IsRequired().HasMaxLength(100).HasComment("Downtime reason code.");
         builder.Property(x => x.Description).HasColumnName("description").IsRequired().HasMaxLength(500).HasComment("Downtime reason description.");
+        builder.Property(x => x.ReasonCategory).HasColumnName("reason_category").IsRequired().HasMaxLength(100).HasComment("Reason category for maintenance RCA and reporting.");
+        builder.Property(x => x.LossCategory).HasColumnName("loss_category").IsRequired().HasMaxLength(100).HasComment("TPM six-big-loss or equivalent OEE loss classification.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReasonCode }).IsUnique();
     }
 }

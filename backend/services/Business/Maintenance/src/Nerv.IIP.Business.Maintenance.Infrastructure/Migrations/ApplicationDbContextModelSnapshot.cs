@@ -44,12 +44,26 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<string>("LossCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("loss_category")
+                        .HasComment("TPM six-big-loss or equivalent OEE loss classification.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<string>("ReasonCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reason_category")
+                        .HasComment("Reason category for maintenance RCA and reporting.");
 
                     b.Property<string>("ReasonCode")
                         .IsRequired()
@@ -165,10 +179,22 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("last_generated_on")
                         .HasComment("Last business date for which the plan generated a maintenance work order.");
 
+                    b.Property<decimal>("LastGeneratedRuntimeHours")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("last_generated_runtime_hours")
+                        .HasComment("Last cumulative runtime-hour reading used to generate a PM work order.");
+
                     b.Property<DateOnly>("NextDueOn")
                         .HasColumnType("date")
                         .HasColumnName("next_due_on")
                         .HasComment("Next business date on which the preventive maintenance plan is due.");
+
+                    b.Property<decimal?>("NextDueRuntimeHours")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("next_due_runtime_hours")
+                        .HasComment("Next cumulative runtime-hour threshold for usage-triggered PM generation.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -190,6 +216,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("plan_code")
                         .HasComment("Maintenance plan code.");
+
+                    b.Property<decimal?>("RuntimeHourInterval")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("runtime_hour_interval")
+                        .HasComment("Optional runtime-hour interval for usage-triggered preventive maintenance.");
 
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date")
@@ -294,6 +326,18 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<string>("FailureCauseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_cause_code")
+                        .HasComment("Structured failure cause code captured from alarm or inspection context.");
+
+                    b.Property<string>("FailureModeCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_mode_code")
+                        .HasComment("Structured failure mode code captured from alarm or inspection context.");
+
                     b.Property<DateTimeOffset>("OpenedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("opened_at_utc")
@@ -319,6 +363,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("priority")
                         .HasComment("Maintenance priority.");
+
+                    b.Property<DateTimeOffset?>("RepairStartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("repair_started_at_utc")
+                        .HasComment("UTC time when effective repair work started.");
 
                     b.Property<string>("SourceAlarmId")
                         .HasMaxLength(150)

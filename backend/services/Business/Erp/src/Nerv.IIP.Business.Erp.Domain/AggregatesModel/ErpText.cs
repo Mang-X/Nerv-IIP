@@ -18,4 +18,9 @@ internal static class ErpText
     {
         return value <= 0 ? throw new ArgumentOutOfRangeException(parameterName, value, "Value must be positive.") : value;
     }
+
+    public static decimal NonNegative(decimal value, string parameterName)
+    {
+        return value < 0 ? throw new ArgumentOutOfRangeException(parameterName, value, "Value cannot be negative.") : value;
+    }
 }

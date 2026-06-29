@@ -20045,6 +20045,10 @@
             "type": "number",
             "format": "decimal"
           },
+          "loadingRate": {
+            "type": "number",
+            "format": "decimal"
+          },
           "performanceRate": {
             "type": "number",
             "format": "decimal"

@@ -48,7 +48,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         StockReleaseDimension? stockRelease,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
-        IReadOnlyCollection<string> dispositionAttachmentFileIds)
+        IReadOnlyCollection<string> dispositionAttachmentFileIds,
+        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null)
     {
         Id = new InspectionRecordId(Guid.CreateVersion7());
         OrganizationId = Required(organizationId);
@@ -159,7 +160,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         StockReleaseDimension? stockRelease,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
         string? dispositionReason,
-        IReadOnlyCollection<string> dispositionAttachmentFileIds)
+        IReadOnlyCollection<string> dispositionAttachmentFileIds,
+        IReadOnlyCollection<InspectionUomConversion>? uomConversions = null)
     {
         ArgumentNullException.ThrowIfNull(inspectionPlan);
         if (inspectionPlan.Status != "active")
@@ -179,7 +181,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             throw new InvalidOperationException($"Inspection plan SKU '{inspectionPlan.SkuCode}' does not match inspected SKU '{skuCode}'.");
         }
 
-        var plannedLines = CalculatePlannedLines(inspectionPlan, resultLines, inspectedQuantity);
+        var plannedLines = CalculatePlannedLines(inspectionPlan, resultLines, inspectedQuantity, uomConversions ?? []);
         return new InspectionRecord(
             inspectionPlan.OrganizationId,
             inspectionPlan.EnvironmentId,
@@ -255,7 +257,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     private static IReadOnlyCollection<InspectionResultLineInput> CalculatePlannedLines(
         InspectionPlan inspectionPlan,
         IReadOnlyCollection<InspectionResultLineInput> resultLines,
-        decimal inspectedQuantity)
+        decimal inspectedQuantity,
+        IReadOnlyCollection<InspectionUomConversion> uomConversions)
     {
         if (resultLines.Count == 0)
         {
@@ -278,7 +281,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             .Where(x => inputByCode.ContainsKey(x.CharacteristicCode))
             .Select(x => new PlannedLineEvaluation(
                 x,
-                CalculatePlannedLine(x, inputByCode[x.CharacteristicCode], inspectedQuantity)))
+                CalculatePlannedLine(x, inputByCode[x.CharacteristicCode], inspectedQuantity, uomConversions)))
             .ToArray();
         return ApplyAqlSeverityDecisions(plannedLines, inspectedQuantity);
     }
@@ -286,7 +289,8 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     private static InspectionResultLineInput CalculatePlannedLine(
         InspectionPlanCharacteristic characteristic,
         InspectionResultLineInput input,
-        decimal inspectedQuantity)
+        decimal inspectedQuantity,
+        IReadOnlyCollection<InspectionUomConversion> uomConversions)
     {
         if (characteristic.SamplingPlan is not null)
         {
@@ -299,7 +303,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
 
         return characteristic.CharacteristicType switch
         {
-            InspectionCharacteristicTypes.Variable => CalculateVariableLine(characteristic, input, inspectedQuantity),
+            InspectionCharacteristicTypes.Variable => CalculateVariableLine(characteristic, input, inspectedQuantity, uomConversions),
             InspectionCharacteristicTypes.Attribute => CalculateAttributeLine(characteristic, input),
             _ => throw new InvalidOperationException($"Unsupported characteristic type '{characteristic.CharacteristicType}'."),
         };
@@ -308,30 +312,55 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     private static InspectionResultLineInput CalculateVariableLine(
         InspectionPlanCharacteristic characteristic,
         InspectionResultLineInput input,
-        decimal inspectedQuantity)
+        decimal inspectedQuantity,
+        IReadOnlyCollection<InspectionUomConversion> uomConversions)
     {
         if (!input.MeasuredValue.HasValue)
         {
             throw new InvalidOperationException($"Variable characteristic '{characteristic.CharacteristicCode}' requires measured value.");
         }
 
+        var measuredValueInPlanUnit = input.MeasuredValue.Value;
+        var resultUnitCode = input.UnitCode ?? characteristic.UnitCode;
         if (!string.IsNullOrWhiteSpace(characteristic.UnitCode)
             && !string.IsNullOrWhiteSpace(input.UnitCode)
             && !string.Equals(characteristic.UnitCode, input.UnitCode, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"Characteristic '{characteristic.CharacteristicCode}' unit '{input.UnitCode}' does not match plan unit '{characteristic.UnitCode}'.");
+            measuredValueInPlanUnit = ConvertMeasuredValue(characteristic, input, uomConversions);
+            resultUnitCode = characteristic.UnitCode;
         }
 
-        var failed = characteristic.LowerSpecLimit.HasValue && input.MeasuredValue.Value < characteristic.LowerSpecLimit.Value
-            || characteristic.UpperSpecLimit.HasValue && input.MeasuredValue.Value > characteristic.UpperSpecLimit.Value;
+        var failed = characteristic.LowerSpecLimit.HasValue && measuredValueInPlanUnit < characteristic.LowerSpecLimit.Value
+            || characteristic.UpperSpecLimit.HasValue && measuredValueInPlanUnit > characteristic.UpperSpecLimit.Value;
+        var conditionalRelease = failed
+            && input.Result == InspectionLineResults.ConditionalRelease
+            && !string.Equals(characteristic.Severity, "critical", StringComparison.OrdinalIgnoreCase);
         return input with
         {
-            ObservedValue = input.MeasuredValue.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            UnitCode = input.UnitCode ?? characteristic.UnitCode,
-            Result = failed ? InspectionLineResults.Failed : InspectionLineResults.Passed,
+            ObservedValue = measuredValueInPlanUnit.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            UnitCode = resultUnitCode,
+            Result = failed
+                ? conditionalRelease ? InspectionLineResults.ConditionalRelease : InspectionLineResults.Failed
+                : InspectionLineResults.Passed,
             DefectReason = failed ? input.DefectReason ?? "out-of-specification" : input.DefectReason,
             DefectQuantity = failed ? input.DefectQuantity ?? inspectedQuantity : input.DefectQuantity,
         };
+    }
+
+    private static decimal ConvertMeasuredValue(
+        InspectionPlanCharacteristic characteristic,
+        InspectionResultLineInput input,
+        IReadOnlyCollection<InspectionUomConversion> uomConversions)
+    {
+        var conversion = uomConversions.SingleOrDefault(x =>
+            string.Equals(x.FromUomCode, input.UnitCode, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.ToUomCode, characteristic.UnitCode, StringComparison.OrdinalIgnoreCase));
+        if (conversion is null)
+        {
+            throw new InvalidOperationException($"Characteristic '{characteristic.CharacteristicCode}' unit '{input.UnitCode}' does not match plan unit '{characteristic.UnitCode}' and no UOM conversion was supplied.");
+        }
+
+        return conversion.Convert(input.MeasuredValue!.Value);
     }
 
     private static InspectionResultLineInput CalculateAttributeLine(
@@ -588,6 +617,61 @@ public sealed record InspectionResultLineInput(
         IReadOnlyCollection<string> attachmentFileIds)
     {
         return new InspectionResultLineInput(characteristicCode, observedValue, null, InspectionLineResults.ConditionalRelease, defectReason, defectQuantity, attachmentFileIds);
+    }
+}
+
+public sealed record InspectionUomConversion(
+    string FromUomCode,
+    string ToUomCode,
+    decimal Factor,
+    decimal Offset,
+    int Precision,
+    string RoundingMode)
+{
+    public static InspectionUomConversion Create(
+        string fromUomCode,
+        string toUomCode,
+        decimal factor,
+        decimal offset,
+        int precision,
+        string roundingMode)
+    {
+        if (factor <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(factor), "Conversion factor must be positive.");
+        }
+
+        return new InspectionUomConversion(
+            Required(fromUomCode),
+            Required(toUomCode),
+            factor,
+            offset,
+            Math.Clamp(precision, 0, 12),
+            Required(roundingMode));
+    }
+
+    public decimal Convert(decimal value)
+    {
+        return Normalize(RoundingMode) switch
+        {
+            "BANKERS" or "TO-EVEN" or "TOEVEN" => Math.Round(value * Factor + Offset, Precision, MidpointRounding.ToEven),
+            "CEILING" or "UP" => RoundToward(value * Factor + Offset, Precision, ceiling: true),
+            "FLOOR" or "DOWN" => RoundToward(value * Factor + Offset, Precision, ceiling: false),
+            _ => Math.Round(value * Factor + Offset, Precision, MidpointRounding.AwayFromZero),
+        };
+    }
+
+    private static decimal RoundToward(decimal value, int digits, bool ceiling)
+    {
+        var scale = (decimal)Math.Pow(10, digits);
+        return (ceiling ? Math.Ceiling(value * scale) : Math.Floor(value * scale)) / scale;
+    }
+
+    private static string Normalize(string value) => value.Trim().ToUpperInvariant();
+
+    private static string Required(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? throw new ArgumentException("Value cannot be blank.", nameof(value)) : value.Trim();
     }
 }
 

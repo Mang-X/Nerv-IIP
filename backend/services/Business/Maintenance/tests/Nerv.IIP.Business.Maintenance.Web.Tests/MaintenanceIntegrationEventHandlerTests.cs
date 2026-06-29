@@ -28,6 +28,10 @@ public sealed class MaintenanceIntegrationEventHandlerTests
         var workOrders = await dbContext.MaintenanceWorkOrders.ToArrayAsync();
         Assert.Single(workOrders);
         Assert.Equal("alarm-001", workOrders[0].SourceAlarmId);
+        Assert.Equal("p1", workOrders[0].Priority);
+        Assert.Equal("OVER_TEMP", workOrders[0].FailureModeCode);
+        Assert.Equal("temperature", workOrders[0].FailureCauseCode);
+        Assert.Contains("96.5", workOrders[0].DiagnosticDescription, StringComparison.Ordinal);
         Assert.True(workOrders[0].AssetUnavailable);
         Assert.Equal(1, sender.CreateWorkOrderCommandCount);
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
@@ -199,7 +203,12 @@ public sealed class MaintenanceIntegrationEventHandlerTests
                 "OVER_TEMP",
                 "critical",
                 raisedAtUtc,
-                externalAlarmId));
+                externalAlarmId,
+                "p1",
+                "temperature",
+                96.5m,
+                90m,
+                "celsius"));
     }
 
     private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(DateTimeOffset clearedAtUtc, int eventVersion = 1)

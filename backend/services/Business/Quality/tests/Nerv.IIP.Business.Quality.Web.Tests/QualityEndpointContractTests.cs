@@ -50,6 +50,10 @@ public sealed class QualityEndpointContractTests
             && x.Route == "/api/business/v1/quality/ncrs/{ncrId}/close"
             && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
             && x.OperationId == "closeBusinessQualityNcr");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete"
+            && x.PermissionCode == BusinessPermissionCodes.QualityNcrManage
+            && x.OperationId == "completeBusinessQualityCapaAction");
     }
 
     [Fact]
