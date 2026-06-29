@@ -97,6 +97,10 @@ if (!builder.Environment.IsDevelopment()
 {
     throw new InvalidOperationException("Iam:EnterpriseIdentity:Mfa:DevelopmentCode must be overridden outside Development.");
 }
+if (!builder.Environment.IsDevelopment() && !usesPostgreSql)
+{
+    throw new InvalidOperationException("Persistence:Provider=PostgreSQL is required for IAM outside Development.");
+}
 
 var app = builder.Build();
 app.UseNervIipCorrelation();

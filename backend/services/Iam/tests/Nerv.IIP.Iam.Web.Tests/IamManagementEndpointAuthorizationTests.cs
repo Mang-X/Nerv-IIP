@@ -129,13 +129,6 @@ public sealed class IamManagementEndpointAuthorizationTests
                 []));
         }
 
-        public Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-        {
-            _ = userId;
-            _ = cancellationToken;
-            return Task.FromResult(permissionCode == "iam.roles.read");
-        }
-
         public Task<bool> UserHasPermissionAsync(
             string userId,
             string organizationId,

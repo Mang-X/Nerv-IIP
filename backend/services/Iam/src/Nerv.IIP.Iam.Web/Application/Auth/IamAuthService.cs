@@ -188,11 +188,6 @@ public sealed class PostgreSqlIamAuthService(
                 cancellationToken));
     }
 
-    public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-    {
-        return await membershipRepository.UserHasPermissionAsync(new UserId(userId), permissionCode, cancellationToken);
-    }
-
     public async Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,
@@ -217,21 +212,13 @@ public sealed class PostgreSqlIamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var credentials = await connectorHostCredentialRepository.ListByConnectorHostIdAsync(
+        var credential = await connectorHostCredentialRepository.GetByConnectorHostIdAsync(
             connectorHostId,
             cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        ConnectorHostCredential? credential = null;
-        foreach (var candidate in credentials)
-        {
-            var secretMatches = tokenService.VerifySecret(secret, candidate.SecretHash);
-            if (credential is null && candidate.IsValidAt(now) && secretMatches)
-            {
-                credential = candidate;
-            }
-        }
-
-        if (credential is null || !credential.IsValidAt(DateTimeOffset.UtcNow))
+        if (credential is null
+            || !credential.IsValidAt(now)
+            || !tokenService.VerifySecret(secret, credential.SecretHash))
         {
             throw Unauthorized();
         }

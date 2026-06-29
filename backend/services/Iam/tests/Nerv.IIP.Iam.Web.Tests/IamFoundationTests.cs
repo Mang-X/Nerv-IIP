@@ -557,6 +557,24 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains("AccessTokenMinutes", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Production_iam_rejects_inmemory_persistence_profile()
+    {
+        using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Production");
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
+                builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
+                builder.UseSetting("Iam:EnterpriseIdentity:Mfa:DevelopmentCode", "654321");
+            });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Persistence:Provider=PostgreSQL", exception.Message, StringComparison.Ordinal);
+    }
+
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
     private sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);

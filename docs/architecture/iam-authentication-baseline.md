@@ -85,6 +85,8 @@ ExternalClient 和 ConnectorHostCredential 不与后台用户登录混用。
 
 ExternalClient client secret、ConnectorHostCredential secret 和 refresh token 只保存 `hmac-sha256:v1:` 版本化 HMAC 摘要，不保存明文或裸 SHA-256。HMAC pepper 由 IAM 配置 `Iam:Secrets:Pepper` 提供；非 Development 环境必须显式配置。机器凭据校验必须通过恒定时间或等效安全比较完成，不能用普通字符串相等比较作为认证裁决。
 
+当前只支持单一 active pepper。轮换 `Iam:Secrets:Pepper` 会使现存 ExternalClient secret、ConnectorHostCredential secret 和 refresh token 摘要全部不可验证：机器凭据必须重置 secret 或由受控 seed 重新写入，用户会话需要重新登录。执行 pepper 轮换前必须安排维护窗口、提前准备新机器 secret、发布新 pepper 配置、重跑受控 seed/凭据重置流程，并通知用户重新登录；平滑多版本 pepper 回退属于后续 hardening，不是当前基线能力。
+
 Connector Host 机器身份认证终态见 [Connector Host 机器身份认证终态](connector-host-machine-auth.md)：ConnectorHostCredential validation 只作为换发短期 access token 的前置校验，AppHub、Ops 和 Gateway 生产入口统一使用 bearer token，旧版 header-secret 只保留迁移窗口。
 
 ## Token 与 Claims

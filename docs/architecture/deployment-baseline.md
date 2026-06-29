@@ -29,7 +29,7 @@
 6. 数据库迁移、初始化、seed 和回滚策略按 docs/adr/0009-database-migration-release-and-seed-strategy.md 与 docs/architecture/database-release-runbook.md 执行；部署入口不得使用绕过 EF migrations history 的生产建表流程。
 7. 部署相关脚本必须通过脚本自动化治理；AppHost、Compose、安装包和脚本可以是不同入口，但不能绕过同一套超时、日志、进程清理和敏感信息处理要求。
 8. 生产和 PoC 部署 profile 必须为 PlatformGateway、Connector Host、Ops、FileStorage、Notification 配置同一组 `InternalService:BearerToken`（环境变量形态为 `InternalService__BearerToken`），用于内部服务调用认证；不得把该 token 写入仓库、Compose 明文模板或脚本日志。
-9. 生产和 PoC 部署 profile 必须为 IAM 配置 `Iam:Secrets:Pepper`（环境变量形态为 `Iam__Secrets__Pepper`；AppHost 参数形态为 `Parameters:iam-secrets-pepper`；release-install 脚本参数为 `-IamSecretsPepper`），用于 ExternalClient、ConnectorHostCredential 和 refresh token 的版本化 HMAC 摘要；不得把 pepper 写入仓库、Compose 明文模板或脚本日志。
+9. 生产和 PoC 部署 profile 必须为 IAM 配置 `Iam:Secrets:Pepper`（环境变量形态为 `Iam__Secrets__Pepper`；AppHost 参数形态为 `Parameters:iam-secrets-pepper`；release-install 脚本参数为 `-IamSecretsPepper`），用于 ExternalClient、ConnectorHostCredential 和 refresh token 的版本化 HMAC 摘要；不得把 pepper 写入仓库、Compose 明文模板或脚本日志。当前只支持单一 active pepper，轮换 pepper 会使现存机器凭据和 refresh token 全部失效；轮换必须作为维护窗口操作，配套重置 ExternalClient/ConnectorHostCredential secret、重跑受控 seed 或凭据重置流程，并通知用户重新登录。
 10. 生产和 PoC 部署 profile 必须为 AppHub 配置 `ConnectorIngestionToken:SigningKey`（环境变量形态为 `ConnectorIngestionToken__SigningKey`；AppHost 参数形态为 `Parameters:connector-ingestion-token-signing-key`；至少 32 bytes），用于签发注册实例绑定的 ingestion token；不得把该 signing key 写入仓库、Compose 明文模板或脚本日志。AppHub 还必须配置当前 header-secret 兼容入口允许的 `ConnectorHostCredential:ConnectorHostId`、`ConnectorHostCredential:OrganizationId` 和 `ConnectorHostCredential:EnvironmentId`，并与 Connector Host 的 `ConnectorHost:*` 运行时配置一致；`ConnectorIngestionToken:LifetimeMinutes` 默认 10 分钟，可由部署 profile 下调。
 
 ## 服务间 HTTP Endpoint 配置
