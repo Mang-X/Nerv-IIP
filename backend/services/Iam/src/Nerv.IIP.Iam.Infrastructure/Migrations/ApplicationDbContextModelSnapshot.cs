@@ -459,6 +459,89 @@ namespace Nerv.IIP.Iam.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.SecurityAuditAggregate.SecurityAuditRecord", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Security audit record identifier.");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("IAM security audit action.");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Actor that caused or attempted the security event.");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Correlation identifier for the security event.");
+
+                    b.Property<string>("DetailsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasComment("Structured JSON details for before and after values or decision diagnostics.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Environment scope for the audited IAM security event.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("Security audit occurrence time in UTC.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Organization scope for the audited IAM security event.");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasComment("Audit outcome, for example success or failure.");
+
+                    b.Property<string>("SourceIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Source IP address associated with the security event when available.");
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasComment("Audited target identifier.");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasComment("Audited target type, for example user, session or role.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Action", "OccurredAtUtc");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OccurredAtUtc");
+
+                    b.HasIndex("TargetType", "TargetId", "OccurredAtUtc");
+
+                    b.ToTable("security_audit_records", "iam", t =>
+                        {
+                            t.HasComment("IAM security audit records for authentication decisions, session revocation and authorization administration.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate.SeedManifest", b =>
                 {
                     b.Property<string>("Id")

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Roles;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Endpoints.Roles;
 using NetCorePal.Extensions.Dto;
 
@@ -146,7 +147,7 @@ public sealed class IamManagementEndpointAuthorizationTests
 
         public Task<AuthResponse> LoginAsync(string loginName, string password, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<AuthResponse> RefreshAsync(string refreshToken, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RevokeSessionAsync(string sessionId, string reason, SecurityAuditContext? auditContext, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ConnectorPrincipalResponse> ValidateConnectorCredentialAsync(string connectorHostId, string secret, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<ClientCredentialsTokenResponse> IssueClientCredentialsTokenAsync(string clientId, string clientSecret, string? scope, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<EnterpriseAuthResponse> HandleOidcCallbackAsync(OidcLoginCallbackRequest request, string? clientInfo, string? ipAddress, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -164,6 +165,6 @@ public sealed class IamManagementEndpointAuthorizationTests
         }
 
         public Task<RoleResponse> CreateRoleAsync(string? roleName, IReadOnlyList<string> permissionCodes, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<RoleResponse> PatchRolePermissionsAsync(string roleId, IReadOnlyList<string> permissionCodes, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<RoleResponse> PatchRolePermissionsAsync(string roleId, IReadOnlyList<string> permissionCodes, SecurityAuditContext? auditContext, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

@@ -246,6 +246,7 @@ public sealed class IamTokenHardeningTests
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
             new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
             NullLogger<PostgreSqlIamAuthService>.Instance,
             new TestWebHostEnvironment());
     }

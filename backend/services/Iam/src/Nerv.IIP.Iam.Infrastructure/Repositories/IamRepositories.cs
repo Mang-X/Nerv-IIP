@@ -3,6 +3,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SecurityAuditAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
@@ -509,3 +510,82 @@ public interface ISeedManifestRepository : IRepository<SeedManifest, SeedManifes
 
 public sealed class SeedManifestRepository(ApplicationDbContext context)
     : RepositoryBase<SeedManifest, SeedManifestId, ApplicationDbContext>(context), ISeedManifestRepository;
+
+public interface ISecurityAuditRepository : IRepository<SecurityAuditRecord, SecurityAuditRecordId>
+{
+    Task<IReadOnlyList<SecurityAuditRecord>> ListAsync(
+        string? organizationId,
+        string? environmentId,
+        string? action,
+        string? targetType,
+        string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class SecurityAuditRepository(ApplicationDbContext context)
+    : RepositoryBase<SecurityAuditRecord, SecurityAuditRecordId, ApplicationDbContext>(context), ISecurityAuditRepository
+{
+    public async Task<IReadOnlyList<SecurityAuditRecord>> ListAsync(
+        string? organizationId,
+        string? environmentId,
+        string? action,
+        string? targetType,
+        string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbContext.SecurityAuditRecords.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(organizationId))
+        {
+            query = query.Where(x => x.OrganizationId == organizationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(environmentId))
+        {
+            query = query.Where(x => x.EnvironmentId == environmentId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            query = query.Where(x => x.Action == action);
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetType))
+        {
+            query = query.Where(x => x.TargetType == targetType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetId))
+        {
+            query = query.Where(x => x.TargetId == targetId);
+        }
+
+        if (occurredFromUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc >= occurredFromUtc);
+        }
+
+        if (occurredToUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc <= occurredToUtc);
+        }
+
+        return await query
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        await DbContext.SaveChangesAsync(cancellationToken);
+    }
+}

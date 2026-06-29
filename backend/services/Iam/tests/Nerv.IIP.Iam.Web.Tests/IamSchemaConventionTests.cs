@@ -7,6 +7,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SecurityAuditAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
@@ -34,6 +35,7 @@ public sealed class IamSchemaConventionTests
             typeof(ConnectorHostCredential),
             typeof(ConnectorHostCredentialCapability),
             typeof(SeedManifest),
+            typeof(SecurityAuditRecord),
         };
 
         var stringKeys = new[]
@@ -49,6 +51,7 @@ public sealed class IamSchemaConventionTests
             new StringKeyRule(typeof(ConnectorHostCredential), nameof(ConnectorHostCredential.Id)),
             new StringKeyRule(typeof(ConnectorHostCredentialCapability), nameof(ConnectorHostCredentialCapability.Id)),
             new StringKeyRule(typeof(SeedManifest), nameof(SeedManifest.Id)),
+            new StringKeyRule(typeof(SecurityAuditRecord), nameof(SecurityAuditRecord.Id)),
         };
 
         var failures = new List<string>();
