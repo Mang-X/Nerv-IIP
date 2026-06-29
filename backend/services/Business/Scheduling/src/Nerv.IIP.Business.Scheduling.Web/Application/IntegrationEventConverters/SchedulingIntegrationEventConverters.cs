@@ -87,14 +87,14 @@ public sealed class SchedulePlanGeneratedIntegrationEventConverter(
 public sealed class ScheduleConflictDetectedIntegrationEventConverter(
     TimeProvider timeProvider,
     ISchedulingIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<ScheduleConflictDetectedDomainEvent, SchedulingIntegrationEvent<ScheduleConflictDetectedPayload>>
+    : IIntegrationEventConverter<ScheduleConflictDetectedDomainEvent, ScheduleConflictDetectedIntegrationEvent>
 {
-    public SchedulingIntegrationEvent<ScheduleConflictDetectedPayload> Convert(ScheduleConflictDetectedDomainEvent domainEvent)
+    public ScheduleConflictDetectedIntegrationEvent Convert(ScheduleConflictDetectedDomainEvent domainEvent)
     {
         var plan = domainEvent.SchedulePlan;
         var conflict = domainEvent.Conflict;
         var context = contextAccessor.GetContext();
-        return Envelope(
+        var envelope = Envelope(
             SchedulingIntegrationEventTypes.ScheduleConflictDetected,
             plan.OrganizationId,
             plan.EnvironmentId,
@@ -114,6 +114,19 @@ public sealed class ScheduleConflictDetectedIntegrationEventConverter(
                 conflict.ResourceId),
             timeProvider,
             context);
+        return new ScheduleConflictDetectedIntegrationEvent(
+            envelope.EventId,
+            envelope.EventType,
+            envelope.EventVersion,
+            envelope.OccurredAtUtc,
+            envelope.SourceService,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.OrganizationId,
+            envelope.EnvironmentId,
+            envelope.Actor,
+            envelope.IdempotencyKey,
+            envelope.Payload);
     }
 }
 
