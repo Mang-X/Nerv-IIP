@@ -5,10 +5,21 @@ namespace Nerv.IIP.Ops.Web.Application.Commands;
 
 public sealed class OperationLeaseReaperOptions
 {
+    public const int MinIntervalSeconds = 5;
+    public const int MaxIntervalSeconds = 3600;
+    public const int MinBatchSize = 1;
+    public const int MaxBatchSize = 100;
+
     public bool Enabled { get; set; } = true;
     public int IntervalSeconds { get; set; } = 60;
     public int ScopeBatchSize { get; set; } = 25;
     public int LeaseBatchSize { get; set; } = 50;
+
+    public TimeSpan EffectiveInterval => TimeSpan.FromSeconds(Math.Clamp(IntervalSeconds, MinIntervalSeconds, MaxIntervalSeconds));
+
+    public int EffectiveScopeBatchSize => Math.Clamp(ScopeBatchSize, MinBatchSize, MaxBatchSize);
+
+    public int EffectiveLeaseBatchSize => Math.Clamp(LeaseBatchSize, MinBatchSize, MaxBatchSize);
 }
 
 public sealed class OperationLeaseReaperHostedService(
@@ -26,8 +37,7 @@ public sealed class OperationLeaseReaperHostedService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var interval = TimeSpan.FromSeconds(Math.Clamp(options.Value.IntervalSeconds, 5, 3600));
-            await Task.Delay(interval, stoppingToken);
+            await Task.Delay(options.Value.EffectiveInterval, stoppingToken);
             await ReapOnceAsync(stoppingToken);
         }
     }
@@ -41,7 +51,7 @@ public sealed class OperationLeaseReaperHostedService(
             var reaper = scope.ServiceProvider.GetRequiredService<IOperationLeaseReaper>();
             var now = DateTimeOffset.UtcNow;
             var scopes = await repository.GetExpiredLeaseScopesAsync(
-                Math.Clamp(options.Value.ScopeBatchSize, 1, 100),
+                options.Value.EffectiveScopeBatchSize,
                 now,
                 cancellationToken);
 
@@ -51,7 +61,7 @@ public sealed class OperationLeaseReaperHostedService(
                     leaseScope.OrganizationId,
                     leaseScope.EnvironmentId,
                     now,
-                    Math.Clamp(options.Value.LeaseBatchSize, 1, 100),
+                    options.Value.EffectiveLeaseBatchSize,
                     cancellationToken);
                 if (result.RequeuedCount > 0 || result.FailedCount > 0)
                 {

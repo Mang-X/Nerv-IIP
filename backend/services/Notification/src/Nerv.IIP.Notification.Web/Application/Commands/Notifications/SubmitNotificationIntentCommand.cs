@@ -6,6 +6,7 @@ using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Messaging.CAP;
+using System.Diagnostics;
 
 namespace Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 
@@ -62,9 +63,12 @@ public sealed class SubmitNotificationIntentCommandHandler(
         }
 
         const string duplicateRecoverySavepoint = "notification_intent_submit_before_save";
+        // Use EF's native current transaction here. The CAP unit-of-work wrapper does not expose savepoints,
+        // while EF's relational transaction does and can recover from a duplicate unique-conflict inside an outer transaction.
         var transaction = dbContext.Database.CurrentTransaction;
         if (transaction is not null)
         {
+            Debug.Assert(transaction.SupportsSavepoints, "Notification duplicate recovery requires a transaction that supports savepoints.");
             await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
         }
 

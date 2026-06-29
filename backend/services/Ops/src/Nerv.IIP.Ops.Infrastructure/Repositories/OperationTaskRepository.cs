@@ -27,6 +27,8 @@ public interface IOperationTaskRepository : IRepository<OperationTask, Operation
 public sealed class OperationTaskRepository(ApplicationDbContext context)
     : RepositoryBase<OperationTask, OperationTaskId, ApplicationDbContext>(context), IOperationTaskRepository
 {
+    private const string NpgsqlProviderName = "Npgsql.EntityFrameworkCore.PostgreSQL";
+
     public async Task<OperationTask?> GetByIdAsync(string operationTaskId, CancellationToken cancellationToken = default)
     {
         var id = new OperationTaskId(operationTaskId);
@@ -83,7 +85,7 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
     public async Task<IReadOnlyList<OperationTask>> GetExpiredLeasesAsync(string organizationId, string environmentId, int take, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         var cappedTake = Math.Clamp(take, 1, 100);
-        if (string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        if (IsPostgreSqlProvider())
         {
             return await DbContext.OperationTasks
                 .FromSqlInterpolated($"""
@@ -137,7 +139,7 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
     public async Task<IReadOnlyList<ExpiredOperationLeaseScope>> GetExpiredLeaseScopesAsync(int take, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         var cappedTake = Math.Clamp(take, 1, 100);
-        if (string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+        if (IsPostgreSqlProvider())
         {
             return await DbContext.Database.SqlQuery<ExpiredOperationLeaseScope>($"""
                 SELECT DISTINCT t."OrganizationId", t."EnvironmentId"
@@ -202,7 +204,7 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
     public async Task LockAuditChainAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)
     {
         if (!DbContext.Database.IsRelational()
-            || !string.Equals(DbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
+            || !IsPostgreSqlProvider())
         {
             return;
         }
@@ -230,5 +232,10 @@ public sealed class OperationTaskRepository(ApplicationDbContext context)
         Span<byte> hash = stackalloc byte[32];
         SHA256.HashData(Encoding.UTF8.GetBytes(material), hash);
         return BitConverter.ToInt64(hash);
+    }
+
+    private bool IsPostgreSqlProvider()
+    {
+        return string.Equals(DbContext.Database.ProviderName, NpgsqlProviderName, StringComparison.Ordinal);
     }
 }

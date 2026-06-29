@@ -8,6 +8,7 @@ using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Messaging.CAP;
+using System.Diagnostics;
 
 namespace Nerv.IIP.Ops.Web.Application.Commands;
 
@@ -110,9 +111,12 @@ public sealed class EfOperationTaskApplicationService(
         await AssignAuditChainAsync(task, pendingAuditIds, cancellationToken);
         await repository.AddAsync(task, cancellationToken);
         const string duplicateRecoverySavepoint = "ops_operation_task_create_before_save";
+        // Use EF's native current transaction here. The CAP unit-of-work wrapper does not expose savepoints,
+        // while EF's relational transaction does and can recover from a duplicate unique-conflict inside an outer transaction.
         var transaction = dbContext.Database.CurrentTransaction;
         if (transaction is not null)
         {
+            Debug.Assert(transaction.SupportsSavepoints, "Ops duplicate recovery requires a transaction that supports savepoints.");
             await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
         }
 
