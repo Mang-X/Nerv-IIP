@@ -7,6 +7,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
@@ -102,6 +103,7 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
             "crack",
             []);
         qualityDb.NonconformanceReports.Add(ncr);
+        qualityDb.CorrectiveActions.Add(NewEffectiveCapa(ncr, "CAPA-SCRAP-001"));
         await qualityDb.SaveChangesAsync();
         ncr.ClearDomainEvents();
 
@@ -210,7 +212,7 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         ncr.SubmitDisposition(
             QualityNcrDispositionTypes.ConditionalRelease,
             "approval-chain-001",
-            [],
+            ["file-waiver-001"],
             ApprovedMrbReview());
         var inventoryRequest = new NcrInventoryDispositionRequestedIntegrationEventConverter(new FixedQualityIntegrationEventContextAccessor())
             .Convert(ncr.GetDomainEvents().OfType<NonconformanceReportInventoryDispositionRequestedDomainEvent>().Single());
@@ -364,6 +366,24 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         return [MrbReviewInput.Approve("qa-manager-001", "MRB accepted disposition", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))];
     }
 
+    private static CorrectiveAction NewEffectiveCapa(NonconformanceReport ncr, string capaCode)
+    {
+        var capa = CorrectiveAction.OpenFromNcr(
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            capaCode,
+            ncr,
+            "Supplier process drift",
+            "Contain affected lot",
+            "qa-engineer-001",
+            DateTimeOffset.Parse("2026-06-30T00:00:00Z"));
+        capa.AddAction("corrective", "Supplier updates process control", "supplier-quality-001", DateTimeOffset.Parse("2026-06-20T00:00:00Z"));
+        var action = capa.Actions.Single();
+        capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
+        capa.VerifyEffectiveness("qa-manager-001", "No recurrence in follow-up lot", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        return capa;
+    }
+
     private sealed class RecordingIntegrationEventPublisher : NetCorePal.Extensions.DistributedTransactions.IIntegrationEventPublisher
     {
         public List<object> Published { get; } = [];
@@ -445,7 +465,9 @@ public sealed class QualityInventoryInspectionReleaseAcceptanceTests
         {
             if (request is CompleteNonconformanceReportInventoryDispositionCommand command)
             {
-                await new CompleteNonconformanceReportInventoryDispositionCommandHandler(new NonconformanceReportRepository(dbContext))
+                await new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+                        new NonconformanceReportRepository(dbContext),
+                        new CorrectiveActionRepository(dbContext))
                     .Handle(command, cancellationToken);
                 foreach (var domainEvent in dbContext.ChangeTracker.Entries<NonconformanceReport>()
                              .SelectMany(x => x.Entity.GetDomainEvents().OfType<NonconformanceReportClosedDomainEvent>())

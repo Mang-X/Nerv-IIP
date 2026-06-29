@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 
@@ -65,11 +66,36 @@ public sealed class CreateInspectionRecordCommandValidator : AbstractValidator<C
 
 public sealed class CreateInspectionRecordCommandHandler(
     IInspectionRecordRepository repository,
-    IInspectionPlanRepository inspectionPlanRepository)
+    IInspectionPlanRepository inspectionPlanRepository,
+    IInspectionUomConversionClient? uomConversionClient = null,
+    IInspectionSourceDocumentVerifier? sourceDocumentVerifier = null)
     : ICommandHandler<CreateInspectionRecordCommand, InspectionRecordId>
 {
+    private readonly IInspectionUomConversionClient uomConversionClient = uomConversionClient ?? NullInspectionUomConversionClient.Instance;
+    private readonly IInspectionSourceDocumentVerifier sourceDocumentVerifier = sourceDocumentVerifier ?? NullInspectionSourceDocumentVerifier.Instance;
+
     public async Task<InspectionRecordId> Handle(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
     {
+        var existing = await repository.FindBySourceDocumentAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceType.Trim().ToLowerInvariant(),
+            request.SourceService.Trim().ToLowerInvariant(),
+            request.SkuCode.Trim(),
+            request.SourceDocumentId.Trim(),
+            cancellationToken);
+        if (existing is not null)
+        {
+            if (existing.InspectedQuantity != request.InspectedQuantity)
+            {
+                throw new KnownException("Inspection source document and SKU already have a record with a different inspected quantity.");
+            }
+
+            return existing.Id;
+        }
+
+        await VerifySourceDocumentAsync(request, cancellationToken);
+
         var lines = request.ResultLines.Select(x => new InspectionResultLineInput(
             x.CharacteristicCode,
             x.ObservedValue,
@@ -97,6 +123,10 @@ public sealed class CreateInspectionRecordCommandHandler(
                     request.InspectionPlanId,
                     cancellationToken)
                 ?? throw new KnownException($"Inspection plan '{request.InspectionPlanId}' was not found.");
+            var uomConversions = await uomConversionClient.GetConversionsAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken);
             record = InspectionRecord.CreateFromPlan(
                 plan,
                 request.SourceType,
@@ -109,7 +139,8 @@ public sealed class CreateInspectionRecordCommandHandler(
                 stockRelease,
                 lines,
                 request.DispositionReason,
-                request.DispositionAttachmentFileIds);
+                request.DispositionAttachmentFileIds,
+                uomConversions);
         }
         else
         {
@@ -132,5 +163,38 @@ public sealed class CreateInspectionRecordCommandHandler(
 
         await repository.AddAsync(record, cancellationToken);
         return record.Id;
+    }
+
+    private async Task VerifySourceDocumentAsync(CreateInspectionRecordCommand request, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(request.SourceType, "receiving", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var verification = await sourceDocumentVerifier.VerifyAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SourceType,
+            request.SourceService,
+            request.SourceDocumentId,
+            request.SkuCode,
+            request.InspectedQuantity,
+            cancellationToken);
+        if (!verification.Exists)
+        {
+            throw new KnownException(verification.Message ?? $"Inspection source document '{request.SourceDocumentId}' was not found.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(verification.SkuCode)
+            && !string.Equals(verification.SkuCode, request.SkuCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new KnownException("Inspection source document SKU does not match the inspected SKU.");
+        }
+
+        if (verification.Quantity is { } sourceQuantity && request.InspectedQuantity > sourceQuantity)
+        {
+            throw new KnownException("Inspection quantity cannot exceed the source document quantity.");
+        }
     }
 }

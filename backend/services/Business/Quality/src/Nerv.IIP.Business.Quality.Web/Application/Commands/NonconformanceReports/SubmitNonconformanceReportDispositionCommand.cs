@@ -78,7 +78,9 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandValid
     }
 }
 
-public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandler(INonconformanceReportRepository repository)
+public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandler(
+    INonconformanceReportRepository repository,
+    ICorrectiveActionRepository correctiveActionRepository)
     : ICommandHandler<CompleteNonconformanceReportInventoryDispositionCommand>
 {
     public async Task Handle(CompleteNonconformanceReportInventoryDispositionCommand request, CancellationToken cancellationToken)
@@ -91,19 +93,30 @@ public sealed class CompleteNonconformanceReportInventoryDispositionCommandHandl
 
         if (ncr.DispositionType == QualityNcrDispositionTypes.Scrap)
         {
-            if (IsPostedScrapAdjustment(request))
+            if (IsPostedScrapAdjustment(request) && IsFullDispositionQuantity(ncr, request.Quantity))
             {
-                ncr.CompleteScrapDisposition(request.InventoryMovementId);
+                if (NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
+                    && !await correctiveActionRepository.HasEffectiveCapaForNcrAsync(ncr.Id.ToString(), cancellationToken))
+                {
+                    ncr.RecordScrapDispositionMovement(request.InventoryMovementId, request.Quantity);
+                    return;
+                }
+
+                ncr.CompleteScrapDisposition(request.InventoryMovementId, request.Quantity);
             }
 
             return;
         }
 
-        if (ncr.DispositionType == QualityNcrDispositionTypes.ConditionalRelease && IsPostedConditionalReleaseInbound(request))
+        if (ncr.DispositionType == QualityNcrDispositionTypes.ConditionalRelease
+            && IsPostedConditionalReleaseInbound(request)
+            && IsFullDispositionQuantity(ncr, request.Quantity))
         {
-            ncr.CompleteConditionalReleaseDisposition();
+            ncr.CompleteConditionalReleaseDisposition(request.Quantity);
         }
     }
+
+    private static bool IsFullDispositionQuantity(NonconformanceReport ncr, decimal quantity) => Math.Abs(quantity) == ncr.DefectQuantity;
 
     private static bool IsPostedScrapAdjustment(CompleteNonconformanceReportInventoryDispositionCommand request)
     {
