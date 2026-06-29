@@ -751,8 +751,6 @@ public sealed class CompleteWcsTaskCommandHandler(
                     return quantity;
                 }
             }
-
-            diagnosticMessage = "Payload does not include an explicit executed quantity field.";
         }
         catch (JsonException)
         {
