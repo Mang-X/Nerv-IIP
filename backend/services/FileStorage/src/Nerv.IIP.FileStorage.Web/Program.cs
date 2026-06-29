@@ -21,6 +21,8 @@ builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
 if (usePostgreSql)
 {
     builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
+    builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+    builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
 }
 else
 {

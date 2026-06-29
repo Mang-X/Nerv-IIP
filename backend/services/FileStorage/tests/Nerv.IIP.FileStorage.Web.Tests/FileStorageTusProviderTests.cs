@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.ServiceAuth;
 
@@ -293,7 +294,43 @@ public sealed class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_CompleteAndDownload_ReturnsUploadedBytes()
+    public async Task TusUploadEndpoint_CompleteAndDownload_WithScannerEnabledPendingScanStatusReturnsNotFound()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var factory = CreateFactoryWithTusProvider(rootPath, scanningEnabled: true);
+            var client = CreateInternalServiceClient(factory);
+            var uploadedBytes = Encoding.UTF8.GetBytes("hello");
+            var created = await CreateTusUploadSessionAsync(client, expectedSizeBytes: uploadedBytes.Length);
+            await PatchTusBytesAsync(client, created.Upload.Url, offset: 0, uploadedBytes);
+
+            var completeResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, uploadedBytes.Length));
+            completeResponse.EnsureSuccessStatusCode();
+
+            var grantResponse = await client.PostAsJsonAsync(
+                $"/api/files/v1/files/{created.FileId}/download-grants",
+                new CreateDownloadGrantRequest("org-001", "prod"));
+            grantResponse.EnsureSuccessStatusCode();
+            var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
+            Assert.NotNull(grant);
+
+            using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(downloadRequest, grant.Download.Headers);
+            var downloadResponse = await client.SendAsync(downloadRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)downloadResponse.StatusCode);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadGrantContentEndpoint_CleanFileWithTenantHeaders_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
         try
@@ -316,10 +353,19 @@ public sealed class FileStorageTusProviderTests
             var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
             Assert.NotNull(grant);
 
-            var downloadResponse = await client.GetAsync(grant.Download.Url);
+            using var firstRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(firstRequest, grant.Download.Headers);
 
-            downloadResponse.EnsureSuccessStatusCode();
-            Assert.Equal(uploadedBytes, await downloadResponse.Content.ReadAsByteArrayAsync());
+            var first = await client.SendAsync(firstRequest);
+
+            first.EnsureSuccessStatusCode();
+            Assert.Equal(uploadedBytes, await first.Content.ReadAsByteArrayAsync());
+
+            using var secondRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+            AddTransferHeaders(secondRequest, grant.Download.Headers);
+            var second = await client.SendAsync(secondRequest);
+
+            Assert.Equal(StatusCodes.Status404NotFound, (int)second.StatusCode);
         }
         finally
         {
@@ -451,7 +497,8 @@ public sealed class FileStorageTusProviderTests
 
     private static WebApplicationFactory<Program> CreateFactoryWithTusProvider(
         string? rootPath = null,
-        double? uploadSessionTtlSeconds = null)
+        double? uploadSessionTtlSeconds = null,
+        bool? scanningEnabled = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -462,7 +509,8 @@ public sealed class FileStorageTusProviderTests
                     {
                         ["FileStorage:UploadProvider"] = "tus",
                         ["FileStorage:Tus:RootPath"] = rootPath,
-                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                        ["FileStorage:UploadSessionTtlSeconds"] = uploadSessionTtlSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        ["FileStorage:Scanning:Enabled"] = scanningEnabled?.ToString()
                     });
                 });
             });
@@ -525,6 +573,25 @@ public sealed class FileStorageTusProviderTests
         request.Headers.Add("Upload-Offset", offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
         request.Content.Headers.ContentType = new("application/offset+octet-stream");
         return request;
+    }
+
+    private static void AddTransferHeaders(HttpRequestMessage request, IReadOnlyDictionary<string, string> headers)
+    {
+        foreach (var header in headers)
+        {
+            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+    }
+
+    private static LocalTusFileStore CreateTusStore(string rootPath)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Tus:RootPath"] = rootPath
+            })
+            .Build();
+        return new LocalTusFileStore(configuration);
     }
 
     private static Task<HttpResponseMessage> SendTusHeadAsync(HttpClient client, string url)
