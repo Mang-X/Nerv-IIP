@@ -3,8 +3,12 @@ using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
+using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application;
+using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Messaging.CAP;
+using System.Diagnostics;
 
 namespace Nerv.IIP.Ops.Web.Application.Commands;
 
@@ -19,6 +23,18 @@ public interface IOperationTaskApplicationService
     Task<AuditIntentResponse> SubmitAuditIntentAsync(SubmitAuditIntentRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> ApproveAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
     Task<OperationTaskResponse> RejectAsync(string operationTaskId, DecideOperationApprovalRequest request, DateTimeOffset now, CancellationToken cancellationToken);
+}
+
+public sealed record OperationLeaseReaperResult(int RequeuedCount, int FailedCount);
+
+public interface IOperationLeaseReaper
+{
+    Task<OperationLeaseReaperResult> ReapExpiredLeasesAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store) : IOperationTaskApplicationService
@@ -71,7 +87,8 @@ public sealed class InMemoryOperationTaskApplicationService(IOpsStateStore store
 
 public sealed class EfOperationTaskApplicationService(
     IOperationTaskRepository repository,
-    IOperationTemplateRepository operationTemplateRepository) : IOperationTaskApplicationService
+    IOperationTemplateRepository operationTemplateRepository,
+    ApplicationDbContext dbContext) : IOperationTaskApplicationService
 {
     public async Task<OperationTaskResponse> CreateAsync(CreateOperationTaskRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -93,6 +110,42 @@ public sealed class EfOperationTaskApplicationService(
         task.AssignPendingAuditIds(pendingAuditIds);
         await AssignAuditChainAsync(task, pendingAuditIds, cancellationToken);
         await repository.AddAsync(task, cancellationToken);
+        const string duplicateRecoverySavepoint = "ops_operation_task_create_before_save";
+        // Use EF's native current transaction here. The CAP unit-of-work wrapper does not expose savepoints,
+        // while EF's relational transaction does and can recover from a duplicate unique-conflict inside an outer transaction.
+        var transaction = dbContext.Database.CurrentTransaction;
+        if (transaction is not null)
+        {
+            Debug.Assert(transaction.SupportsSavepoints, "Ops duplicate recovery requires a transaction that supports savepoints.");
+            await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.ReleaseSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
+        }
+        catch (DbUpdateException exception)
+        {
+            if (!IsDuplicateTaskConflict(exception))
+            {
+                throw;
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.RollbackToSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
+
+            dbContext.ChangeTracker.Clear();
+            var duplicate = await repository.GetByIdempotencyScopeAsync(idempotencyScope, cancellationToken)
+                ?? RethrowDuplicateConflict(exception);
+            return duplicate.ToDetailFact().ToContract();
+        }
+
         return task.ToDetailFact().ToContract();
     }
 
@@ -287,6 +340,93 @@ public sealed class EfOperationTaskApplicationService(
         }
 
         throw new InvalidOperationTaskRequestException($"Unsupported operation code: {operationCode}");
+    }
+
+    private bool IsDuplicateTaskConflict(DbUpdateException exception)
+    {
+        return dbContext.ChangeTracker.Entries<OperationTask>().Any(x => x.State == EntityState.Added)
+            && ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, constraintOrIndexName: null);
+    }
+
+    private static OperationTask RethrowDuplicateConflict(DbUpdateException exception)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
+    }
+}
+
+public sealed class EfOperationLeaseReaper(
+    IOperationTaskRepository repository,
+    ApplicationDbContext dbContext) : IOperationLeaseReaper
+{
+    public async Task<OperationLeaseReaperResult> ReapExpiredLeasesAsync(
+        string organizationId,
+        string environmentId,
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var expiredTasks = await repository.GetExpiredLeasesAsync(
+            organizationId,
+            environmentId,
+            Math.Clamp(take, 1, 100),
+            now,
+            cancellationToken);
+        if (expiredTasks.Count == 0)
+        {
+            return new OperationLeaseReaperResult(0, 0);
+        }
+
+        await repository.LockAuditChainAsync(organizationId, environmentId, cancellationToken);
+        var chainHead = await repository.GetAuditChainHeadAsync(organizationId, environmentId, cancellationToken);
+        var requeued = 0;
+        var failed = 0;
+        foreach (var task in expiredTasks)
+        {
+            var beforeStatus = task.Status;
+            var auditId = await repository.NextAuditRecordIdAsync(cancellationToken);
+            var auditCount = task.AuditRecords.Count;
+            task.AbandonExpiredLease(auditId, now);
+            if (task.AuditRecords.Count == auditCount)
+            {
+                continue;
+            }
+
+            chainHead = AssignAuditChainStamp(task, [auditId], chainHead);
+            if (string.Equals(task.Status, "queued", StringComparison.Ordinal))
+            {
+                requeued++;
+            }
+            else if (!string.Equals(task.Status, beforeStatus, StringComparison.Ordinal))
+            {
+                failed++;
+            }
+        }
+
+        // Background reaping is not mediated by CommandUnitOfWorkBehavior, so this save intentionally
+        // persists state only. Domain event publication for lease-timeout transitions is a future contract decision.
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new OperationLeaseReaperResult(requeued, failed);
+    }
+
+    private static AuditChainHead? AssignAuditChainStamp(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
+    {
+        if (auditRecordIds.Count == 0)
+        {
+            return head;
+        }
+
+        var sequenceNo = head?.SequenceNo ?? 0;
+        var previousHash = head?.IntegrityHash ?? string.Empty;
+
+        foreach (var auditRecordId in auditRecordIds)
+        {
+            sequenceNo++;
+            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
+            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
+        }
+
+        return new AuditChainHead(sequenceNo, previousHash);
     }
 }
 
