@@ -63,6 +63,58 @@ public sealed class BarcodeLabelRecordScanCommandTests
         }
     }
 
+    [Fact]
+    public async Task Scan_record_allows_different_serials_without_company_prefix_epc_uri()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-001", "(01)09506000134352(21)SN-0001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002", "(01)09506000134352(21)SN-0002"));
+            await dbContext.SaveChangesAsync();
+
+            Assert.All(await dbContext.ScanRecords.ToArrayAsync(), scan => Assert.Null(scan.EpcUri));
+        }
+    }
+
+    [Fact]
+    public async Task Rejected_scan_records_can_repeat_scanned_value_with_different_idempotency_keys()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using var dbContext = database.CreateDbContext();
+        dbContext.ScanRecords.Add(ScanRecord.Record("org-001", "env-dev", "PDA-01", "BAD-CODE", "wms.receiving", "ASN-001", "idem-reject-001", "rejected", "unknown"));
+        dbContext.ScanRecords.Add(ScanRecord.Record("org-001", "env-dev", "PDA-01", "BAD-CODE", "wms.receiving", "ASN-001", "idem-reject-002", "rejected", "unknown"));
+
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(2, await dbContext.ScanRecords.CountAsync());
+    }
+
+    [Fact]
+    public async Task Scan_record_unique_index_rejects_same_gtin_serial_without_lot_across_barcode_forms()
+    {
+        await using var database = await BarcodeLabelSqliteDatabase.CreateAsync();
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-001", "(01)09506000134352(21)SN-0001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = database.CreateDbContext())
+        {
+            dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002", "010950600013435221SN-0001"));
+            await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+        }
+    }
+
     private static RecordScanCommand NewInventoryScanCommand(string idempotencyKey)
     {
         return new RecordScanCommand(
@@ -85,13 +137,13 @@ public sealed class BarcodeLabelRecordScanCommandTests
             2);
     }
 
-    private static ScanRecord NewInventoryScan(string idempotencyKey)
+    private static ScanRecord NewInventoryScan(string idempotencyKey, string scannedValue = "(01)09506000134352(10)LOT-A\u001D(21)SN-0001")
     {
         return ScanRecord.Record(
             "org-001",
             "env-dev",
             "PDA-01",
-            "(01)09506000134352(10)LOT-A\u001D(21)SN-0001",
+            scannedValue,
             "inventory.receipt",
             "ASN-001",
             idempotencyKey,

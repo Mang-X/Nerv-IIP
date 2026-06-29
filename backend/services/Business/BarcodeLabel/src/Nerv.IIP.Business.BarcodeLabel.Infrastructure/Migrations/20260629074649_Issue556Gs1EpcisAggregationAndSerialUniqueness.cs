@@ -66,14 +66,23 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 table: "scan_records",
                 columns: new[] { "organization_id", "environment_id", "gtin", "lot_no", "serial_number" },
                 unique: true,
-                filter: "gtin IS NOT NULL AND serial_number IS NOT NULL");
+                filter: "gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_scan_records_organization_id_environment_id_gtin_serial_num~",
+                schema: "barcode",
+                table: "scan_records",
+                columns: new[] { "organization_id", "environment_id", "gtin", "serial_number" },
+                unique: true,
+                filter: "gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_scan_records_organization_id_environment_id_scanned_value",
                 schema: "barcode",
                 table: "scan_records",
                 columns: new[] { "organization_id", "environment_id", "scanned_value" },
-                unique: true);
+                unique: true,
+                filter: "result = 'accepted'");
 
             migrationBuilder.CreateIndex(
                 name: "IX_scan_records_organization_id_environment_id_sscc",
@@ -90,12 +99,20 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 filter: "epc_uri IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_gtin~",
+                name: "IX_epcis_events_organization_id_environment_id_event_type_gti~1",
                 schema: "barcode",
                 table: "epcis_events",
                 columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "lot_no", "serial_number" },
                 unique: true,
-                filter: "gtin IS NOT NULL AND serial_number IS NOT NULL");
+                filter: "gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_epcis_events_organization_id_environment_id_event_type_gtin~",
+                schema: "barcode",
+                table: "epcis_events",
+                columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "serial_number" },
+                unique: true,
+                filter: "gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_epcis_events_organization_id_environment_id_parent_sscc",
@@ -118,6 +135,11 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 table: "scan_records");
 
             migrationBuilder.DropIndex(
+                name: "IX_scan_records_organization_id_environment_id_gtin_serial_num~",
+                schema: "barcode",
+                table: "scan_records");
+
+            migrationBuilder.DropIndex(
                 name: "IX_scan_records_organization_id_environment_id_scanned_value",
                 schema: "barcode",
                 table: "scan_records");
@@ -129,6 +151,11 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
             migrationBuilder.DropIndex(
                 name: "IX_epcis_events_organization_id_environment_id_event_type_epc_~",
+                schema: "barcode",
+                table: "epcis_events");
+
+            migrationBuilder.DropIndex(
+                name: "IX_epcis_events_organization_id_environment_id_event_type_gti~1",
                 schema: "barcode",
                 table: "epcis_events");
 

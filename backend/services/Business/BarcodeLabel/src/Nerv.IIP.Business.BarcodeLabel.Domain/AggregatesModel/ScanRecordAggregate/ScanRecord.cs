@@ -82,7 +82,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
                 EpcisEvents.Add(EpcisEvent.ObjectEvent(OrganizationId, EnvironmentId, this));
             }
 
-            if (!string.IsNullOrWhiteSpace(Sscc) && !string.IsNullOrWhiteSpace(SerialNumber))
+            if (SourceWorkflow == "wms.receiving" && !string.IsNullOrWhiteSpace(Sscc) && !string.IsNullOrWhiteSpace(SerialNumber))
             {
                 EpcisEvents.Add(EpcisEvent.Aggregation(OrganizationId, EnvironmentId, this, SourceWorkflow, SourceDocumentId));
             }
@@ -220,7 +220,7 @@ public sealed class ScanRecord : Entity<ScanRecordId>, IAggregateRoot
         Gtin = parsed.Gtin;
         LotNo = parsed.LotNo;
         SerialNumber = parsed.SerialNumber;
-        EpcUri = parsed.EpcUri;
+        EpcUri = BarcodeLabelText.Optional(parsed.EpcUri);
         Sscc = parsed.Sscc;
     }
 

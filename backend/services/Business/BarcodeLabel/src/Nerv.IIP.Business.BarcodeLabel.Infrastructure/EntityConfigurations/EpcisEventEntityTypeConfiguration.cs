@@ -31,7 +31,10 @@ public sealed class EpcisEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.OccurredAtUtc).HasColumnName("occurred_at_utc").IsRequired().HasComment("UTC time when the EPCIS event occurred.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.Gtin, x.LotNo, x.SerialNumber })
             .IsUnique()
-            .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.Gtin, x.SerialNumber })
+            .IsUnique()
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EventType, x.EpcUri })
             .IsUnique()
             .HasFilter("epc_uri IS NOT NULL");

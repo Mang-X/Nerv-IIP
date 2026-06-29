@@ -370,6 +370,32 @@ public sealed class BarcodeLabelAggregateTests
     }
 
     [Fact]
+    public void Accepted_issue_scan_with_sscc_does_not_create_packing_aggregation_event()
+    {
+        var scan = ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(00)123456789012345675(01)09506000134352(21)SN-0001",
+            "inventory.issue",
+            "OUT-001",
+            "idem-scan-issue-aggregation-001",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
+            1);
+
+        Assert.DoesNotContain(scan.EpcisEvents, x => x.EventType == "aggregationEvent");
+        Assert.Single(scan.EpcisEvents, x => x.EventType == "objectEvent");
+    }
+
+    [Fact]
     public void Accepted_inventory_scan_does_not_use_gs1_ai30_as_movement_quantity()
     {
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() => ScanRecord.Record(

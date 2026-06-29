@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260629034438_Issue556Gs1EpcisAggregationAndSerialUniqueness")]
+    [Migration("20260629074649_Issue556Gs1EpcisAggregationAndSerialUniqueness")]
     partial class Issue556Gs1EpcisAggregationAndSerialUniqueness
     {
         /// <inheritdoc />
@@ -539,17 +539,22 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                         .IsUnique();
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ScannedValue")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("result = 'accepted'");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Sscc");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "DeviceCode", "ScannedAtUtc");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "LotNo", "SerialNumber")
                         .IsUnique()
-                        .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
+                        .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("scan_records", "barcode", t =>
                         {
@@ -699,9 +704,14 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
+                    b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "Gtin", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "Gtin", "LotNo", "SerialNumber")
                         .IsUnique()
-                        .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
+                        .HasDatabaseName("IX_epcis_events_organization_id_environment_id_event_type_gti~1")
+                        .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("epcis_events", "barcode", t =>
                         {

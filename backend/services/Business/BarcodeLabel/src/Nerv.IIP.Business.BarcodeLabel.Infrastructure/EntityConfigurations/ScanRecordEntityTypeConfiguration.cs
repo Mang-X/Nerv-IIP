@@ -41,14 +41,19 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceCode, x.ScannedAtUtc });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue })
+            .IsUnique()
+            .HasFilter("result = 'accepted'");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EpcUri })
             .IsUnique()
             .HasFilter("epc_uri IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkflow, x.SourceDocumentId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber })
             .IsUnique()
-            .HasFilter("gtin IS NOT NULL AND serial_number IS NOT NULL");
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.SerialNumber })
+            .IsUnique()
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Sscc });
     }
 }
