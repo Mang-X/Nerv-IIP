@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
@@ -265,6 +266,7 @@ public sealed class CompleteOutboundOrderCommandHandler(
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"Outbound order was not found: {request.OutboundOrderId}");
         var executedQuantitiesByLine = await GetExecutedPickingQuantitiesAsync(outbound, cancellationToken);
+        EnsureInventoryClientAvailableForShortPickRelease(outbound, executedQuantitiesByLine);
         var movementRequests = outbound.CompletePackReview(request.PackReviewNo, request.Passed, request.IdempotencyKey, executedQuantitiesByLine);
         await ReleaseShortPickedReservationBalancesAsync(outbound, cancellationToken);
         dbContext.InventoryMovementRequests.AddRange(movementRequests);
@@ -287,6 +289,26 @@ public sealed class CompleteOutboundOrderCommandHandler(
         return taskExecutions.Length == 0
             ? null
             : taskExecutions.ToDictionary(x => x.LineNo, x => x.ExecutedQuantity, StringComparer.Ordinal);
+    }
+
+    private void EnsureInventoryClientAvailableForShortPickRelease(
+        OutboundOrder outbound,
+        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+    {
+        if (inventoryReservationClient is not null || executedQuantitiesByLine is null)
+        {
+            return;
+        }
+
+        var requiresRelease = outbound.Lines.Any(line =>
+            line.InventoryReservationId is not null
+            && executedQuantitiesByLine.TryGetValue(line.LineNo, out var executedQuantity)
+            && executedQuantity >= 0
+            && Math.Min(executedQuantity, line.RequestedQuantity) < line.RequestedQuantity);
+        if (requiresRelease)
+        {
+            throw new KnownException("Inventory reservation client is required to release short-picked reserved stock before completing outbound order.");
+        }
     }
 
     private async Task ReleaseShortPickedReservationBalancesAsync(
@@ -676,7 +698,9 @@ public sealed class DispatchWcsTaskCommandHandler(ApplicationDbContext dbContext
 
 public sealed record CompleteWcsTaskCommand(string OrganizationId, string EnvironmentId, string ExternalTaskId, string CompletionPayloadJson) : ICommand;
 
-public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext)
+public sealed class CompleteWcsTaskCommandHandler(
+    ApplicationDbContext dbContext,
+    ILogger<CompleteWcsTaskCommandHandler>? logger = null)
     : ICommandHandler<CompleteWcsTaskCommand>
 {
     public async Task Handle(CompleteWcsTaskCommand request, CancellationToken cancellationToken)
@@ -692,11 +716,20 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
             return;
         }
 
-        var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson);
+        var executedQuantity = ExtractExecutedQuantity(request.CompletionPayloadJson, out var diagnosticMessage);
         task.Complete(request.CompletionPayloadJson);
         var warehouseTask = await dbContext.WarehouseTasks.SingleOrDefaultAsync(x => x.Id == task.WarehouseTaskId, cancellationToken)
             ?? throw new KnownException($"Warehouse task was not found: {task.WarehouseTaskId}");
-        if (executedQuantity is null || warehouseTask.Status == WarehouseTaskStatus.Completed)
+        if (executedQuantity is null)
+        {
+            logger?.LogWarning(
+                "WCS completion callback for external task {ExternalTaskId} did not update warehouse task progress: {DiagnosticMessage}",
+                request.ExternalTaskId,
+                diagnosticMessage);
+            return;
+        }
+
+        if (warehouseTask.Status == WarehouseTaskStatus.Completed)
         {
             return;
         }
@@ -704,8 +737,9 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
         warehouseTask.RecordProgress(executedQuantity.Value);
     }
 
-    private static decimal? ExtractExecutedQuantity(string completionPayloadJson)
+    private static decimal? ExtractExecutedQuantity(string completionPayloadJson, out string diagnosticMessage)
     {
+        diagnosticMessage = string.Empty;
         try
         {
             using var document = JsonDocument.Parse(completionPayloadJson);
@@ -717,12 +751,16 @@ public sealed class CompleteWcsTaskCommandHandler(ApplicationDbContext dbContext
                     return quantity;
                 }
             }
+
+            diagnosticMessage = "Payload does not include an explicit executed quantity field.";
         }
         catch (JsonException)
         {
+            diagnosticMessage = "Payload is not valid JSON.";
             return null;
         }
 
+        diagnosticMessage = "Payload does not include an explicit executed quantity field.";
         return null;
     }
 }

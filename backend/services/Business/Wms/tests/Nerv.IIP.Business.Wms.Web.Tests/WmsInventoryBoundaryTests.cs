@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.ServiceAuth;
@@ -279,6 +280,40 @@ public sealed class WmsInventoryBoundaryTests
         var release = Assert.Single(inventory.ReleaseRequests);
         Assert.Equal("res-short", release.ReservationId);
         Assert.Equal(2m, release.Quantity);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_requires_inventory_client_before_short_pick_mutates_order()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-SHORT-NO-CLIENT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 10m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-short-no-client");
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-SHORT-NO-CLIENT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
+            new RecordWarehouseTaskProgressCommand(dbContext.WarehouseTasks.Single().Id, 8m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-SHORT-NO-CLIENT-001", true, "idem-short-no-client-001"),
+            CancellationToken.None));
+
+        Assert.Equal(OutboundOrderStatus.Open, outbound.Status);
+        var line = outbound.Lines.Single();
+        Assert.Equal(0m, line.IssuedQuantity);
+        Assert.Equal(0m, line.BackorderQuantity);
     }
 
     [Fact]
@@ -727,6 +762,40 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal(WcsTaskStatus.Completed, dbContext.WcsTasks.Single().Status);
     }
 
+    [Fact]
+    public async Task Complete_wcs_task_logs_warning_when_completion_payload_has_no_executed_quantity()
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-DIAG-001",
+            "OUT-WCS-DIAG-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
+            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-DIAG-001", """{"step":1}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var logger = new ListLogger<CompleteWcsTaskCommandHandler>();
+
+        await new CompleteWcsTaskCommandHandler(dbContext, logger).Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-DIAG-001", """{"ok":true}"""),
+            CancellationToken.None);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains("WCS-DIAG-001", entry.Message, StringComparison.Ordinal);
+        Assert.Contains("executed quantity", entry.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -793,6 +862,27 @@ public sealed class WmsInventoryBoundaryTests
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
             });
+        }
+    }
+
+    private sealed class ListLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+            => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
         }
     }
 }
