@@ -28,6 +28,33 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                 nullable: true,
                 comment: "User id that completed this CAPA action item.");
 
+            migrationBuilder.Sql(
+                """
+                DO $$
+                DECLARE
+                    duplicate_key text;
+                BEGIN
+                    SELECT format(
+                        'organization_id=%s, environment_id=%s, source_type=%s, source_service=%s, source_document_id=%s, sku_code=%s, count=%s',
+                        organization_id,
+                        environment_id,
+                        source_type,
+                        source_service,
+                        source_document_id,
+                        sku_code,
+                        count(*))
+                    INTO duplicate_key
+                    FROM quality.inspection_records
+                    GROUP BY organization_id, environment_id, source_type, source_service, source_document_id, sku_code
+                    HAVING count(*) > 1
+                    LIMIT 1;
+
+                    IF duplicate_key IS NOT NULL THEN
+                        RAISE EXCEPTION 'Cannot add unique inspection source/SKU index because duplicate Quality inspection records already exist: %. Resolve historical duplicates before applying migration 20260629074947_AddQualityLongtailReviewFixes.', duplicate_key;
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.CreateIndex(
                 name: "IX_inspection_records_organization_id_environment_id_source_t~1",
                 schema: "quality",
