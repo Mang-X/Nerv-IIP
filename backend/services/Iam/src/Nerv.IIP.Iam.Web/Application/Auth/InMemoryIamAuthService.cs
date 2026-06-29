@@ -92,12 +92,6 @@ public sealed class InMemoryIamAuthService(
             externalClient.Scope));
     }
 
-    public Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-    {
-        var allowed = store.UserHasPermission(userId, "org-001", "env-dev", permissionCode);
-        return Task.FromResult(allowed);
-    }
-
     public Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,

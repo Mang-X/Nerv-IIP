@@ -233,11 +233,6 @@ public sealed class PostgreSqlIamAuthService(
                 cancellationToken));
     }
 
-    public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-    {
-        return await membershipRepository.UserHasPermissionAsync(new UserId(userId), permissionCode, cancellationToken);
-    }
-
     public async Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,
@@ -262,12 +257,13 @@ public sealed class PostgreSqlIamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var secretHash = tokenService.HashSecret(secret);
-        var credential = await connectorHostCredentialRepository.GetByConnectorHostAndSecretHashAsync(
+        var credential = await connectorHostCredentialRepository.GetByConnectorHostIdAsync(
             connectorHostId,
-            secretHash,
             cancellationToken);
-        if (credential is null || !credential.IsValidAt(DateTimeOffset.UtcNow))
+        var now = DateTimeOffset.UtcNow;
+        if (credential is null
+            || !credential.IsValidAt(now)
+            || !tokenService.VerifySecret(secret, credential.SecretHash))
         {
             throw Unauthorized();
         }
@@ -286,9 +282,10 @@ public sealed class PostgreSqlIamAuthService(
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var secretHash = tokenService.HashSecret(clientSecret);
         var externalClient = await externalClientRepository.GetByClientIdAsync(clientId, cancellationToken);
-        if (externalClient is null || !externalClient.CanAuthenticate(secretHash, now))
+        if (externalClient is null
+            || !externalClient.CanAuthenticate(now)
+            || !tokenService.VerifySecret(clientSecret, externalClient.SecretHash))
         {
             throw Unauthorized();
         }

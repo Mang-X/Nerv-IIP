@@ -25,7 +25,12 @@ public sealed class IamPermissionAuthorizer(IIamAuthService auth) : IIamPermissi
             return false;
         }
 
-        if (await auth.UserHasPermissionAsync(principal.UserId, permissionCode, cancellationToken))
+        if (await auth.UserHasPermissionAsync(
+                principal.UserId,
+                principal.OrganizationId,
+                principal.EnvironmentId,
+                permissionCode,
+                cancellationToken))
         {
             return true;
         }

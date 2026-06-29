@@ -27,6 +27,8 @@ param(
 
     [string] $IamJwtJwksJson,
 
+    [string] $IamSecretsPepper,
+
     [string] $IamSeedAdminPassword,
 
     [string] $InternalServiceBearerToken,
@@ -72,6 +74,10 @@ if ($EnvironmentName -ne "Development") {
 
     if ([string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
         throw "-IamJwtJwksJson is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
+        throw "-IamSecretsPepper is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
@@ -146,6 +152,11 @@ if (-not [string]::IsNullOrWhiteSpace($IamJwtPrivateKeyPem)) {
 if (-not [string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
     $environment["Iam__Jwt__JwksJson"] = $IamJwtJwksJson
     $environment["Parameters__iam-jwt-jwks-json"] = $IamJwtJwksJson
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
+    $environment["Iam__Secrets__Pepper"] = $IamSecretsPepper
+    $environment["Parameters__iam-secrets-pepper"] = $IamSecretsPepper
 }
 
 if (-not [string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {

@@ -49,10 +49,9 @@ public class ExternalClient : Entity<ExternalClientId>, IAggregateRoot
     public DateTimeOffset ValidFromUtc { get; private set; }
     public DateTimeOffset? ValidToUtc { get; private set; }
 
-    public bool CanAuthenticate(string secretHash, DateTimeOffset now)
+    public bool CanAuthenticate(DateTimeOffset now)
     {
         return Enabled
-            && string.Equals(SecretHash, secretHash, StringComparison.Ordinal)
             && ValidFromUtc <= now
             && (ValidToUtc is null || ValidToUtc > now);
     }

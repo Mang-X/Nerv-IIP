@@ -147,7 +147,6 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
-    Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(
         UserId userId,
         OrganizationId organizationId,
@@ -191,23 +190,6 @@ public sealed class MembershipRepository(ApplicationDbContext context)
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId,
             cancellationToken);
-    }
-
-    public async Task<bool> UserHasPermissionAsync(
-        UserId userId,
-        string permissionCode,
-        CancellationToken cancellationToken = default)
-    {
-        return await (
-            from membership in DbContext.Memberships
-            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
-            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
-            join rolePermission in DbContext.RolePermissions on role.Id equals rolePermission.RoleId
-            where membership.UserId == userId
-                && role.Deleted == NotDeleted
-                && rolePermission.PermissionCode == permissionCode
-            select rolePermission.Id)
-            .AnyAsync(cancellationToken);
     }
 
     public async Task<bool> UserHasPermissionAsync(
@@ -427,22 +409,20 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
 
 public interface IConnectorHostCredentialRepository : IRepository<ConnectorHostCredential, ConnectorHostCredentialId>
 {
-    Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    Task<ConnectorHostCredential?> GetByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class ConnectorHostCredentialRepository(ApplicationDbContext context)
     : RepositoryBase<ConnectorHostCredential, ConnectorHostCredentialId, ApplicationDbContext>(context), IConnectorHostCredentialRepository
 {
-    public async Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    public async Task<ConnectorHostCredential?> GetByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default)
     {
         return await DbContext.ConnectorHostCredentials
-            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
+            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId, cancellationToken);
     }
 }
 

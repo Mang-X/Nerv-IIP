@@ -305,14 +305,6 @@ public sealed class IamAuthServiceScopeTests
             return Task.FromResult<Membership?>(membership);
         }
 
-        public Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default)
-        {
-            _ = userId;
-            _ = permissionCode;
-            _ = cancellationToken;
-            return Task.FromResult(false);
-        }
-
         public Task<bool> UserHasPermissionAsync(
             UserId userId,
             OrganizationId organizationId,

@@ -161,6 +161,7 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
             });
 
         var ex = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
@@ -291,7 +292,10 @@ public sealed class IamEnterpriseIdentityTests
                 builder.UseEnvironment("Production");
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:Kid", IamJwtTestKeys.Kid);
                 builder.UseSetting("Iam:Jwt:SigningKeys:0:PrivateKeyPem", IamJwtTestKeys.PrivateKeyPem);
+                builder.UseSetting("Iam:Secrets:Pepper", "test-production-pepper");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+                builder.UseSetting("Persistence:Provider", "PostgreSQL");
+                builder.UseSetting("ConnectionStrings:IamDb", "Host=localhost;Port=1;Database=nerv_iip_iam_unreachable;Username=nerv;Password=nerv");
             });
     }
 
