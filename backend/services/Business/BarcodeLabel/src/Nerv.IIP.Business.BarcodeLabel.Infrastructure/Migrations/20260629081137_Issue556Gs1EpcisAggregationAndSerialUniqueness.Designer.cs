@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260629074649_Issue556Gs1EpcisAggregationAndSerialUniqueness")]
+    [Migration("20260629081137_Issue556Gs1EpcisAggregationAndSerialUniqueness")]
     partial class Issue556Gs1EpcisAggregationAndSerialUniqueness
     {
         /// <inheritdoc />
@@ -533,13 +533,16 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "EpcUri")
                         .IsUnique()
+                        .HasDatabaseName("UX_scan_records_epc_uri")
                         .HasFilter("epc_uri IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "IdempotencyKey")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("UX_scan_records_idempotency");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ScannedValue")
                         .IsUnique()
+                        .HasDatabaseName("UX_scan_records_accepted_scanned_value")
                         .HasFilter("result = 'accepted'");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Sscc");
@@ -548,12 +551,14 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "SerialNumber")
                         .IsUnique()
+                        .HasDatabaseName("UX_scan_records_gtin_serial_no_lot")
                         .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "Gtin", "LotNo", "SerialNumber")
                         .IsUnique()
+                        .HasDatabaseName("UX_scan_records_gtin_lot_serial")
                         .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("scan_records", "barcode", t =>
@@ -700,17 +705,19 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "EpcUri")
                         .IsUnique()
+                        .HasDatabaseName("UX_epcis_events_epc_uri")
                         .HasFilter("epc_uri IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceWorkflow", "SourceDocumentId");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "Gtin", "SerialNumber")
                         .IsUnique()
+                        .HasDatabaseName("UX_epcis_events_gtin_serial_no_lot")
                         .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "EventType", "Gtin", "LotNo", "SerialNumber")
                         .IsUnique()
-                        .HasDatabaseName("IX_epcis_events_organization_id_environment_id_event_type_gti~1")
+                        .HasDatabaseName("UX_epcis_events_gtin_lot_serial")
                         .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
 
                     b.ToTable("epcis_events", "barcode", t =>

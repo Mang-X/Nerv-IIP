@@ -39,20 +39,26 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
             .WithOne()
             .HasForeignKey(x => x.ScanRecordId)
             .OnDelete(DeleteBehavior.Cascade);
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_idempotency");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceCode, x.ScannedAtUtc });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue })
             .IsUnique()
+            .HasDatabaseName("UX_scan_records_accepted_scanned_value")
             .HasFilter("result = 'accepted'");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EpcUri })
             .IsUnique()
+            .HasDatabaseName("UX_scan_records_epc_uri")
             .HasFilter("epc_uri IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkflow, x.SourceDocumentId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber })
             .IsUnique()
+            .HasDatabaseName("UX_scan_records_gtin_lot_serial")
             .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.SerialNumber })
             .IsUnique()
+            .HasDatabaseName("UX_scan_records_gtin_serial_no_lot")
             .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Sscc });
     }

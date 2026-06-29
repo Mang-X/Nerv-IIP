@@ -59,7 +59,8 @@ public sealed class BarcodeLabelRecordScanCommandTests
         await using (var dbContext = database.CreateDbContext())
         {
             dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002"));
-            await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+            Assert.Contains("Duplicate serialized barcode scan", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -111,7 +112,8 @@ public sealed class BarcodeLabelRecordScanCommandTests
         await using (var dbContext = database.CreateDbContext())
         {
             dbContext.ScanRecords.Add(NewInventoryScan("idem-scan-gs1-002", "010950600013435221SN-0001"));
-            await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
+            var exception = await Assert.ThrowsAsync<KnownException>(() => dbContext.SaveChangesAsync());
+            Assert.Contains("Duplicate serialized barcode scan", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
     }
 

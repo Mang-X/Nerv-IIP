@@ -25,6 +25,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 schema: "barcode",
                 table: "epcis_events");
 
+            migrationBuilder.RenameIndex(
+                name: "IX_scan_records_organization_id_environment_id_idempotency_key",
+                schema: "barcode",
+                table: "scan_records",
+                newName: "UX_scan_records_idempotency");
+
             migrationBuilder.AddColumn<string>(
                 name: "sscc",
                 schema: "barcode",
@@ -53,31 +59,13 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 comment: "Parent SSCC-18 logistic unit for EPCIS aggregation or disaggregation events.");
 
             migrationBuilder.CreateIndex(
-                name: "IX_scan_records_organization_id_environment_id_epc_uri",
+                name: "IX_scan_records_organization_id_environment_id_sscc",
                 schema: "barcode",
                 table: "scan_records",
-                columns: new[] { "organization_id", "environment_id", "epc_uri" },
-                unique: true,
-                filter: "epc_uri IS NOT NULL");
+                columns: new[] { "organization_id", "environment_id", "sscc" });
 
             migrationBuilder.CreateIndex(
-                name: "IX_scan_records_organization_id_environment_id_gtin_lot_no_ser~",
-                schema: "barcode",
-                table: "scan_records",
-                columns: new[] { "organization_id", "environment_id", "gtin", "lot_no", "serial_number" },
-                unique: true,
-                filter: "gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_scan_records_organization_id_environment_id_gtin_serial_num~",
-                schema: "barcode",
-                table: "scan_records",
-                columns: new[] { "organization_id", "environment_id", "gtin", "serial_number" },
-                unique: true,
-                filter: "gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_scan_records_organization_id_environment_id_scanned_value",
+                name: "UX_scan_records_accepted_scanned_value",
                 schema: "barcode",
                 table: "scan_records",
                 columns: new[] { "organization_id", "environment_id", "scanned_value" },
@@ -85,32 +73,26 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 filter: "result = 'accepted'");
 
             migrationBuilder.CreateIndex(
-                name: "IX_scan_records_organization_id_environment_id_sscc",
+                name: "UX_scan_records_epc_uri",
                 schema: "barcode",
                 table: "scan_records",
-                columns: new[] { "organization_id", "environment_id", "sscc" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_epc_~",
-                schema: "barcode",
-                table: "epcis_events",
-                columns: new[] { "organization_id", "environment_id", "event_type", "epc_uri" },
+                columns: new[] { "organization_id", "environment_id", "epc_uri" },
                 unique: true,
                 filter: "epc_uri IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_gti~1",
+                name: "UX_scan_records_gtin_lot_serial",
                 schema: "barcode",
-                table: "epcis_events",
-                columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "lot_no", "serial_number" },
+                table: "scan_records",
+                columns: new[] { "organization_id", "environment_id", "gtin", "lot_no", "serial_number" },
                 unique: true,
                 filter: "gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
 
             migrationBuilder.CreateIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_gtin~",
+                name: "UX_scan_records_gtin_serial_no_lot",
                 schema: "barcode",
-                table: "epcis_events",
-                columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "serial_number" },
+                table: "scan_records",
+                columns: new[] { "organization_id", "environment_id", "gtin", "serial_number" },
                 unique: true,
                 filter: "gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
 
@@ -119,53 +101,77 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 schema: "barcode",
                 table: "epcis_events",
                 columns: new[] { "organization_id", "environment_id", "parent_sscc" });
+
+            migrationBuilder.CreateIndex(
+                name: "UX_epcis_events_epc_uri",
+                schema: "barcode",
+                table: "epcis_events",
+                columns: new[] { "organization_id", "environment_id", "event_type", "epc_uri" },
+                unique: true,
+                filter: "epc_uri IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_epcis_events_gtin_lot_serial",
+                schema: "barcode",
+                table: "epcis_events",
+                columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "lot_no", "serial_number" },
+                unique: true,
+                filter: "gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "UX_epcis_events_gtin_serial_no_lot",
+                schema: "barcode",
+                table: "epcis_events",
+                columns: new[] { "organization_id", "environment_id", "event_type", "gtin", "serial_number" },
+                unique: true,
+                filter: "gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_scan_records_organization_id_environment_id_epc_uri",
-                schema: "barcode",
-                table: "scan_records");
-
-            migrationBuilder.DropIndex(
-                name: "IX_scan_records_organization_id_environment_id_gtin_lot_no_ser~",
-                schema: "barcode",
-                table: "scan_records");
-
-            migrationBuilder.DropIndex(
-                name: "IX_scan_records_organization_id_environment_id_gtin_serial_num~",
-                schema: "barcode",
-                table: "scan_records");
-
-            migrationBuilder.DropIndex(
-                name: "IX_scan_records_organization_id_environment_id_scanned_value",
-                schema: "barcode",
-                table: "scan_records");
-
-            migrationBuilder.DropIndex(
                 name: "IX_scan_records_organization_id_environment_id_sscc",
                 schema: "barcode",
                 table: "scan_records");
 
             migrationBuilder.DropIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_epc_~",
+                name: "UX_scan_records_accepted_scanned_value",
                 schema: "barcode",
-                table: "epcis_events");
+                table: "scan_records");
 
             migrationBuilder.DropIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_gti~1",
+                name: "UX_scan_records_epc_uri",
                 schema: "barcode",
-                table: "epcis_events");
+                table: "scan_records");
 
             migrationBuilder.DropIndex(
-                name: "IX_epcis_events_organization_id_environment_id_event_type_gtin~",
+                name: "UX_scan_records_gtin_lot_serial",
                 schema: "barcode",
-                table: "epcis_events");
+                table: "scan_records");
+
+            migrationBuilder.DropIndex(
+                name: "UX_scan_records_gtin_serial_no_lot",
+                schema: "barcode",
+                table: "scan_records");
 
             migrationBuilder.DropIndex(
                 name: "IX_epcis_events_organization_id_environment_id_parent_sscc",
+                schema: "barcode",
+                table: "epcis_events");
+
+            migrationBuilder.DropIndex(
+                name: "UX_epcis_events_epc_uri",
+                schema: "barcode",
+                table: "epcis_events");
+
+            migrationBuilder.DropIndex(
+                name: "UX_epcis_events_gtin_lot_serial",
+                schema: "barcode",
+                table: "epcis_events");
+
+            migrationBuilder.DropIndex(
+                name: "UX_epcis_events_gtin_serial_no_lot",
                 schema: "barcode",
                 table: "epcis_events");
 
@@ -183,6 +189,12 @@ namespace Nerv.IIP.Business.BarcodeLabel.Infrastructure.Migrations
                 name: "parent_sscc",
                 schema: "barcode",
                 table: "epcis_events");
+
+            migrationBuilder.RenameIndex(
+                name: "UX_scan_records_idempotency",
+                schema: "barcode",
+                table: "scan_records",
+                newName: "IX_scan_records_organization_id_environment_id_idempotency_key");
 
             migrationBuilder.CreateIndex(
                 name: "IX_scan_records_organization_id_environment_id_gtin_lot_no_ser~",
