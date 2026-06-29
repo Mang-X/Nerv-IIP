@@ -778,6 +778,56 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Close_ncr_scrap_disposition_reuses_recorded_scrap_movement_after_capa_is_effective()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-CLOSE-RECORDED-001",
+            "receiving",
+            "RCV-SCRAP-CLOSE-RECORDED-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var completionHandler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+        await completionHandler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-RECORDED-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None);
+        dbContext.CorrectiveActions.Add(NewEffectiveCapa(ncr, "CAPA-SCRAP-CLOSE-RECORDED-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var closeHandler = new CloseNonconformanceReportCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+
+        await closeHandler.Handle(
+            new CloseNonconformanceReportCommand(ncr.Id, null, null, null),
+            CancellationToken.None);
+
+        Assert.Equal("closed", ncr.Status);
+        Assert.Equal("SM-FULL-RECORDED-001", ncr.ScrapMovementId);
+    }
+
+    [Fact]
     public async Task Complete_ncr_scrap_disposition_closes_when_effective_capa_exists()
     {
         await using var provider = CreateInMemoryProvider();

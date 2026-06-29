@@ -256,9 +256,9 @@ public sealed class NonconformanceReport : Entity<NonconformanceReportId>, IAggr
             throw new InvalidOperationException("NCR cannot be closed before disposition is decided.");
         }
 
-        ReworkWorkOrderId = Optional(reworkWorkOrderId);
-        ScrapMovementId = Optional(scrapMovementId);
-        ReturnDocumentId = Optional(returnDocumentId);
+        ReworkWorkOrderId = Optional(reworkWorkOrderId) ?? ReworkWorkOrderId;
+        ScrapMovementId = Optional(scrapMovementId) ?? ScrapMovementId;
+        ReturnDocumentId = Optional(returnDocumentId) ?? ReturnDocumentId;
         EnsureClosureReferences();
         Status = "closed";
         Touch();
