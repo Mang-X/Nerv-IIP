@@ -107,9 +107,19 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
             throw new InvalidOperationException("Cancelled warehouse tasks cannot record progress.");
         }
 
+        if (Status == WarehouseTaskStatus.Completed)
+        {
+            throw new InvalidOperationException("Completed warehouse tasks cannot record progress.");
+        }
+
         if (executedQuantity < 0 || executedQuantity > PlannedQuantity)
         {
             throw new ArgumentOutOfRangeException(nameof(executedQuantity), executedQuantity, "Executed quantity must be within planned quantity.");
+        }
+
+        if (executedQuantity < ExecutedQuantity)
+        {
+            throw new InvalidOperationException("Warehouse task progress cannot regress.");
         }
 
         ExecutedQuantity = executedQuantity;

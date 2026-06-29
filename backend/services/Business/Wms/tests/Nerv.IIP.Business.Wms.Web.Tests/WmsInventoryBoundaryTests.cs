@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -204,6 +205,80 @@ public sealed class WmsInventoryBoundaryTests
         var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
         Assert.Equal(result.RequestId, movementRequest.Id);
         Assert.Equal("res-001", movementRequest.InventoryReservationId);
+    }
+
+    [Fact]
+    public async Task Picking_task_keeps_reservation_and_posting_location_on_the_actual_pick_dimension()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-LOCATION-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-PLANNED", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-location");
+
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-LOCATION-001", "LINE-001", "LOC-ACTUAL", "PACK-01", 4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CompleteWarehouseTaskCommandHandler(dbContext).Handle(
+            new CompleteWarehouseTaskCommand(dbContext.WarehouseTasks.Single().Id),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-LOCATION-001", true, "idem-location-001"),
+            CancellationToken.None);
+
+        Assert.Equal("LOC-ACTUAL", Assert.Single(inventory.Requests).LocationCode);
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal("LOC-ACTUAL", movementRequest.LocationCode);
+        Assert.Equal("res-location", movementRequest.InventoryReservationId);
+    }
+
+    [Fact]
+    public async Task Complete_outbound_posts_executed_pick_quantity_and_releases_short_reservation_balance()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-SHORT-001",
+            "sales-delivery",
+            "SO-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 10m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventory = new FakeWmsInventoryReservationClient("res-short");
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, "TASK-OUT-SHORT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var warehouseTask = dbContext.WarehouseTasks.Single();
+        await new RecordWarehouseTaskProgressCommandHandler(dbContext).Handle(
+            new RecordWarehouseTaskProgressCommand(warehouseTask.Id, 8m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, "PACK-SHORT-001", true, "idem-short-001"),
+            CancellationToken.None);
+
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal(8m, movementRequest.Quantity);
+        Assert.Equal("res-short", movementRequest.InventoryReservationId);
+        var line = outbound.Lines.Single();
+        Assert.Equal(8m, line.IssuedQuantity);
+        Assert.Equal(2m, line.BackorderQuantity);
+        var release = Assert.Single(inventory.ReleaseRequests);
+        Assert.Equal("res-short", release.ReservationId);
+        Assert.Equal(2m, release.Quantity);
     }
 
     [Fact]
@@ -520,6 +595,70 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("idem-count-001", movementRequest.IdempotencyKey);
     }
 
+    [Fact]
+    public async Task Complete_count_execution_confirms_inventory_count_task_without_external_count_adjustment_request()
+    {
+        await using var dbContext = CreateContext();
+        var inventory = new FakeWmsInventoryReservationClient("res-unused")
+        {
+            CountTaskId = "11111111-1111-7111-8111-111111111111",
+            InventoryMovementId = "22222222-2222-7222-8222-222222222222",
+        };
+
+        var countId = await new CreateCountExecutionCommandHandler(dbContext, inventory).Handle(
+            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-FREEZE-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var result = await new CompleteCountExecutionCommandHandler(dbContext, inventory).Handle(
+            new CompleteCountExecutionCommand(countId, 7.5m, "idem-count-freeze-001"),
+            CancellationToken.None);
+
+        Assert.Empty(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal("22222222-2222-7222-8222-222222222222", result.InventoryMovementId);
+        Assert.Collection(inventory.CountTaskRequests, request =>
+        {
+            Assert.Equal("COUNT-FREEZE-001", request.CountTaskCode);
+            Assert.Equal("LOC-A-01", request.LocationCode);
+        });
+        Assert.Collection(inventory.CountAdjustmentRequests, request =>
+        {
+            Assert.Equal("11111111-1111-7111-8111-111111111111", request.CountTaskId);
+            Assert.Equal(7.5m, request.CountedQuantity);
+            Assert.Equal("idem-count-freeze-001", request.IdempotencyKey);
+        });
+    }
+
+    [Fact]
+    public async Task Complete_wcs_task_records_actual_progress_on_linked_warehouse_task()
+    {
+        await using var dbContext = CreateContext();
+        var warehouseTask = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-WCS-001",
+            "OUT-WCS-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            10m);
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new DispatchWcsTaskCommandHandler(dbContext).Handle(
+            new DispatchWcsTaskCommand(warehouseTask.Id, "agv", "WCS-ACTUAL-001", """{"step":1}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-ACTUAL-001", """{"actualQuantity":8}"""),
+            CancellationToken.None);
+
+        Assert.Equal(8m, warehouseTask.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Open, warehouseTask.Status);
+    }
+
     private static ApplicationDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -532,7 +671,11 @@ public sealed class WmsInventoryBoundaryTests
     {
         public List<WmsInventoryReservationRequest> Requests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
+        public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
+        public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
         public List<string> ReservationResults { get; } = [];
+        public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
+        public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
 
         public Task<WmsInventoryReservationResult> ReserveAsync(
             WmsInventoryReservationRequest request,
@@ -550,6 +693,22 @@ public sealed class WmsInventoryBoundaryTests
         {
             ReleaseRequests.Add(request);
             return Task.FromResult(new WmsInventoryReservationReleaseResult(request.ReservationId, 0m, request.Quantity));
+        }
+
+        public Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
+            WmsInventoryCountTaskRequest request,
+            CancellationToken cancellationToken)
+        {
+            CountTaskRequests.Add(request);
+            return Task.FromResult(new WmsInventoryCountTaskResult(CountTaskId, 1L));
+        }
+
+        public Task<WmsInventoryCountAdjustmentResult> ConfirmCountAdjustmentAsync(
+            WmsInventoryCountAdjustmentRequest request,
+            CancellationToken cancellationToken)
+        {
+            CountAdjustmentRequests.Add(request);
+            return Task.FromResult(new WmsInventoryCountAdjustmentResult(InventoryMovementId, request.CountedQuantity - 10m, request.CountedQuantity));
         }
     }
 

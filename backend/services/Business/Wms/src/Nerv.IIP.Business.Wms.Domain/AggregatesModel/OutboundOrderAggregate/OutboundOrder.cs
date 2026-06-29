@@ -103,6 +103,7 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         var line = FindLine(lineNo);
         EnsurePickingQuantity(line, quantity);
 
+        line.MarkPickLocation(fromLocationCode);
         line.MarkInventoryReserved(inventoryReservationId);
         return WarehouseTask.CreatePicking(
             OrganizationId,
@@ -138,6 +139,13 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
+        => CompletePackReview(packReviewNo, passed, idempotencyKey, null);
+
+    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(
+        string packReviewNo,
+        bool passed,
+        string idempotencyKey,
+        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
@@ -152,7 +160,19 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         Status = OutboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
         var singleLine = lines.Count == 1;
-        var requests = lines.Select(line => InventoryMovementRequest.Create(
+        foreach (var line in lines)
+        {
+            line.RecordFulfillment(GetExecutedQuantity(line, executedQuantitiesByLine));
+        }
+
+        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
+        if (postingLines.Length == 0)
+        {
+            throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
+        }
+
+        singleLine = postingLines.Length == 1;
+        var requests = postingLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,
                 "outbound",
@@ -168,11 +188,26 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                line.RequestedQuantity,
+                line.IssuedQuantity,
                 line.InventoryReservationId))
             .ToArray();
         this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
         return requests;
+    }
+
+    private static decimal GetExecutedQuantity(OutboundOrderLine line, IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+    {
+        if (executedQuantitiesByLine is null || !executedQuantitiesByLine.TryGetValue(line.LineNo, out var executedQuantity))
+        {
+            return line.RequestedQuantity;
+        }
+
+        if (executedQuantity < 0 || executedQuantity > line.RequestedQuantity)
+        {
+            throw new InvalidOperationException($"Executed quantity for outbound line '{line.LineNo}' must be within requested quantity.");
+        }
+
+        return executedQuantity;
     }
 
     public void MarkInventoryPostingFailed()
@@ -333,6 +368,8 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
     public string? InventoryReservationId { get; private set; }
+    public decimal IssuedQuantity { get; private set; }
+    public decimal BackorderQuantity { get; private set; }
 
     public static OutboundOrderLine Create(OutboundOrderLineDraft draft)
     {
@@ -353,6 +390,22 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         }
 
         InventoryReservationId = normalizedReservationId;
+    }
+
+    public void MarkPickLocation(string pickLocationCode)
+    {
+        PickLocationCode = WmsText.Required(pickLocationCode, nameof(pickLocationCode));
+    }
+
+    public void RecordFulfillment(decimal issuedQuantity)
+    {
+        if (issuedQuantity < 0 || issuedQuantity > RequestedQuantity)
+        {
+            throw new InvalidOperationException("Issued quantity must be within requested quantity.");
+        }
+
+        IssuedQuantity = issuedQuantity;
+        BackorderQuantity = RequestedQuantity - issuedQuantity;
     }
 
     public void ClearInventoryReservation()

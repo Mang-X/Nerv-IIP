@@ -80,6 +80,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
         var order = domainEvent.OutboundOrder;
         var line = order.Lines.First();
         var status = order.Status.ToString();
+        var publicQuantity = line.IssuedQuantity > 0 ? line.IssuedQuantity : line.RequestedQuantity;
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
@@ -92,7 +93,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
                 line.UomCode,
                 order.SiteCode,
                 line.PickLocationCode,
-                line.RequestedQuantity,
+                publicQuantity,
                 status,
                 null,
                 null,
@@ -104,7 +105,7 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
                         x.UomCode,
                         order.SiteCode,
                         x.PickLocationCode,
-                        x.RequestedQuantity,
+                        x.IssuedQuantity > 0 ? x.IssuedQuantity : x.RequestedQuantity,
                         null))
                     .ToArray(),
                 order.SourceDocumentType,
