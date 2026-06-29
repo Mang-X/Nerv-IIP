@@ -21,7 +21,8 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
         string currencyCode,
         DateOnly? invoiceDate,
         DateOnly? dueDate,
-        string? paymentTermCode)
+        string? paymentTermCode,
+        decimal exchangeRate)
     {
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
@@ -30,6 +31,8 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
         CustomerCode = ErpText.Required(customerCode, nameof(customerCode));
         Amount = ErpText.Positive(amount, nameof(amount));
         CurrencyCode = ErpText.Required(currencyCode, nameof(currencyCode)).ToUpperInvariant();
+        ExchangeRate = ErpText.Positive(exchangeRate, nameof(exchangeRate));
+        LocalAmount = Amount * ExchangeRate;
         CreatedAtUtc = DateTime.UtcNow;
         InvoiceDate = invoiceDate ?? DateOnly.FromDateTime(CreatedAtUtc);
         DueDate = dueDate ?? InvoiceDate.AddDays(30);
@@ -44,12 +47,16 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
     public string CustomerCode { get; private set; } = string.Empty;
     public decimal Amount { get; private set; }
     public decimal CollectedAmount { get; private set; }
+    public decimal LocalAmount { get; private set; }
+    public decimal LocalCollectedAmount { get; private set; }
     public string CurrencyCode { get; private set; } = string.Empty;
+    public decimal ExchangeRate { get; private set; }
     public DateOnly InvoiceDate { get; private set; }
     public DateOnly DueDate { get; private set; }
     public string PaymentTermCode { get; private set; } = string.Empty;
     public DateTime CreatedAtUtc { get; private set; }
     public decimal OpenAmount => Amount - CollectedAmount;
+    public decimal LocalOpenAmount => LocalAmount - LocalCollectedAmount;
 
     public static AccountReceivable Create(
         string organizationId,
@@ -61,9 +68,10 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
         string currencyCode,
         DateOnly? invoiceDate = null,
         DateOnly? dueDate = null,
-        string? paymentTermCode = null)
+        string? paymentTermCode = null,
+        decimal exchangeRate = 1m)
     {
-        return new AccountReceivable(organizationId, environmentId, receivableNo, sourceDocumentNo, customerCode, amount, currencyCode, invoiceDate, dueDate, paymentTermCode);
+        return new AccountReceivable(organizationId, environmentId, receivableNo, sourceDocumentNo, customerCode, amount, currencyCode, invoiceDate, dueDate, paymentTermCode, exchangeRate);
     }
 
     public void RegisterCollection(decimal amount)
@@ -75,6 +83,7 @@ public sealed class AccountReceivable : Entity<AccountReceivableId>, IAggregateR
         }
 
         CollectedAmount += amount;
+        LocalCollectedAmount += amount * ExchangeRate;
     }
 
     public string GetAgingBucket(DateOnly asOfDate)

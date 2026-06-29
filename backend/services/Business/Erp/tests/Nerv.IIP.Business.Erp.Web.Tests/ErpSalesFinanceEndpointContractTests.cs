@@ -324,7 +324,7 @@ public sealed class ErpSalesFinanceEndpointContractTests
     }
 
     [Fact]
-    public async Task Create_sales_order_uses_master_data_credit_limit_and_blocks_overrun()
+    public async Task Create_sales_order_uses_master_data_credit_limit_and_holds_overrun()
     {
         await using var provider = ErpTestProvider.CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -338,13 +338,14 @@ public sealed class ErpSalesFinanceEndpointContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var exception = await Assert.ThrowsAsync<KnownException>(() => new CreateSalesOrderCommandHandler(
+        await new CreateSalesOrderCommandHandler(
                 dbContext,
                 new StaticCustomerCreditProfileReader(new CustomerCreditProfile("CUST-001", 120m, "CNY"))).Handle(
                 new CreateSalesOrderCommand("org-001", "env-dev", "SO-CREDIT-BLOCK", "QUO-CREDIT-BLOCK"),
-                CancellationToken.None));
+                CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        Assert.Contains("credit limit", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("credit-held", dbContext.SalesOrders.Single(x => x.SalesOrderNo == "SO-CREDIT-BLOCK").Status);
     }
 
     [Fact]

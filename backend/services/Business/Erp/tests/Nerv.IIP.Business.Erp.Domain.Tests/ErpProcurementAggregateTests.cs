@@ -75,7 +75,7 @@ public sealed class ErpProcurementAggregateTests
     }
 
     [Fact]
-    public void Purchase_receipt_cannot_exceed_open_order_quantity()
+    public void Purchase_receipt_allows_over_receipt_within_tolerance_and_final_delivery_closes_line()
     {
         var order = PurchaseOrder.Create(
             "org-001",
@@ -83,14 +83,40 @@ public sealed class ErpProcurementAggregateTests
             "PO-001",
             "SUP-001",
             "SITE-01",
-            [NewPurchaseOrderLine(quantity: 10m)]);
+            [NewPurchaseOrderLine(quantity: 10m, overReceiptTolerancePercent: 5m)]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
+
+        var receipt = PurchaseReceipt.Record(
+            order,
+            "RCV-001",
+            [new PurchaseReceiptLineDraft("LINE-001", 10.4m, "accepted", FinalDelivery: true)]);
+
+        Assert.Equal(PurchaseReceiptStatus.Recorded, receipt.Status);
+        var line = Assert.Single(order.Lines);
+        Assert.Equal(10.4m, line.ReceivedQuantity);
+        Assert.Equal(0m, line.OpenQuantity);
+        Assert.True(line.FinalDelivery);
+        Assert.Equal(PurchaseOrderStatus.Closed, order.Status);
+    }
+
+    [Fact]
+    public void Purchase_receipt_rejects_over_receipt_beyond_tolerance()
+    {
+        var order = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-001",
+            "SUP-001",
+            "SITE-01",
+            [NewPurchaseOrderLine(quantity: 10m, overReceiptTolerancePercent: 5m)]);
         order.MarkApprovalRequested("approval-chain-001");
         order.ReleaseAfterApproval("approval-chain-001");
 
         Assert.Throws<ArgumentOutOfRangeException>(() => PurchaseReceipt.Record(
             order,
             "RCV-001",
-            [new PurchaseReceiptLineDraft("LINE-001", 11m, "accepted")]));
+            [new PurchaseReceiptLineDraft("LINE-001", 10.6m, "accepted")]));
     }
 
     [Fact]
@@ -199,6 +225,7 @@ public sealed class ErpProcurementAggregateTests
             "PO-001",
             "SUP-001",
             "SITE-01",
+            "USD",
             [NewPurchaseOrderLine(quantity: 10m)]);
         order.MarkApprovalRequested("approval-chain-001");
         order.ReleaseAfterApproval("approval-chain-001");
@@ -213,9 +240,10 @@ public sealed class ErpProcurementAggregateTests
             "INV-001",
             new DateOnly(2026, 6, 10),
             new DateOnly(2026, 7, 10),
-            "CNY",
+            "USD",
             quantityTolerance: 0m,
             amountTolerance: 0m,
+            priceTolerancePercent: 0m,
             [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4m, 12.5m)]);
 
         Assert.Equal(SupplierInvoiceMatchStatus.Matched, invoice.MatchStatus);
@@ -229,9 +257,10 @@ public sealed class ErpProcurementAggregateTests
             "INV-002",
             new DateOnly(2026, 6, 10),
             new DateOnly(2026, 7, 10),
-            "CNY",
+            "USD",
             quantityTolerance: 0m,
             amountTolerance: 0m,
+            priceTolerancePercent: 0m,
             [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4.1m, 12.5m)]);
         Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldByQuantity.MatchStatus);
         Assert.Empty(heldByQuantity.GetDomainEvents());
@@ -245,9 +274,10 @@ public sealed class ErpProcurementAggregateTests
             "INV-002-V",
             new DateOnly(2026, 6, 10),
             new DateOnly(2026, 7, 10),
-            "CNY",
+            "USD",
             quantityTolerance: 0m,
             amountTolerance: 0m,
+            priceTolerancePercent: 0m,
             [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4.1m, 12.5m)]);
         voidedHold.VoidPaymentHold();
         Assert.Equal(SupplierInvoiceMatchStatus.Voided, voidedHold.MatchStatus);
@@ -259,12 +289,38 @@ public sealed class ErpProcurementAggregateTests
             "INV-002-A",
             new DateOnly(2026, 6, 10),
             new DateOnly(2026, 7, 10),
-            "CNY",
+            "USD",
             quantityTolerance: 0m,
             amountTolerance: 0m,
+            priceTolerancePercent: 0m,
             [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 0.1m, 12.5m)],
             new Dictionary<string, decimal>(StringComparer.Ordinal) { ["LINE-001"] = 4m });
         Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldByCumulativeQuantity.MatchStatus);
+
+        Assert.Throws<InvalidOperationException>(() => SupplierInvoice.Match(
+            order,
+            receipt,
+            "INV-WRONG-CURRENCY",
+            new DateOnly(2026, 6, 10),
+            new DateOnly(2026, 7, 10),
+            "CNY",
+            quantityTolerance: 0m,
+            amountTolerance: 0m,
+            priceTolerancePercent: 0m,
+            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4m, 12.5m)]));
+
+        var heldByPricePercent = SupplierInvoice.Match(
+            order,
+            receipt,
+            "INV-PRICE-PCT",
+            new DateOnly(2026, 6, 10),
+            new DateOnly(2026, 7, 10),
+            "USD",
+            quantityTolerance: 0m,
+            amountTolerance: 100m,
+            priceTolerancePercent: 1m,
+            [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 4m, 12.7m)]);
+        Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld, heldByPricePercent.MatchStatus);
 
         var multiLineOrder = PurchaseOrder.Create(
             "org-001",
@@ -303,8 +359,8 @@ public sealed class ErpProcurementAggregateTests
         return new RfqLineDraft("LINE-001", "SKU-RM-1000", "kg", 25m, "SITE-01", new DateOnly(2026, 6, 1));
     }
 
-    private static PurchaseOrderLineDraft NewPurchaseOrderLine(decimal quantity)
+    private static PurchaseOrderLineDraft NewPurchaseOrderLine(decimal quantity, decimal overReceiptTolerancePercent = 0m)
     {
-        return new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", quantity, 12.5m, new DateOnly(2026, 6, 3));
+        return new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", quantity, 12.5m, new DateOnly(2026, 6, 3), overReceiptTolerancePercent);
     }
 }

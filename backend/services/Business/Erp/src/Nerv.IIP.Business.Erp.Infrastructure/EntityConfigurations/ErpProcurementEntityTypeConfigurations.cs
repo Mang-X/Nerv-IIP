@@ -130,6 +130,7 @@ public sealed class PurchaseOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PurchaseOrderNo).HasColumnName("purchase_order_no").IsRequired().HasMaxLength(100).HasComment("Purchase order number.");
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Purchase order currency code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase order status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Purchase order total amount.");
         builder.Property(x => x.ApprovalChainId).HasColumnName("approval_chain_id").HasMaxLength(150).HasComment("BusinessApproval chain id that gates purchase order release.");
@@ -155,6 +156,9 @@ public sealed class PurchaseOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").IsRequired().HasPrecision(18, 6).HasComment("ERP recorded receipt quantity.");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Purchase unit price.");
         builder.Property(x => x.PromisedDate).HasColumnName("promised_date").IsRequired().HasComment("Promised receipt date.");
+        builder.Property(x => x.OverReceiptTolerancePercent).HasColumnName("over_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed over receipt tolerance percent for the line.");
+        builder.Property(x => x.UnderReceiptTolerancePercent).HasColumnName("under_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed under receipt tolerance percent for final delivery close.");
+        builder.Property(x => x.FinalDelivery).HasColumnName("final_delivery").IsRequired().HasComment("Whether final delivery was declared and the line is closed despite remaining quantity.");
         builder.Ignore(x => x.OpenQuantity);
         builder.Ignore(x => x.LineAmount);
     }

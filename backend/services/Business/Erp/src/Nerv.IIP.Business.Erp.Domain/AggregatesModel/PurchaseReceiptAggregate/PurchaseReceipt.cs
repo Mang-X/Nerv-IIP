@@ -17,7 +17,8 @@ public sealed record PurchaseReceiptLineDraft(
     decimal ReceivedQuantity,
     string QualityStatus,
     string? LocationCode = null,
-    string? LotNo = null);
+    string? LotNo = null,
+    bool FinalDelivery = false);
 
 public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
 {
@@ -40,7 +41,7 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         RecordedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
-            var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity);
+            var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
             var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
             lines.Add(line);
         }
