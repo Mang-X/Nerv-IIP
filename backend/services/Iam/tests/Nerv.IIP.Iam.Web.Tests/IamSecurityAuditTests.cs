@@ -18,7 +18,8 @@ public sealed class IamSecurityAuditTests
     [Fact]
     public async Task Failed_password_login_persists_security_audit_and_failed_attempt_count()
     {
-        await using var db = CreateDbContext();
+        var databaseName = $"iam-security-audit-{Guid.NewGuid():N}";
+        await using var db = CreateDbContext(databaseName);
         var passwordService = new IamPasswordService();
         var user = new User(
             new UserId("user-audit-login"),
@@ -52,6 +53,70 @@ public sealed class IamSecurityAuditTests
     }
 
     [Fact]
+    public async Task Unknown_user_login_persists_security_audit_before_throwing()
+    {
+        var databaseName = $"iam-security-audit-{Guid.NewGuid():N}";
+        await using (var db = CreateDbContext(databaseName))
+        {
+            var auth = CreateAuthService(db);
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+                "missing-user",
+                "Password123!",
+                "test-client",
+                "10.0.0.4",
+                CancellationToken.None));
+        }
+
+        await using var verifyDb = CreateDbContext(databaseName);
+        var audit = Assert.Single(await verifyDb.SecurityAuditRecords.ToListAsync());
+        Assert.Equal("iam.auth.login.failed", audit.Action);
+        Assert.Equal("failure", audit.Outcome);
+        Assert.Equal("user", audit.TargetType);
+        Assert.Equal("missing-user", audit.TargetId);
+        Assert.Equal("10.0.0.4", audit.SourceIp);
+        Assert.Contains("\"reason\":\"unknown-or-disabled-user\"", audit.DetailsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Locked_out_login_persists_security_audit_before_throwing()
+    {
+        var databaseName = $"iam-security-audit-{Guid.NewGuid():N}";
+        var passwordService = new IamPasswordService();
+        await using (var db = CreateDbContext(databaseName))
+        {
+            var user = new User(
+                new UserId("user-audit-locked"),
+                "audit-locked",
+                "audit-locked@nerv-iip.local",
+                passwordService.Hash("Password123!"),
+                true,
+                Guid.NewGuid().ToString("n"),
+                1);
+            user.RecordFailedLogin(DateTimeOffset.UtcNow, 1, TimeSpan.FromMinutes(15));
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
+            var auth = CreateAuthService(db, passwordService);
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(
+                "audit-locked",
+                "Password123!",
+                "test-client",
+                "10.0.0.5",
+                CancellationToken.None));
+        }
+
+        await using var verifyDb = CreateDbContext(databaseName);
+        var audit = Assert.Single(await verifyDb.SecurityAuditRecords.ToListAsync());
+        Assert.Equal("iam.auth.login.failed", audit.Action);
+        Assert.Equal("failure", audit.Outcome);
+        Assert.Equal("user", audit.TargetType);
+        Assert.Equal("user-audit-locked", audit.TargetId);
+        Assert.Equal("10.0.0.5", audit.SourceIp);
+        Assert.Contains("\"reason\":\"locked-out\"", audit.DetailsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Session_revoke_persists_security_audit_record()
     {
         await using var db = CreateDbContext();
@@ -72,7 +137,7 @@ public sealed class IamSecurityAuditTests
         await auth.RevokeSessionAsync(
             "session-audit-revoke",
             "admin-revoke",
-            new SecurityAuditContext("user-admin", "corr-revoke", "10.0.0.2"),
+            new SecurityAuditContext("user-admin", "corr-revoke", "10.0.0.2", "org-001", "env-dev"),
             CancellationToken.None);
         await db.SaveChangesAsync();
 
@@ -103,7 +168,7 @@ public sealed class IamSecurityAuditTests
         await roles.PatchRolePermissionsAsync(
             "role-audit-operator",
             ["iam.users.read", "ops.tasks.read"],
-            new SecurityAuditContext("user-admin", "corr-role", "10.0.0.3"),
+            new SecurityAuditContext("user-admin", "corr-role", "10.0.0.3", "org-001", "env-dev"),
             CancellationToken.None);
         await db.SaveChangesAsync();
 
@@ -118,7 +183,15 @@ public sealed class IamSecurityAuditTests
 
         var query = new PostgreSqlIamSecurityAuditApplicationService(new SecurityAuditRepository(db));
         var records = await query.ListAsync(
-            new SecurityAuditListOptions(null, null, "iam.role.permissions.changed", "role", "role-audit-operator", 10),
+            new SecurityAuditListOptions(
+                null,
+                null,
+                "iam.role.permissions.changed",
+                "role",
+                "role-audit-operator",
+                audit.OccurredAtUtc.AddMinutes(-1),
+                audit.OccurredAtUtc.AddMinutes(1),
+                10),
             CancellationToken.None);
         var queried = Assert.Single(records);
         Assert.Equal(audit.Id.Id, queried.SecurityAuditRecordId);
@@ -145,10 +218,10 @@ public sealed class IamSecurityAuditTests
             new TestWebHostEnvironment());
     }
 
-    private static ApplicationDbContext CreateDbContext()
+    private static ApplicationDbContext CreateDbContext(string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase($"iam-security-audit-{Guid.NewGuid():N}")
+            .UseInMemoryDatabase(databaseName ?? $"iam-security-audit-{Guid.NewGuid():N}")
             .Options;
         return new ApplicationDbContext(options, new NoopMediator());
     }

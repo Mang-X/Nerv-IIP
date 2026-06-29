@@ -93,4 +93,17 @@ internal sealed class NoopSecurityAuditRecorder : ISecurityAuditRecorder
         _ = cancellationToken;
         return Task.CompletedTask;
     }
+
+    public Task RecordAndSaveAsync(
+        SecurityAuditContext context,
+        string action,
+        string targetType,
+        string targetId,
+        string outcome,
+        object details,
+        DateTimeOffset occurredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        return RecordAsync(context, action, targetType, targetId, outcome, details, occurredAtUtc, cancellationToken);
+    }
 }

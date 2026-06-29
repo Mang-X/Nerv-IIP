@@ -12,6 +12,8 @@ public sealed record ListSecurityAuditRecordsRequest(
     string? Action,
     string? TargetType,
     string? TargetId,
+    DateTimeOffset? OccurredFromUtc,
+    DateTimeOffset? OccurredToUtc,
     int? Take);
 
 [HttpGet("/api/iam/v1/security-audit-records")]
@@ -34,6 +36,8 @@ public sealed class ListSecurityAuditRecordsEndpoint(
                 req.Action,
                 req.TargetType,
                 req.TargetId,
+                req.OccurredFromUtc,
+                req.OccurredToUtc,
                 req.Take),
             ct);
         await Send.OkAsync(records.AsResponseData(), ct);

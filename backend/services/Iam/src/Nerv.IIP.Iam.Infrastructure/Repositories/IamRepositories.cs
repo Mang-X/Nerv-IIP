@@ -539,8 +539,12 @@ public interface ISecurityAuditRepository : IRepository<SecurityAuditRecord, Sec
         string? action,
         string? targetType,
         string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
         int take,
         CancellationToken cancellationToken = default);
+
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class SecurityAuditRepository(ApplicationDbContext context)
@@ -552,6 +556,8 @@ public sealed class SecurityAuditRepository(ApplicationDbContext context)
         string? action,
         string? targetType,
         string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
         int take,
         CancellationToken cancellationToken = default)
     {
@@ -581,10 +587,25 @@ public sealed class SecurityAuditRepository(ApplicationDbContext context)
             query = query.Where(x => x.TargetId == targetId);
         }
 
+        if (occurredFromUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc >= occurredFromUtc);
+        }
+
+        if (occurredToUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc <= occurredToUtc);
+        }
+
         return await query
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.Id)
             .Take(Math.Clamp(take, 1, 200))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        await DbContext.SaveChangesAsync(cancellationToken);
     }
 }

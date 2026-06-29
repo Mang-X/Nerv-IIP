@@ -144,7 +144,7 @@ public sealed class PostgreSqlIamRoleApplicationService(
         role.ReplacePermissions(seededCodes);
         var after = role.Permissions.Select(x => x.PermissionCode).Order(StringComparer.Ordinal).ToArray();
         await securityAudit.RecordAsync(
-            auditContext ?? new SecurityAuditContext("unknown", Guid.CreateVersion7().ToString("N"), null),
+            auditContext ?? new SecurityAuditContext("unknown", Guid.CreateVersion7().ToString("N"), null, "unknown", "unknown"),
             "iam.role.permissions.changed",
             "role",
             role.Id.Id,

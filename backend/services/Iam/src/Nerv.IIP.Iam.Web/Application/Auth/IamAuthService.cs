@@ -40,7 +40,7 @@ public sealed class PostgreSqlIamAuthService(
         var user = await userRepository.GetByLoginNameAsync(loginName, cancellationToken);
         if (user is null || !user.Enabled)
         {
-            await securityAudit.RecordAsync(
+            await securityAudit.RecordAndSaveAsync(
                 new SecurityAuditContext($"login:{loginName}", Guid.CreateVersion7().ToString("N"), ipAddress, "unknown", "unknown"),
                 "iam.auth.login.failed",
                 "user",
@@ -56,7 +56,7 @@ public sealed class PostgreSqlIamAuthService(
         if (user.IsLockedOut(now))
         {
             var auditContext = await CreateUserAuditContextAsync(user, $"user:{user.Id.Id}", ipAddress, cancellationToken);
-            await securityAudit.RecordAsync(
+            await securityAudit.RecordAndSaveAsync(
                 auditContext,
                 "iam.auth.login.failed",
                 "user",
@@ -155,7 +155,7 @@ public sealed class PostgreSqlIamAuthService(
             "session",
             session.Id.Id,
             "success",
-            new { reason, session.UserId, session.RevokedAtUtc },
+            new { reason, userId = session.UserId.Id, session.RevokedAtUtc },
             now,
             cancellationToken);
     }

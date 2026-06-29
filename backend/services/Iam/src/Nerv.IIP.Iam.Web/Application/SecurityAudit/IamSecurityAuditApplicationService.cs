@@ -8,8 +8,8 @@ public sealed record SecurityAuditContext(
     string Actor,
     string CorrelationId,
     string? SourceIp,
-    string OrganizationId = "org-001",
-    string EnvironmentId = "env-dev");
+    string OrganizationId,
+    string EnvironmentId);
 
 public sealed record SecurityAuditRecordResponse(
     string SecurityAuditRecordId,
@@ -31,11 +31,23 @@ public sealed record SecurityAuditListOptions(
     string? Action,
     string? TargetType,
     string? TargetId,
+    DateTimeOffset? OccurredFromUtc,
+    DateTimeOffset? OccurredToUtc,
     int? Take);
 
 public interface ISecurityAuditRecorder
 {
     Task RecordAsync(
+        SecurityAuditContext context,
+        string action,
+        string targetType,
+        string targetId,
+        string outcome,
+        object details,
+        DateTimeOffset occurredAtUtc,
+        CancellationToken cancellationToken);
+
+    Task RecordAndSaveAsync(
         SecurityAuditContext context,
         string action,
         string targetType,
@@ -60,7 +72,33 @@ public sealed class SecurityAuditRecorder(ISecurityAuditRepository repository) :
         DateTimeOffset occurredAtUtc,
         CancellationToken cancellationToken)
     {
-        var record = new SecurityAuditRecord(
+        await repository.AddAsync(CreateRecord(context, action, targetType, targetId, outcome, details, occurredAtUtc), cancellationToken);
+    }
+
+    public async Task RecordAndSaveAsync(
+        SecurityAuditContext context,
+        string action,
+        string targetType,
+        string targetId,
+        string outcome,
+        object details,
+        DateTimeOffset occurredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await repository.AddAsync(CreateRecord(context, action, targetType, targetId, outcome, details, occurredAtUtc), cancellationToken);
+        await repository.SaveChangesAsync(cancellationToken);
+    }
+
+    private static SecurityAuditRecord CreateRecord(
+        SecurityAuditContext context,
+        string action,
+        string targetType,
+        string targetId,
+        string outcome,
+        object details,
+        DateTimeOffset occurredAtUtc)
+    {
+        return new SecurityAuditRecord(
             new SecurityAuditRecordId($"audit-{Guid.CreateVersion7():N}"),
             Normalize(context.OrganizationId, "unknown"),
             Normalize(context.EnvironmentId, "unknown"),
@@ -73,8 +111,6 @@ public sealed class SecurityAuditRecorder(ISecurityAuditRepository repository) :
             Normalize(context.CorrelationId, Guid.CreateVersion7().ToString("N")),
             context.SourceIp,
             JsonSerializer.Serialize(details, JsonOptions));
-
-        await repository.AddAsync(record, cancellationToken);
     }
 
     private static string Normalize(string? value, string fallback)
@@ -103,6 +139,8 @@ public sealed class PostgreSqlIamSecurityAuditApplicationService(ISecurityAuditR
             options.Action,
             options.TargetType,
             options.TargetId,
+            options.OccurredFromUtc,
+            options.OccurredToUtc,
             options.Take ?? 50,
             cancellationToken);
         return records.Select(ToResponse).ToArray();
