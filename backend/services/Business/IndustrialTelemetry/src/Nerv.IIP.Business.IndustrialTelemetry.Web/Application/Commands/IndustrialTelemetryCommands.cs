@@ -65,7 +65,12 @@ public sealed record CreateOrUpdateAlarmRuleCommand(
     string ComparisonOperator,
     decimal ThresholdValue,
     string UnitCode,
-    bool IsEnabled) : ICommand<AlarmRuleId>;
+    bool IsEnabled,
+    decimal DeadbandValue = 0m,
+    int OnDelaySeconds = 0,
+    int OffDelaySeconds = 0,
+    int MinDurationSeconds = 0,
+    string? Priority = null) : ICommand<AlarmRuleId>;
 
 public sealed class CreateOrUpdateAlarmRuleCommandValidator : AbstractValidator<CreateOrUpdateAlarmRuleCommand>
 {
@@ -84,6 +89,11 @@ public sealed class CreateOrUpdateAlarmRuleCommandValidator : AbstractValidator<
             .Must(AlarmRule.IsSupportedComparisonOperator)
             .WithMessage("Unsupported alarm rule comparison operator.");
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.DeadbandValue).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.OnDelaySeconds).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.OffDelaySeconds).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.MinDurationSeconds).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Priority).MaximumLength(50);
     }
 }
 
@@ -108,7 +118,12 @@ public sealed class CreateOrUpdateAlarmRuleCommandHandler(ApplicationDbContext d
                 request.ComparisonOperator,
                 request.ThresholdValue,
                 request.UnitCode,
-                request.IsEnabled);
+                request.IsEnabled,
+                request.DeadbandValue,
+                request.OnDelaySeconds,
+                request.OffDelaySeconds,
+                request.MinDurationSeconds,
+                request.Priority);
             return existing.Id;
         }
 
@@ -123,7 +138,12 @@ public sealed class CreateOrUpdateAlarmRuleCommandHandler(ApplicationDbContext d
             request.ComparisonOperator,
             request.ThresholdValue,
             request.UnitCode,
-            request.IsEnabled);
+            request.IsEnabled,
+            request.DeadbandValue,
+            request.OnDelaySeconds,
+            request.OffDelaySeconds,
+            request.MinDurationSeconds,
+            request.Priority);
         dbContext.AlarmRules.Add(rule);
         return rule.Id;
     }
@@ -273,10 +293,6 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return;
         }
 
-        var matchedRules = rules
-            .Where(rule => rule.Evaluate(request.AverageValue, request.MaxValue))
-            .ToArray();
-
         var ruleCodes = rules.Select(x => x.RuleCode).ToArray();
         var activePersistedAlarms = await dbContext.AlarmEvents
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -293,28 +309,36 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .DistinctBy(x => x.Id)
             .Where(alarm => ruleCodes.Any(ruleCode => IsAlarmForRule(alarm, ruleCode)))
             .ToArray();
-        var matchedRuleCodes = matchedRules
-            .Select(x => x.RuleCode)
-            .ToHashSet(StringComparer.Ordinal);
-
+        var previousSummaries = rules.Any(rule => rule.RequiredTriggerSeconds > 0 || rule.OffDelaySeconds > 0)
+            ? await LoadPreviousSummariesAsync(request, normalizedTagKey, cancellationToken)
+            : [];
         foreach (var rule in rules)
         {
             var ruleActiveAlarms = activeAlarms
                 .Where(alarm => IsAlarmForRule(alarm, rule.RuleCode))
                 .OrderBy(alarm => alarm.RaisedAtUtc)
                 .ToArray();
-            if (matchedRuleCodes.Contains(rule.RuleCode))
+            var isTriggered = rule.Evaluate(request.AverageValue, request.MaxValue);
+            if (isTriggered)
             {
                 if (ruleActiveAlarms.Length == 0)
                 {
-                    dbContext.AlarmEvents.Add(AlarmEvent.Raise(
-                        request.OrganizationId,
-                        request.EnvironmentId,
-                        request.DeviceAssetId,
-                        rule.AlarmCode,
-                        rule.Severity,
-                        request.BucketEndUtc,
-                        CreateRuleExternalAlarmId(rule)));
+                    if (HasSatisfiedTriggerDelay(rule, request, previousSummaries))
+                    {
+                        dbContext.AlarmEvents.Add(AlarmEvent.Raise(
+                            request.OrganizationId,
+                            request.EnvironmentId,
+                            request.DeviceAssetId,
+                            rule.AlarmCode,
+                            rule.Severity,
+                            request.BucketEndUtc,
+                            CreateRuleExternalAlarmId(rule),
+                            rule.Priority,
+                            rule.TagKey,
+                            rule.SelectObservedValue(request.AverageValue, request.MaxValue),
+                            rule.ThresholdValue,
+                            rule.UnitCode));
+                    }
                 }
 
                 foreach (var duplicate in ruleActiveAlarms.Skip(1))
@@ -325,11 +349,109 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
                 continue;
             }
 
+            if (!rule.IsReturnToNormal(request.AverageValue, request.MaxValue))
+            {
+                continue;
+            }
+
             foreach (var activeAlarm in ruleActiveAlarms)
             {
-                TryClearRuleAlarm(activeAlarm, request.BucketEndUtc, "return-to-normal");
+                if (HasSatisfiedReturnToNormalDelay(rule, request, activeAlarm.RaisedAtUtc, previousSummaries))
+                {
+                    TryClearRuleAlarm(activeAlarm, request.BucketEndUtc, "return-to-normal");
+                }
             }
         }
+    }
+
+    private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var previousPersistedSummaries = await dbContext.TelemetrySummaries
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .Take(100)
+            .ToArrayAsync(cancellationToken);
+        return previousPersistedSummaries
+            .Concat(dbContext.TelemetrySummaries.Local
+                .Where(x => x.OrganizationId == request.OrganizationId)
+                .Where(x => x.EnvironmentId == request.EnvironmentId)
+                .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+                .Where(x => x.TagKey == normalizedTagKey)
+                .Where(x => x.BucketEndUtc <= request.BucketStartUtc))
+            .DistinctBy(x => x.Id)
+            .OrderByDescending(x => x.BucketEndUtc)
+            .Take(100)
+            .ToArray();
+    }
+
+    private static bool HasSatisfiedTriggerDelay(
+        AlarmRule rule,
+        RecordTelemetrySampleCommand request,
+        IReadOnlyCollection<TelemetrySummary> previousSummaries)
+    {
+        var requiredSeconds = rule.RequiredTriggerSeconds;
+        if (requiredSeconds <= 0)
+        {
+            return true;
+        }
+
+        var conditionStartUtc = CalculateConsecutiveConditionStart(
+            rule,
+            previousSummaries,
+            static (rule, summary) => rule.Evaluate(summary.AverageValue, summary.MaxValue),
+            request.BucketStartUtc);
+        return (request.BucketEndUtc - conditionStartUtc).TotalSeconds >= requiredSeconds;
+    }
+
+    private static bool HasSatisfiedReturnToNormalDelay(
+        AlarmRule rule,
+        RecordTelemetrySampleCommand request,
+        DateTimeOffset raisedAtUtc,
+        IReadOnlyCollection<TelemetrySummary> previousSummaries)
+    {
+        if (request.BucketEndUtc < raisedAtUtc)
+        {
+            return false;
+        }
+
+        if (rule.OffDelaySeconds <= 0)
+        {
+            return true;
+        }
+
+        var conditionStartUtc = CalculateConsecutiveConditionStart(
+            rule,
+            previousSummaries,
+            static (rule, summary) => rule.IsReturnToNormal(summary.AverageValue, summary.MaxValue),
+            request.BucketStartUtc);
+        return (request.BucketEndUtc - conditionStartUtc).TotalSeconds >= rule.OffDelaySeconds;
+    }
+
+    private static DateTimeOffset CalculateConsecutiveConditionStart(
+        AlarmRule rule,
+        IReadOnlyCollection<TelemetrySummary> previousSummaries,
+        Func<AlarmRule, TelemetrySummary, bool> predicate,
+        DateTimeOffset defaultStartUtc)
+    {
+        var conditionStartUtc = defaultStartUtc;
+        foreach (var summary in previousSummaries)
+        {
+            if (!predicate(rule, summary))
+            {
+                break;
+            }
+
+            conditionStartUtc = summary.BucketStartUtc;
+        }
+
+        return conditionStartUtc;
     }
 
     private static string CreateRuleExternalAlarmId(AlarmRule rule)
@@ -463,7 +585,12 @@ public sealed record RaiseAlarmCommand(
     string AlarmCode,
     string Severity,
     DateTimeOffset RaisedAtUtc,
-    string ExternalAlarmId) : ICommand<AlarmEventId>;
+    string ExternalAlarmId,
+    string? Priority = null,
+    string? TagKey = null,
+    decimal? ObservedValue = null,
+    decimal? ThresholdValue = null,
+    string? UnitCode = null) : ICommand<AlarmEventId>;
 
 public sealed class RaiseAlarmCommandValidator : AbstractValidator<RaiseAlarmCommand>
 {
@@ -475,6 +602,9 @@ public sealed class RaiseAlarmCommandValidator : AbstractValidator<RaiseAlarmCom
         RuleFor(x => x.AlarmCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Severity).NotEmpty().MaximumLength(50);
         RuleFor(x => x.ExternalAlarmId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Priority).MaximumLength(50);
+        RuleFor(x => x.TagKey).MaximumLength(150);
+        RuleFor(x => x.UnitCode).MaximumLength(50);
     }
 }
 
@@ -483,7 +613,19 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
 {
     public async Task<AlarmEventId> Handle(RaiseAlarmCommand request, CancellationToken cancellationToken)
     {
-        var incoming = AlarmEvent.Raise(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.AlarmCode, request.Severity, request.RaisedAtUtc, request.ExternalAlarmId);
+        var incoming = AlarmEvent.Raise(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            request.AlarmCode,
+            request.Severity,
+            request.RaisedAtUtc,
+            request.ExternalAlarmId,
+            request.Priority,
+            request.TagKey,
+            request.ObservedValue,
+            request.ThresholdValue,
+            request.UnitCode);
         var existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId

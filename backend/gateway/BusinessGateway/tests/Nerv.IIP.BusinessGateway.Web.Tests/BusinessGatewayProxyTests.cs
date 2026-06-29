@@ -1709,6 +1709,7 @@ public sealed class BusinessGatewayProxyTests
             industrialTelemetry.LastOeeRequest);
         using var oeeDocument = JsonDocument.Parse(await oeeResponse.Content.ReadAsStringAsync());
         var oee = oeeDocument.RootElement.GetProperty("data");
+        Assert.Equal(0.75m, oee.GetProperty("loadingRate").GetDecimal());
         Assert.True(oee.GetProperty("performanceRateEstimated").GetBoolean());
         Assert.True(oee.GetProperty("qualityRateEstimated").GetBoolean());
     }
@@ -3648,6 +3649,7 @@ public sealed class BusinessGatewayProxyTests
                     windowEndUtc = "2026-06-01T16:00:00Z",
                     stateSampleCount = 2,
                     availabilityRate = 0.5m,
+                    loadingRate = 0.75m,
                     performanceRate = 1m,
                     qualityRate = 1m,
                     oeeRate = 0.5m,
@@ -6054,6 +6056,7 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
             request.WindowEndUtc,
             2,
             0.5m,
+            0.75m,
             1m,
             1m,
             0.5m,
