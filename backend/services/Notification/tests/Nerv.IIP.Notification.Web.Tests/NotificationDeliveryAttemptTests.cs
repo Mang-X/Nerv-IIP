@@ -6,6 +6,7 @@ using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.Repositories;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using Nerv.IIP.Notification.Web.Application.Notifications;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Notification.Web.Tests;
 
@@ -61,6 +62,19 @@ public sealed class NotificationDeliveryAttemptTests
     }
 
     [Fact]
+    public void Delivery_attempt_rejects_non_positive_max_attempts()
+    {
+        var messageId = new NotificationMessageId(Guid.CreateVersion7());
+        var now = DateTimeOffset.Parse("2026-06-29T00:00:00Z");
+        var attempt = DeliveryAttempt.Start(messageId, NotificationDeliveryChannels.InApp, now);
+
+        var exception = Assert.Throws<KnownException>(() =>
+            attempt.MarkFailed("provider-timeout", now.AddSeconds(1), maxAttempts: 0, retryDelay: TimeSpan.FromMinutes(2)));
+
+        Assert.Equal("Delivery max attempts must be positive.", exception.Message);
+    }
+
+    [Fact]
     public async Task Concurrent_duplicate_submit_returns_persisted_winner_after_unique_conflict()
     {
         await using var fixture = await NotificationSqliteFixture.CreateAsync();
@@ -74,6 +88,7 @@ public sealed class NotificationDeliveryAttemptTests
             DateTimeOffset.Parse("2026-06-29T00:00:00Z")), CancellationToken.None);
 
         await using var secondDb = fixture.CreateContext();
+        await using var transaction = await secondDb.Database.BeginTransactionAsync();
         var secondHandler = new SubmitNotificationIntentCommandHandler(
             new NotificationIntentRepository(secondDb),
             secondDb);

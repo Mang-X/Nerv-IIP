@@ -83,10 +83,15 @@ public sealed class DeliveryAttempt : Entity<DeliveryAttemptId>
 
     public void MarkFailed(string failureReason, DateTimeOffset now, int maxAttempts, TimeSpan retryDelay)
     {
+        if (maxAttempts <= 0)
+        {
+            throw new KnownException("Delivery max attempts must be positive.");
+        }
+
         EnsureStarted();
         FailureReason = Required(failureReason, "Delivery failure reason is required.");
         AttemptedAtUtc = now;
-        if (AttemptNo >= Math.Max(1, maxAttempts))
+        if (AttemptNo >= maxAttempts)
         {
             Status = NotificationDeliveryAttemptStatuses.DeadLettered;
             NextRetryAtUtc = null;

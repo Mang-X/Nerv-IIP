@@ -55,7 +55,7 @@ public sealed class OperationLeaseReaperTests
     }
 
     [Fact]
-    public async Task Concurrent_duplicate_create_returns_persisted_operation_task()
+    public async Task Concurrent_duplicate_create_inside_transaction_returns_persisted_operation_task()
     {
         await using var fixture = await OpsSqliteFixture.CreateAsync();
         var first = new EfOperationTaskApplicationService(
@@ -68,6 +68,7 @@ public sealed class OperationLeaseReaperTests
             CancellationToken.None);
 
         await using var secondDb = fixture.CreateContext();
+        await using var transaction = await secondDb.Database.BeginTransactionAsync();
         var second = new EfOperationTaskApplicationService(
             new OperationTaskRepository(secondDb),
             new OperationTemplateRepository(secondDb),

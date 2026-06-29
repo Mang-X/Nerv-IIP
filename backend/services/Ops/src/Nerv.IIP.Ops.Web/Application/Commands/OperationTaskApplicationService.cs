@@ -7,6 +7,7 @@ using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Infrastructure.Repositories;
 using Nerv.IIP.Ops.Web.Application;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Ops.Web.Application.Commands;
 
@@ -108,12 +109,33 @@ public sealed class EfOperationTaskApplicationService(
         task.AssignPendingAuditIds(pendingAuditIds);
         await AssignAuditChainAsync(task, pendingAuditIds, cancellationToken);
         await repository.AddAsync(task, cancellationToken);
+        const string duplicateRecoverySavepoint = "ops_operation_task_create_before_save";
+        var transaction = dbContext.Database.CurrentTransaction;
+        if (transaction is not null)
+        {
+            await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+        }
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.ReleaseSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
         }
-        catch (DbUpdateException exception) when (IsDuplicateTaskConflict(exception))
+        catch (DbUpdateException exception)
         {
+            if (!IsDuplicateTaskConflict(exception))
+            {
+                throw;
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.RollbackToSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
+
             dbContext.ChangeTracker.Clear();
             var duplicate = await repository.GetByIdempotencyScopeAsync(idempotencyScope, cancellationToken)
                 ?? RethrowDuplicateConflict(exception);
@@ -319,66 +341,13 @@ public sealed class EfOperationTaskApplicationService(
     private bool IsDuplicateTaskConflict(DbUpdateException exception)
     {
         return dbContext.ChangeTracker.Entries<OperationTask>().Any(x => x.State == EntityState.Added)
-            && OpsUniqueConflictDetector.IsUniqueConflict(exception, dbContext);
+            && ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, constraintOrIndexName: null);
     }
 
     private static OperationTask RethrowDuplicateConflict(DbUpdateException exception)
     {
         System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
         throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
-    }
-}
-
-internal static class OpsUniqueConflictDetector
-{
-    public static bool IsUniqueConflict(Exception exception, DbContext dbContext)
-    {
-        var providerName = dbContext.Database.ProviderName ?? string.Empty;
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (IsPostgreSqlUniqueConflict(current)
-                || IsSqliteUniqueConflict(providerName, current))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsPostgreSqlUniqueConflict(Exception exception)
-    {
-        if (!string.Equals(exception.GetType().FullName, "Npgsql.PostgresException", StringComparison.Ordinal))
-        {
-            return false;
-        }
-
-        return exception.GetType().GetProperty("SqlState")?.GetValue(exception) as string == "23505";
-    }
-
-    private static bool IsSqliteUniqueConflict(string providerName, Exception exception)
-    {
-        var typeName = exception.GetType().FullName ?? string.Empty;
-        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase)
-            && !typeName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var errorCode = GetIntProperty(exception, "SqliteErrorCode");
-        var extendedErrorCode = GetIntProperty(exception, "SqliteExtendedErrorCode");
-        return errorCode == 19 || extendedErrorCode is 1555 or 2067;
-    }
-
-    private static int? GetIntProperty(Exception exception, string propertyName)
-    {
-        var value = exception.GetType().GetProperty(propertyName)?.GetValue(exception);
-        return value switch
-        {
-            int intValue => intValue,
-            uint uintValue when uintValue <= int.MaxValue => (int)uintValue,
-            _ => null
-        };
     }
 }
 
@@ -430,6 +399,8 @@ public sealed class EfOperationLeaseReaper(
             }
         }
 
+        // Background reaping is not mediated by CommandUnitOfWorkBehavior, so this save intentionally
+        // persists state only. Domain event publication for lease-timeout transitions is a future contract decision.
         await dbContext.SaveChangesAsync(cancellationToken);
         return new OperationLeaseReaperResult(requeued, failed);
     }

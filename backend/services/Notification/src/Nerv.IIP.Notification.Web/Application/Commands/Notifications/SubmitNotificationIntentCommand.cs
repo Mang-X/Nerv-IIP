@@ -61,12 +61,33 @@ public sealed class SubmitNotificationIntentCommandHandler(
                 command.Now));
         }
 
+        const string duplicateRecoverySavepoint = "notification_intent_submit_before_save";
+        var transaction = dbContext.Database.CurrentTransaction;
+        if (transaction is not null)
+        {
+            await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+        }
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.ReleaseSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
         }
-        catch (DbUpdateException exception) when (IsDuplicateIntentConflict(exception))
+        catch (DbUpdateException exception)
         {
+            if (!IsDuplicateIntentConflict(exception))
+            {
+                throw;
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.RollbackToSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
+
             dbContext.ChangeTracker.Clear();
             var duplicate = await repository.GetByDedupeKeyAsync(
                 command.OrganizationId,

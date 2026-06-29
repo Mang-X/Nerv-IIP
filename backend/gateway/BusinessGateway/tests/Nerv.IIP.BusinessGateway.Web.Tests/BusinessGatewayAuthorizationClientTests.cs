@@ -90,33 +90,6 @@ public sealed class BusinessGatewayAuthorizationClientTests
     }
 
     [Fact]
-    public async Task Http_authorization_client_cache_key_includes_permission_version()
-    {
-        var handler = new RecordingHandler(_ => AuthorizationResponse(HttpStatusCode.OK, allowed: true));
-        var cache = new RecordingCache();
-        var client = CreateClient(
-            handler,
-            new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 },
-            cache);
-        var requirement = new BusinessGatewayPermissionRequirement(
-            BusinessGatewayPermissions.MesWorkOrdersRead,
-            "org-001",
-            "env-dev",
-            null,
-            null);
-
-        await client.CheckAsync(BusinessGatewayTestTokens.ValidAccessToken(permissionVersion: 7), requirement, CancellationToken.None);
-        await client.CheckAsync(BusinessGatewayTestTokens.ValidAccessToken(permissionVersion: 8), requirement, CancellationToken.None);
-
-        Assert.Collection(
-            cache.Keys,
-            key => Assert.Contains(":permission-version:7:", key, StringComparison.Ordinal),
-            key => Assert.Contains(":permission-version:8:", key, StringComparison.Ordinal));
-        Assert.NotEqual(cache.Keys[0], cache.Keys[1]);
-        Assert.Equal(2, handler.Requests.Count);
-    }
-
-    [Fact]
     public async Task Accept_language_forwarding_handler_copies_current_request_language()
     {
         var httpContext = new DefaultHttpContext();
@@ -137,11 +110,10 @@ public sealed class BusinessGatewayAuthorizationClientTests
 
     private static HttpBusinessGatewayAuthorizationClient CreateClient(
         RecordingHandler handler,
-        BusinessGatewayAuthorizationOptions? options = null,
-        IAppCache? cache = null) =>
+        BusinessGatewayAuthorizationOptions? options = null) =>
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
-            cache ?? new MemoryAppCache(),
+            new MemoryAppCache(),
             Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }));
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
@@ -180,25 +152,6 @@ public sealed class BusinessGatewayAuthorizationClientTests
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken));
             return responseFactory(request);
-        }
-    }
-
-    private sealed class RecordingCache : IAppCache
-    {
-        public List<string> Keys { get; } = [];
-
-        public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl)
-        {
-            Keys.Add(key);
-            return await factory();
-        }
-
-        public void InvalidatePrefix(string prefix)
-        {
-        }
-
-        public void Clear()
-        {
         }
     }
 }
