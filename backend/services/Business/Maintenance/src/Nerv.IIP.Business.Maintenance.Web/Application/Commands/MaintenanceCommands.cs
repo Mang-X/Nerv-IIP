@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
@@ -15,7 +17,10 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string Priority,
     string? SourceAlarmId,
     string OpenedBy,
-    string? AssetUnavailableReason) : ICommand<MaintenanceWorkOrderId>;
+    string? AssetUnavailableReason,
+    string? DiagnosticDescription = null,
+    string? FailureModeCode = null,
+    string? FailureCauseCode = null) : ICommand<MaintenanceWorkOrderId>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -28,6 +33,9 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(500);
+        RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
+        RuleFor(x => x.FailureModeCode).MaximumLength(100);
+        RuleFor(x => x.FailureCauseCode).MaximumLength(100);
     }
 }
 
@@ -51,7 +59,16 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
 
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
             ? MaintenanceWorkOrder.OpenManual(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.Priority, request.OpenedBy)
-            : MaintenanceWorkOrder.OpenFromAlarm(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.SourceAlarmId, request.Priority, request.OpenedBy);
+            : MaintenanceWorkOrder.OpenFromAlarm(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.DeviceAssetId,
+                request.SourceAlarmId,
+                request.Priority,
+                request.OpenedBy,
+                request.DiagnosticDescription,
+                request.FailureModeCode,
+                request.FailureCauseCode);
 
         if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
         {
@@ -94,6 +111,16 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(ApplicationDbCont
     {
         var workOrder = await dbContext.MaintenanceWorkOrders.Include(x => x.SparePartLines).SingleOrDefaultAsync(x => x.Id == request.WorkOrderId, cancellationToken)
             ?? throw new KnownException($"Maintenance work order was not found: {request.WorkOrderId}");
+        var downtimeReasonExists = await dbContext.DowntimeReasons.AnyAsync(
+            x => x.OrganizationId == workOrder.OrganizationId
+                && x.EnvironmentId == workOrder.EnvironmentId
+                && x.ReasonCode == request.DowntimeReasonCode,
+            cancellationToken);
+        if (!downtimeReasonExists)
+        {
+            throw new KnownException($"Downtime reason was not found: {request.DowntimeReasonCode}");
+        }
+
         workOrder.Complete(
             request.Result,
             request.DowntimeReasonCode,
@@ -175,34 +202,67 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractV
     }
 }
 
-public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(ApplicationDbContext dbContext)
+public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
+    ApplicationDbContext dbContext,
+    IAssetRuntimeHoursProvider? runtimeHoursProvider = null)
     : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
 {
     public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
     {
-        var duePlans = await dbContext.MaintenancePlans
+        var plans = await dbContext.MaintenancePlans
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.NextDueOn <= request.BusinessDate)
+            .Where(x => x.NextDueOn <= request.BusinessDate || x.RuntimeHourInterval != null)
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.PlanCode)
             .ToArrayAsync(cancellationToken);
 
         var workOrderIds = new List<MaintenanceWorkOrderId>();
-        foreach (var plan in duePlans)
+        foreach (var plan in plans)
         {
-            var workOrder = MaintenanceWorkOrder.OpenFromPlan(
+            foreach (var dueDate in plan.ConsumeDueDates(request.BusinessDate))
+            {
+                AddPlanWorkOrder(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds);
+            }
+
+            if (runtimeHoursProvider is null || plan.RuntimeHourInterval is null)
+            {
+                continue;
+            }
+
+            var runtime = await runtimeHoursProvider.CalculateAsync(
                 plan.OrganizationId,
                 plan.EnvironmentId,
                 plan.DeviceAssetId,
-                plan.PlanCode,
-                request.OpenedBy);
-            dbContext.MaintenanceWorkOrders.Add(workOrder);
-            plan.MarkGenerated(request.BusinessDate);
-            workOrderIds.Add(workOrder.Id);
+                new DateTimeOffset(plan.StartsOn.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                new DateTimeOffset(request.BusinessDate.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                cancellationToken);
+            if (!runtime.HasRuntimeSamples)
+            {
+                continue;
+            }
+
+            var runtimeDueCount = plan.ConsumeRuntimeDue(runtime.RuntimeHours);
+            for (var i = 0; i < runtimeDueCount; i++)
+            {
+                AddPlanWorkOrder(plan, request.OpenedBy, $"runtime:{plan.LastGeneratedRuntimeHours:0.######}:{i + 1}", workOrderIds);
+            }
         }
 
         return new GenerateDueMaintenanceWorkOrdersResult(workOrderIds.Count, workOrderIds);
+    }
+
+    private void AddPlanWorkOrder(MaintenancePlan plan, string openedBy, string dueSuffix, List<MaintenanceWorkOrderId> workOrderIds)
+    {
+        var workOrder = MaintenanceWorkOrder.OpenFromPlan(
+            plan.OrganizationId,
+            plan.EnvironmentId,
+            plan.DeviceAssetId,
+            plan.PlanCode,
+            openedBy,
+            $"{plan.PlanCode}:{dueSuffix}");
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        workOrderIds.Add(workOrder.Id);
     }
 }
 
@@ -260,7 +320,8 @@ public sealed record CreateMaintenancePlanCommand(
     string Owner,
     DateTimeOffset? WindowStartUtc,
     DateTimeOffset? WindowEndUtc,
-    string? IdempotencyKey = null) : ICommand<MaintenancePlanId>;
+    string? IdempotencyKey = null,
+    decimal? RuntimeHourInterval = null) : ICommand<MaintenancePlanId>;
 
 public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<CreateMaintenancePlanCommand>
 {
@@ -273,6 +334,7 @@ public sealed class CreateMaintenancePlanCommandValidator : AbstractValidator<Cr
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.Interval).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.RuntimeHourInterval).GreaterThan(0);
         RuleFor(x => x)
             .Must(x => (x.WindowStartUtc is null) == (x.WindowEndUtc is null))
             .WithMessage("Maintenance availability window start and end must be provided together.");
@@ -308,7 +370,8 @@ public sealed class CreateMaintenancePlanCommandHandler(
                 request.StartsOn,
                 request.Owner,
                 request.WindowStartUtc,
-                request.WindowEndUtc),
+                request.WindowEndUtc,
+                request.RuntimeHourInterval),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -327,7 +390,7 @@ public sealed class CreateMaintenancePlanCommandHandler(
 
         var windowStartUtc = request.WindowStartUtc?.ToUniversalTime();
         var windowEndUtc = request.WindowEndUtc?.ToUniversalTime();
-        var plan = MaintenancePlan.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, allocation.Code, request.Interval, request.StartsOn, request.Owner, windowStartUtc, windowEndUtc);
+        var plan = MaintenancePlan.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, allocation.Code, request.Interval, request.StartsOn, request.Owner, windowStartUtc, windowEndUtc, request.RuntimeHourInterval);
         dbContext.MaintenancePlans.Add(plan);
         await Task.CompletedTask;
         return plan.Id;
@@ -454,5 +517,128 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
             cancellationToken)
             ?? throw new KnownException($"Maintenance inspection work order was not found: {inspection.WorkOrderId}");
         return workOrder.DeviceAssetId;
+    }
+}
+
+public sealed record CreateDowntimeReasonCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory) : ICommand<DowntimeReasonId>;
+
+public sealed class CreateDowntimeReasonCommandValidator : AbstractValidator<CreateDowntimeReasonCommand>
+{
+    public CreateDowntimeReasonCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class CreateDowntimeReasonCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CreateDowntimeReasonCommand, DowntimeReasonId>
+{
+    public async Task<DowntimeReasonId> Handle(CreateDowntimeReasonCommand request, CancellationToken cancellationToken)
+    {
+        var normalizedReasonCode = request.ReasonCode.Trim();
+        var existing = await dbContext.DowntimeReasons.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReasonCode == normalizedReasonCode,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        var reason = DowntimeReason.Create(request.OrganizationId, request.EnvironmentId, normalizedReasonCode, request.Description, request.ReasonCategory, request.LossCategory);
+        dbContext.DowntimeReasons.Add(reason);
+        return reason.Id;
+    }
+}
+
+public sealed record UpdateDowntimeReasonCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory) : ICommand;
+
+public sealed class UpdateDowntimeReasonCommandValidator : AbstractValidator<UpdateDowntimeReasonCommand>
+{
+    public UpdateDowntimeReasonCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class UpdateDowntimeReasonCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<UpdateDowntimeReasonCommand>
+{
+    public async Task Handle(UpdateDowntimeReasonCommand request, CancellationToken cancellationToken)
+    {
+        var normalizedReasonCode = request.ReasonCode.Trim();
+        var reason = await dbContext.DowntimeReasons.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReasonCode == normalizedReasonCode,
+            cancellationToken)
+            ?? throw new KnownException($"Downtime reason was not found: {request.ReasonCode}");
+
+        reason.Update(request.Description, request.ReasonCategory, request.LossCategory);
+    }
+}
+
+public sealed record DeleteDowntimeReasonCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode) : ICommand;
+
+public sealed class DeleteDowntimeReasonCommandValidator : AbstractValidator<DeleteDowntimeReasonCommand>
+{
+    public DeleteDowntimeReasonCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class DeleteDowntimeReasonCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<DeleteDowntimeReasonCommand>
+{
+    public async Task Handle(DeleteDowntimeReasonCommand request, CancellationToken cancellationToken)
+    {
+        var normalizedReasonCode = request.ReasonCode.Trim();
+        var reason = await dbContext.DowntimeReasons.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReasonCode == normalizedReasonCode,
+            cancellationToken)
+            ?? throw new KnownException($"Downtime reason was not found: {request.ReasonCode}");
+
+        var hasWorkOrders = await dbContext.MaintenanceWorkOrders.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DowntimeReasonCode == normalizedReasonCode,
+            cancellationToken);
+        if (hasWorkOrders)
+        {
+            throw new KnownException($"Downtime reason is referenced by maintenance work orders and cannot be deleted: {request.ReasonCode}");
+        }
+
+        dbContext.DowntimeReasons.Remove(reason);
     }
 }

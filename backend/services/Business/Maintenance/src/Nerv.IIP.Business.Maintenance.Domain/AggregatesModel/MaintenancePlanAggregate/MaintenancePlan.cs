@@ -19,7 +19,8 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         DateOnly startsOn,
         string owner,
         DateTimeOffset? windowStartUtc,
-        DateTimeOffset? windowEndUtc)
+        DateTimeOffset? windowEndUtc,
+        decimal? runtimeHourInterval)
     {
         if ((windowStartUtc is null) != (windowEndUtc is null))
         {
@@ -40,10 +41,18 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         PlanCode = MaintenanceText.Required(planCode, nameof(planCode));
         Interval = MaintenanceText.Required(interval, nameof(interval));
         _ = ParseIsoDayInterval(Interval);
+        if (runtimeHourInterval is not null && runtimeHourInterval <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(runtimeHourInterval), "Maintenance runtime-hour interval must be positive.");
+        }
+
         StartsOn = startsOn;
         Owner = MaintenanceText.Required(owner, nameof(owner));
         WindowStartUtc = windowStartUtc;
         WindowEndUtc = windowEndUtc;
+        RuntimeHourInterval = runtimeHourInterval;
+        LastGeneratedRuntimeHours = 0m;
+        NextDueRuntimeHours = runtimeHourInterval;
         NextDueOn = startsOn;
         CreatedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new MaintenancePlanCreatedDomainEvent(this));
@@ -60,6 +69,9 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
     public string Owner { get; private set; } = string.Empty;
     public DateTimeOffset? WindowStartUtc { get; private set; }
     public DateTimeOffset? WindowEndUtc { get; private set; }
+    public decimal? RuntimeHourInterval { get; private set; }
+    public decimal LastGeneratedRuntimeHours { get; private set; }
+    public decimal? NextDueRuntimeHours { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
     public static MaintenancePlan Create(
@@ -71,9 +83,10 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
         DateOnly startsOn,
         string owner,
         DateTimeOffset? windowStartUtc = null,
-        DateTimeOffset? windowEndUtc = null)
+        DateTimeOffset? windowEndUtc = null,
+        decimal? runtimeHourInterval = null)
     {
-        return new MaintenancePlan(organizationId, environmentId, deviceAssetId, planCode, interval, startsOn, owner, windowStartUtc, windowEndUtc);
+        return new MaintenancePlan(organizationId, environmentId, deviceAssetId, planCode, interval, startsOn, owner, windowStartUtc, windowEndUtc, runtimeHourInterval);
     }
 
     public bool IsDueOn(DateOnly businessDate)
@@ -83,13 +96,39 @@ public sealed class MaintenancePlan : Entity<MaintenancePlanId>, IAggregateRoot
 
     public void MarkGenerated(DateOnly generatedOn)
     {
-        if (!IsDueOn(generatedOn))
+        _ = ConsumeDueDates(generatedOn);
+    }
+
+    public IReadOnlyCollection<DateOnly> ConsumeDueDates(DateOnly businessDate)
+    {
+        var dueDates = new List<DateOnly>();
+        var intervalDays = ParseIsoDayInterval(Interval);
+        while (NextDueOn <= businessDate)
         {
-            return;
+            dueDates.Add(NextDueOn);
+            LastGeneratedOn = NextDueOn;
+            NextDueOn = NextDueOn.AddDays(intervalDays);
         }
 
-        LastGeneratedOn = generatedOn;
-        NextDueOn = generatedOn.AddDays(ParseIsoDayInterval(Interval));
+        return dueDates;
+    }
+
+    public int ConsumeRuntimeDue(decimal runtimeHours)
+    {
+        if (RuntimeHourInterval is null || NextDueRuntimeHours is null || runtimeHours < NextDueRuntimeHours)
+        {
+            return 0;
+        }
+
+        var generatedCount = 0;
+        while (NextDueRuntimeHours is not null && runtimeHours >= NextDueRuntimeHours)
+        {
+            generatedCount++;
+            NextDueRuntimeHours += RuntimeHourInterval.Value;
+        }
+
+        LastGeneratedRuntimeHours = runtimeHours;
+        return generatedCount;
     }
 
     private static int ParseIsoDayInterval(string interval)

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using MediatR;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -140,6 +141,31 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
     }
 }
 
+public sealed record ListDowntimeReasonsQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100) : IQuery<PagedMaintenanceListResponse<DowntimeReasonListItem>>;
+
+public sealed record DowntimeReasonListItem(DowntimeReasonId DowntimeReasonId, string OrganizationId, string EnvironmentId, string ReasonCode, string Description, string ReasonCategory, string LossCategory);
+
+public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListDowntimeReasonsQuery, PagedMaintenanceListResponse<DowntimeReasonListItem>>
+{
+    public async Task<PagedMaintenanceListResponse<DowntimeReasonListItem>> Handle(ListDowntimeReasonsQuery request, CancellationToken cancellationToken)
+    {
+        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
+        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var query = dbContext.DowntimeReasons
+            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(x => x.ReasonCode)
+            .Select(x => new DowntimeReasonListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.ReasonCode, x.Description, x.ReasonCategory, x.LossCategory))
+            .Skip(skip)
+            .Take(take)
+            .ToArrayAsync(cancellationToken);
+        return new PagedMaintenanceListResponse<DowntimeReasonListItem>(items, skip, take, total);
+    }
+}
+
 public sealed record QueryAssetReliabilityQuery(
     string OrganizationId,
     string EnvironmentId,
@@ -190,9 +216,9 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => x.SourceAlarmId != null)
+            .Where(x => x.SourceAlarmId != null || x.SourceType == MaintenanceWorkOrderSourceTypes.Inspection || x.FailureModeCode != null || x.DowntimeReasonCode != null)
             .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
-            .Select(x => new ReliabilityWorkOrderProjection(x.OpenedAtUtc, x.CompletedAtUtc))
+            .Select(x => new ReliabilityWorkOrderProjection(x.OpenedAtUtc, x.RepairStartedAtUtc, x.CompletedAtUtc))
             .ToArrayAsync(cancellationToken);
         var runtimeHours = await runtimeHoursProvider.CalculateAsync(
             request.OrganizationId,
@@ -204,7 +230,8 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
 
         var completedDurations = faultOrders
             .Where(x => x.CompletedAtUtc is not null && x.CompletedAtUtc > x.OpenedAtUtc)
-            .Select(x => (decimal)(x.CompletedAtUtc!.Value - x.OpenedAtUtc).TotalMinutes)
+            .Select(x => (decimal)(x.CompletedAtUtc!.Value - (x.RepairStartedAtUtc ?? x.OpenedAtUtc)).TotalMinutes)
+            .Where(x => x > 0)
             .ToArray();
         var failureCount = faultOrders.Length;
         var repairCount = completedDurations.Length;
@@ -226,7 +253,7 @@ public sealed class QueryAssetReliabilityQueryHandler : IQueryHandler<QueryAsset
     }
 }
 
-internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? CompletedAtUtc);
+internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc, DateTimeOffset? RepairStartedAtUtc, DateTimeOffset? CompletedAtUtc);
 
 public static class AssetRuntimeSources
 {

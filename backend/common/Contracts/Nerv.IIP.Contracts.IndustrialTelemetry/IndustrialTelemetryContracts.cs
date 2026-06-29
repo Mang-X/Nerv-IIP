@@ -67,7 +67,12 @@ public sealed record AlarmRaisedPayload(
     string AlarmCode,
     string Severity,
     DateTimeOffset RaisedAtUtc,
-    string ExternalAlarmId);
+    string ExternalAlarmId,
+    string? Priority = null,
+    string? TagKey = null,
+    decimal? ObservedValue = null,
+    decimal? ThresholdValue = null,
+    string? UnitCode = null);
 
 public sealed record AlarmClearedIntegrationEvent(
     string EventId,

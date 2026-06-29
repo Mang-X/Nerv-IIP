@@ -53,8 +53,23 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
                 integrationEvent.Payload.Severity,
                 integrationEvent.Payload.ExternalAlarmId,
                 IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
-                integrationEvent.Payload.AlarmCode),
+                integrationEvent.Payload.AlarmCode,
+                BuildDiagnosticDescription(integrationEvent.Payload),
+                integrationEvent.Payload.AlarmCode,
+                integrationEvent.Payload.TagKey),
             cancellationToken);
+    }
+
+    private static string? BuildDiagnosticDescription(AlarmRaisedPayload payload)
+    {
+        if (payload.ObservedValue is null || payload.ThresholdValue is null)
+        {
+            return null;
+        }
+
+        var unit = string.IsNullOrWhiteSpace(payload.UnitCode) ? string.Empty : $" {payload.UnitCode}";
+        var tag = string.IsNullOrWhiteSpace(payload.TagKey) ? payload.AlarmCode : payload.TagKey;
+        return $"{payload.AlarmCode}: {tag} observed {payload.ObservedValue:0.######}{unit}, threshold {payload.ThresholdValue:0.######}{unit}.";
     }
 }
 

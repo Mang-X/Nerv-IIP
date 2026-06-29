@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
@@ -23,6 +24,12 @@ public abstract class MaintenanceEndpoint<TRequest, TResponse> : Endpoint<TReque
                 break;
             case "POST":
                 Post(contract.Route);
+                break;
+            case "PUT":
+                Put(contract.Route);
+                break;
+            case "DELETE":
+                Delete(contract.Route);
                 break;
             default:
                 throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by Maintenance endpoints.");
@@ -63,7 +70,8 @@ public sealed record CreateMaintenancePlanRequest(
     string Owner,
     DateTimeOffset? WindowStartUtc,
     DateTimeOffset? WindowEndUtc,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    decimal? RuntimeHourInterval = null);
 
 public sealed record CreateMaintenancePlanResponse(MaintenancePlanId PlanId);
 
@@ -124,6 +132,28 @@ public sealed record CreateMaintenanceSparePartRequest(
 
 public sealed record CreateMaintenanceSparePartResponse(SparePartLineId SparePartLineId);
 
+public sealed record CreateDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record CreateDowntimeReasonResponse(DowntimeReasonId DowntimeReasonId);
+
+public sealed record UpdateDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record DeleteDowntimeReasonRequest(string OrganizationId, string EnvironmentId, string ReasonCode);
+
+public sealed record ListDowntimeReasonsRequest(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100);
+
 public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
     : MaintenanceEndpoint<CreateMaintenanceWorkOrderRequest, ResponseData<CreateMaintenanceWorkOrderResponse>>
 {
@@ -167,7 +197,7 @@ public sealed class CreateMaintenancePlanEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenancePlanRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateMaintenancePlanCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.PlanCode, req.Interval, req.StartsOn, req.Owner, req.WindowStartUtc, req.WindowEndUtc, req.IdempotencyKey, req.RuntimeHourInterval), ct);
         await Send.OkAsync(new CreateMaintenancePlanResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -295,6 +325,54 @@ public sealed class CreateMaintenanceSparePartEndpoint(ISender sender)
     }
 }
 
+public sealed class CreateDowntimeReasonEndpoint(ISender sender)
+    : MaintenanceEndpoint<CreateDowntimeReasonRequest, ResponseData<CreateDowntimeReasonResponse>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<CreateDowntimeReasonEndpoint>());
+
+    public override async Task HandleAsync(CreateDowntimeReasonRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateDowntimeReasonCommand(req.OrganizationId, req.EnvironmentId, req.ReasonCode, req.Description, req.ReasonCategory, req.LossCategory), ct);
+        await Send.OkAsync(new CreateDowntimeReasonResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListDowntimeReasonsEndpoint(ISender sender)
+    : MaintenanceEndpoint<ListDowntimeReasonsRequest, ResponseData<PagedMaintenanceListResponse<DowntimeReasonListItem>>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<ListDowntimeReasonsEndpoint>());
+
+    public override async Task HandleAsync(ListDowntimeReasonsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListDowntimeReasonsQuery(req.OrganizationId, req.EnvironmentId, req.Skip, req.Take), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UpdateDowntimeReasonEndpoint(ISender sender)
+    : MaintenanceEndpoint<UpdateDowntimeReasonRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<UpdateDowntimeReasonEndpoint>());
+
+    public override async Task HandleAsync(UpdateDowntimeReasonRequest req, CancellationToken ct)
+    {
+        await sender.Send(new UpdateDowntimeReasonCommand(req.OrganizationId, req.EnvironmentId, req.ReasonCode, req.Description, req.ReasonCategory, req.LossCategory), ct);
+        await Send.OkAsync(new object().AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class DeleteDowntimeReasonEndpoint(ISender sender)
+    : MaintenanceEndpoint<DeleteDowntimeReasonRequest, ResponseData<object>>
+{
+    public override void Configure() => ConfigureMaintenanceContract(MaintenanceEndpointContracts.Get<DeleteDowntimeReasonEndpoint>());
+
+    public override async Task HandleAsync(DeleteDowntimeReasonRequest req, CancellationToken ct)
+    {
+        await sender.Send(new DeleteDowntimeReasonCommand(req.OrganizationId, req.EnvironmentId, req.ReasonCode), ct);
+        await Send.OkAsync(new object().AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record MaintenanceEndpointContract(Type EndpointType, string HttpMethod, string Route, string PermissionCode, string AuthorizationPolicy, string OperationId);
 
 public static class MaintenanceEndpointContracts
@@ -312,6 +390,10 @@ public static class MaintenanceEndpointContracts
         new(typeof(ListMaintenanceInspectionsEndpoint), "GET", "/api/business/v1/maintenance/inspections", MaintenancePermissionCodes.PlansRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceInspections"),
         new(typeof(ListMaintenanceSparePartsEndpoint), "GET", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceSpareParts"),
         new(typeof(CreateMaintenanceSparePartEndpoint), "POST", "/api/business/v1/maintenance/spare-parts", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceSparePart"),
+        new(typeof(CreateDowntimeReasonEndpoint), "POST", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "createMaintenanceDowntimeReason"),
+        new(typeof(ListDowntimeReasonsEndpoint), "GET", "/api/business/v1/maintenance/downtime-reasons", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "listMaintenanceDowntimeReasons"),
+        new(typeof(UpdateDowntimeReasonEndpoint), "PUT", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "updateMaintenanceDowntimeReason"),
+        new(typeof(DeleteDowntimeReasonEndpoint), "DELETE", "/api/business/v1/maintenance/downtime-reasons/{reasonCode}", MaintenancePermissionCodes.WorkOrdersManage, InternalServiceAuthorizationPolicy.Name, "deleteMaintenanceDowntimeReason"),
         new(typeof(GetMaintenanceAssetAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/assets/{deviceAssetId}/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "getMaintenanceAssetAvailabilityWindows"),
         new(typeof(QueryMaintenanceAvailabilityWindowsEndpoint), "GET", "/api/business/v1/maintenance/availability-windows", MaintenancePermissionCodes.WorkOrdersRead, InternalServiceAuthorizationPolicy.Name, "queryMaintenanceAvailabilityWindows"),
     ];

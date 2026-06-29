@@ -71,9 +71,9 @@ public sealed class MaintenanceCommandLockTests
         await dbContext.SaveChangesAsync();
         var second = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 8), "system:pm"), CancellationToken.None);
 
-        Assert.Equal(1, first.GeneratedCount);
+        Assert.Equal(2, first.GeneratedCount);
         Assert.Equal(0, second.GeneratedCount);
-        Assert.Single(dbContext.MaintenanceWorkOrders);
+        Assert.Equal(2, dbContext.MaintenanceWorkOrders.Count());
     }
 
     public sealed record ThrowingLockedCommand(string LockKey) : ICommand;

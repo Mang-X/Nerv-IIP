@@ -103,6 +103,25 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Maintenance_plan_catches_up_missed_periods_without_phase_drift()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        var dueDates = plan.ConsumeDueDates(new DateOnly(2026, 6, 22));
+
+        Assert.Equal(
+            [
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 8),
+                new DateOnly(2026, 6, 15),
+                new DateOnly(2026, 6, 22),
+            ],
+            dueDates);
+        Assert.Equal(new DateOnly(2026, 6, 22), plan.LastGeneratedOn);
+        Assert.Equal(new DateOnly(2026, 6, 29), plan.NextDueOn);
+    }
+
+    [Fact]
     public void Inspection_must_reference_a_plan_or_work_order()
     {
         Assert.Throws<ArgumentException>(() =>
@@ -114,11 +133,13 @@ public sealed class MaintenanceAggregateTests
     {
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", DateOnly.FromDateTime(DateTime.UtcNow), "maintenance");
         var inspection = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "operator-001", "passed", DateTimeOffset.UtcNow);
-        var reason = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure");
+        var reason = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure");
 
         Assert.Equal("P7D", plan.Interval);
         Assert.Equal(plan.Id, inspection.PlanId);
         Assert.Equal("equipment-failure", reason.ReasonCode);
+        Assert.Equal("breakdown", reason.ReasonCategory);
+        Assert.Equal("equipment-failure", reason.LossCategory);
         Assert.IsType<MaintenancePlanCreatedDomainEvent>(plan.GetDomainEvents().Single());
         Assert.IsType<MaintenanceInspectionRecordedDomainEvent>(inspection.GetDomainEvents().Single());
     }
