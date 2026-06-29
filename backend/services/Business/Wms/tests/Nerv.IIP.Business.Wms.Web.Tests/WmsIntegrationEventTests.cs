@@ -69,6 +69,26 @@ public sealed class WmsIntegrationEventTests
     }
 
     [Fact]
+    public void Outbound_completed_event_reports_zero_for_fully_short_picked_line()
+    {
+        var outbound = DomainWmsFactory.MultiLineOutboundOrder();
+        outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["LINE-001"] = 4m,
+                ["LINE-002"] = 0m,
+            });
+
+        var integrationEvent = new OutboundOrderCompletedIntegrationEventConverter().Convert(new OutboundOrderCompletedDomainEvent(outbound));
+        var shortPickedLine = integrationEvent.Payload.Lines!.Single(x => x.LineReference == "LINE-002");
+
+        Assert.Equal(0m, shortPickedLine.Quantity);
+    }
+
+    [Fact]
     public void Outbound_count_and_wcs_events_use_required_event_types()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
