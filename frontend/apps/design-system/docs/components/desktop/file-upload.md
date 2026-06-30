@@ -312,6 +312,29 @@ const upload = ref<FileUploadExpose | null>(null)
   />
 </Demo>
 
+```vue
+<script setup lang="ts">
+import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
+</script>
+
+<template>
+  <FileUpload
+    variant="avatar"
+    purpose="operator-avatar"
+    owner-service="Iam"
+    owner-type="UserProfile"
+    owner-id="operator-2406"
+    organization-id="org-demo"
+    environment-id="env-prod"
+    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :max-files="1"
+    :create-upload-session="createUploadSession"
+    :complete-upload-session="completeUploadSession"
+    :transport="uploadWithNativeFileStorageTransport"
+  />
+</template>
+```
+
 ## 紧凑上传
 
 `variant="compact"` 压缩 dropzone 与行高，适合表单侧栏、抽屉和空间受限的配置面板。
@@ -335,6 +358,30 @@ const upload = ref<FileUploadExpose | null>(null)
   />
 </Demo>
 
+```vue
+<script setup lang="ts">
+import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
+</script>
+
+<template>
+  <FileUpload
+    variant="compact"
+    purpose="work-instruction-attachment"
+    owner-service="ProductEngineering"
+    owner-type="StandardOperation"
+    owner-id="op-assembly-10"
+    organization-id="org-demo"
+    environment-id="env-prod"
+    :accepted-content-types="['application/pdf', 'text/plain']"
+    :max-files="4"
+    :auto-upload="false"
+    :create-upload-session="createUploadSession"
+    :complete-upload-session="completeUploadSession"
+    :transport="uploadWithNativeFileStorageTransport"
+  />
+</template>
+```
+
 ## 画廊上传
 
 `variant="gallery"` 以网格卡片展示图片证据，适合质检缺陷照片、设备巡检照片和现场佐证图集。
@@ -356,6 +403,29 @@ const upload = ref<FileUploadExpose | null>(null)
     :transport="demoTransport"
   />
 </Demo>
+
+```vue
+<script setup lang="ts">
+import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
+</script>
+
+<template>
+  <FileUpload
+    variant="gallery"
+    purpose="quality-gallery"
+    owner-service="Quality"
+    owner-type="NonconformanceReport"
+    owner-id="ncr-2406-21"
+    organization-id="org-demo"
+    environment-id="env-prod"
+    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :max-files="6"
+    :create-upload-session="createUploadSession"
+    :complete-upload-session="completeUploadSession"
+    :transport="uploadWithNativeFileStorageTransport"
+  />
+</template>
+```
 
 ## 表格上传
 
@@ -384,6 +454,34 @@ const upload = ref<FileUploadExpose | null>(null)
   />
 </Demo>
 
+```vue
+<script setup lang="ts">
+import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
+</script>
+
+<template>
+  <FileUpload
+    variant="table"
+    purpose="engineering-documents"
+    owner-service="ProductEngineering"
+    owner-type="EngineeringDocument"
+    owner-id="doc-pack-2406"
+    organization-id="org-demo"
+    environment-id="env-prod"
+    :accepted-content-types="[
+      'application/pdf',
+      'image/png',
+      'image/svg+xml',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ]"
+    :max-files="8"
+    :create-upload-session="createUploadSession"
+    :complete-upload-session="completeUploadSession"
+    :transport="uploadWithNativeFileStorageTransport"
+  />
+</template>
+```
+
 ## 图片上传
 
 `variant="image"` 使用更宽的图片预览卡，适合设备铭牌、工位照片、首件照片等需要检查画面的场景。
@@ -405,6 +503,29 @@ const upload = ref<FileUploadExpose | null>(null)
     :transport="demoTransport"
   />
 </Demo>
+
+```vue
+<script setup lang="ts">
+import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
+</script>
+
+<template>
+  <FileUpload
+    variant="image"
+    purpose="equipment-photo"
+    owner-service="Maintenance"
+    owner-type="EquipmentAsset"
+    owner-id="eqp-press-07"
+    organization-id="org-demo"
+    environment-id="env-prod"
+    :accepted-content-types="['image/png', 'image/jpeg', 'image/svg+xml']"
+    :max-files="4"
+    :create-upload-session="createUploadSession"
+    :complete-upload-session="completeUploadSession"
+    :transport="uploadWithNativeFileStorageTransport"
+  />
+</template>
+```
 
 ## 接口边界
 
