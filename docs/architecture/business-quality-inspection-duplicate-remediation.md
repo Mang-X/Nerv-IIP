@@ -1,6 +1,6 @@
 # Quality inspection duplicate remediation runbook
 
-This runbook is the operator path for migration
+This runbook is the operator path for the migration
 `20260629074947_AddQualityLongtailReviewFixes`, which adds the unique
 `quality.inspection_records` idempotency scope:
 
@@ -80,6 +80,9 @@ ranked_records AS (
         r.sku_code,
         r.inspected_quantity,
         r.result,
+        r.disposition_reason,
+        r.batch_no,
+        r.serial_no,
         r.uom_code,
         r.site_code,
         r.location_code,
@@ -113,6 +116,9 @@ ranked_records AS (
         r.sku_code,
         r.inspected_quantity,
         r.result,
+        r.disposition_reason,
+        r.batch_no,
+        r.serial_no,
         r.uom_code,
         r.site_code,
         r.location_code,
@@ -167,7 +173,7 @@ For each duplicate group, keep one canonical record:
 2. If exactly one record is tied to downstream event/audit evidence, keep that
    record.
 3. If no record has downstream references and all business facts match, keep the
-   earliest `created_at_utc`; use the smallest `id` only as the tie breaker.
+   earliest `created_at_utc`; use the smallest `id` only as the tiebreaker.
 4. If multiple records have different NCRs or different downstream outcomes,
    stop and resolve with Quality, Inventory, and the source-service owner.
 
