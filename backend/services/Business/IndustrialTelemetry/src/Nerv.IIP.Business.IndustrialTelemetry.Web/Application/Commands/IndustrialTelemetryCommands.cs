@@ -381,7 +381,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.TagKey == normalizedTagKey)
-            .AnyAsync(x => x.BucketEndUtc > request.BucketEndUtc, cancellationToken)
+            .AnyAsync(x => x.BucketEndUnixTimeMilliseconds > request.BucketEndUtc.ToUnixTimeMilliseconds(), cancellationToken)
             || HasLocalNewerSummary(request, normalizedTagKey);
     }
 
@@ -405,8 +405,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.TagKey == normalizedTagKey)
-            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
-            .OrderByDescending(x => x.BucketEndUtc)
+            .Where(x => x.BucketEndUnixTimeMilliseconds <= request.BucketStartUtc.ToUnixTimeMilliseconds())
+            .OrderByDescending(x => x.BucketEndUnixTimeMilliseconds)
             .Take(100)
             .ToArrayAsync(cancellationToken);
         return previousPersistedSummaries

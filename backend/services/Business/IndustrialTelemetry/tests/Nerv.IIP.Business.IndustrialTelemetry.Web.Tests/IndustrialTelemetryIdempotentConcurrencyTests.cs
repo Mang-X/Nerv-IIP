@@ -5,6 +5,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
+using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using NetCorePal.Extensions.Primitives;
@@ -17,6 +18,12 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     public async Task Duplicate_sample_save_conflict_is_retried_as_idempotent_existing_summary()
     {
         await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using (var setupContext = database.CreateContext())
+        {
+            setupContext.AlarmRules.Add(AlarmRule.Configure("org-001", "env-dev", "DEV-RACE-01", "TEMP_RULE", "TEMP_HIGH", "critical", "temperature", ">=", 90m, "celsius", true));
+            await setupContext.SaveChangesAsync();
+        }
+
         await using var winningContext = database.CreateContext();
         await using var racingContext = database.CreateContext();
         var command = new RecordTelemetrySampleCommand(
@@ -63,7 +70,7 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
         await using var assertionContext = database.CreateContext();
         Assert.Equal(1, await assertionContext.TelemetrySummaries.CountAsync());
         Assert.Equal(1, await assertionContext.DeviceStateSnapshots.CountAsync());
-        Assert.Equal(0, await assertionContext.AlarmEvents.CountAsync());
+        Assert.Equal(1, await assertionContext.AlarmEvents.CountAsync());
     }
 
     [Fact]
