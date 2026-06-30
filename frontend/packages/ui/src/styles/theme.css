@@ -89,9 +89,13 @@
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-fast-invoke: cubic-bezier(0, 0, 0, 1);
+  --ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1);
   --duration-fast: 150ms;
   --duration-base: 220ms;
   --duration-slow: 320ms;
+  --duration-fast-invoke: 187ms;
+  --duration-fade: 83ms;
 
   /* Brand-tinted glow for emphasis surfaces (focus halo, active hero card). */
   --shadow-glow-brand:
@@ -305,6 +309,102 @@
     background-color: color-mix(in oklch, var(--foreground) 84%, transparent);
     -webkit-backdrop-filter: blur(10px) saturate(1.4);
     backdrop-filter: blur(10px) saturate(1.4);
+  }
+}
+
+/* Shared overlay motion. Portalled content cannot rely on scoped SFC styles, so
+   Select and Dropdown share one global, tokenized animation vocabulary here. */
+.ds-overlay-content {
+  --ds-overlay-open-duration: var(--duration-fast-invoke, 187ms);
+  --ds-overlay-close-duration: var(--duration-fade, 83ms);
+  --ds-overlay-transform-ease: var(--ease-fast-invoke, cubic-bezier(0, 0, 0, 1));
+  --ds-overlay-opacity-ease: linear;
+  --ds-overlay-open-scale: 0.97;
+  --ds-overlay-close-scale: 0.99;
+  --ds-overlay-offset-x: 0;
+  --ds-overlay-offset-y: -2px;
+  transform-origin: var(--ds-overlay-transform-origin);
+  will-change: transform, opacity;
+}
+
+.ds-select-content {
+  --ds-overlay-transform-origin: var(--reka-select-content-transform-origin);
+}
+
+.ds-dropdown-menu-content {
+  --ds-overlay-transform-origin: var(--reka-dropdown-menu-content-transform-origin);
+}
+
+.ds-overlay-content[data-side='top'] {
+  --ds-overlay-offset-y: 2px;
+}
+
+.ds-overlay-content[data-side='left'] {
+  --ds-overlay-offset-x: 2px;
+  --ds-overlay-offset-y: 0;
+}
+
+.ds-overlay-content[data-side='right'] {
+  --ds-overlay-offset-x: -2px;
+  --ds-overlay-offset-y: 0;
+}
+
+.ds-overlay-content[data-state='open'] {
+  animation:
+    ds-overlay-content-open-transform var(--ds-overlay-open-duration) var(--ds-overlay-transform-ease) both,
+    ds-overlay-content-open-opacity var(--duration-fade, 83ms) var(--ds-overlay-opacity-ease) both;
+}
+
+.ds-overlay-content[data-state='closed'] {
+  animation:
+    ds-overlay-content-close-transform var(--ds-overlay-close-duration) var(--ds-overlay-transform-ease) both,
+    ds-overlay-content-close-opacity var(--ds-overlay-close-duration) var(--ds-overlay-opacity-ease) both;
+}
+
+.ds-overlay-content[data-align-trigger='true'] {
+  animation: none;
+  will-change: auto;
+}
+
+@keyframes ds-overlay-content-open-transform {
+  from {
+    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-open-scale));
+  }
+  to {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes ds-overlay-content-open-opacity {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ds-overlay-content-close-transform {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-close-scale));
+  }
+}
+
+@keyframes ds-overlay-content-close-opacity {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-overlay-content {
+    animation: none !important;
   }
 }
 
