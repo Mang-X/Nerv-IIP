@@ -156,12 +156,9 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
                 matchingLines.Sum(line => line.ReceivedQuantity));
         }
 
-        var firstLine = receipt.Lines.FirstOrDefault();
         return new InspectionSourceDocumentVerification(
-            true,
-            firstLine?.SkuCode,
-            firstLine?.ReceivedQuantity,
-            $"ERP purchase receipt '{sourceDocumentId}' does not contain SKU '{skuCode}'.");
+            false,
+            Message: $"ERP purchase receipt '{sourceDocumentId}' does not contain SKU '{skuCode}'.");
     }
 }
 

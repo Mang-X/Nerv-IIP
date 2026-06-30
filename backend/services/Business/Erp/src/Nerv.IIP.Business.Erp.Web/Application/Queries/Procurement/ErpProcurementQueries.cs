@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
 
@@ -221,7 +220,7 @@ public sealed class GetPurchaseReceiptSourceDocumentQueryHandler(ApplicationDbCo
                 && x.PurchaseReceiptNo == request.PurchaseReceiptNo)
             .Select(x => new PurchaseReceiptSourceDocumentResponse(
                 x.PurchaseReceiptNo,
-                x.Status == PurchaseReceiptStatus.Recorded ? "recorded" : x.Status.ToString(),
+                "recorded",
                 x.Lines
                     .OrderBy(line => line.PurchaseOrderLineNo)
                     .Select(line => new PurchaseReceiptSourceDocumentLineResponse(

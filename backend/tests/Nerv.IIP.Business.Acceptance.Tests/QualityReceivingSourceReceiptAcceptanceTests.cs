@@ -43,6 +43,8 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
             CancellationToken.None));
 
         Assert.Contains("SKU", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RCV-SKU-MISMATCH", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("SKU-RM-404", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(qualityDb.InspectionRecords);
     }
 
