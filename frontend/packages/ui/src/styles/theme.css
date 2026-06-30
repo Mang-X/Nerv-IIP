@@ -89,9 +89,13 @@
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-fast-invoke: cubic-bezier(0, 0, 0, 1);
+  --ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1);
   --duration-fast: 150ms;
   --duration-base: 220ms;
   --duration-slow: 320ms;
+  --duration-fast-invoke: 187ms;
+  --duration-fade: 83ms;
 
   /* Brand-tinted glow for emphasis surfaces (focus halo, active hero card). */
   --shadow-glow-brand:

@@ -9,6 +9,18 @@
 | `--ease-out-quart` | `cubic-bezier(0.25, 1, 0.5, 1)` | 通用进入 / 悬停 |
 | `--ease-out-expo` | `cubic-bezier(0.16, 1, 0.3, 1)` | 滑动吸附、抽屉、回弹 |
 | `--ease-in-out-quart` | 对称 | 标签页 / 指示器滑动 |
+| `--ease-fast-invoke` | `cubic-bezier(0, 0, 0, 1)` | 功能型下拉、工具栏弹层 |
+| `--ease-point-to-point` | `cubic-bezier(0.55, 0.55, 0, 1)` | 同一元素位置迁移 |
+
+## 时长令牌
+
+| 令牌 | 时长 | 用途 |
+|---|---:|---|
+| `--duration-fast-invoke` | `187ms` | Select / Dropdown 等功能型弹层进入 |
+| `--duration-fade` | `83ms` | 弹层透明度淡入淡出 |
+| `--duration-fast` | `150ms` | 普通微交互 |
+| `--duration-base` | `220ms` | 常规状态过渡 |
+| `--duration-slow` | `320ms` | 较大区域切换 |
 
 > 约定：`--ease-out-back` 令牌不存在，需要回弹时用 `var(--ease-out-back, cubic-bezier(0.34,1.4,0.64,1))` 的回退写法。
 

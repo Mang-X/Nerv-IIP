@@ -4,15 +4,24 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./file-preview": "./src/components/ui/file-preview/index.ts"
   },
   "scripts": {
     "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "test": "vp test run src"
   },
   "dependencies": {
+    "@embedpdf/core": "2.14.4",
+    "@embedpdf/engines": "2.14.4",
+    "@embedpdf/plugin-document-manager": "2.14.4",
+    "@embedpdf/plugin-render": "2.14.4",
+    "@embedpdf/plugin-scroll": "2.14.4",
+    "@embedpdf/plugin-viewport": "2.14.4",
+    "@embedpdf/plugin-zoom": "2.14.4",
     "@fontsource-variable/inter": "^5.2.5",
     "@internationalized/date": "^3.12.1",
+    "@silurus/ooxml": "0.69.0",
     "@tanstack/vue-table": "^8.21.3",
     "@unovis/ts": "^1.6.5",
     "@unovis/vue": "^1.6.5",
@@ -20,6 +29,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-vue-next": "1.0.0",
+    "motion-v": "2.3.0",
     "reka-ui": "^2.9.7",
     "tailwind-merge": "^3.6.0",
     "vue": "3.5.34",
