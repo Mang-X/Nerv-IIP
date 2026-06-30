@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 
@@ -94,7 +95,9 @@ public sealed record VerifyCorrectiveActionEffectivenessCommand(
     string Result,
     DateTimeOffset VerifiedAtUtc) : ICommand;
 
-public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(ICorrectiveActionRepository repository)
+public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(
+    ICorrectiveActionRepository repository,
+    INonconformanceReportRepository nonconformanceReportRepository)
     : ICommandHandler<VerifyCorrectiveActionEffectivenessCommand>
 {
     public async Task Handle(VerifyCorrectiveActionEffectivenessCommand request, CancellationToken cancellationToken)
@@ -102,12 +105,15 @@ public sealed class VerifyCorrectiveActionEffectivenessCommandHandler(ICorrectiv
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
             ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
         capa.VerifyEffectiveness(request.VerifiedByUserId, request.Result, request.VerifiedAtUtc);
+        await CorrectiveActionNcrRedrive.CloseRecordedScrapNcrAsync(capa, nonconformanceReportRepository, cancellationToken);
     }
 }
 
 public sealed record CloseCorrectiveActionCommand(CorrectiveActionId CorrectiveActionId, string ClosedByUserId) : ICommand;
 
-public sealed class CloseCorrectiveActionCommandHandler(ICorrectiveActionRepository repository)
+public sealed class CloseCorrectiveActionCommandHandler(
+    ICorrectiveActionRepository repository,
+    INonconformanceReportRepository nonconformanceReportRepository)
     : ICommandHandler<CloseCorrectiveActionCommand>
 {
     public async Task Handle(CloseCorrectiveActionCommand request, CancellationToken cancellationToken)
@@ -115,5 +121,35 @@ public sealed class CloseCorrectiveActionCommandHandler(ICorrectiveActionReposit
         var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
             ?? throw new KnownException($"CAPA '{request.CorrectiveActionId}' was not found.");
         capa.Close(request.ClosedByUserId);
+        await CorrectiveActionNcrRedrive.CloseRecordedScrapNcrAsync(capa, nonconformanceReportRepository, cancellationToken);
+    }
+}
+
+internal static class CorrectiveActionNcrRedrive
+{
+    public static async Task CloseRecordedScrapNcrAsync(
+        CorrectiveAction correctiveAction,
+        INonconformanceReportRepository nonconformanceReportRepository,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(correctiveAction.SourceNcrId)
+            || !Guid.TryParse(correctiveAction.SourceNcrId, out var sourceNcrGuid))
+        {
+            return;
+        }
+
+        var ncr = await nonconformanceReportRepository.GetAsync(
+            new NonconformanceReportId(sourceNcrGuid),
+            cancellationToken);
+        if (ncr is null
+            || string.Equals(ncr.Status, "closed", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(ncr.DispositionType, QualityNcrDispositionTypes.Scrap, StringComparison.OrdinalIgnoreCase)
+            || !NonconformanceReport.RequiresEffectiveCapa(ncr.SourceType, ncr.DispositionType)
+            || string.IsNullOrWhiteSpace(ncr.ScrapMovementId))
+        {
+            return;
+        }
+
+        ncr.Close(null, null, null);
     }
 }
