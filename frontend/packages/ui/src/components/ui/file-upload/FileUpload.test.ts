@@ -1,10 +1,112 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 
 import type { FileUploadExpose } from '.'
-import { FileUpload } from '.'
+import { FileUpload, fileUploadMotion } from '.'
+
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
+
+beforeEach(() => {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: vi.fn(() => 'blob:nerv-iip-preview'),
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: vi.fn(),
+  })
+})
+
+afterEach(() => {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: originalCreateObjectURL,
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: originalRevokeObjectURL,
+  })
+})
+
+vi.mock('motion-v', () => {
+  const passthrough = (slot: string, tag = 'div') => defineComponent({
+    name: slot,
+    inheritAttrs: false,
+    setup(_, { attrs, slots }) {
+      const hasAttr = (name: string) => attrs[name] !== undefined
+
+      return () => h(tag, {
+        ...attrs,
+        'data-motion-component': slot,
+        'data-has-while-hover': hasAttr('whileHover') || hasAttr('while-hover') ? 'true' : undefined,
+        'data-has-while-tap': hasAttr('whileTap') || hasAttr('while-tap') ? 'true' : undefined,
+        'data-has-layout': hasAttr('layout') ? 'true' : undefined,
+      }, slots.default?.())
+    },
+  })
+
+  return {
+    AnimatePresence: passthrough('animate-presence'),
+    MotionConfig: passthrough('motion-config'),
+    motion: {
+      button: passthrough('motion-button', 'button'),
+      div: passthrough('motion-div'),
+      span: passthrough('motion-span', 'span'),
+    },
+  }
+})
 
 describe('FileUpload', () => {
+  it('exposes and renders with the shared motion-v upload curves', async () => {
+    expect(fileUploadMotion.fastInvoke).toEqual({
+      duration: 0.187,
+      ease: [0, 0, 0, 1],
+    })
+    expect(fileUploadMotion.pointToPointShort).toEqual({
+      duration: 0.187,
+      ease: [0.55, 0.55, 0, 1],
+    })
+
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        variant: 'queue',
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([new File(['hello'], 'motion-evidence.txt', { type: 'text/plain' })])
+    await flushPromises()
+
+    expect(wrapper.find('[data-motion-component="motion-config"]').exists()).toBe(true)
+    expect(wrapper.find('[data-motion-component="motion-button"][data-dragging="false"]').exists()).toBe(true)
+    expect(wrapper.find('[data-motion-component="motion-div"][data-motion-row="true"]').exists()).toBe(true)
+    expect(wrapper.get('[data-slot="file-upload-dropzone"]').classes()).toContain('data-[dragging=true]:border-primary')
+    expect(wrapper.get('[data-slot="file-upload-dropzone"]').classes()).not.toContain('data-[dragging=true]:border-brand')
+  })
+
+  it('applies visible motion affordances to the dropzone and row state changes', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        variant: 'queue',
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([new File(['hello'], 'animated-status.txt', { type: 'text/plain' })])
+    await flushPromises()
+
+    const dropzone = wrapper.get('[data-slot="file-upload-dropzone"]')
+    expect(dropzone.attributes('data-has-while-hover')).toBe('true')
+    expect(dropzone.attributes('data-has-while-tap')).toBe('true')
+    expect(wrapper.find('[data-motion-component="motion-span"][data-motion-status="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-motion-component="motion-div"][data-motion-icon="true"]').exists()).toBe(true)
+    expect(wrapper.find('[data-motion-component="motion-div"][data-motion-actions="true"]').exists()).toBe(true)
+  })
+
   it('uploads accepted files through FileStorage session callbacks', async () => {
     const createUploadSession = vi.fn().mockResolvedValue({
       uploadSessionId: 'ups_1',
@@ -74,7 +176,7 @@ describe('FileUpload', () => {
     ])
   })
 
-  it('keeps the completed file id even when the API returns an empty string', async () => {
+  it('falls back to the session file id when the API returns an empty string', async () => {
     const wrapper = mount(FileUpload, {
       props: createBaseProps({
         createUploadSession: vi.fn().mockResolvedValue({
@@ -100,7 +202,7 @@ describe('FileUpload', () => {
     await flushPromises()
 
     expect(wrapper.emitted('completed')?.[0]).toEqual([
-      [{ fileId: '', fileName: 'empty-id.txt' }],
+      [{ fileId: 'session_file_1', fileName: 'empty-id.txt' }],
     ])
   })
 
@@ -130,15 +232,132 @@ describe('FileUpload', () => {
     await input.trigger('change')
 
     expect(createUploadSession).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('File type is not accepted.')
+    expect(wrapper.text()).toContain('文件类型不符合要求。')
     expect(wrapper.emitted('rejected')?.[0]).toEqual([
-      [{ fileName: 'evidence.txt', reason: 'File type is not accepted.' }],
+      [{ fileName: 'evidence.txt', reason: '文件类型不符合要求。' }],
     ])
+  })
+
+  it('shows accepted file extensions in the upload affordance', () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        acceptedContentTypes: ['application/pdf', 'image/png', 'image/jpeg', 'image/svg+xml'],
+        maxFileSizeBytes: 10 * 1024 * 1024,
+        maxFiles: 8,
+      }),
+    })
+
+    expect(wrapper.get('[data-slot="file-upload-accept-hint"]').text()).toBe(
+      '支持 .pdf、.png、.jpg、.jpeg、.svg · 单个文件不超过 10.0 MB · 最多 8 个文件',
+    )
+  })
+
+  it('renders the default upload affordance as a component-library button', () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        acceptedContentTypes: ['application/pdf'],
+      }),
+    })
+
+    const trigger = wrapper.get('[data-file-upload-button="true"]')
+    expect(trigger.element.tagName).toBe('BUTTON')
+    expect(trigger.attributes('data-slot')).toBe('button')
+    expect(trigger.text()).toContain('选择文件')
+    expect(wrapper.find('[data-slot="file-upload-dropzone"]').exists()).toBe(false)
+    expect(wrapper.get('[data-slot="file-upload-accept-hint"]').text()).toContain('支持 .pdf')
+  })
+
+  it('validates extension accept entries against file names', async () => {
+    const createUploadSession = vi.fn().mockResolvedValue({
+      uploadSessionId: 'ups_1',
+      fileId: 'file_1',
+      uploadMode: 'tus',
+      provider: 'tus',
+      expiresAtUtc: '2026-05-24T00:00:00Z',
+      upload: {
+        url: '/api/files/v1/tus/ups_1',
+        headers: { 'x-nerv-upload-mode': 'tus' },
+      },
+    })
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        acceptedContentTypes: ['.png'],
+        createUploadSession,
+        transport: vi.fn().mockResolvedValue(undefined),
+      }),
+    })
+
+    await selectFiles(wrapper, [new File(['png'], 'accepted-by-extension.png', { type: 'image/png' })])
+    await flushPromises()
+
+    expect(createUploadSession).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('accepted-by-extension.png')
+  })
+
+  it('does not consume upload slots for invalid files within the same batch', async () => {
+    const createUploadSession = vi.fn().mockResolvedValue({
+      uploadSessionId: 'ups_1',
+      fileId: 'file_1',
+      uploadMode: 'tus',
+      provider: 'tus',
+      expiresAtUtc: '2026-05-24T00:00:00Z',
+      upload: {
+        url: '/api/files/v1/tus/ups_1',
+        headers: { 'x-nerv-upload-mode': 'tus' },
+      },
+    })
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        acceptedContentTypes: ['application/pdf'],
+        maxFiles: 1,
+        createUploadSession,
+        transport: vi.fn().mockResolvedValue(undefined),
+      }),
+    })
+
+    await selectFiles(wrapper, [
+      new File(['bad'], 'wrong-type.txt', { type: 'text/plain' }),
+      new File(['pdf'], 'accepted.pdf', { type: 'application/pdf' }),
+    ])
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('文件类型不符合要求。')
+    expect(wrapper.text()).toContain('accepted.pdf')
+    expect(wrapper.text()).not.toContain('Maximum file count reached.')
+    expect(createUploadSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders a ReUI-style queue summary with total size and built-in actions', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        variant: 'queue',
+        maxFiles: 3,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([
+      new File(['hello'], 'first.txt', { type: 'text/plain' }),
+      new File(['world'], 'second.txt', { type: 'text/plain' }),
+    ])
+    await flushPromises()
+
+    expect(wrapper.get('[data-slot="file-upload-summary"]').text()).toContain('文件 (2/3)')
+    expect(wrapper.get('[data-slot="file-upload-summary"]').text()).toContain('总计 10 B')
+    expect(wrapper.get('[data-slot="file-upload-add-button"]').text()).toContain('添加文件')
+
+    await wrapper.get('[data-slot="file-upload-clear-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
+    expect(wrapper.find('[data-slot="file-upload-summary"]').exists()).toBe(false)
   })
 
   it('accepts dropped files and shows the active drop state', async () => {
     const wrapper = mount(FileUpload, {
       props: createBaseProps({
+        variant: 'queue',
         acceptedContentTypes: ['application/pdf'],
         transport: vi.fn().mockResolvedValue(undefined),
       }),
@@ -219,13 +438,13 @@ describe('FileUpload', () => {
 
     await selectFiles(wrapper, [new File(['hello'], 'evidence.txt', { type: 'text/plain' })])
     await flushPromises()
-    await wrapper.get('button[aria-label="Pause evidence.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="暂停 evidence.txt"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('paused')
+    expect(wrapper.text()).toContain('已暂停')
     expect(completeUploadSession).not.toHaveBeenCalled()
 
-    await wrapper.get('button[aria-label="Resume evidence.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="继续 evidence.txt"]').trigger('click')
     deferred.resolveAll()
     await flushPromises()
 
@@ -257,11 +476,11 @@ describe('FileUpload', () => {
       expect(capturedSignal?.aborted).toBe(false)
     })
 
-    await wrapper.get('button[aria-label="Pause abortable.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="暂停 abortable.txt"]').trigger('click')
     await flushPromises()
 
     expect(capturedSignal?.aborted).toBe(true)
-    expect(wrapper.text()).toContain('paused')
+    expect(wrapper.text()).toContain('已暂停')
   })
 
   it('can retry a failed upload row', async () => {
@@ -290,9 +509,9 @@ describe('FileUpload', () => {
       expect(wrapper.text()).toContain('Temporary network interruption.')
     })
 
-    await wrapper.get('button[aria-label="Retry evidence.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="重试 evidence.txt"]').trigger('click')
     await waitForAssertion(() => {
-      expect(wrapper.text()).toContain('completed')
+      expect(wrapper.text()).toContain('已完成')
     })
 
     expect(transport).toHaveBeenCalledTimes(2)
@@ -347,9 +566,9 @@ describe('FileUpload', () => {
       expect(wrapper.text()).toContain('Upload session expired.')
     })
 
-    await wrapper.get('button[aria-label="Retry expired-session.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="重试 expired-session.txt"]').trigger('click')
     await waitForAssertion(() => {
-      expect(wrapper.text()).toContain('completed')
+      expect(wrapper.text()).toContain('已完成')
     })
 
     expect(createUploadSession).toHaveBeenCalledTimes(2)
@@ -381,7 +600,7 @@ describe('FileUpload', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('queued-evidence.txt')
-    expect(wrapper.text()).toContain('queued')
+    expect(wrapper.text()).toContain('待上传')
     expect(createUploadSession).not.toHaveBeenCalled()
     expect(transport).not.toHaveBeenCalled()
   })
@@ -424,10 +643,170 @@ describe('FileUpload', () => {
 
     expect(createUploadSession).toHaveBeenCalledTimes(1)
     expect(transport).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('completed')
+    expect(wrapper.text()).toContain('已完成')
     expect(wrapper.emitted('completed')?.[0]).toEqual([
       [{ fileId: 'file_1', fileName: 'external-evidence.txt' }],
     ])
+  })
+
+  it('uses progress color instead of a completed row border highlight', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        variant: 'queue',
+        transport: vi.fn().mockImplementation(({ onProgress }) => {
+          onProgress(100)
+          return Promise.resolve()
+        }),
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([new File(['hello'], 'completed-evidence.txt', { type: 'text/plain' })])
+    await upload.uploadQueued()
+    await flushPromises()
+
+    expect(wrapper.get('[data-slot="file-upload-row"]').attributes('data-status')).toBe('completed')
+    expect(wrapper.get('[data-slot="progress"]').attributes('class')).toContain(
+      '[&_[data-slot=progress-indicator]]:bg-success',
+    )
+  })
+
+  it('exposes queue state for parent action buttons', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        transport: vi.fn().mockImplementation(({ onProgress }) => {
+          onProgress(100)
+          return Promise.resolve()
+        }),
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    expect(upload.hasRows).toBe(false)
+    expect(upload.hasQueuedRows).toBe(false)
+
+    await upload.addFiles([new File(['hello'], 'queued-state.txt', { type: 'text/plain' })])
+    await flushPromises()
+
+    expect(upload.hasRows).toBe(true)
+    expect(upload.hasQueuedRows).toBe(true)
+
+    await upload.uploadQueued()
+    await flushPromises()
+
+    expect(upload.hasRows).toBe(true)
+    expect(upload.hasQueuedRows).toBe(false)
+
+    upload.clear()
+    await flushPromises()
+
+    expect(upload.hasRows).toBe(false)
+    expect(upload.hasQueuedRows).toBe(false)
+  })
+
+  it('renders image thumbnails for image uploads', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        acceptedContentTypes: ['image/png'],
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([new File(['png'], 'defect-photo.png', { type: 'image/png' })])
+    await flushPromises()
+
+    const thumbnail = wrapper.get('[data-slot="file-upload-thumbnail"]')
+    expect(thumbnail.attributes('src')).toBe('blob:nerv-iip-preview')
+    expect(thumbnail.attributes('alt')).toBe('defect-photo.png')
+  })
+
+  it('supports queue, compact, gallery, table, avatar, and image variants', async () => {
+    for (const variant of ['queue', 'compact', 'gallery', 'table', 'avatar', 'image'] as const) {
+      const wrapper = mount(FileUpload, {
+        props: createBaseProps({
+          autoUpload: false,
+          variant,
+          acceptedContentTypes: ['image/png'],
+        }),
+      })
+      const upload = wrapper.vm as unknown as FileUploadExpose
+
+      await upload.addFiles([new File(['png'], `${variant}-upload.png`, { type: 'image/png' })])
+      await flushPromises()
+
+      expect(wrapper.get('[data-slot="file-upload"]').attributes('data-variant')).toBe(variant)
+
+      if (variant === 'compact' || variant === 'gallery' || variant === 'image') {
+        const cta = wrapper.get('[data-file-upload-cta="true"]')
+        expect(cta.attributes('data-slot')).toBe('button')
+        expect(cta.element.tagName).toBe('SPAN')
+      }
+
+      if (variant === 'avatar') {
+        expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
+        expect(wrapper.get('[data-slot="file-upload-thumbnail"]').attributes('alt')).toBe('avatar-upload.png')
+        continue
+      }
+
+      expect(wrapper.get('[data-slot="file-upload-row"]').attributes('data-variant')).toBe(variant)
+
+      if (variant === 'gallery' || variant === 'image') {
+        expect(wrapper.find('[data-slot="file-upload-grid"]').exists()).toBe(true)
+      }
+
+      if (variant === 'table') {
+        expect(wrapper.find('[data-slot="file-upload-table"]').exists()).toBe(true)
+      }
+    }
+  })
+
+  it('uses the latest owner and scope props when uploading queued rows', async () => {
+    const createUploadSession = vi.fn().mockResolvedValue({
+      uploadSessionId: 'ups_1',
+      fileId: 'file_1',
+      uploadMode: 'tus',
+      provider: 'tus',
+      expiresAtUtc: '2026-05-24T00:00:00Z',
+      upload: {
+        url: '/api/console/v1/files/tus/ups_1',
+        headers: { 'x-nerv-upload-mode': 'tus' },
+      },
+    })
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        ownerId: 'inspection_old',
+        organizationId: 'org_old',
+        environmentId: 'env_old',
+        purpose: 'old-purpose',
+        createUploadSession,
+        transport: vi.fn().mockResolvedValue(undefined),
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+
+    await upload.addFiles([new File(['hello'], 'late-scope.txt', { type: 'text/plain' })])
+    await wrapper.setProps({
+      ownerId: 'inspection_new',
+      organizationId: 'org_new',
+      environmentId: 'env_new',
+      purpose: 'quality-evidence',
+    })
+
+    await upload.uploadQueued()
+    await flushPromises()
+
+    expect(createUploadSession).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: 'org_new',
+      environmentId: 'env_new',
+      filePurpose: 'quality-evidence',
+      owner: expect.objectContaining({
+        ownerId: 'inspection_new',
+      }),
+    }))
   })
 
   it('clears rows without emitting a synthetic empty completed event', async () => {
@@ -459,7 +838,7 @@ describe('FileUpload', () => {
     await upload.addFiles([
       new File(['hello'], 'queued-evidence.txt', { type: 'text/plain' }),
     ])
-    await wrapper.get('button[aria-label="Remove queued-evidence.txt"]').trigger('click')
+    await wrapper.get('button[aria-label="移除 queued-evidence.txt"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-slot="file-upload-row"]').exists()).toBe(false)
@@ -492,6 +871,7 @@ describe('FileUpload', () => {
     const transport = vi.fn().mockRejectedValue(new Error('Network failed.'))
     const wrapper = mount(FileUpload, {
       props: createBaseProps({
+        variant: 'queue',
         acceptedContentTypes: ['application/pdf'],
         maxFiles: 2,
         transport,
@@ -503,7 +883,7 @@ describe('FileUpload', () => {
     ])
     await flushPromises()
 
-    expect(wrapper.text()).toContain('2 slots available')
+    expect(wrapper.text()).toContain('还可上传 2 个文件')
 
     await selectFiles(wrapper, [
       new File(['pdf'], 'failed-upload.pdf', { type: 'application/pdf' }),
@@ -512,7 +892,7 @@ describe('FileUpload', () => {
       expect(wrapper.text()).toContain('Network failed.')
     })
 
-    expect(wrapper.text()).toContain('2 slots available')
+    expect(wrapper.text()).toContain('还可上传 2 个文件')
   })
 
   it('uses a virtualized scroll container for large file queues', async () => {
@@ -532,6 +912,26 @@ describe('FileUpload', () => {
 
     expect(wrapper.find('[data-slot="file-upload-virtual-list"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-slot="file-upload-row"]').length).toBeLessThan(files.length)
+  })
+
+  it('accounts for row spacing in virtualized queue height', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        maxFiles: 60,
+        virtualizeThreshold: 10,
+        virtualRowHeight: 92,
+        virtualListHeight: 10000,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+    const files = Array.from({ length: 12 }, (_, index) =>
+      new File(['hello'], `spaced-${index}.txt`, { type: 'text/plain' }))
+
+    await upload.addFiles(files)
+    await flushPromises()
+
+    expect(wrapper.get('[data-slot="file-upload-virtual-list"]').attributes('style')).toContain('height: 1200px')
   })
 })
 

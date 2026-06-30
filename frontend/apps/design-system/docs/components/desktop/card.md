@@ -8,7 +8,7 @@ import { CardPro, BadgePro, StatusBadgePro, Separator } from '@nerv-iip/ui'
 
 # Card 卡片
 
-承载分组信息的「表面」原语。`CardPro` 在 shadcn 之上复制重建——发丝级描边 + 顶部内嵌高光读作单一清晰表面。它本身不含内边距与排版，内容由调用方组织（通常 `p-6` 头部 + 内容，放进 `grid`）；`interactive` 为可点击卡片叠加克制的悬浮上浮。
+承载分组信息的「表面」原语。`CardPro` 基于 `@nerv-iip/ui` 稳定导出的卡片基础能力复制重建——发丝级描边 + 顶部内嵌高光读作单一清晰表面。它本身不含内边距与排版，内容由调用方组织（通常 `p-6` 头部 + 内容，放进 `grid`）；`interactive` 为可点击卡片叠加克制的悬浮上浮。
 
 ## 基础
 

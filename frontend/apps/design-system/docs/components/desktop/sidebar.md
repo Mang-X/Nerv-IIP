@@ -328,7 +328,7 @@ const todo = ref('待派工单')
    what read as muddy/诡异 at any accent hue), near-white text, and the glyph in
    the brand accent: that single accent touch carries identity without coloring
    the surface. Matches [data-active] in any sidebar-menu so level-1, sub, and
-   tooltip-wrapped rows are identical, and out-specifies shadcn's gray default.
+   tooltip-wrapped rows are identical, and out-specifies the primitive gray default.
    The :hover twin keeps the active fill from reverting when hovered. */
 .ds-sb [data-slot='sidebar-menu'] [data-active='true'],
 .ds-sb [data-slot='sidebar-menu'] [data-active='true']:hover {

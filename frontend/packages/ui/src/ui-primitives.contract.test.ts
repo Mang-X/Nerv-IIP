@@ -32,6 +32,7 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
 
   it('exports file upload primitives from the stable package boundary', () => {
     expect(ui.FileUpload).toBeDefined()
+    expect(ui.fileUploadMotion).toBeDefined()
     expect(ui.uploadWithNativeFileStorageTransport).toBeDefined()
     expect(ui.useFileUpload).toBeDefined()
   })
@@ -72,5 +73,21 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
     expect(themeCss).toContain('@keyframes ds-overlay-content-open-transform')
     expect(themeCss).toContain(".ds-overlay-content[data-align-trigger='true']")
     expect(themeCss).toContain('@media (prefers-reduced-motion: reduce)')
+  })
+
+  it('keeps Motion for Vue curves paired with CSS motion tokens', () => {
+    const themeCss = readFileSync(
+      resolve(process.cwd(), 'src/styles/theme.css'),
+      'utf8',
+    )
+
+    expect(themeCss).toContain('--ease-fast-invoke: cubic-bezier(0, 0, 0, 1)')
+    expect(themeCss).toContain('--ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1)')
+    expect(themeCss).toContain('--duration-fast-invoke: 187ms')
+    expect(ui.fileUploadMotion.fastInvoke).toEqual(ui.filePreviewMotion.fastInvoke)
+    expect(ui.fileUploadMotion.pointToPointShort).toEqual({
+      duration: 0.187,
+      ease: [0.55, 0.55, 0, 1],
+    })
   })
 })

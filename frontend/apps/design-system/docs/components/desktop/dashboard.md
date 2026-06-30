@@ -14,7 +14,7 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 
 # AppShellInset 应用外壳
 
-控制台页面的标准外壳 **block**:组合真正的 shadcn Sidebar(可折叠 / Rail / 移动抽屉)+ inset 内容区 + 顶部栏。搭一个控制台页面从它起步,而不是手拼分区件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
+控制台页面的标准外壳 **block**:组合 `@nerv-iip/ui` 稳定导出的 Sidebar 系统(可折叠 / Rail / 移动抽屉)+ inset 内容区 + 顶部栏。搭一个控制台页面从它起步,而不是手拼分区件。侧栏导航用 `SidebarGroup` / `SidebarMenu` / `SidebarMenuButton` 组织。
 
 ## 完整外壳
 
@@ -123,4 +123,4 @@ import { LayoutDashboardIcon, BoxesIcon, ClipboardCheckIcon, WrenchIcon, Setting
 | `default` | inset 主内容区 |
 | `collapsible` | `offcanvas` \| `icon` \| `none`，侧栏折叠方式(默认 `icon`)|
 
-> 底层是完整的 shadcn Sidebar 系统(`SidebarProvider` / `Sidebar` / `SidebarRail` / `SidebarInset` / `SidebarTrigger` / `SidebarMenu*`),可直接取用做更深定制。
+> 底层通过 `@nerv-iip/ui` 稳定导出完整 Sidebar 系统(`SidebarProvider` / `Sidebar` / `SidebarRail` / `SidebarInset` / `SidebarTrigger` / `SidebarMenu*`),需要更深定制时也从组件库导入。

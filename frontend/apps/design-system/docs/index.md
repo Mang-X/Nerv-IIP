@@ -68,7 +68,7 @@ import {
     <div class="ds-home-feat">
       <span class="ds-home-fic"><LayersIcon /></span>
       <span class="ds-home-fname">原版零改动</span>
-      <span class="ds-home-fdesc">shadcn / reka 原版不改，定制复制重建为 Pro / Mobile 层 + 令牌。</span>
+      <span class="ds-home-fdesc">上游原语仅作内部基座，定制复制重建为 Pro / Mobile 层 + 令牌。</span>
     </div>
     <div class="ds-home-feat">
       <span class="ds-home-fic"><AccessibilityIcon /></span>

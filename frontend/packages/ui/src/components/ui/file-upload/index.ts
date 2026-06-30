@@ -1,6 +1,7 @@
 export { default as FileUpload } from './FileUpload.vue'
 export { uploadWithNativeFileStorageTransport } from './nativeTransport'
 export { useFileUpload } from './useFileUpload'
+export { fileUploadMotion } from './motion'
 export type {
   FileUploadCompletedFile,
   FileUploadCompleteSessionRequest,
@@ -13,4 +14,5 @@ export type {
   FileUploadSession,
   FileUploadTransport,
   FileUploadTransportContext,
+  FileUploadVariant,
 } from './types'
