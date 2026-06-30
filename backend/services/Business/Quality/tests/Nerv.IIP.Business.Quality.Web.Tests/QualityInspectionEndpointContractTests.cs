@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.DomainEvents;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 using Nerv.IIP.Business.Quality.Web.Application.Auth;
@@ -17,6 +18,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
+using Nerv.IIP.Business.Quality.Web.Application.DomainEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
@@ -828,6 +830,120 @@ public sealed class QualityInspectionEndpointContractTests
     }
 
     [Fact]
+    public async Task Capa_effectiveness_redrives_recorded_scrap_ncr_closure_without_replaying_inventory_event()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-CAPA-REDRIVE-001",
+            "receiving",
+            "RCV-SCRAP-CAPA-REDRIVE-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var completionHandler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+        await completionHandler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-CAPA-REDRIVE-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-REDRIVE-001");
+        dbContext.CorrectiveActions.Add(capa);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var redriveHandler = new CorrectiveActionLifecycleDomainEventHandlerForCloseRecordedScrapNcr(
+            new NonconformanceReportRepository(dbContext));
+
+        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        var effectivenessEvent = capa.GetDomainEvents().OfType<CorrectiveActionEffectivenessVerifiedDomainEvent>().Single();
+        await redriveHandler.Handle(
+            effectivenessEvent,
+            CancellationToken.None);
+
+        Assert.Equal("closed", ncr.Status);
+        Assert.Equal("SM-FULL-CAPA-REDRIVE-001", ncr.ScrapMovementId);
+    }
+
+    [Fact]
+    public async Task Capa_redrive_is_noop_for_closed_ncr_and_repeated_lifecycle_events()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ncr = NonconformanceReport.Open(
+            "org-001",
+            "env-dev",
+            "NCR-SCRAP-CAPA-IDEMPOTENT-001",
+            "receiving",
+            "RCV-SCRAP-CAPA-IDEMPOTENT-001",
+            "SKU-RM-1000",
+            10m,
+            "dimension-out-of-spec",
+            null,
+            null,
+            []);
+        ncr.SubmitDisposition(
+            "scrap",
+            "approval-chain-approved",
+            [],
+            [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-06-16T08:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var completionHandler = new CompleteNonconformanceReportInventoryDispositionCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext));
+        await completionHandler.Handle(
+            new CompleteNonconformanceReportInventoryDispositionCommand(
+                ncr.Id,
+                "SM-FULL-CAPA-IDEMPOTENT-001",
+                "adjustment",
+                "blocked",
+                -10m),
+            CancellationToken.None);
+        var capa = NewCompletedOpenCapa(ncr, "CAPA-SCRAP-IDEMPOTENT-001");
+        dbContext.CorrectiveActions.Add(capa);
+        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        var redriveHandler = new CorrectiveActionLifecycleDomainEventHandlerForCloseRecordedScrapNcr(
+            new NonconformanceReportRepository(dbContext));
+        var effectivenessEvent = capa.GetDomainEvents().OfType<CorrectiveActionEffectivenessVerifiedDomainEvent>().Single();
+        await redriveHandler.Handle(
+            effectivenessEvent,
+            CancellationToken.None);
+        ncr.ClearDomainEvents();
+
+        await redriveHandler.Handle(
+            effectivenessEvent,
+            CancellationToken.None);
+        capa.Close("qa-manager-001");
+        var closedEvent = capa.GetDomainEvents().OfType<CorrectiveActionClosedDomainEvent>().Single();
+        await redriveHandler.Handle(
+            closedEvent,
+            CancellationToken.None);
+
+        Assert.Equal("closed", ncr.Status);
+        Assert.Equal("SM-FULL-CAPA-IDEMPOTENT-001", ncr.ScrapMovementId);
+        Assert.DoesNotContain(ncr.GetDomainEvents(), x => x is NonconformanceReportClosedDomainEvent);
+    }
+
+    [Fact]
     public async Task Complete_ncr_scrap_disposition_closes_when_effective_capa_exists()
     {
         await using var provider = CreateInMemoryProvider();
@@ -942,6 +1058,13 @@ public sealed class QualityInspectionEndpointContractTests
 
     private static CorrectiveAction NewEffectiveCapa(NonconformanceReport ncr, string capaCode)
     {
+        var capa = NewCompletedOpenCapa(ncr, capaCode);
+        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
+        return capa;
+    }
+
+    private static CorrectiveAction NewCompletedOpenCapa(NonconformanceReport ncr, string capaCode)
+    {
         var capa = CorrectiveAction.OpenFromNcr(
             ncr.OrganizationId,
             ncr.EnvironmentId,
@@ -954,7 +1077,6 @@ public sealed class QualityInspectionEndpointContractTests
         capa.AddAction("corrective", "Fix supplier process", "supplier-quality-001", DateTimeOffset.Parse("2026-06-20T00:00:00Z"));
         var action = capa.Actions.Single();
         capa.CompleteAction(action.Id, action.OwnerUserId, DateTimeOffset.Parse("2026-06-21T00:00:00Z"));
-        capa.VerifyEffectiveness("qa-manager-001", "No recurrence", DateTimeOffset.Parse("2026-07-10T00:00:00Z"));
         return capa;
     }
 
