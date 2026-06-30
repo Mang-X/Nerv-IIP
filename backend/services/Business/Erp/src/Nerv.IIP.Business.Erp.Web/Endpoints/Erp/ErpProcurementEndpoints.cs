@@ -136,6 +136,11 @@ public sealed record ListPurchaseOrdersRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record GetPurchaseReceiptSourceDocumentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PurchaseReceiptNo);
+
 public sealed record ListRequestsForQuotationRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -244,6 +249,24 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
     }
 }
 
+public sealed class GetPurchaseReceiptSourceDocumentEndpoint(ISender sender)
+    : ErpEndpoint<GetPurchaseReceiptSourceDocumentRequest, ResponseData<PurchaseReceiptSourceDocumentResponse?>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<GetPurchaseReceiptSourceDocumentEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetPurchaseReceiptSourceDocumentRequest req, CancellationToken ct)
+    {
+        var purchaseReceiptNo = Route<string>("purchaseReceiptNo") ?? req.PurchaseReceiptNo;
+        var response = await sender.Send(
+            new GetPurchaseReceiptSourceDocumentQuery(req.OrganizationId, req.EnvironmentId, purchaseReceiptNo),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class RecordSupplierInvoiceEndpoint(ISender sender)
     : ErpEndpoint<RecordSupplierInvoiceRequest, ResponseData<RecordSupplierInvoiceResponse>>
 {
@@ -347,6 +370,7 @@ public static class ErpProcurementEndpointContracts
         new(typeof(ListRequestsForQuotationEndpoint), "GET", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpRequestsForQuotation"),
         new(typeof(CreatePurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseOrder"),
         new(typeof(RecordPurchaseReceiptEndpoint), "POST", "/api/business/v1/erp/purchase-receipts", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "recordErpPurchaseReceipt"),
+        new(typeof(GetPurchaseReceiptSourceDocumentEndpoint), "GET", "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "getErpPurchaseReceiptSourceDocument"),
         new(typeof(RecordSupplierInvoiceEndpoint), "POST", "/api/business/v1/erp/supplier-invoices", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "recordErpSupplierInvoice"),
         new(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "releaseErpSupplierInvoicePaymentHold"),
         new(typeof(VoidSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "voidErpSupplierInvoicePaymentHold"),
