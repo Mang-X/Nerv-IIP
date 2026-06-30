@@ -1,6 +1,4 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
-using Nerv.IIP.Business.Quality.Domain.DomainEvents;
-
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 
 public partial record CorrectiveActionId : IGuidStronglyTypedId;
@@ -138,7 +136,6 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
             : verifiedAtUtc;
         Status = "effectiveness-verified";
         Touch();
-        this.AddDomainEvent(new CorrectiveActionEffectivenessVerifiedDomainEvent(this));
     }
 
     public void Close(string closedByUserId)
@@ -152,7 +149,6 @@ public sealed class CorrectiveAction : Entity<CorrectiveActionId>, IAggregateRoo
         ClosedAtUtc = DateTimeOffset.UtcNow;
         Status = "closed";
         Touch();
-        this.AddDomainEvent(new CorrectiveActionClosedDomainEvent(this));
     }
 
     private void EnsureOpen()
