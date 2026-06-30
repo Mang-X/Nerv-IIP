@@ -28,6 +28,7 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
         DeliveryOrderNo = ErpText.Required(deliveryOrderNo, nameof(deliveryOrderNo));
         SalesOrderNo = order.SalesOrderNo;
         CustomerCode = order.CustomerCode;
+        Status = "released";
         ReleasedAtUtc = DateTime.UtcNow;
         foreach (var draft in lineDrafts)
         {
@@ -48,12 +49,27 @@ public sealed class DeliveryOrder : Entity<DeliveryOrderId>, IAggregateRoot
     public string DeliveryOrderNo { get; private set; } = string.Empty;
     public string SalesOrderNo { get; private set; } = string.Empty;
     public string CustomerCode { get; private set; } = string.Empty;
+    public string Status { get; private set; } = "released";
     public DateTime ReleasedAtUtc { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
+    public string? CancellationReason { get; private set; }
     public IReadOnlyCollection<DeliveryOrderLine> Lines => lines;
 
     public static DeliveryOrder Release(SalesOrder order, string deliveryOrderNo, IEnumerable<DeliveryOrderLineDraft> lines)
     {
         return new DeliveryOrder(order, deliveryOrderNo, lines);
+    }
+
+    public void Cancel(string reason, DateTime cancelledAtUtc)
+    {
+        if (string.Equals(Status, "cancelled", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Status = "cancelled";
+        CancelledAtUtc = cancelledAtUtc;
+        CancellationReason = ErpText.Required(reason, nameof(reason));
     }
 }
 
