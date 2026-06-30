@@ -54,11 +54,23 @@ describe('@nerv-iip/ui foundation primitive exports', () => {
       resolve(process.cwd(), 'src/components/ui/select/SelectContent.vue'),
       'utf8',
     )
+    const dropdownContent = readFileSync(
+      resolve(process.cwd(), 'src/components/ui/dropdown-menu/DropdownMenuContent.vue'),
+      'utf8',
+    )
+    const themeCss = readFileSync(
+      resolve(process.cwd(), 'src/styles/theme.css'),
+      'utf8',
+    )
 
+    expect(selectContent).toContain('ds-overlay-content ds-select-content')
     expect(selectContent).toContain('ds-select-content')
-    expect(selectContent).toContain('@keyframes ds-select-content-open-transform')
-    expect(selectContent).toContain('@media (prefers-reduced-motion: reduce)')
-    expect(selectContent).not.toContain('data-[align-trigger=true]:animate-none')
-    expect(selectContent).not.toContain('<style scoped>')
+    expect(selectContent).toContain(':data-align-trigger="position === \'item-aligned\'"')
+    expect(selectContent).not.toContain('<style')
+    expect(dropdownContent).toContain('ds-overlay-content ds-dropdown-menu-content')
+    expect(dropdownContent).not.toContain('<style')
+    expect(themeCss).toContain('@keyframes ds-overlay-content-open-transform')
+    expect(themeCss).toContain(".ds-overlay-content[data-align-trigger='true']")
+    expect(themeCss).toContain('@media (prefers-reduced-motion: reduce)')
   })
 })

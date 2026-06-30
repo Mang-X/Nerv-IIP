@@ -27,6 +27,13 @@ type OfficeViewer = {
   _render?: () => Promise<void>
 }
 
+type CanvasOfficeViewer = OfficeViewer & {
+  opts?: { width?: number }
+  _opts?: { width?: number }
+  renderCurrentSlide?: () => Promise<void>
+  _render?: () => Promise<void>
+}
+
 const props = defineProps<{
   src: string
   kind: Extract<FilePreviewKind, 'office-docx' | 'office-xlsx' | 'office-pptx'>
@@ -109,10 +116,9 @@ const jumpOptions = computed(() => {
     }))
   }
 
-  const labelPrefix = props.kind === 'office-pptx' ? '第' : '第'
   const labelSuffix = props.kind === 'office-pptx' ? '张' : '页'
   return Array.from({ length: total.value }, (_, index) => ({
-    label: `${labelPrefix} ${index + 1} ${labelSuffix}`,
+    label: `第 ${index + 1} ${labelSuffix}`,
     value: String(index),
   }))
 })
@@ -199,17 +205,10 @@ async function rerenderCanvasViewer() {
       }
 
       const renderWidth = getEffectiveCanvasRenderWidth()
-      active.opts = active.opts ?? {}
-      active.opts.width = renderWidth
-      active._opts = active._opts ?? {}
-      active._opts.width = renderWidth
+      setCanvasViewerRenderWidth(active, renderWidth)
 
       try {
-        if (props.kind === 'office-pptx') {
-          await active.renderCurrentSlide?.()
-        } else {
-          await active._render?.()
-        }
+        await rerenderActiveCanvasViewer(active)
       } catch (err) {
         if (token === loadToken) {
           handleError(err)
@@ -218,6 +217,27 @@ async function rerenderCanvasViewer() {
     }
   } finally {
     canvasRerenderInFlight = false
+  }
+}
+
+function setCanvasViewerRenderWidth(active: CanvasOfficeViewer, renderWidth: number) {
+  // @silurus/ooxml 0.69.0 exposes navigation publicly, but not Viewer resize.
+  // Keep the private width write isolated so future package upgrades have one
+  // small compatibility point instead of coupling the render flow throughout.
+  active.opts = active.opts ?? {}
+  active.opts.width = renderWidth
+  active._opts = active._opts ?? {}
+  active._opts.width = renderWidth
+}
+
+async function rerenderActiveCanvasViewer(active: CanvasOfficeViewer) {
+  // No public Viewer rerender API exists in @silurus/ooxml 0.69.0; these private
+  // methods are the only path that preserves the current document and text layer
+  // while resizing without creating another worker-backed viewer.
+  if (props.kind === 'office-pptx') {
+    await active.renderCurrentSlide?.()
+  } else {
+    await active._render?.()
   }
 }
 
@@ -416,23 +436,25 @@ async function goToIndex(value: unknown) {
     return
   }
 
-  if (props.kind === 'office-docx') {
-    if (active.goToPage) {
-      await active.goToPage(nextIndex)
+  try {
+    if (props.kind === 'office-docx') {
+      if (active.goToPage) {
+        await active.goToPage(nextIndex)
+      } else {
+        await stepToIndex(active, nextIndex)
+      }
+    } else if (props.kind === 'office-pptx') {
+      if (active.goToSlide) {
+        await active.goToSlide(nextIndex)
+      } else {
+        await stepToIndex(active, nextIndex)
+      }
     } else {
-      await stepToIndex(active, nextIndex)
+      await active.goToSheet?.(nextIndex)
     }
-  } else if (props.kind === 'office-pptx') {
-    if (active.goToSlide) {
-      await active.goToSlide(nextIndex)
-    } else {
-      await stepToIndex(active, nextIndex)
-    }
-  } else {
-    await active.goToSheet?.(nextIndex)
+  } catch (err) {
+    handleError(err)
   }
-
-  currentIndex.value = nextIndex
 }
 
 async function stepToIndex(active: OfficeViewer, nextIndex: number) {
@@ -494,7 +516,7 @@ onBeforeUnmount(() => {
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent class="max-h-64 min-w-32">
+          <SelectContent position="popper" class="max-h-64 min-w-32">
             <SelectItem v-for="option in jumpOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </SelectItem>

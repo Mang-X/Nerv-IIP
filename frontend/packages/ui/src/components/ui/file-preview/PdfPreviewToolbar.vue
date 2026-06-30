@@ -8,7 +8,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
 import { Button } from '../button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
@@ -23,8 +23,9 @@ const { provides: zoom, state: zoomState } = useZoom(() => props.documentId)
 const currentPage = computed(() => scrollState.value.currentPage || 1)
 const totalPages = computed(() => scrollState.value.totalPages || 0)
 const zoomLabel = computed(() => `${Math.round(zoomState.value.currentZoomLevel * 100)}%`)
-const canGoPrevious = computed(() => currentPage.value > 1)
-const canGoNext = computed(() => totalPages.value > 0 && currentPage.value < totalPages.value)
+const jumping = shallowRef(false)
+const canGoPrevious = computed(() => currentPage.value > 1 && !jumping.value)
+const canGoNext = computed(() => totalPages.value > 0 && currentPage.value < totalPages.value && !jumping.value)
 const pageOptions = computed(() =>
   Array.from({ length: totalPages.value }, (_, index) => {
     const page = index + 1
@@ -34,9 +35,10 @@ const pageOptions = computed(() =>
     }
   }),
 )
+let jumpReleaseTimer = 0
 
 async function jumpToPage(value: unknown) {
-  if (typeof value !== 'string') {
+  if (typeof value !== 'string' || jumping.value) {
     return
   }
 
@@ -45,13 +47,28 @@ async function jumpToPage(value: unknown) {
     return
   }
 
-  const distance = targetPage - currentPage.value
-  const action = distance > 0 ? scroll.value?.scrollToNextPage : scroll.value?.scrollToPreviousPage
-
-  for (let index = 0; index < Math.abs(distance); index += 1) {
-    await action?.('smooth')
+  jumping.value = true
+  try {
+    scroll.value?.scrollToPage({
+      pageNumber: targetPage,
+      behavior: 'smooth',
+    })
+  } finally {
+    if (jumpReleaseTimer) {
+      window.clearTimeout(jumpReleaseTimer)
+    }
+    jumpReleaseTimer = window.setTimeout(() => {
+      jumping.value = false
+      jumpReleaseTimer = 0
+    }, 187)
   }
 }
+
+onBeforeUnmount(() => {
+  if (jumpReleaseTimer) {
+    window.clearTimeout(jumpReleaseTimer)
+  }
+})
 </script>
 
 <template>
@@ -75,10 +92,10 @@ async function jumpToPage(value: unknown) {
         :model-value="String(currentPage)"
         @update:model-value="jumpToPage"
       >
-        <SelectTrigger size="sm" class="h-7 w-24 justify-between font-mono text-xs" aria-label="选择 PDF 页码">
+        <SelectTrigger size="sm" class="h-7 w-24 justify-between font-mono text-xs" aria-label="选择 PDF 页码" :disabled="jumping">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent class="max-h-64 min-w-24">
+        <SelectContent position="popper" class="max-h-64 min-w-24">
           <SelectItem v-for="option in pageOptions" :key="option.value" :value="option.value">
             {{ option.label }}
           </SelectItem>

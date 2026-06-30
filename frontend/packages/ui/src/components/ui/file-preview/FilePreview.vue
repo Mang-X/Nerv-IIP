@@ -42,7 +42,7 @@ const subtitle = computed(() => {
   const pieces = [kindMeta.value.label, formattedSize.value].filter(Boolean)
   return pieces.join(' · ')
 })
-const contentKey = computed(() => `${previewKind.value}:${props.src ?? 'empty'}:${props.loading}:${props.error ?? ''}`)
+const contentKey = computed(() => `${previewKind.value}:${props.src ?? 'empty'}:${props.loading}:${props.error ?? ''}:${internalError.value}`)
 
 function openSource(src = props.src) {
   if (src) {
@@ -62,7 +62,17 @@ watch(
   },
 )
 
+watch(
+  () => props.loading,
+  (loading) => {
+    if (loading) {
+      internalError.value = ''
+    }
+  },
+)
+
 function onChildReady(kind = previewKind.value) {
+  internalError.value = ''
   if (kind !== 'unsupported') {
     emit('ready', kind)
   }

@@ -8,6 +8,13 @@ import {
   PresentationIcon,
 } from 'lucide-vue-next'
 
+import {
+  formatFileSize,
+  getFileExtension,
+  getFileFamily,
+  normalizeContentType,
+} from '../../../lib/file'
+
 export type FilePreviewKind = 'pdf' | 'image' | 'office-docx' | 'office-xlsx' | 'office-pptx' | 'unsupported'
 
 export interface FilePreviewKindMeta {
@@ -34,8 +41,6 @@ export interface FilePreviewEmits {
   error: [message: string]
   openSource: [src: string]
 }
-
-const imageExtensions = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'webp'])
 
 export const filePreviewMotion = {
   fastInvoke: {
@@ -89,38 +94,27 @@ export const filePreviewMotion = {
 } as const
 
 export function getFilePreviewKind(fileName: string, contentType = ''): FilePreviewKind {
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? ''
-  const type = contentType.toLowerCase().split(';', 1)[0]?.trim() ?? ''
+  const extension = getFileExtension(fileName)
+  const type = normalizeContentType(contentType)
+  const family = getFileFamily(fileName, contentType)
 
-  if (extension === 'pdf' || type === 'application/pdf') {
+  if (family === 'pdf') {
     return 'pdf'
   }
 
-  if (type.startsWith('image/') || imageExtensions.has(extension)) {
+  if (family === 'image') {
     return 'image'
   }
 
-  if (
-    extension === 'docx' ||
-    type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    type.includes('wordprocessingml.document')
-  ) {
+  if (extension === 'docx' || type.includes('wordprocessingml.document')) {
     return 'office-docx'
   }
 
-  if (
-    extension === 'xlsx' ||
-    type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    type.includes('spreadsheetml.sheet')
-  ) {
+  if (extension === 'xlsx' || type.includes('spreadsheetml.sheet')) {
     return 'office-xlsx'
   }
 
-  if (
-    extension === 'pptx' ||
-    type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
-    type.includes('presentationml.presentation')
-  ) {
+  if (extension === 'pptx' || type.includes('presentationml.presentation')) {
     return 'office-pptx'
   }
 
@@ -179,22 +173,5 @@ export function getFilePreviewKindMeta(kind: FilePreviewKind): FilePreviewKindMe
 }
 
 export function formatFilePreviewSize(sizeBytes?: number | null) {
-  if (sizeBytes == null || Number.isNaN(sizeBytes)) {
-    return ''
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let value = sizeBytes
-  let unitIndex = 0
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-
-  if (unitIndex === 0) {
-    return `${Math.round(value)} ${units[unitIndex]}`
-  }
-
-  return `${value.toFixed(1)} ${units[unitIndex]}`
+  return formatFileSize(sizeBytes)
 }

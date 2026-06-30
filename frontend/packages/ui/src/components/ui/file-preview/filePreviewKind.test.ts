@@ -27,8 +27,14 @@ describe('file preview kind helpers', () => {
   it('formats byte sizes for dense file metadata', () => {
     expect(formatFilePreviewSize()).toBe('')
     expect(formatFilePreviewSize(512)).toBe('512 B')
+    expect(formatFilePreviewSize(-500)).toBe('0 B')
     expect(formatFilePreviewSize(1536)).toBe('1.5 KB')
     expect(formatFilePreviewSize(2 * 1024 * 1024)).toBe('2.0 MB')
+  })
+
+  it('does not treat extensionless names as previewable extensions', () => {
+    expect(getFilePreviewKind('pdf', '')).toBe('unsupported')
+    expect(getFilePreviewKind('png', '')).toBe('unsupported')
   })
 
   it('exposes Windows motion values for the component animation layer', () => {

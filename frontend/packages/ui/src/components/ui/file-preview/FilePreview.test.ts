@@ -26,6 +26,7 @@ const pdfEngineMocks = vi.hoisted(() => ({
 const pdfScrollMocks = vi.hoisted(() => ({
   currentPage: 1,
   totalPages: 3,
+  scrollToPage: vi.fn(),
   scrollToPreviousPage: vi.fn(),
   scrollToNextPage: vi.fn(),
 }))
@@ -115,6 +116,7 @@ vi.mock('@embedpdf/plugin-scroll/vue', () => ({
   }),
   useScroll: () => ({
     provides: computed(() => ({
+      scrollToPage: pdfScrollMocks.scrollToPage,
       scrollToPreviousPage: pdfScrollMocks.scrollToPreviousPage,
       scrollToNextPage: pdfScrollMocks.scrollToNextPage,
     })),
@@ -290,6 +292,7 @@ describe('FilePreview', () => {
     pdfEngineMocks.error = null
     pdfScrollMocks.currentPage = 1
     pdfScrollMocks.totalPages = 3
+    pdfScrollMocks.scrollToPage.mockClear()
     pdfScrollMocks.scrollToPreviousPage.mockClear()
     pdfScrollMocks.scrollToNextPage.mockClear()
   })
@@ -347,8 +350,11 @@ describe('FilePreview', () => {
     pageSelect.vm.$emit('update:modelValue', '3')
     await flushPromises()
 
-    expect(pdfScrollMocks.scrollToNextPage).toHaveBeenCalledTimes(2)
-    expect(pdfScrollMocks.scrollToNextPage).toHaveBeenCalledWith('smooth')
+    expect(pdfScrollMocks.scrollToPage).toHaveBeenCalledWith({
+      pageNumber: 3,
+      behavior: 'smooth',
+    })
+    expect(pdfScrollMocks.scrollToNextPage).not.toHaveBeenCalled()
     expect(pdfScrollMocks.scrollToPreviousPage).not.toHaveBeenCalled()
   })
 
@@ -415,6 +421,26 @@ describe('FilePreview', () => {
     expect(wrapper.emitted('error')?.[0]).toEqual(['无法加载 missing.png。'])
     expect(wrapper.text()).toContain('预览失败')
     expect(wrapper.text()).toContain('无法加载 missing.png。')
+  })
+
+  it('clears child preview errors when the same source is retried', async () => {
+    const wrapper = mount(FilePreview, {
+      props: {
+        src: '/files/missing.png',
+        fileName: 'missing.png',
+        contentType: 'image/png',
+      },
+    })
+
+    await wrapper.get('[data-testid="file-preview-image"]').trigger('error')
+    expect(wrapper.text()).toContain('预览失败')
+
+    await wrapper.setProps({ loading: true })
+    await wrapper.setProps({ loading: false })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('预览失败')
+    expect(wrapper.find('[data-testid="file-preview-image"]').exists()).toBe(true)
   })
 
   it('uses a distinct empty-source state', () => {
