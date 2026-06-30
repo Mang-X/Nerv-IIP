@@ -199,6 +199,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
+        var hasNewerSummary = await HasNewerSummaryAsync(request, normalizedTagKey, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -229,12 +230,20 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
                 throw new KnownException("Telemetry summary source sequence has conflicting payload.");
             }
 
-            await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+            if (!hasNewerSummary)
+            {
+                await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+            }
+
             return new RecordTelemetrySampleResult(existingSummary.Id, stateId);
         }
 
         dbContext.TelemetrySummaries.Add(incoming);
-        await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+        if (!hasNewerSummary)
+        {
+            await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+        }
+
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
     }
 
@@ -364,6 +373,27 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         }
     }
 
+    private async Task<bool> HasNewerSummaryAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        var persistedBucketEnds = await dbContext.TelemetrySummaries
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .Select(x => x.BucketEndUtc)
+            .ToArrayAsync(cancellationToken);
+        return persistedBucketEnds.Any(bucketEndUtc => bucketEndUtc > request.BucketEndUtc) ||
+            dbContext.TelemetrySummaries.Local.Any(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey
+                && x.BucketEndUtc > request.BucketEndUtc);
+    }
+
     private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
         RecordTelemetrySampleCommand request,
         string normalizedTagKey,
@@ -441,14 +471,21 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         DateTimeOffset defaultStartUtc)
     {
         var conditionStartUtc = defaultStartUtc;
+        var expectedPreviousBucketEndUtc = defaultStartUtc;
         foreach (var summary in previousSummaries)
         {
+            if (summary.BucketEndUtc != expectedPreviousBucketEndUtc)
+            {
+                break;
+            }
+
             if (!predicate(rule, summary))
             {
                 break;
             }
 
             conditionStartUtc = summary.BucketStartUtc;
+            expectedPreviousBucketEndUtc = summary.BucketStartUtc;
         }
 
         return conditionStartUtc;
