@@ -110,7 +110,6 @@ const availableSlotCount = computed(() => Math.max(props.maxFiles - occupiedSlot
 const canAddMore = computed(() => !props.disabled && availableSlotCount.value > 0)
 const totalSizeBytes = computed(() => rows.reduce((sum, row) => sum + row.sizeBytes, 0))
 const totalSizeLabel = computed(() => formatFileSize(totalSizeBytes.value))
-const maxSizeHint = computed(() => props.maxFileSizeBytes ? `单个文件不超过 ${formatFileSize(props.maxFileSizeBytes)}` : null)
 const primaryRow = computed(() => rows.find(isSlotOccupyingRow) ?? rows[rows.length - 1] ?? null)
 const isGridVariant = computed(() => props.variant === 'gallery' || props.variant === 'image')
 const isDropzoneVariant = computed(() => props.variant !== 'default')
