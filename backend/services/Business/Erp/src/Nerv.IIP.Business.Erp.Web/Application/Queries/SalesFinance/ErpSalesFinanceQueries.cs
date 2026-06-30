@@ -187,9 +187,12 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "released"))
+        if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            query = query.Where(x => false);
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = status is "released" or "cancelled"
+                ? query.Where(x => x.Status == status)
+                : query.Where(x => false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -212,7 +215,7 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
                 x.DeliveryOrderNo,
                 x.SalesOrderNo,
                 x.CustomerCode,
-                "released",
+                x.Status,
                 x.Lines
                     .OrderBy(line => line.SalesOrderLineNo)
                     .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity))

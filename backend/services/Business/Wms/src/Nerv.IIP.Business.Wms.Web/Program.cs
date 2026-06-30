@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -63,6 +64,7 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
