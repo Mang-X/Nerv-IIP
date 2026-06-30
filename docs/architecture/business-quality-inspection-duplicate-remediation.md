@@ -175,9 +175,10 @@ For each duplicate group, keep one canonical record:
 
 Treat a duplicate group as conflicting when any of these differ between records:
 
-1. `inspected_quantity`, `result`, `disposition_reason`, or failed quantity.
+1. `inspected_quantity`, `result`, `disposition_reason`, or result-line
+   `defect_quantity`.
 2. `uom_code`, `site_code`, `location_code`, `source_quality_status`,
-   `owner_type`, `owner_id`, batch, or serial.
+   `owner_type`, `owner_id`, `batch_no`, or `serial_no`.
 3. Result-line count or result-line signature.
 4. NCR links, NCR disposition state, Inventory movement ids, ERP return ids, or
    MES rework work-order ids.
