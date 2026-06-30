@@ -225,7 +225,18 @@ public sealed class WcsTaskCancelledIntegrationEventConverter
             task.OrganizationId,
             task.EnvironmentId,
             $"wms:wcs-cancelled:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
-            new WmsIntegrationPayload(task.ExternalTaskId, null, null, null, null, null, null, task.Status.ToString(), "WCS_TASK_CANCELLED", task.FailureMessage));
+            new WmsIntegrationPayload(
+                task.ExternalTaskId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                task.Status.ToString(),
+                "WCS_TASK_CANCELLED",
+                task.FailureMessage,
+                AdapterType: task.AdapterType));
     }
 }
 
