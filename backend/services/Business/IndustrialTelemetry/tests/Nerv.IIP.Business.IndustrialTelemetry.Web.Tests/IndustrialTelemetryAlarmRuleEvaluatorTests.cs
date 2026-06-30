@@ -331,6 +331,41 @@ public sealed class IndustrialTelemetryAlarmRuleEvaluatorTests
     }
 
     [Fact]
+    public async Task RecordTelemetrySample_deduplicates_same_bucket_before_checking_on_delay_continuity()
+    {
+        await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_deduplicates_same_bucket_before_checking_on_delay_continuity));
+        dbContext.AlarmRules.Add(AlarmRule.Configure(
+            "org-001",
+            "env-dev",
+            "DEV-PUMP-13",
+            "TEMP_RULE",
+            "TEMP_HIGH",
+            "warning",
+            "temperature",
+            ">=",
+            90m,
+            "celsius",
+            true,
+            onDelaySeconds: 180));
+        await dbContext.SaveChangesAsync();
+        var handler = new RecordTelemetrySampleCommandHandler(dbContext);
+        var firstBucketEndUtc = new DateTimeOffset(2026, 6, 1, 8, 1, 0, TimeSpan.Zero);
+
+        await handler.Handle(CreateSample("DEV-PUMP-13", firstBucketEndUtc, 95m, "sample-013-1"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-13", firstBucketEndUtc.AddMinutes(1), 96m, "sample-013-2a"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-13", firstBucketEndUtc.AddMinutes(1), 97m, "sample-013-2b"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        await handler.Handle(CreateSample("DEV-PUMP-13", firstBucketEndUtc.AddMinutes(2), 98m, "sample-013-3"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var alarm = Assert.Single(dbContext.AlarmEvents);
+        Assert.Equal("TEMP_RULE", alarm.ExternalAlarmId);
+        Assert.Equal(firstBucketEndUtc.AddMinutes(2), alarm.RaisedAtUtc);
+    }
+
+    [Fact]
     public async Task RecordTelemetrySample_does_not_bridge_missing_bucket_for_off_delay()
     {
         await using var dbContext = CreateDbContext(nameof(RecordTelemetrySample_does_not_bridge_missing_bucket_for_off_delay));

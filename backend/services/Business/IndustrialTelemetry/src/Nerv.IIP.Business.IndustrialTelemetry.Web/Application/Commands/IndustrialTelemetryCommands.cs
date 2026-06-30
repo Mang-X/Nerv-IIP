@@ -199,7 +199,6 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
-        var hasNewerSummary = await HasNewerSummaryAsync(request, normalizedTagKey, cancellationToken);
         var existingSummary = await dbContext.TelemetrySummaries.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
@@ -230,19 +229,13 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
                 throw new KnownException("Telemetry summary source sequence has conflicting payload.");
             }
 
-            if (!hasNewerSummary)
-            {
-                await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
-            }
+            await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
 
             return new RecordTelemetrySampleResult(existingSummary.Id, stateId);
         }
 
         dbContext.TelemetrySummaries.Add(incoming);
-        if (!hasNewerSummary)
-        {
-            await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
-        }
+        await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
 
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
     }
@@ -298,6 +291,11 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .ToListAsync(cancellationToken);
 
         if (rules.Count == 0)
+        {
+            return;
+        }
+
+        if (await HasNewerSummaryAsync(request, normalizedTagKey, cancellationToken))
         {
             return;
         }
@@ -378,20 +376,36 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         string normalizedTagKey,
         CancellationToken cancellationToken)
     {
-        var persistedBucketEnds = await dbContext.TelemetrySummaries
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => x.TagKey == normalizedTagKey)
-            .Select(x => x.BucketEndUtc)
-            .ToArrayAsync(cancellationToken);
-        return persistedBucketEnds.Any(bucketEndUtc => bucketEndUtc > request.BucketEndUtc) ||
-            dbContext.TelemetrySummaries.Local.Any(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.DeviceAssetId == request.DeviceAssetId
-                && x.TagKey == normalizedTagKey
-                && x.BucketEndUtc > request.BucketEndUtc);
+        try
+        {
+            return await dbContext.TelemetrySummaries
+                .Where(x => x.OrganizationId == request.OrganizationId)
+                .Where(x => x.EnvironmentId == request.EnvironmentId)
+                .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+                .Where(x => x.TagKey == normalizedTagKey)
+                .AnyAsync(x => x.BucketEndUtc > request.BucketEndUtc, cancellationToken) ||
+                HasLocalNewerSummary(request, normalizedTagKey);
+        }
+        catch (InvalidOperationException exception) when (IsDateTimeOffsetComparisonTranslationFailure(exception))
+        {
+            return HasLocalNewerSummary(request, normalizedTagKey);
+        }
+    }
+
+    private bool HasLocalNewerSummary(RecordTelemetrySampleCommand request, string normalizedTagKey)
+    {
+        return dbContext.TelemetrySummaries.Local.Any(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.DeviceAssetId == request.DeviceAssetId
+            && x.TagKey == normalizedTagKey
+            && x.BucketEndUtc > request.BucketEndUtc);
+    }
+
+    private static bool IsDateTimeOffsetComparisonTranslationFailure(InvalidOperationException exception)
+    {
+        return exception.Message.Contains("could not be translated", StringComparison.OrdinalIgnoreCase)
+            && exception.Message.Contains(nameof(TelemetrySummary.BucketEndUtc), StringComparison.Ordinal);
     }
 
     private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
@@ -472,7 +486,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
     {
         var conditionStartUtc = defaultStartUtc;
         var expectedPreviousBucketEndUtc = defaultStartUtc;
-        foreach (var summary in previousSummaries)
+        foreach (var summary in DeduplicatePreviousSummariesByBucketEnd(previousSummaries))
         {
             if (summary.BucketEndUtc != expectedPreviousBucketEndUtc)
             {
@@ -489,6 +503,14 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         }
 
         return conditionStartUtc;
+    }
+
+    private static IEnumerable<TelemetrySummary> DeduplicatePreviousSummariesByBucketEnd(IReadOnlyCollection<TelemetrySummary> previousSummaries)
+    {
+        return previousSummaries
+            .GroupBy(summary => summary.BucketEndUtc)
+            .Select(group => group.OrderByDescending(summary => summary.RecordedAtUtc).First())
+            .OrderByDescending(summary => summary.BucketEndUtc);
     }
 
     private static string CreateRuleExternalAlarmId(AlarmRule rule)
