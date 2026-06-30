@@ -376,20 +376,13 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         string normalizedTagKey,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            return await dbContext.TelemetrySummaries
-                .Where(x => x.OrganizationId == request.OrganizationId)
-                .Where(x => x.EnvironmentId == request.EnvironmentId)
-                .Where(x => x.DeviceAssetId == request.DeviceAssetId)
-                .Where(x => x.TagKey == normalizedTagKey)
-                .AnyAsync(x => x.BucketEndUtc > request.BucketEndUtc, cancellationToken) ||
-                HasLocalNewerSummary(request, normalizedTagKey);
-        }
-        catch (InvalidOperationException exception) when (IsDateTimeOffsetComparisonTranslationFailure(exception))
-        {
-            return HasLocalNewerSummary(request, normalizedTagKey);
-        }
+        return await dbContext.TelemetrySummaries
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .AnyAsync(x => x.BucketEndUtc > request.BucketEndUtc, cancellationToken)
+            || HasLocalNewerSummary(request, normalizedTagKey);
     }
 
     private bool HasLocalNewerSummary(RecordTelemetrySampleCommand request, string normalizedTagKey)
@@ -400,12 +393,6 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             && x.DeviceAssetId == request.DeviceAssetId
             && x.TagKey == normalizedTagKey
             && x.BucketEndUtc > request.BucketEndUtc);
-    }
-
-    private static bool IsDateTimeOffsetComparisonTranslationFailure(InvalidOperationException exception)
-    {
-        return exception.Message.Contains("could not be translated", StringComparison.OrdinalIgnoreCase)
-            && exception.Message.Contains(nameof(TelemetrySummary.BucketEndUtc), StringComparison.Ordinal);
     }
 
     private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
