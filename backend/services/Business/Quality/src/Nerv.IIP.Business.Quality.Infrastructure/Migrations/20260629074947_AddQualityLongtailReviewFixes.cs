@@ -50,7 +50,7 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Migrations
                     LIMIT 1;
 
                     IF duplicate_key IS NOT NULL THEN
-                        RAISE EXCEPTION 'Cannot add unique inspection source/SKU index because duplicate Quality inspection records already exist: %. Resolve historical duplicates before applying migration 20260629074947_AddQualityLongtailReviewFixes.', duplicate_key;
+                        RAISE EXCEPTION 'Cannot add unique inspection source/SKU index because duplicate Quality inspection records already exist: %. Resolve historical duplicates with docs/architecture/business-quality-inspection-duplicate-remediation.md before applying migration 20260629074947_AddQualityLongtailReviewFixes.', duplicate_key;
                     END IF;
                 END $$;
                 """);

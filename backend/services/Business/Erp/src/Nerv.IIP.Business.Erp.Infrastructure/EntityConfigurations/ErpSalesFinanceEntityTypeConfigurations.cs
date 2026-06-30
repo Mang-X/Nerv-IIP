@@ -115,7 +115,10 @@ public sealed class DeliveryOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.DeliveryOrderNo).HasColumnName("delivery_order_no").IsRequired().HasMaxLength(100).HasComment("Delivery order request number.");
         builder.Property(x => x.SalesOrderNo).HasColumnName("sales_order_no").IsRequired().HasMaxLength(100).HasComment("Source sales order number.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("ERP delivery order lifecycle status projected from WMS execution facts.");
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC release time.");
+        builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when WMS cancellation was projected to ERP.");
+        builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("WMS cancellation reason projected to ERP delivery order.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("DeliveryOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeliveryOrderNo }).IsUnique();
