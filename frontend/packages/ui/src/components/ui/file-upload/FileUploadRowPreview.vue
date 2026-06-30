@@ -2,6 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import type { FileUploadRow } from './types'
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { getFileFamily } from '../../../lib/file'
 import { cn } from '../../../lib/utils'
 import { rowKind } from './useFileUpload'
 
@@ -12,10 +13,7 @@ const props = defineProps<{
 
 const previewUrl = shallowRef<string | null>(null)
 const kind = computed(() => rowKind(props.row))
-const isImage = computed(() =>
-  props.row.contentType.startsWith('image/')
-  || /\.(apng|avif|gif|jpe?g|png|webp)$/i.test(props.row.fileName),
-)
+const isImage = computed(() => getFileFamily(props.row.fileName, props.row.contentType) === 'image')
 
 watch(
   () => [props.row.file, isImage.value] as const,

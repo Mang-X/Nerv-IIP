@@ -15,6 +15,7 @@ import { useVirtualList } from '@vueuse/core'
 import { computed, shallowRef, useTemplateRef } from 'vue'
 import { ImageIcon, PlusIcon, Trash2Icon, UploadCloudIcon, UserIcon } from 'lucide-vue-next'
 import { AnimatePresence, motion, MotionConfig } from 'motion-v'
+import { getAcceptedFileExtensions } from '../../../lib/file'
 import { cn } from '../../../lib/utils'
 import { Button } from '../button'
 import FileUploadRowItem from './FileUploadRowItem.vue'
@@ -196,11 +197,7 @@ const dropzoneTitle = computed(() => {
 const dropzoneDescription = computed(() => {
   switch (props.variant) {
     case 'compact':
-      return [
-        acceptedTypeHint.value ? `支持 ${acceptedTypeHint.value}` : null,
-        maxSizeHint.value,
-        `最多 ${props.maxFiles} 个文件`,
-      ].filter(Boolean).join(' · ')
+      return restrictionHint.value
     case 'gallery':
       return '拖拽图片到这里或点击浏览'
     case 'image':
@@ -243,23 +240,8 @@ const dropzoneIcon = computed(() => {
       return UploadCloudIcon
   }
 })
-const restrictionHint = computed(() => {
-  const hints = [
-    acceptedTypeHint.value ? `支持 ${acceptedTypeHint.value}` : null,
-    maxSizeHint.value,
-    `最多 ${props.maxFiles} 个文件`,
-  ].filter(Boolean)
-
-  return hints.join(' · ')
-})
-const tableRestrictionHint = computed(() => {
-  const maxSize = props.maxFileSizeBytes ? `最大文件大小：${formatFileSize(props.maxFileSizeBytes)}` : null
-  return [
-    acceptedTypeHint.value ? `支持 ${acceptedTypeHint.value}` : null,
-    maxSize,
-    `最多文件数：${props.maxFiles}`,
-  ].filter(Boolean).join(' · ')
-})
+const restrictionHint = computed(() => buildRestrictionHint('default'))
+const tableRestrictionHint = computed(() => buildRestrictionHint('table'))
 const avatarHint = computed(() => {
   if (!primaryRow.value) {
     return restrictionHint.value
@@ -281,36 +263,6 @@ const avatarHint = computed(() => {
   }
 })
 
-const acceptedTypeExtensions: Record<string, string[]> = {
-  'application/pdf': ['.pdf'],
-  'application/msword': ['.doc'],
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-  'application/vnd.ms-excel': ['.xls'],
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-  'application/vnd.ms-powerpoint': ['.ppt'],
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-  'application/zip': ['.zip'],
-  'application/x-zip-compressed': ['.zip'],
-  'application/json': ['.json'],
-  'application/xml': ['.xml'],
-  'text/plain': ['.txt'],
-  'text/csv': ['.csv'],
-  'image/png': ['.png'],
-  'image/jpeg': ['.jpg', '.jpeg'],
-  'image/gif': ['.gif'],
-  'image/webp': ['.webp'],
-  'image/svg+xml': ['.svg'],
-  'audio/mpeg': ['.mp3'],
-  'video/mp4': ['.mp4'],
-}
-
-const acceptedTypeFamilies: Record<string, string[]> = {
-  'image/*': ['.png', '.jpg', '.jpeg', '.svg'],
-  'audio/*': ['.mp3', '.wav'],
-  'video/*': ['.mp4', '.mov'],
-  'text/*': ['.txt', '.csv'],
-}
-
 function formatAcceptedTypeHint(acceptedTypes: string[]) {
   const labels = acceptedTypes.flatMap((acceptedType) => {
     const normalized = acceptedType.trim().toLowerCase()
@@ -319,16 +271,23 @@ function formatAcceptedTypeHint(acceptedTypes: string[]) {
       return []
     }
 
-    if (normalized.startsWith('.')) {
-      return [normalized]
-    }
-
-    return acceptedTypeExtensions[normalized]
-      ?? acceptedTypeFamilies[normalized]
-      ?? [normalized]
+    const extensions = getAcceptedFileExtensions(normalized)
+    return extensions.length > 0
+      ? extensions.map(extension => `.${extension}`)
+      : [normalized]
   })
 
   return Array.from(new Set(labels)).join('、')
+}
+
+function buildRestrictionHint(style: 'default' | 'table') {
+  return [
+    acceptedTypeHint.value ? `支持 ${acceptedTypeHint.value}` : null,
+    props.maxFileSizeBytes
+      ? `${style === 'table' ? '最大文件大小：' : '单个文件不超过 '}${formatFileSize(props.maxFileSizeBytes)}`
+      : null,
+    style === 'table' ? `最多文件数：${props.maxFiles}` : `最多 ${props.maxFiles} 个文件`,
+  ].filter(Boolean).join(' · ')
 }
 
 const {

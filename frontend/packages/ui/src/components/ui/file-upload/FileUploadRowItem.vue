@@ -3,12 +3,13 @@ import type { StyleValue } from 'vue'
 import type { BadgeVariants } from '../badge'
 import type { FileUploadRow, FileUploadVariant } from './types'
 import { computed } from 'vue'
-import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from 'lucide-vue-next'
+import { XIcon } from 'lucide-vue-next'
 import { AnimatePresence, motion } from 'motion-v'
 import { cn } from '../../../lib/utils'
 import { Badge } from '../badge'
 import { Button } from '../button'
 import { Progress } from '../progress'
+import FileUploadRowActions from './FileUploadRowActions.vue'
 import FileUploadRowPreview from './FileUploadRowPreview.vue'
 import { fileUploadMotion } from './motion'
 import { formatFileSize, rowKind } from './useFileUpload'
@@ -204,55 +205,15 @@ const actionsClass = computed(() => cn(
     <Badge :variant="badgeVariant" class="shrink-0">
       {{ statusLabel }}
     </Badge>
-    <MotionDiv
-      data-motion-actions="true"
+    <FileUploadRowActions
+      :row="row"
       class="flex shrink-0 items-center gap-1"
-      :layout="true"
-      :initial="{ opacity: 0, x: 4 }"
-      :animate="{ opacity: 1, x: 0 }"
-      :transition="fileUploadMotion.fastInvoke"
-    >
-      <Button
-        v-if="row.status === 'failed'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`重试 ${row.fileName}`"
-        @click="emits('retry', row.id)"
-      >
-        <RotateCcwIcon />
-      </Button>
-      <Button
-        v-else-if="row.status === 'uploading'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`暂停 ${row.fileName}`"
-        @click="emits('pause', row.id)"
-      >
-        <PauseIcon />
-      </Button>
-      <Button
-        v-else-if="row.status === 'paused'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`继续 ${row.fileName}`"
-        @click="emits('resume', row.id)"
-      >
-        <PlayIcon />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`移除 ${row.fileName}`"
-        @click="emits('remove', row.id)"
-      >
-        <XIcon />
-        <span class="sr-only">移除 {{ row.fileName }}</span>
-      </Button>
-    </MotionDiv>
+      :initial-x="4"
+      @pause="emits('pause', $event)"
+      @resume="emits('resume', $event)"
+      @retry="emits('retry', $event)"
+      @remove="emits('remove', $event)"
+    />
   </div>
 
   <div
@@ -285,55 +246,14 @@ const actionsClass = computed(() => cn(
       {{ kind.label }}
     </Badge>
     <span class="text-muted-foreground">{{ formatFileSize(row.sizeBytes) }}</span>
-    <MotionDiv
-      data-motion-actions="true"
+    <FileUploadRowActions
+      :row="row"
       class="flex items-center justify-end gap-1"
-      :layout="true"
-      :initial="{ opacity: 0, x: 6 }"
-      :animate="{ opacity: 1, x: 0 }"
-      :transition="fileUploadMotion.fastInvoke"
-    >
-      <Button
-        v-if="row.status === 'failed'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`重试 ${row.fileName}`"
-        @click="emits('retry', row.id)"
-      >
-        <RotateCcwIcon />
-      </Button>
-      <Button
-        v-else-if="row.status === 'uploading'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`暂停 ${row.fileName}`"
-        @click="emits('pause', row.id)"
-      >
-        <PauseIcon />
-      </Button>
-      <Button
-        v-else-if="row.status === 'paused'"
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`继续 ${row.fileName}`"
-        @click="emits('resume', row.id)"
-      >
-        <PlayIcon />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`移除 ${row.fileName}`"
-        @click="emits('remove', row.id)"
-      >
-        <XIcon />
-        <span class="sr-only">移除 {{ row.fileName }}</span>
-      </Button>
-    </MotionDiv>
+      @pause="emits('pause', $event)"
+      @resume="emits('resume', $event)"
+      @retry="emits('retry', $event)"
+      @remove="emits('remove', $event)"
+    />
   </div>
 
   <div
@@ -402,80 +322,13 @@ const actionsClass = computed(() => cn(
       </p>
     </div>
 
-    <MotionDiv
-      data-motion-actions="true"
+    <FileUploadRowActions
+      :row="row"
       :class="actionsClass"
-      :layout="true"
-      :initial="{ opacity: 0, x: 6 }"
-      :animate="{ opacity: 1, x: 0 }"
-      :transition="fileUploadMotion.fastInvoke"
-    >
-      <AnimatePresence mode="wait">
-        <MotionSpan
-          v-if="row.status === 'uploading'"
-          key="pause"
-          :initial="{ opacity: 0, scale: 0.92, x: 4 }"
-          :animate="{ opacity: 1, scale: 1, x: 0 }"
-          :exit="{ opacity: 0, scale: 0.92, x: -4 }"
-          :transition="fileUploadMotion.fastInvoke"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`暂停 ${row.fileName}`"
-            @click="emits('pause', row.id)"
-          >
-            <PauseIcon />
-          </Button>
-        </MotionSpan>
-        <MotionSpan
-          v-else-if="row.status === 'paused'"
-          key="resume"
-          :initial="{ opacity: 0, scale: 0.92, x: 4 }"
-          :animate="{ opacity: 1, scale: 1, x: 0 }"
-          :exit="{ opacity: 0, scale: 0.92, x: -4 }"
-          :transition="fileUploadMotion.fastInvoke"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`继续 ${row.fileName}`"
-            @click="emits('resume', row.id)"
-          >
-            <PlayIcon />
-          </Button>
-        </MotionSpan>
-        <MotionSpan
-          v-else-if="row.status === 'failed'"
-          key="retry"
-          :initial="{ opacity: 0, scale: 0.92, x: 4 }"
-          :animate="{ opacity: 1, scale: 1, x: 0 }"
-          :exit="{ opacity: 0, scale: 0.92, x: -4 }"
-          :transition="fileUploadMotion.fastInvoke"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="`重试 ${row.fileName}`"
-            @click="emits('retry', row.id)"
-          >
-            <RotateCcwIcon />
-          </Button>
-        </MotionSpan>
-      </AnimatePresence>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        :aria-label="`移除 ${row.fileName}`"
-        @click="emits('remove', row.id)"
-      >
-        <XIcon />
-        <span class="sr-only">移除 {{ row.fileName }}</span>
-      </Button>
-    </MotionDiv>
+      @pause="emits('pause', $event)"
+      @resume="emits('resume', $event)"
+      @retry="emits('retry', $event)"
+      @remove="emits('remove', $event)"
+    />
   </div>
 </template>
