@@ -121,7 +121,8 @@ const renderRowsAfterDropzone = computed(() => rows.length > 0 && props.variant 
 const shouldVirtualizeRows = computed(() =>
   rows.length > props.virtualizeThreshold
   && !isGridVariant.value
-  && props.variant !== 'avatar',
+  && props.variant !== 'avatar'
+  && props.variant !== 'compact',
 )
 const virtualItemHeight = computed(() => props.virtualRowHeight + virtualRowGap)
 const virtualContainerStyle = computed(() => ({
@@ -668,7 +669,6 @@ defineExpose<FileUploadExpose>({
             :key="virtualRow.data.id"
             data-motion-row="true"
             :style="virtualMotionRowStyle"
-            :layout="true"
             :initial="{ opacity: 0, y: 12, scale: 0.985, filter: 'blur(3px)' }"
             :animate="{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }"
             :exit="{ opacity: 0, y: -6, scale: 0.99, filter: 'blur(2px)' }"

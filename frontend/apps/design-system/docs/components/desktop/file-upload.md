@@ -547,7 +547,7 @@ import { FileUpload, uploadWithNativeFileStorageTransport } from '@nerv-iip/ui'
 | `transport(context)` | 真实传输实现，默认 `uploadWithNativeFileStorageTransport` |
 | `completed(files)` | 当前队列内已完成文件快照；单个文件完成或移除已完成行后都会重新发出 |
 | `rejected(files)` | 入队前被拒绝的文件与原因 |
-| `failed(row)` | 上传失败的行，用户可点行内重试 |
+| `failed(row)` | 上传失败的行；`default / queue / compact / table` 行内提供重试，`avatar / gallery / image` 可移除后重新选择，父级也可调用 `retryFailed()` 统一重试 |
 
 ## 暴露方法
 

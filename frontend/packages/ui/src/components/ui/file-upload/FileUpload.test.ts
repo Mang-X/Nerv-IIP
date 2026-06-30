@@ -912,6 +912,30 @@ describe('FileUpload', () => {
 
     expect(wrapper.find('[data-slot="file-upload-virtual-list"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-slot="file-upload-row"]').length).toBeLessThan(files.length)
+    expect(
+      wrapper.findAll('[data-motion-row="true"]')
+        .every(row => row.attributes('data-has-layout') !== 'true'),
+    ).toBe(true)
+  })
+
+  it('does not render compact rows twice when the queue exceeds the virtualization threshold', async () => {
+    const wrapper = mount(FileUpload, {
+      props: createBaseProps({
+        autoUpload: false,
+        maxFiles: 60,
+        variant: 'compact',
+        virtualizeThreshold: 20,
+      }),
+    })
+    const upload = wrapper.vm as unknown as FileUploadExpose
+    const files = Array.from({ length: 45 }, (_, index) =>
+      new File(['hello'], `compact-${index}.txt`, { type: 'text/plain' }))
+
+    await upload.addFiles(files)
+    await flushPromises()
+
+    expect(wrapper.find('[data-slot="file-upload-virtual-list"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-slot="file-upload-row"]')).toHaveLength(files.length)
   })
 
   it('accounts for row spacing in virtualized queue height', async () => {
