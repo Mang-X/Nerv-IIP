@@ -23,6 +23,120 @@ public static class EquipmentRuntimeReasonCodes
     public const string NoEligibleSubstitute = "equipment.noEligibleSubstitute";
 }
 
+public enum EquipmentRuntimeDeviceStateCategory
+{
+    Productive = 0,
+    LoadingNonProductive = 1,
+    PlannedDown = 2,
+    Unavailable = 3,
+    Unknown = 4
+}
+
+public static class EquipmentRuntimeDeviceStates
+{
+    public const string Running = "running";
+    public const string Available = "available";
+    public const string Idle = "idle";
+    public const string Ready = "ready";
+    public const string Standby = "standby";
+    public const string PlannedDown = "planned-down";
+    public const string Stopped = "stopped";
+    public const string Faulted = "faulted";
+
+    private static readonly IReadOnlyDictionary<string, EquipmentRuntimeDeviceStateCategory> Categories =
+        new Dictionary<string, EquipmentRuntimeDeviceStateCategory>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Running] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["run"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["operating"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["active"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["producing"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["machining"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["in-production"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["运行"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["运行中"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["加工"] = EquipmentRuntimeDeviceStateCategory.Productive,
+            ["生产中"] = EquipmentRuntimeDeviceStateCategory.Productive,
+
+            [Available] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            [Idle] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            [Ready] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            [Standby] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            ["waiting"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            ["就绪"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            ["空闲"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+            ["待机"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+
+            [PlannedDown] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["planned-stop"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["planned-maintenance"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["maintenance-window"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["scheduled-maintenance"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["planned-outage"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["pm"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["计划停机"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["计划维护"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+            ["预防维护"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
+
+            [Stopped] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["stop"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["down"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            [Faulted] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["fault"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["error"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["unavailable"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["breakdown"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["unplanned-down"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["emergency-stop"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["offline"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["停止"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["停机"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["故障"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+            ["离线"] = EquipmentRuntimeDeviceStateCategory.Unavailable,
+        };
+
+    public static EquipmentRuntimeDeviceStateCategory Classify(string? state)
+    {
+        var normalized = Normalize(state);
+        return normalized is not null && Categories.TryGetValue(normalized, out var category)
+            ? category
+            : EquipmentRuntimeDeviceStateCategory.Unknown;
+    }
+
+    public static bool IsProductiveRuntime(string? state)
+    {
+        return Classify(state) == EquipmentRuntimeDeviceStateCategory.Productive;
+    }
+
+    public static bool IsPlannedDownState(string? state)
+    {
+        return Classify(state) == EquipmentRuntimeDeviceStateCategory.PlannedDown;
+    }
+
+    public static bool IsRuntimeAvailable(string? state)
+    {
+        return Classify(state) is EquipmentRuntimeDeviceStateCategory.Productive or EquipmentRuntimeDeviceStateCategory.LoadingNonProductive;
+    }
+
+    private static string? Normalize(string? state)
+    {
+        if (string.IsNullOrWhiteSpace(state))
+        {
+            return null;
+        }
+
+        var normalized = state.Trim().ToLowerInvariant()
+            .Replace('_', '-')
+            .Replace(' ', '-');
+        while (normalized.Contains("--", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        return normalized;
+    }
+}
+
 public sealed record EquipmentRuntimeAvailabilityRequest(
     string OrganizationId,
     string EnvironmentId,
