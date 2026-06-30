@@ -348,6 +348,7 @@ Source:
 3. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260523103259_InitialWmsSchema.cs`
 4. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260615072943_ScopeWcsTaskExternalTaskIdByTenant.cs`
 5. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260616110921_AddWmsInventoryReservationLink.cs`
+6. `backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Infrastructure/Migrations/20260630023839_AddWmsWcsCancellationConsumerInbox.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
@@ -360,6 +361,7 @@ Source:
 | `wcs_tasks` | business | WCS adapter 任务映射、状态和外部任务诊断。 | `id` 为 Guid v7 强类型 ID；随 warehouse task 记录 `organization_id`、`environment_id`，并记录 warehouse task id、external task id、状态和失败原因。 | `organization_id + environment_id + external_task_id` 唯一索引保护租户内回调幂等并支持设备回调定位；状态索引用于自动化队列。 | 由 dispatch/complete/fail 推进，保留自动化执行诊断；WCS 事件必须携带真实租户上下文。 |
 | `inventory_movement_requests` | business | WMS 向 Inventory 请求库存移动的本地 pending/posted/failed 元数据。 | `id` 为 Guid v7 强类型 ID；记录业务来源、幂等键、movement type、posting 状态、Inventory movement id、可选 `inventory_reservation_id` 和失败代码/消息。 | 幂等键索引用于防重复 request；状态索引用于补偿扫描；posted/failed 事件按组织、环境、movement type、来源单据、来源行和幂等键匹配本地 request。 | 由 WMS completion 在本地事务内创建 pending request，并通过公共 `Nerv.IIP.Contracts.Inventory` movement-requested / stock-movement-posted / stock-movement-posting-failed 集成事件异步闭环；出库 request 可携带 Inventory reservation id 供 Inventory 过账时分配预留；Inventory 业务拒绝会把 request 标记为 Failed，释放对应预留并冻结对应入库/出库单，retry 只重提 failed 行。 |
 | `integration_event_dead_letters` | system | WMS 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实。 | `consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 | PostgreSQL profile 下由共享 persistent DLQ store 写入；operator replay 后标记 `Replayed`，不删除原始拒绝事实。 |
+| `processed_integration_events` | system | WMS 业务 inbox，记录 WCS 撤单适配器消费者等已经执行业务副作用的事件。 | `consumer_name + idempotency_key` 是唯一消费边界；`event_id` 仅用于追溯原始发布事件；`source_service + event_type + processed_at_utc` 支撑消费诊断。 | 唯一索引用于 CAP/RabbitMQ/Redis 重投、re-release 和并发消费兜底。 | 随消费者成功处理写入；不建立跨 schema 外键，不删除原始事件事实；缺失 WCS adapter endpoint 等确定性配置错误进入 dead-letter 而不是写入 inbox。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPPublishedMessage` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部投递扫描。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
 | `CAPReceivedMessage` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部消费幂等。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |

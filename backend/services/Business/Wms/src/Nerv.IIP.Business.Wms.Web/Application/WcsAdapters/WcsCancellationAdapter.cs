@@ -13,6 +13,8 @@ public sealed record WcsCancellationRequest(
 
 public interface IWcsCancellationAdapter
 {
+    bool CanHandle(WcsCancellationRequest request, out string? failureMessage);
+
     Task CancelAsync(WcsCancellationRequest request, CancellationToken cancellationToken);
 }
 
@@ -21,18 +23,31 @@ public sealed class HttpWcsCancellationAdapter(
     IConfiguration configuration,
     ILogger<HttpWcsCancellationAdapter> logger) : IWcsCancellationAdapter
 {
-    public async Task CancelAsync(WcsCancellationRequest request, CancellationToken cancellationToken)
+    public bool CanHandle(WcsCancellationRequest request, out string? failureMessage)
     {
         var endpoint = configuration[$"Wcs:Adapters:{request.AdapterType}:CancelEndpoint"];
         if (string.IsNullOrWhiteSpace(endpoint))
         {
-            logger.LogWarning(
-                "WCS cancellation endpoint is not configured for adapter {AdapterType}; external task {ExternalTaskId} was not sent to a physical adapter.",
-                request.AdapterType,
-                request.ExternalTaskId);
-            return;
+            failureMessage = $"WCS cancellation endpoint is not configured for adapter '{request.AdapterType}'.";
+            return false;
         }
 
+        failureMessage = null;
+        return true;
+    }
+
+    public async Task CancelAsync(WcsCancellationRequest request, CancellationToken cancellationToken)
+    {
+        if (!CanHandle(request, out var failureMessage))
+        {
+            logger.LogWarning(
+                "{FailureMessage} External task {ExternalTaskId} was not sent to a physical adapter.",
+                failureMessage,
+                request.ExternalTaskId);
+            throw new InvalidOperationException(failureMessage);
+        }
+
+        var endpoint = configuration[$"Wcs:Adapters:{request.AdapterType}:CancelEndpoint"];
         using var response = await httpClient.PostAsJsonAsync(
             endpoint,
             new WcsCancellationHttpPayload(

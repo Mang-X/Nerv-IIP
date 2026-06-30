@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
@@ -53,6 +54,41 @@ public sealed class WmsOutboundCancelledDeliveryProjectionConsumerTests
             WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OutboundOrderCancelledHandler_DeadLettersWhenDeliveryAlreadyHasAccountReceivable()
+    {
+        await using var dbContext = CreateDbContext();
+        var delivery = await ReleaseDeliveryOrderAsync(dbContext, "DO-CANCEL-AR-001", "SO-CANCEL-AR-001", "SO-LINE-AR-001", 2m, 80m);
+        await new CreateAccountReceivableCommandHandler(dbContext).Handle(
+            new CreateAccountReceivableCommand(
+                "org-001",
+                "env-dev",
+                "AR-CANCEL-001",
+                delivery.DeliveryOrderNo,
+                "CUS-001",
+                160m,
+                "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var integrationEvent = BuildWmsCancelledEvent(delivery, "customer-requested-cancel");
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var handler = CreateHandler(dbContext, deadLetters);
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persisted = await dbContext.DeliveryOrders.SingleAsync(x => x.DeliveryOrderNo == "DO-CANCEL-AR-001", CancellationToken.None);
+        Assert.Equal("released", persisted.Status);
+        Assert.Null(persisted.CancelledAtUtc);
+        Assert.Null(persisted.CancellationReason);
+        Assert.Empty(dbContext.ProcessedIntegrationEvents);
+        var deadLetter = Assert.Single(await deadLetters.ListAsync(
+            WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal("delivery-already-accrued", deadLetter.FailureCode);
     }
 
     private static WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDeliveryProjection CreateHandler(

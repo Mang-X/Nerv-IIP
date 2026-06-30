@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.Extensions.Logging;
+using Nerv.IIP.Business.Wms.Infrastructure;
+using Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Wms.Web.Application.WcsAdapters;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
@@ -10,6 +12,7 @@ namespace Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Wms.WmsIntegrationEvent", ConsumerName)]
 public sealed class WcsTaskCancelledIntegrationEventHandlerForAdapterCancellation(
+    ApplicationDbContext dbContext,
     IWcsCancellationAdapter adapter,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ILogger<WcsTaskCancelledIntegrationEventHandlerForAdapterCancellation> logger)
@@ -76,20 +79,34 @@ public sealed class WcsTaskCancelledIntegrationEventHandlerForAdapterCancellatio
         var reason = string.IsNullOrWhiteSpace(integrationEvent.Payload.DiagnosticMessage)
             ? "wms-task-cancelled"
             : integrationEvent.Payload.DiagnosticMessage.Trim();
+        var request = new WcsCancellationRequest(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            integrationEvent.Payload.AdapterType,
+            integrationEvent.Payload.PublicReference,
+            reason,
+            integrationEvent.IdempotencyKey);
+
+        if (!adapter.CanHandle(request, out var failureMessage))
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "missing-wcs-adapter-endpoint",
+                failureMessage ?? "WCS cancellation adapter is not configured for this event.",
+                cancellationToken);
+            return;
+        }
+
+        if (!await WmsProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
 
         logger.LogInformation(
             "Sending WCS task cancellation to adapter {AdapterType} for external task {ExternalTaskId}.",
             integrationEvent.Payload.AdapterType,
             integrationEvent.Payload.PublicReference);
-        await adapter.CancelAsync(
-            new WcsCancellationRequest(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                integrationEvent.Payload.AdapterType,
-                integrationEvent.Payload.PublicReference,
-                reason,
-                integrationEvent.IdempotencyKey),
-            cancellationToken);
+        await adapter.CancelAsync(request, cancellationToken);
     }
 
     private Task DeadLetterAsync(
@@ -104,6 +121,31 @@ public sealed class WcsTaskCancelledIntegrationEventHandlerForAdapterCancellatio
                 integrationEvent,
                 failureCode,
                 failureMessage),
+            cancellationToken);
+    }
+}
+
+internal static class WmsProcessedIntegrationEventInbox
+{
+    public static Task<bool> TryRecordAsync(
+        ApplicationDbContext dbContext,
+        string consumerName,
+        IIntegrationEventEnvelope integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return ProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            dbContext.ProcessedIntegrationEvents,
+            consumerName,
+            integrationEvent,
+            record => new ProcessedIntegrationEvent(
+                record.ConsumerName,
+                record.EventId,
+                record.EventType,
+                record.EventVersion,
+                record.SourceService,
+                record.IdempotencyKey,
+                record.ProcessedAtUtc),
             cancellationToken);
     }
 }

@@ -89,6 +89,21 @@ public sealed class WmsOutboundOrderCancelledIntegrationEventHandlerForCancelDel
             return;
         }
 
+        var hasAccountReceivable = await dbContext.AccountReceivables.AnyAsync(x =>
+            x.OrganizationId == integrationEvent.OrganizationId
+            && x.EnvironmentId == integrationEvent.EnvironmentId
+            && x.SourceDocumentNo == delivery.DeliveryOrderNo,
+            cancellationToken);
+        if (hasAccountReceivable)
+        {
+            await DeadLetterAsync(
+                integrationEvent,
+                "delivery-already-accrued",
+                $"ERP delivery order '{delivery.DeliveryOrderNo}' already has account receivable; WMS cancellation cannot project delivery cancellation after AR accrual.",
+                cancellationToken);
+            return;
+        }
+
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
