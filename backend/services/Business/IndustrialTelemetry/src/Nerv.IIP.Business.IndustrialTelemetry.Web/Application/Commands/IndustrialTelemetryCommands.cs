@@ -230,11 +230,13 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             }
 
             await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+
             return new RecordTelemetrySampleResult(existingSummary.Id, stateId);
         }
 
         dbContext.TelemetrySummaries.Add(incoming);
         await EvaluateAlarmRulesAsync(request, normalizedTagKey, cancellationToken);
+
         return new RecordTelemetrySampleResult(incoming.Id, stateId);
     }
 
@@ -289,6 +291,11 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .ToListAsync(cancellationToken);
 
         if (rules.Count == 0)
+        {
+            return;
+        }
+
+        if (await HasNewerSummaryAsync(request, normalizedTagKey, cancellationToken))
         {
             return;
         }
@@ -364,6 +371,30 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         }
     }
 
+    private async Task<bool> HasNewerSummaryAsync(
+        RecordTelemetrySampleCommand request,
+        string normalizedTagKey,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.TelemetrySummaries
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.TagKey == normalizedTagKey)
+            .AnyAsync(x => x.BucketEndUnixTimeMilliseconds > request.BucketEndUtc.ToUnixTimeMilliseconds(), cancellationToken)
+            || HasLocalNewerSummary(request, normalizedTagKey);
+    }
+
+    private bool HasLocalNewerSummary(RecordTelemetrySampleCommand request, string normalizedTagKey)
+    {
+        return dbContext.TelemetrySummaries.Local.Any(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.DeviceAssetId == request.DeviceAssetId
+            && x.TagKey == normalizedTagKey
+            && x.BucketEndUtc > request.BucketEndUtc);
+    }
+
     private async Task<IReadOnlyCollection<TelemetrySummary>> LoadPreviousSummariesAsync(
         RecordTelemetrySampleCommand request,
         string normalizedTagKey,
@@ -374,8 +405,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.TagKey == normalizedTagKey)
-            .Where(x => x.BucketEndUtc <= request.BucketStartUtc)
-            .OrderByDescending(x => x.BucketEndUtc)
+            .Where(x => x.BucketEndUnixTimeMilliseconds <= request.BucketStartUtc.ToUnixTimeMilliseconds())
+            .OrderByDescending(x => x.BucketEndUnixTimeMilliseconds)
             .Take(100)
             .ToArrayAsync(cancellationToken);
         return previousPersistedSummaries
@@ -441,17 +472,32 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         DateTimeOffset defaultStartUtc)
     {
         var conditionStartUtc = defaultStartUtc;
-        foreach (var summary in previousSummaries)
+        var expectedPreviousBucketEndUtc = defaultStartUtc;
+        foreach (var summary in DeduplicatePreviousSummariesByBucketEnd(previousSummaries))
         {
+            if (summary.BucketEndUtc != expectedPreviousBucketEndUtc)
+            {
+                break;
+            }
+
             if (!predicate(rule, summary))
             {
                 break;
             }
 
             conditionStartUtc = summary.BucketStartUtc;
+            expectedPreviousBucketEndUtc = summary.BucketStartUtc;
         }
 
         return conditionStartUtc;
+    }
+
+    private static IEnumerable<TelemetrySummary> DeduplicatePreviousSummariesByBucketEnd(IReadOnlyCollection<TelemetrySummary> previousSummaries)
+    {
+        return previousSummaries
+            .GroupBy(summary => summary.BucketEndUtc)
+            .Select(group => group.OrderByDescending(summary => summary.RecordedAtUtc).First())
+            .OrderByDescending(summary => summary.BucketEndUtc);
     }
 
     private static string CreateRuleExternalAlarmId(AlarmRule rule)

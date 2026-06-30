@@ -198,21 +198,6 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryOeeQuery, OeeResponse>
 {
-    private static readonly HashSet<string> ProductiveRuntimeStates = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "running",
-    };
-
-    private static readonly HashSet<string> PlannedDownStates = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "planned-down",
-        "planned-stop",
-        "planned-maintenance",
-        "maintenance-window",
-        "scheduled-maintenance",
-        "pm",
-    };
-
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
     {
         var carryInState = await dbContext.DeviceStateSnapshots
@@ -303,25 +288,12 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
     private static bool IsProductiveRuntimeState(string state)
     {
-        return ProductiveRuntimeStates.Contains(NormalizeStateKey(state));
+        return EquipmentRuntimeDeviceStates.IsProductiveRuntime(state);
     }
 
     private static bool IsPlannedDownState(string state)
     {
-        return PlannedDownStates.Contains(NormalizeStateKey(state));
-    }
-
-    private static string NormalizeStateKey(string state)
-    {
-        var normalized = state.Trim().ToLowerInvariant()
-            .Replace('_', '-')
-            .Replace(' ', '-');
-        while (normalized.Contains("--", StringComparison.Ordinal))
-        {
-            normalized = normalized.Replace("--", "-", StringComparison.Ordinal);
-        }
-
-        return normalized;
+        return EquipmentRuntimeDeviceStates.IsPlannedDownState(state);
     }
 
     private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
@@ -421,8 +393,6 @@ public sealed class QueryRuntimeAvailabilityQueryValidator : AbstractValidator<Q
 public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryRuntimeAvailabilityQuery, EquipmentRuntimeAvailabilityResponse>
 {
-    private static readonly string[] AvailableStates = ["available", "idle", "ready", "running", "standby"];
-
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryRuntimeAvailabilityQuery request, CancellationToken cancellationToken)
     {
         var requestedDeviceAssetIds = request.DeviceAssetIds?
@@ -562,7 +532,7 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
 
     private static bool IsAvailableState(string state)
     {
-        return AvailableStates.Contains(state, StringComparer.OrdinalIgnoreCase);
+        return EquipmentRuntimeDeviceStates.IsRuntimeAvailable(state);
     }
 
     private static EquipmentRuntimeSeverity MapAlarmSeverity(string severity)
