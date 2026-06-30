@@ -4,7 +4,7 @@
 
 ## 按表面浏览
 
-- [**桌面 PC**](/components/desktop/) —— `@nerv-iip/ui`：按钮、徽标、卡片、提示、DataTablePro、描述列表、时间线、图表、Pro 覆盖层。
+- [**桌面 PC**](/components/desktop/) —— `@nerv-iip/ui`：按钮、徽标、卡片、提示、FileUpload、DataTablePro、描述列表、时间线、图表、Pro 覆盖层。
 - [**移动 PDA**](/components/mobile/) —— `@nerv-iip/ui-mobile`：原生质感控件、手势（侧滑 / 下拉刷新 / 抽屉）、宫格 / 悬浮按钮 / 居中提示。
 - [**一体机看板**](/components/board) —— 大屏触控布局与大卡组件。
 

@@ -7,21 +7,22 @@ import type {
   FileUploadSession,
   FileUploadTransport,
 } from './types'
-import { computed, reactive } from 'vue'
+import type { MaybeRefOrGetter } from 'vue'
+import { computed, reactive, toValue } from 'vue'
 import { formatFileSize as formatSharedFileSize } from '../../../lib/file'
 import { getFileKind } from './fileKind'
 
 interface UseFileUploadOptions {
-  purpose: string
-  ownerService: string
-  ownerType: string
-  ownerId: string
-  organizationId: string
-  environmentId: string
-  acceptedContentTypes: string[]
-  maxFileSizeBytes?: number
-  maxFiles: number
-  autoUpload: boolean
+  purpose: MaybeRefOrGetter<string>
+  ownerService: MaybeRefOrGetter<string>
+  ownerType: MaybeRefOrGetter<string>
+  ownerId: MaybeRefOrGetter<string>
+  organizationId: MaybeRefOrGetter<string>
+  environmentId: MaybeRefOrGetter<string>
+  acceptedContentTypes: MaybeRefOrGetter<string[]>
+  maxFileSizeBytes?: MaybeRefOrGetter<number | undefined>
+  maxFiles: MaybeRefOrGetter<number>
+  autoUpload: MaybeRefOrGetter<boolean>
   createUploadSession: (request: FileUploadCreateSessionRequest) => Promise<FileUploadSession>
   completeUploadSession: (
     uploadSessionId: string,
@@ -42,6 +43,8 @@ export function useFileUpload(options: UseFileUploadOptions) {
       .filter((row) => row.status === 'completed' && row.fileId !== null)
       .map((row) => ({ fileId: row.fileId!, fileName: row.fileName })),
   )
+  const hasRows = computed(() => rows.length > 0)
+  const hasQueuedRows = computed(() => rows.some((row) => row.status === 'queued'))
   const isUploading = computed(() => rows.some((row) => row.status === 'uploading'))
   const occupiedSlotCount = computed(() => rows.filter(isSlotOccupyingRow).length)
 
@@ -51,12 +54,12 @@ export function useFileUpload(options: UseFileUploadOptions) {
   }
 
   async function addFiles(files: File[]) {
-    const availableSlots = Math.max(options.maxFiles - occupiedSlotCount.value, 0)
+    let acceptedSlotCount = occupiedSlotCount.value
     const acceptedRows: FileUploadRow[] = []
     const rejectedFiles: FileUploadRejectedFile[] = []
 
-    for (const file of files.slice(0, availableSlots)) {
-      const rejection = validateFile(file, options.acceptedContentTypes, options.maxFileSizeBytes)
+    for (const file of files) {
+      const rejection = validateFile(file, toValue(options.acceptedContentTypes), toValue(options.maxFileSizeBytes))
 
       if (rejection) {
         rejectedFiles.push({ fileName: file.name, reason: rejection })
@@ -64,19 +67,21 @@ export function useFileUpload(options: UseFileUploadOptions) {
         continue
       }
 
+      if (acceptedSlotCount >= toValue(options.maxFiles)) {
+        rejectedFiles.push({ fileName: file.name, reason: '已达到最大文件数量限制。' })
+        continue
+      }
+
       const row = appendRow(createRow(file, 'queued'))
       acceptedRows.push(row)
-    }
-
-    for (const file of files.slice(availableSlots)) {
-      rejectedFiles.push({ fileName: file.name, reason: 'Maximum file count reached.' })
+      acceptedSlotCount += 1
     }
 
     if (rejectedFiles.length > 0) {
       options.onRejected(rejectedFiles)
     }
 
-    if (options.autoUpload) {
+    if (toValue(options.autoUpload)) {
       await uploadRows(acceptedRows)
     }
   }
@@ -98,14 +103,14 @@ export function useFileUpload(options: UseFileUploadOptions) {
 
     try {
       const session = row.uploadSession ?? await options.createUploadSession({
-        organizationId: options.organizationId,
-        environmentId: options.environmentId,
+        organizationId: toValue(options.organizationId),
+        environmentId: toValue(options.environmentId),
         owner: {
-          ownerService: options.ownerService,
-          ownerType: options.ownerType,
-          ownerId: options.ownerId,
+          ownerService: toValue(options.ownerService),
+          ownerType: toValue(options.ownerType),
+          ownerId: toValue(options.ownerId),
         },
-        filePurpose: options.purpose,
+        filePurpose: toValue(options.purpose),
         fileName: row.fileName,
         contentType: row.contentType,
         expectedSizeBytes: row.sizeBytes,
@@ -123,14 +128,14 @@ export function useFileUpload(options: UseFileUploadOptions) {
       })
 
       const completed = await options.completeUploadSession(session.uploadSessionId, {
-        organizationId: options.organizationId,
-        environmentId: options.environmentId,
-        filePurpose: options.purpose,
+        organizationId: toValue(options.organizationId),
+        environmentId: toValue(options.environmentId),
+        filePurpose: toValue(options.purpose),
         checksum: null,
         sizeBytes: row.sizeBytes,
       })
 
-      row.fileId = completed.fileId ?? session.fileId
+      row.fileId = completed.fileId || session.fileId
       row.status = 'completed'
       row.progress = 100
       options.onCompleted(completedFiles.value)
@@ -142,7 +147,7 @@ export function useFileUpload(options: UseFileUploadOptions) {
       }
 
       row.status = 'failed'
-      row.error = error instanceof Error ? error.message : 'Upload failed.'
+      row.error = error instanceof Error ? error.message : '上传失败。'
       options.onFailed(row)
     }
     finally {
@@ -231,6 +236,8 @@ export function useFileUpload(options: UseFileUploadOptions) {
   return {
     rows,
     completedFiles,
+    hasRows,
+    hasQueuedRows,
     isUploading,
     addFiles,
     uploadQueued,
@@ -270,11 +277,11 @@ function validateFile(
   maxFileSizeBytes?: number,
 ) {
   if (maxFileSizeBytes && file.size > maxFileSizeBytes) {
-    return 'File is larger than the maximum size.'
+    return '文件超过最大大小限制。'
   }
 
   if (acceptedContentTypes.length > 0 && !isAcceptedType(file, acceptedContentTypes)) {
-    return 'File type is not accepted.'
+    return '文件类型不符合要求。'
   }
 
   return null
@@ -282,11 +289,21 @@ function validateFile(
 
 function isAcceptedType(file: File, acceptedContentTypes: string[]) {
   return acceptedContentTypes.some((acceptedType) => {
-    if (acceptedType.endsWith('/*')) {
-      return file.type.startsWith(acceptedType.slice(0, -1))
+    const normalizedAcceptedType = acceptedType.trim().toLowerCase()
+
+    if (!normalizedAcceptedType) {
+      return false
     }
 
-    return file.type === acceptedType
+    if (normalizedAcceptedType.startsWith('.')) {
+      return file.name.toLowerCase().endsWith(normalizedAcceptedType)
+    }
+
+    if (normalizedAcceptedType.endsWith('/*')) {
+      return file.type.toLowerCase().startsWith(normalizedAcceptedType.slice(0, -1))
+    }
+
+    return file.type.toLowerCase() === normalizedAcceptedType
   })
 }
 

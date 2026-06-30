@@ -104,6 +104,7 @@ export default defineConfig({
           items: [
             { text: 'Input 输入框', link: '/components/desktop/input' },
             { text: 'Field 表单字段', link: '/components/desktop/field' },
+            { text: 'FileUpload 文件上传', link: '/components/desktop/file-upload' },
             { text: 'Select 选择器', link: '/components/desktop/select' },
             { text: 'Checkbox 复选框', link: '/components/desktop/checkbox' },
             { text: 'Radio 单选框', link: '/components/desktop/radio' },

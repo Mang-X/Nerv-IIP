@@ -211,6 +211,7 @@ export {
 } from './components/ui/table'
 export {
   FileUpload,
+  fileUploadMotion,
   uploadWithNativeFileStorageTransport,
   useFileUpload,
   type FileUploadCompletedFile,
