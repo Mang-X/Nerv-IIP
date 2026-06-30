@@ -186,3 +186,51 @@ public sealed class ListPurchaseOrdersQueryHandler(ApplicationDbContext dbContex
         return new ListPurchaseOrdersResponse(orders, total);
     }
 }
+
+public sealed record GetPurchaseReceiptSourceDocumentQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string PurchaseReceiptNo) : IQuery<PurchaseReceiptSourceDocumentResponse?>;
+
+public sealed record PurchaseReceiptSourceDocumentResponse(
+    string PurchaseReceiptNo,
+    string Status,
+    IReadOnlyCollection<PurchaseReceiptSourceDocumentLineResponse> Lines);
+
+public sealed record PurchaseReceiptSourceDocumentLineResponse(
+    string LineNo,
+    string SkuCode,
+    string UomCode,
+    decimal ReceivedQuantity,
+    string? LotNo,
+    string Status);
+
+public sealed class GetPurchaseReceiptSourceDocumentQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetPurchaseReceiptSourceDocumentQuery, PurchaseReceiptSourceDocumentResponse?>
+{
+    public async Task<PurchaseReceiptSourceDocumentResponse?> Handle(
+        GetPurchaseReceiptSourceDocumentQuery request,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.PurchaseReceipts
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.PurchaseReceiptNo == request.PurchaseReceiptNo)
+            .Select(x => new PurchaseReceiptSourceDocumentResponse(
+                x.PurchaseReceiptNo,
+                "recorded",
+                x.Lines
+                    .OrderBy(line => line.PurchaseOrderLineNo)
+                    .Select(line => new PurchaseReceiptSourceDocumentLineResponse(
+                        line.PurchaseOrderLineNo,
+                        line.SkuCode,
+                        line.UomCode,
+                        line.ReceivedQuantity,
+                        line.LotNo,
+                        line.QualityStatus))
+                    .ToArray()))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+}

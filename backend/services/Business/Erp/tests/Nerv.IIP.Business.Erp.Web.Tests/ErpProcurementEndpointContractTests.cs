@@ -18,7 +18,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(10, contracts.Length);
+        Assert.Equal(11, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -44,6 +44,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "recordErpPurchaseReceipt");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "getErpPurchaseReceiptSourceDocument");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/supplier-invoices"
             && x.PermissionCode == ErpPermissionCodes.FinanceManage
@@ -78,6 +83,7 @@ public sealed class ErpProcurementEndpointContractTests
     [InlineData(typeof(ListRequestsForQuotationEndpoint))]
     [InlineData(typeof(CreatePurchaseOrderEndpoint))]
     [InlineData(typeof(RecordPurchaseReceiptEndpoint))]
+    [InlineData(typeof(GetPurchaseReceiptSourceDocumentEndpoint))]
     [InlineData(typeof(RecordSupplierInvoiceEndpoint))]
     [InlineData(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint))]
     [InlineData(typeof(VoidSupplierInvoicePaymentHoldEndpoint))]
@@ -228,6 +234,65 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Single(response.Items);
         Assert.Equal("PO-001", response.Items.Single().PurchaseOrderNo);
         Assert.Equal(36m, response.Items.Single().TotalAmount);
+    }
+
+    [Fact]
+    public async Task Get_purchase_receipt_source_document_query_returns_org_scoped_line_facts()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-RECEIPT-FACTS",
+            "SUP-001",
+            "SITE-01",
+            [
+                new Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 5m, 10m, new DateOnly(2026, 6, 5)),
+                new Domain.AggregatesModel.PurchaseOrderAggregate.PurchaseOrderLineDraft("LINE-002", "SKU-RM-2000", "kg", 7m, 8m, new DateOnly(2026, 6, 5)),
+            ]);
+        order.MarkApprovalRequested("approval-receipt-facts");
+        order.ReleaseAfterApproval("approval-receipt-facts");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new RecordPurchaseReceiptCommandHandler(dbContext).Handle(
+            new RecordPurchaseReceiptCommand(
+                "org-001",
+                "env-dev",
+                "RCV-FACTS",
+                "PO-RECEIPT-FACTS",
+                [
+                    new PurchaseReceiptCommandLine("LINE-001", 2m, "inspection", "IQC-STAGE", "LOT-001"),
+                    new PurchaseReceiptCommandLine("LINE-002", 3m, "accepted", "IQC-STAGE", "LOT-002"),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetPurchaseReceiptSourceDocumentQueryHandler(dbContext).Handle(
+            new GetPurchaseReceiptSourceDocumentQuery("org-001", "env-dev", "RCV-FACTS"),
+            CancellationToken.None);
+        var wrongOrg = await new GetPurchaseReceiptSourceDocumentQueryHandler(dbContext).Handle(
+            new GetPurchaseReceiptSourceDocumentQuery("org-other", "env-dev", "RCV-FACTS"),
+            CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Equal("recorded", response.Status);
+        Assert.Equal("RCV-FACTS", response.PurchaseReceiptNo);
+        Assert.Null(wrongOrg);
+        Assert.Equal(2, response.Lines.Count);
+        Assert.Contains(response.Lines, line =>
+            line.LineNo == "LINE-001"
+            && line.SkuCode == "SKU-RM-1000"
+            && line.UomCode == "kg"
+            && line.ReceivedQuantity == 2m
+            && line.LotNo == "LOT-001"
+            && line.Status == "inspection");
+        Assert.Contains(response.Lines, line =>
+            line.LineNo == "LINE-002"
+            && line.SkuCode == "SKU-RM-2000"
+            && line.ReceivedQuantity == 3m
+            && line.LotNo == "LOT-002");
     }
 
     [Fact]

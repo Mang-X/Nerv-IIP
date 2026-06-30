@@ -45,9 +45,14 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
     builder.Services.AddHttpClient<IApprovalChainStatusClient, HttpApprovalChainStatusClient>(client =>
     {
         client.BaseAddress = approvalBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IErpPurchaseReceiptFactClient, HttpErpPurchaseReceiptFactClient>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
     }).UseHttpClientMetrics();
 
     if (isTesting)
@@ -108,7 +113,7 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
-    builder.Services.AddSingleton<IInspectionSourceDocumentVerifier>(NullInspectionSourceDocumentVerifier.Instance);
+    builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
     builder.Services.AddScoped<INonconformanceReportCodeGenerator, NonconformanceReportCodeGenerator>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
