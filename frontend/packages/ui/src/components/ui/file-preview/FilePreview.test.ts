@@ -5,7 +5,7 @@ import { computed, defineComponent, h, shallowRef } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FilePreview, getFilePreviewKindMeta } from '.'
-import { Select } from '../select'
+import { SelectPro } from '../../pro/select'
 import OfficePreview from './OfficePreview.vue'
 import PdfPreview from './PdfPreview.vue'
 
@@ -346,7 +346,7 @@ describe('FilePreview', () => {
       },
     })
 
-    const pageSelect = wrapper.getComponent(Select)
+    const pageSelect = wrapper.getComponent(SelectPro)
     pageSelect.vm.$emit('update:modelValue', '3')
     await flushPromises()
 
@@ -653,7 +653,7 @@ describe('FilePreview', () => {
 
     await flushPromises()
 
-    const pageSelect = wrapper.getComponent(Select)
+    const pageSelect = wrapper.getComponent(SelectPro)
     pageSelect.vm.$emit('update:modelValue', '1')
     await flushPromises()
 
@@ -670,7 +670,7 @@ describe('FilePreview', () => {
 
     await flushPromises()
 
-    const slideSelect = wrapper.getComponent(Select)
+    const slideSelect = wrapper.getComponent(SelectPro)
     slideSelect.vm.$emit('update:modelValue', '2')
     await flushPromises()
 
@@ -689,7 +689,7 @@ describe('FilePreview', () => {
 
     expect(wrapper.text()).toContain('Summary · 1/2')
 
-    const sheetSelect = wrapper.getComponent(Select)
+    const sheetSelect = wrapper.getComponent(SelectPro)
     sheetSelect.vm.$emit('update:modelValue', '1')
     await flushPromises()
 

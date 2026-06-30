@@ -10,17 +10,12 @@ import {
 } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
+import { SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '../../pro/select'
 import { Button } from '../button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
 const props = defineProps<{
   documentId: string
 }>()
-
-const previewSelectTriggerClass =
-  'h-7 w-24 justify-between border-brand/25 bg-brand/10 font-mono text-xs text-foreground hover:bg-brand/15 focus-visible:border-brand focus-visible:ring-brand/25 dark:bg-brand/10 dark:hover:bg-brand/15 [&_svg]:text-brand-strong'
-const previewSelectContentClass = 'max-h-64 min-w-24 border border-brand/20 ring-brand/20 shadow-md'
-const previewSelectItemClass = 'focus:bg-brand/10 focus:text-foreground data-[state=checked]:bg-brand/10 data-[state=checked]:text-foreground'
 
 const { provides: scroll, state: scrollState } = useScroll(() => props.documentId)
 const { provides: zoom, state: zoomState } = useZoom(() => props.documentId)
@@ -91,21 +86,21 @@ onBeforeUnmount(() => {
       >
         <ChevronLeftIcon aria-hidden="true" />
       </Button>
-      <Select
+      <SelectPro
         v-if="pageOptions.length > 0"
         data-slot="file-preview-pdf-page-select"
         :model-value="String(currentPage)"
         @update:model-value="jumpToPage"
       >
-        <SelectTrigger size="sm" :class="previewSelectTriggerClass" aria-label="选择 PDF 页码" :disabled="jumping">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper" :class="previewSelectContentClass">
-          <SelectItem v-for="option in pageOptions" :key="option.value" :value="option.value" :class="previewSelectItemClass">
+        <SelectProTrigger class="h-7 w-24 font-mono text-xs" aria-label="选择 PDF 页码" :disabled="jumping">
+          <SelectProValue />
+        </SelectProTrigger>
+        <SelectProContent class="max-h-64 min-w-24">
+          <SelectProItem v-for="option in pageOptions" :key="option.value" :value="option.value">
             {{ option.label }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
+          </SelectProItem>
+        </SelectProContent>
+      </SelectPro>
       <div v-else class="min-w-16 text-center font-mono text-xs text-muted-foreground">
         {{ currentPage }}/{{ totalPages || '-' }}
       </div>

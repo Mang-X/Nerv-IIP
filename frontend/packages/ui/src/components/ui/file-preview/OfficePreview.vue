@@ -3,8 +3,8 @@ import type { FilePreviewKind } from './filePreviewKind'
 import { ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
+import { SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '../../pro/select'
 import { Button } from '../button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select'
 
 type OfficeViewer = {
   destroy: () => void
@@ -60,10 +60,6 @@ const minimumCanvasRenderWidth = 280
 const minimumZoomScale = 0.5
 const maximumZoomScale = 2
 const zoomScaleStep = 0.1
-const previewSelectTriggerClass =
-  'h-7 w-32 max-w-[42vw] justify-between border-brand/25 bg-brand/10 font-mono text-xs text-foreground hover:bg-brand/15 focus-visible:border-brand focus-visible:ring-brand/25 dark:bg-brand/10 dark:hover:bg-brand/15 [&_svg]:text-brand-strong'
-const previewSelectContentClass = 'max-h-64 min-w-32 border border-brand/20 ring-brand/20 shadow-md'
-const previewSelectItemClass = 'focus:bg-brand/10 focus:text-foreground data-[state=checked]:bg-brand/10 data-[state=checked]:text-foreground'
 let loadToken = 0
 let canvasResizeObserver: ResizeObserver | null = null
 let canvasResizeFrame = 0
@@ -506,26 +502,25 @@ onBeforeUnmount(() => {
   <div data-slot="file-preview-office" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
     <div class="flex items-center justify-between gap-2 border-b border-border/70 bg-muted/35 px-2 py-1.5">
       <div class="flex min-w-0 items-center gap-2">
-        <Select
+        <SelectPro
           v-if="jumpOptions.length > 0"
           data-slot="file-preview-office-jump-select"
           :model-value="String(currentIndex)"
           @update:model-value="goToIndex"
         >
-          <SelectTrigger
-            size="sm"
-            :class="previewSelectTriggerClass"
+          <SelectProTrigger
+            class="h-7 w-32 max-w-[42vw] font-mono text-xs"
             :aria-label="jumpSelectLabel"
             :disabled="loading"
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent position="popper" :class="previewSelectContentClass">
-            <SelectItem v-for="option in jumpOptions" :key="option.value" :value="option.value" :class="previewSelectItemClass">
+            <SelectProValue />
+          </SelectProTrigger>
+          <SelectProContent class="max-h-64 min-w-32">
+            <SelectProItem v-for="option in jumpOptions" :key="option.value" :value="option.value">
               {{ option.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
         <div class="min-w-0 truncate font-mono text-xs text-muted-foreground">
           {{ indexLabel }}
         </div>
