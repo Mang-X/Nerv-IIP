@@ -70,6 +70,25 @@ public sealed class QualitySchemaConventionTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Inspection_source_sku_unique_index_precheck_points_to_duplicate_remediation_runbook()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260626170759_AddQualityNcrInventoryDispositionRouting",
+            "20260629074947_AddQualityLongtailReviewFixes");
+
+        Assert.Contains(
+            "Cannot add unique inspection source/SKU index because duplicate Quality inspection records already exist",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "docs/architecture/business-quality-inspection-duplicate-remediation.md",
+            script,
+            StringComparison.Ordinal);
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();

@@ -35,6 +35,7 @@
 8. 确认失败停止条件：任一服务 migration 或 seed 失败时，不继续启动新版本业务服务。
 9. 从第五阶段旧库升级到第六阶段及以后时，先执行“迁移历史表 schema 搬迁”前置步骤；否则 EF 会在新的 service schema history table 中看不到已应用的 `InitialCreate`，从而尝试重复建表。
 10. 确认执行脚本分类为 `release-install` 或受控 release migrator，并通过脚本治理门禁；不得用 `verify` 脚本直接处理客户数据环境。
+11. 执行 Quality migration `20260629074947_AddQualityLongtailReviewFixes` 前，先按 `docs/architecture/business-quality-inspection-duplicate-remediation.md` 检查并清理 `quality.inspection_records` 来源单据 + SKU 历史重复组；该路径不得静默删除或改写 NCR、事件或审计证据。
 
 ## 第六阶段迁移历史表 schema 搬迁
 
