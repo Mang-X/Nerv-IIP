@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+
 namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.CorrectiveActionAggregate;
 
 public partial record CorrectiveActionId : IGuidStronglyTypedId;
