@@ -60,6 +60,10 @@ const minimumCanvasRenderWidth = 280
 const minimumZoomScale = 0.5
 const maximumZoomScale = 2
 const zoomScaleStep = 0.1
+const previewSelectTriggerClass =
+  'h-7 w-32 max-w-[42vw] justify-between border-brand/25 bg-brand/10 font-mono text-xs text-foreground hover:bg-brand/15 focus-visible:border-brand focus-visible:ring-brand/25 dark:bg-brand/10 dark:hover:bg-brand/15 [&_svg]:text-brand-strong'
+const previewSelectContentClass = 'max-h-64 min-w-32 border border-brand/20 ring-brand/20 shadow-md'
+const previewSelectItemClass = 'focus:bg-brand/10 focus:text-foreground data-[state=checked]:bg-brand/10 data-[state=checked]:text-foreground'
 let loadToken = 0
 let canvasResizeObserver: ResizeObserver | null = null
 let canvasResizeFrame = 0
@@ -510,14 +514,14 @@ onBeforeUnmount(() => {
         >
           <SelectTrigger
             size="sm"
-            class="h-7 w-32 max-w-[42vw] justify-between font-mono text-xs"
+            :class="previewSelectTriggerClass"
             :aria-label="jumpSelectLabel"
             :disabled="loading"
           >
             <SelectValue />
           </SelectTrigger>
-          <SelectContent position="popper" class="max-h-64 min-w-32">
-            <SelectItem v-for="option in jumpOptions" :key="option.value" :value="option.value">
+          <SelectContent position="popper" :class="previewSelectContentClass">
+            <SelectItem v-for="option in jumpOptions" :key="option.value" :value="option.value" :class="previewSelectItemClass">
               {{ option.label }}
             </SelectItem>
           </SelectContent>

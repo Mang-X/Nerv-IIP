@@ -17,6 +17,11 @@ const props = defineProps<{
   documentId: string
 }>()
 
+const previewSelectTriggerClass =
+  'h-7 w-24 justify-between border-brand/25 bg-brand/10 font-mono text-xs text-foreground hover:bg-brand/15 focus-visible:border-brand focus-visible:ring-brand/25 dark:bg-brand/10 dark:hover:bg-brand/15 [&_svg]:text-brand-strong'
+const previewSelectContentClass = 'max-h-64 min-w-24 border border-brand/20 ring-brand/20 shadow-md'
+const previewSelectItemClass = 'focus:bg-brand/10 focus:text-foreground data-[state=checked]:bg-brand/10 data-[state=checked]:text-foreground'
+
 const { provides: scroll, state: scrollState } = useScroll(() => props.documentId)
 const { provides: zoom, state: zoomState } = useZoom(() => props.documentId)
 
@@ -92,11 +97,11 @@ onBeforeUnmount(() => {
         :model-value="String(currentPage)"
         @update:model-value="jumpToPage"
       >
-        <SelectTrigger size="sm" class="h-7 w-24 justify-between font-mono text-xs" aria-label="选择 PDF 页码" :disabled="jumping">
+        <SelectTrigger size="sm" :class="previewSelectTriggerClass" aria-label="选择 PDF 页码" :disabled="jumping">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent position="popper" class="max-h-64 min-w-24">
-          <SelectItem v-for="option in pageOptions" :key="option.value" :value="option.value">
+        <SelectContent position="popper" :class="previewSelectContentClass">
+          <SelectItem v-for="option in pageOptions" :key="option.value" :value="option.value" :class="previewSelectItemClass">
             {{ option.label }}
           </SelectItem>
         </SelectContent>
