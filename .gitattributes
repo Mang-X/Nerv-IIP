@@ -1,0 +1,45 @@
+# Normalize text line endings in the repository. Git stores tracked text as LF
+# and checks it out as LF regardless of each developer's core.autocrlf setting.
+* text=auto eol=lf
+
+# C# and EF-generated migration/snapshot files are the highest-churn review
+# surface for this repo; keep them explicit even though the global rule covers
+# text files.
+*.cs text eol=lf
+
+# Binary assets must not be line-ending normalized.
+*.bmp -text
+*.gif -text
+*.ico -text
+*.jpg -text
+*.jpeg -text
+*.png -text
+*.webp -text
+
+*.eot -text
+*.otf -text
+*.ttf -text
+*.woff -text
+*.woff2 -text
+
+*.7z -text
+*.br -text
+*.gz -text
+*.rar -text
+*.tar -text
+*.tgz -text
+*.zip -text
+
+*.doc -text
+*.docx -text
+*.pdf -text
+*.ppt -text
+*.pptx -text
+*.xls -text
+*.xlsx -text
+
+*.dll -text
+*.exe -text
+*.pdb -text
+*.pfx -text
+*.snk -text
