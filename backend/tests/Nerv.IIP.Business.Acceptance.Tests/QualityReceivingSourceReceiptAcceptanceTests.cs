@@ -84,6 +84,25 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
         Assert.Equal(2, qualityDb.InspectionRecords.Count());
     }
 
+    [Fact]
+    public async Task Quality_accepts_wms_receiving_source_when_document_id_is_projected_erp_receipt_no()
+    {
+        await using var erpDb = CreateErpContext();
+        await using var qualityDb = CreateQualityContext();
+        await SeedPurchaseReceiptAsync(erpDb, "WMS-IN-GRIR-001");
+        var handler = CreateQualityHandler(qualityDb, erpDb);
+
+        var id = await handler.Handle(
+            NewInspectionCommand("WMS-IN-GRIR-001", "SKU-RM-1000", 2m, "LOT-001", "wms"),
+            CancellationToken.None);
+        await qualityDb.SaveChangesAsync(CancellationToken.None);
+
+        Assert.NotEqual(default, id);
+        var record = Assert.Single(qualityDb.InspectionRecords);
+        Assert.Equal("wms", record.SourceService);
+        Assert.Equal("WMS-IN-GRIR-001", record.SourceDocumentId);
+    }
+
     private static CreateInspectionRecordCommandHandler CreateQualityHandler(QualityDbContext qualityDb, ErpDbContext erpDb)
     {
         return new CreateInspectionRecordCommandHandler(
@@ -97,14 +116,15 @@ public sealed class QualityReceivingSourceReceiptAcceptanceTests
         string receiptNo,
         string skuCode,
         decimal inspectedQuantity,
-        string? lotNo = null)
+        string? lotNo = null,
+        string sourceService = "purchase-receipt")
     {
         return new CreateInspectionRecordCommand(
             "org-001",
             "env-dev",
             null,
             "receiving",
-            "purchase-receipt",
+            sourceService,
             receiptNo,
             skuCode,
             inspectedQuantity,

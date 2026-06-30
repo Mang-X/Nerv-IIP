@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
@@ -102,12 +101,8 @@ public sealed class ErpPurchaseReceiptInspectionSourceDocumentVerifier(
     private static readonly string[] SupportedSourceServices =
     [
         "purchase-receipt",
-        "erp-purchase-receipt",
-        "business-erp",
         "erp",
-        "business-wms",
         "wms",
-        "inbound-receipt",
     ];
 
     public async Task<InspectionSourceDocumentVerification> VerifyAsync(
@@ -178,11 +173,6 @@ public sealed class HttpErpPurchaseReceiptFactClient(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ErpPurchaseReceiptFact?>>(
             cancellationToken);
