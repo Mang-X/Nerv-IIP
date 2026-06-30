@@ -21,7 +21,7 @@ frontend/
       src/
     business-pda/              # PDA 一线作业（Capacitor APK，规划中）
     business-workstation/      # roadmap 预留：工位机/平板触摸操作台
-    business-board/            # roadmap 预留：车间/产线/仓库/工厂大屏看板（只读）
+    screen/                    # 工业数据大屏：车间/产线/仓库/工厂（公共展示/指挥中心，只读，独立 app）
   packages/
     ui/
     ui-mobile/                # 触摸组件层（PDA/移动密度，复制重建、原版零改）
@@ -42,7 +42,7 @@ frontend/
 - `packages/ui-mobile`：触摸/PDA 区块组件层（Reka UI + Tailwind + 复用 `@nerv-iip/ui` 的设计 token），按「原版零改、复制重建」doctrine 自建移动密度组件（ScanBar、TabBar、BottomSheet、ListRow 等），不 import PC FE-2 区块以避免桌面密度污染。
 - `packages/business-core`：与 PC 同源的内核——领域类型 + SOP/状态机 + 字典(CodeSet) + 命令构造器，由 `business-console` 现有 `src/data/*.ts` 有界抽取，PC 与移动端共用；PC 端逐步迁移消费，不一次性改写。
 
-`apps/business-workstation`（工位机/平板触摸操作台）与 `apps/business-board`（大屏只读看板）为 roadmap 预留，v1 不实现，仅占位目录与共享包边界；`business-board` 复用 `ui` 的图表与 token，但不依赖 `ui-mobile`（展示态非触摸操作态）。
+`apps/business-workstation`（工位机/平板触摸操作台）为 roadmap 预留，v1 不实现。大屏只读看板已由 `apps/screen` 落地（取代原 `business-board` 占位命名，见 GitHub Epic #562）：独立 Vite app，全屏深色 `ScreenLayout` + `ScreenScaler` 等比缩放，复用 `ui` 的 screen 层组件与 `--sb-*` token，不依赖 `ui-mobile`（展示态非触摸操作态）。
 
 Business Console MVP 是第二个真实应用入口：`frontend/apps/business-console` 使用 Vite Plus + Vue 3 建立独立 app shell，承载 #166 到 #169 的 MasterData、Inventory、Quality 和 MES 业务页面，并已补入 ProductEngineering、DemandPlanning 和 MES PC 工作台相关路由。它消费 BusinessGateway 的 `/api/business-console/v1/**` facade，不直接调用业务服务 URL，也不把业务 CRUD 页面放回主平台 `frontend/apps/console`。完整导航地图、能力目录、角色导航、分期和“后端存在但前端不得提前暴露”的规则见 `docs/architecture/frontend-navigation-map.md`。Business Console 的可见导航不得机械映射后端服务列表；实现时必须按 RBAC、角色任务、feature flag、近期/星标、全局搜索和上下文穿透组织入口。PC 端长期采用顶部-侧边 T 型导航，但当前 `@nerv-iip/app-shell` 只有侧边栏 `navItems` 契约；落地前必须先扩展 app-shell 公共 API 和测试，不得在业务页面局部硬拼顶部域导航。
 

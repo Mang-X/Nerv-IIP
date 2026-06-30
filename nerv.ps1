@@ -102,7 +102,11 @@ Platform services:
   5117 BusinessMaintenance
   5118 BusinessERP
   5119 BusinessGateway
+  5120 BusinessScheduling
   5125 BusinessConsole
+  5126 BusinessPDA (dev)
+  5128 Screen
+  5180 DesignSystem (docs)
 
 Infrastructure services:
   15432 PostgreSQL
