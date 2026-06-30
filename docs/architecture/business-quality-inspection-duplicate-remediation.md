@@ -167,6 +167,12 @@ ORDER BY
 
 For each duplicate group, keep one canonical record:
 
+The report's `canonical_rank` is only a starting order based on Quality-local
+NCR references, `created_at_utc`, and `id`. It cannot detect CAP messages,
+external event payloads, ticket attachments, or other audit evidence. Check
+those references before treating a ranked row as the canonical record or
+deleting any non-canonical row.
+
 1. Prefer the record referenced by an NCR through
    `inspection_records.nonconformance_report_id` or
    `nonconformance_reports.source_inspection_record_id`.
