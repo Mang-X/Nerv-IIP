@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitepress'
+import wasm from 'vite-plugin-wasm'
 
 // Nerv-IIP 设计系统文档 (VitePress).
 // Runs under the workspace's `vite → @voidzero-dev/vite-plus-core` override; the
@@ -120,6 +121,7 @@ export default defineConfig({
             { text: 'Timeline 时间线', link: '/components/desktop/timeline' },
             { text: 'Tabs 标签页', link: '/components/desktop/tabs' },
             { text: 'Carousel 轮播图', link: '/components/desktop/carousel' },
+            { text: 'FilePreview 文件预览', link: '/components/desktop/file-preview' },
             { text: 'Status 状态', link: '/components/desktop/status' },
           ],
         },
@@ -308,9 +310,12 @@ export default defineConfig({
   },
 
   vite: {
-    plugins: [tailwindcss()],
+    plugins: [wasm(), tailwindcss()],
     resolve: {
       alias: {
+        '@nerv-iip/ui/file-preview': fileURLToPath(
+          new URL('../../../../packages/ui/src/components/ui/file-preview/index.ts', import.meta.url),
+        ),
         '@nerv-iip/ui': fileURLToPath(
           new URL('../../../../packages/ui/src/index.ts', import.meta.url),
         ),

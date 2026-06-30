@@ -23,6 +23,9 @@ defineProps<{
 <template>
   <ClientOnly>
     <div class="ds-demo" :class="{ 'ds-demo-popout-box': popout }">
+      <div v-if="title" class="ds-demo-title">
+        {{ title }}
+      </div>
       <div class="ds-demo-preview" :class="{ 'ds-demo-center': center, 'ds-demo-mobile': mobile, 'ds-demo-popout': popout, 'ds-demo-block': block }">
         <div v-if="mobile" class="ds-demo-phone"><slot /></div>
         <slot v-else />
@@ -62,6 +65,15 @@ defineProps<{
      blending into a same-coloured --card panel. */
   background: var(--background);
   overflow: hidden;
+}
+.ds-demo-title {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  padding: 0.625rem 0.875rem;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
 }
 .ds-demo-preview {
   display: flex;

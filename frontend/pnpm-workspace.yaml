@@ -10,6 +10,8 @@ allowBuilds:
   # deprecated `transformWithEsbuild`, which @vitejs/plugin-vue still calls, and now
   # requires esbuild installed separately (its postinstall fetches the native bin).
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@silurus/ooxml@0.69.0'
 overrides:
   vite: npm:@voidzero-dev/vite-plus-core@0.1.21
   vitest: npm:@voidzero-dev/vite-plus-test@0.1.21

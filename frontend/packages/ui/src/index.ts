@@ -225,3 +225,12 @@ export {
   type FileUploadTransport,
   type FileUploadTransportContext,
 } from './components/ui/file-upload'
+export {
+  filePreviewMotion,
+  formatFilePreviewSize,
+  getFilePreviewKind,
+  getFilePreviewKindMeta,
+  isFilePreviewSupported,
+  type FilePreviewKind,
+  type FilePreviewKindMeta,
+} from './components/ui/file-preview/filePreviewKind'
