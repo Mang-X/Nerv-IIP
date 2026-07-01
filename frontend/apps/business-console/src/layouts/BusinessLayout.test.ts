@@ -150,9 +150,29 @@ describe('BusinessLayout (T-shaped)', () => {
   })
 
   it('renders the home page as a business workbench instead of a route directory', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [
+          'business.inventory.ledger.read',
+          'business.inventory.movements.create',
+          'business.inventory.counts.manage',
+          'business.quality.inspection-records.read',
+          'business.quality.ncr.read',
+          'business.mes.work-orders.read',
+          'business.mes.operations.read',
+          'business.mes.reporting.read',
+        ],
+      },
+    })
+
     const wrapper = mount(IndexPage, {
       global: {
-        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
         stubs: {
           BusinessLayout: { template: '<main><slot /></main>' },
           RouterLink: { props: ['to'], template: '<a><slot /></a>' },
