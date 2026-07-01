@@ -115,12 +115,12 @@ flowchart LR
 
 ## 仓库放置
 
-建议首批实现时采用以下目录。本文档只冻结方向；具体代码创建需进入实施计划。
+当前 PDA v1 已采用 `frontend/apps/business-pda`，早期草案中的 `frontend/apps/pda` 不再作为代码事实。后续新增 native/offline 能力时仍沿用下列分层，但路径以 `business-pda` 为准。
 
 ```text
 frontend/
   apps/
-    pda/
+    business-pda/
       capacitor.config.ts
       android/
       src/
@@ -157,7 +157,7 @@ frontend/
 
 目录职责：
 
-1. `frontend/apps/pda` 是真实移动应用入口，与 `frontend/apps/console` 并列。
+1. `frontend/apps/business-pda` 是真实移动应用入口，与 `frontend/apps/console` 和 `frontend/apps/business-console` 并列；package name 为 `@nerv-iip/business-pda`。
 2. `android/` 保留在 PDA app 内，作为 Capacitor 生成和维护的 Android 工程。
 3. `src/native` 提供 TypeScript facade，页面只消费 facade。
 4. `src/offline` 管理本地数据库 schema、迁移、outbox 和同步策略。
@@ -168,7 +168,7 @@ frontend/
 
 PDA 不复用当前 `@nerv-iip/app-shell` 的桌面 `AppShell` 组件。当前 app-shell 是 Console 的 sidebar/topbar chrome，PDA 需要常驻扫描状态、底部动作条、离线队列提示和单手操作布局；强行扩展同一个 shell 会让桌面 Console 与 PDA 的交互边界耦合。
 
-PDA 首批在 `frontend/apps/pda/src/components` 内实现 `PdaShell` 和作业布局。可复用的登录恢复、组织/环境上下文、权限解析、Gateway bearer 注入等非视觉逻辑，如果后续在 Console 与 PDA 之间出现真实重复，应抽到更细粒度的 `frontend/packages/auth`、`layer-base` 或独立 composable 包，而不是把它们塞进 `@nerv-iip/app-shell`。
+当前首批代码事实是：`frontend/apps/business-pda/src/pages/*` 页面复用 `@nerv-iip/ui-mobile` 的 `AppShellMobile`，PDA app 本地尚未建立 `src/components` 目录，也没有独立 `PdaShell`。作业布局当前由页面、`frontend/apps/business-pda/src/composables/*`、`frontend/packages/business-core` 的任务/SOP 定义和 `frontend/packages/ui-mobile` 组件组合完成。后续如果出现多个页面共享的 PDA 专用 chrome，再在 `frontend/apps/business-pda/src/components` 内抽取 app-local shell；可复用的登录恢复、组织/环境上下文、权限解析、Gateway bearer 注入等非视觉逻辑，如果后续在 Console 与 PDA 之间出现真实重复，应抽到更细粒度的 `frontend/packages/auth`、`business-core` 或独立 composable 包，而不是把它们塞进 `@nerv-iip/app-shell`。
 
 ## Capacitor 配置策略
 
@@ -371,17 +371,21 @@ stateDiagram-v2
 
 ### BusinessGateway mobile facade
 
-PDA mobile facade 的推荐落点是 `BusinessGateway`，即后续 `backend/gateway/BusinessGateway` 或等价业务 BFF。它复用现有 `PlatformGateway` 已验证的 facade 模式、IAM-backed permission enforcement、OpenAPI 生成和错误归一化口径，但部署和职责边界不同：
+PDA v1 已落地 `frontend/apps/business-pda`，当前事实是复用 `BusinessGateway` 现有 `/api/business-console/v1/**` facade 和 `@nerv-iip/api-client` 的 business-console 稳定导出；尚未创建独立 `/api/mobile/v1/**` endpoint、`business-gateway-mobile.v1.json`、`src/generated/mobile/` 或 `src/mobile.ts`。移动专用 facade 的推荐落点仍是 `BusinessGateway`，但应作为后续轨道，只承载 business-console facade 不适合表达的 PDA 专属 bootstrap、个人任务、扫码解释、设备注册、离线 outbox/sync 和诊断上传。
+
+它复用现有 `PlatformGateway` 已验证的 facade 模式、IAM-backed permission enforcement、OpenAPI 生成和错误归一化口径，但部署和职责边界不同：
 
 1. `PlatformGateway` 继续服务主平台 Console、AppHub、Ops、IAM Admin、观测等平台控制面接口。
 2. `BusinessGateway` 承载业务平台页面和移动 PDA 的聚合查询与提交入口，包括 WMS、Inventory、MES、Quality、Maintenance 等业务域。
 3. PDA 生产 API 不应把 WMS/MES/Inventory 等业务聚合逻辑写入 `PlatformGateway`。
-4. Slice 1 技术样机如果 BusinessGateway 尚未创建，可以使用 mock BusinessGateway 或临时本地 adapter 验证 Capacitor、扫描和 outbox；进入业务服务联调前必须收敛到 BusinessGateway。
+4. 当前 `business-pda` 已通过 BusinessGateway 的 business-console facade 完成 WMS、MES 和设备轻量作业页面；后续 mobile facade 落地时不得把既有业务控制台契约机械复制一份。
 
-PDA 只访问 BusinessGateway 的 mobile facade：
+PDA 当前只访问 BusinessGateway/PlatformGateway 的受控 facade，不直连业务服务 URL：
 
 ```text
-PDA -> BusinessGateway /api/mobile/v1/*
+PDA -> BusinessGateway /api/business-console/v1/*   # current v1 facts
+PDA -> PlatformGateway /api/console/v1/*            # auth/session facade
+PDA -> BusinessGateway /api/mobile/v1/*             # future mobile-specific track
 BusinessGateway -> IAM / WMS / Inventory / MES / Quality / Maintenance / FileStorage
 ```
 
@@ -415,7 +419,9 @@ BusinessGateway 非职责：
 
 ### Mobile OpenAPI 生成链路
 
-Mobile OpenAPI 使用独立 BusinessGateway 契约，但仍进入现有 `@nerv-iip/api-client` 包，避免 PDA 与 Console 各自维护 transport、auth header、错误模型和 envelope 类型。
+当前代码还没有 Mobile OpenAPI 生成链路；`frontend/packages/api-client/openapi/` 只包含 PlatformGateway 与 BusinessGateway business-console 快照，`src/index.ts` 只重新导出 console、business-console、iam 和 auth 稳定入口。Mobile OpenAPI 使用独立 BusinessGateway 契约时，仍应进入现有 `@nerv-iip/api-client` 包，避免 PDA 与 Console 各自维护 transport、auth header、错误模型和 envelope 类型。
+
+后续落地顺序：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。
 2. 导出脚本保存快照到 `frontend/packages/api-client/openapi/business-gateway-mobile.v1.json`。
@@ -626,17 +632,18 @@ User action
 
 ### 开发命令草案
 
-后续实施时可引入：
+当前 `business-pda` package 已提供以下命令：
 
 ```powershell
-pnpm -C frontend --filter @nerv-iip/pda dev
-pnpm -C frontend --filter @nerv-iip/pda build
-pnpm -C frontend --filter @nerv-iip/pda cap:sync
-pnpm -C frontend --filter @nerv-iip/pda android:open
-pnpm -C frontend --filter @nerv-iip/pda android:build
+pnpm -C frontend --filter @nerv-iip/business-pda dev
+pnpm -C frontend --filter @nerv-iip/business-pda typecheck
+pnpm -C frontend --filter @nerv-iip/business-pda test
+pnpm -C frontend --filter @nerv-iip/business-pda build
+pnpm -C frontend --filter @nerv-iip/business-pda cap:sync
+pnpm -C frontend --filter @nerv-iip/business-pda cap:open
 ```
 
-最终命令以 `package.json` 和 Vite+ workspace task 为准。
+最终命令以 `frontend/apps/business-pda/package.json` 和 Vite+ workspace task 为准。
 
 ### 发布包
 
@@ -651,7 +658,7 @@ pnpm -C frontend --filter @nerv-iip/pda android:build
 
 1. App semantic version 与 build number 分离。
 2. native bridge API 需要独立版本标识。
-3. BusinessGateway mobile facade 使用 `/api/mobile/v1` 路径版本。
+3. 后续独立 BusinessGateway mobile facade 使用 `/api/mobile/v1` 路径版本；当前 PDA v1 仍复用 `/api/business-console/v1/**`。
 4. 破坏性 API 变更必须提升 mobile facade 主版本。
 
 ## 测试策略
@@ -708,7 +715,7 @@ MVP 最低矩阵：
 
 ### Slice 1. Technical spike
 
-1. 创建 `frontend/apps/pda`。
+1. 扩展 `frontend/apps/business-pda`。
 2. 接入 Capacitor Android。
 3. 实现 DataWedge intent 或目标设备扫描 adapter。
 4. 实现 camera fallback。
