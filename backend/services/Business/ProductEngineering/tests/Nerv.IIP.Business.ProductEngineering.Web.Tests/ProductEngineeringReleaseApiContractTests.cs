@@ -36,7 +36,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     {
         var contracts = ProductEngineeringEndpointContracts.All;
 
-        Assert.Equal(18, contracts.Count);
+        Assert.Equal(22, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents/{documentNumber}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
@@ -49,8 +49,12 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/release" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/where-used" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/where-used" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/routings" && x.PermissionCode == EngineeringPermissionCodes.RoutingsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/routings/{routingCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.RoutingsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-changes" && x.PermissionCode == EngineeringPermissionCodes.ChangesRead);
@@ -97,8 +101,12 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(GetEngineeringItemEndpoint))]
     [InlineData(typeof(ReleaseEngineeringBomEndpoint))]
     [InlineData(typeof(GetEngineeringBomEndpoint))]
+    [InlineData(typeof(GetEngineeringBomExplosionEndpoint))]
+    [InlineData(typeof(GetEngineeringBomWhereUsedEndpoint))]
     [InlineData(typeof(ReleaseManufacturingBomEndpoint))]
     [InlineData(typeof(GetManufacturingBomEndpoint))]
+    [InlineData(typeof(GetManufacturingBomExplosionEndpoint))]
+    [InlineData(typeof(GetManufacturingBomWhereUsedEndpoint))]
     [InlineData(typeof(ReleaseRoutingEndpoint))]
     [InlineData(typeof(GetRoutingEndpoint))]
     [InlineData(typeof(ReleaseEngineeringChangeEndpoint))]
@@ -344,6 +352,130 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal("MBOM-1000", detail.BomCode);
         Assert.Equal("SKU-RM-1000", Assert.Single(detail.MaterialLines).SkuCode);
         Assert.Equal("mix-temperature", Assert.Single(detail.RecipeLines).ParameterCode);
+    }
+
+    [Fact]
+    public async Task Engineering_bom_explosion_selects_effective_versions_and_rolls_quantities_with_line_factors()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var fgBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "A", "SKU-FG")
+            .AddLine("SKU-SUB", 2m, "EA", isPhantom: true, alternateGroup: "ALT-A", alternatePriority: 1, referenceDesignators: "R1,R2", scrapRate: 0.10m, yieldRate: 0.95m);
+        fgBom.Release(new DateOnly(2026, 1, 1));
+        var subBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-SUB", "A", "SKU-SUB")
+            .AddLine("SKU-RM", 3m, "EA");
+        subBom.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.AddRange(fgBom, subBom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringBomExplosionQueryHandler(dbContext).Handle(
+            new GetEngineeringBomExplosionQuery("org-001", "env-dev", "SKU-FG", new DateOnly(2026, 6, 1), 10m),
+            CancellationToken.None);
+
+        Assert.Equal("EngineeringBom", response.BomKind);
+        Assert.Equal("EBOM-FG", response.Root.BomCode);
+        Assert.Equal("A", response.Root.Revision);
+        var sub = Assert.Single(response.Root.Children!);
+        Assert.Equal("SKU-SUB", sub.ItemCode);
+        Assert.True(sub.IsPhantom);
+        Assert.Equal("ALT-A", sub.AlternateGroup);
+        Assert.Equal("R1,R2", sub.ReferenceDesignators);
+        Assert.Equal(2m, sub.LineQuantity);
+        Assert.Equal(23.1579m, Math.Round(sub.RequiredQuantity, 4));
+        var raw = Assert.Single(sub.Children!);
+        Assert.Equal("SKU-RM", raw.ItemCode);
+        Assert.Equal(69.4737m, Math.Round(raw.RequiredQuantity, 4));
+        Assert.Contains(response.Diagnostics, x => x.Code == "missing-child-bom" && x.ItemCode == "SKU-RM");
+    }
+
+    [Fact]
+    public async Task Manufacturing_bom_explosion_prefers_production_version_selection_for_lot_size()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldMbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
+            .AddMaterialLine("SKU-OLD", 1m, "EA", 0m);
+        oldMbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        var selectedMbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "B", "SKU-FG")
+            .AddMaterialLine("SKU-RM", 5m, "EA", 0.05m, substituteSkuCodes: "SKU-RM-ALT");
+        selectedMbom.ReleaseFromEngineeringBom("EBOM-FG:B", EngineeringVersionStatus.Published, new DateOnly(2026, 2, 1));
+        dbContext.ManufacturingBoms.AddRange(oldMbom, selectedMbom);
+        dbContext.ProductionVersions.Add(ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG",
+            "MBOM-FG:B",
+            "ROUTE-FG:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            100m,
+            1,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetManufacturingBomExplosionQueryHandler(dbContext).Handle(
+            new GetManufacturingBomExplosionQuery("org-001", "env-dev", "SKU-FG", new DateOnly(2026, 6, 1), 50m),
+            CancellationToken.None);
+
+        Assert.Equal("ProductionVersion", response.SelectionMode);
+        Assert.Equal("MBOM-FG", response.Root.BomCode);
+        Assert.Equal("B", response.Root.Revision);
+        var material = Assert.Single(response.Root.Children!);
+        Assert.Equal("SKU-RM", material.ItemCode);
+        Assert.Equal("SKU-RM-ALT", material.SubstituteSkuCodes);
+        Assert.Equal(262.5m, material.RequiredQuantity);
+    }
+
+    [Fact]
+    public async Task Engineering_bom_explosion_reports_cycle_diagnostics_without_recursing_forever()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var bomA = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-A", "A", "SKU-A")
+            .AddLine("SKU-B", 1m, "EA");
+        bomA.Release(new DateOnly(2026, 1, 1));
+        var bomB = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-B", "A", "SKU-B")
+            .AddLine("SKU-A", 1m, "EA");
+        bomB.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.AddRange(bomA, bomB);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringBomExplosionQueryHandler(dbContext).Handle(
+            new GetEngineeringBomExplosionQuery("org-001", "env-dev", "SKU-A", new DateOnly(2026, 6, 1), 1m),
+            CancellationToken.None);
+
+        Assert.Contains(response.Diagnostics, x => x.Code == "cycle-detected" && x.ItemCode == "SKU-A");
+    }
+
+    [Fact]
+    public async Task Manufacturing_bom_where_used_returns_direct_released_parent_context()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
+            .AddMaterialLine("SKU-RM", 2m, "EA", 0.02m, isPhantom: false, referenceDesignators: "P1");
+        mbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        dbContext.ManufacturingBoms.Add(mbom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetManufacturingBomWhereUsedQueryHandler(dbContext).Handle(
+            new GetManufacturingBomWhereUsedQuery("org-001", "env-dev", "SKU-RM", new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+
+        var usage = Assert.Single(response.Items);
+        Assert.Equal("ManufacturingBom", usage.BomKind);
+        Assert.Equal("MBOM-FG", usage.BomCode);
+        Assert.Equal("SKU-FG", usage.ParentItemCode);
+        Assert.Equal(2m, usage.LineQuantity);
+        Assert.Equal(0.02m, usage.ScrapRate);
+        Assert.Equal("P1", usage.ReferenceDesignators);
     }
 
     [Fact]
@@ -1769,6 +1901,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             isOutsourced: false,
             description: null);
     }
+
 
     private sealed class RecordingApprovalVerifier(bool shouldApprove = true) : IEngineeringApprovalVerifier
     {

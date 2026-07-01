@@ -783,6 +783,33 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Engineering_bom_explosion_facade_forwards_context_and_internal_service_token()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/engineering/engineering-boms/explosion?organizationId=org-001&environmentId=env-dev&itemCode=SKU-FG&effectiveDate=2026-06-01&lotSize=25");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", engineering.LastInternalToken);
+        Assert.Equal(new BusinessConsoleBomExplosionRequest("org-001", "env-dev", "SKU-FG", DateOnly.Parse("2026-06-01"), 25m), engineering.LastEngineeringBomExplosionRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("EngineeringBom", data.GetProperty("bomKind").GetString());
+        Assert.Equal("SKU-FG", data.GetProperty("root").GetProperty("itemCode").GetString());
+        Assert.Equal(BusinessGatewayPermissions.EngineeringBomsRead, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
     public async Task Engineering_write_facades_use_internal_service_token_for_downstream_business_service()
     {
         var engineering = new RecordingProductEngineeringClient();
@@ -2691,11 +2718,23 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleResolveProductionVersionRequest("org-001", "env-dev", "FG-FRONT-SHOCK", DateOnly.Parse("2025-01-15"), 100),
             CancellationToken.None);
+        await client.GetEngineeringBomExplosionAsync(
+            "internal-token-001",
+            new BusinessConsoleBomExplosionRequest("org-001", "env-dev", "SKU-FG", DateOnly.Parse("2026-06-01"), 25),
+            CancellationToken.None);
+        await client.GetManufacturingBomWhereUsedAsync(
+            "internal-token-001",
+            new BusinessConsoleBomWhereUsedRequest("org-001", "env-dev", "SKU-RM", DateOnly.Parse("2026-06-01")),
+            CancellationToken.None);
 
         Assert.Equal("/api/business/v1/engineering/production-versions?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&status=active&skip=5&take=15", handler.Requests[0].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[0].Headers.Authorization!.Parameter);
         Assert.Equal("/api/business/v1/engineering/production-versions/resolve?organizationId=org-001&environmentId=env-dev&skuCode=FG-FRONT-SHOCK&effectiveDate=2025-01-15&lotSize=100", handler.Requests[1].RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", handler.Requests[1].Headers.Authorization!.Parameter);
+        Assert.Equal("/api/business/v1/engineering/engineering-boms/explosion?organizationId=org-001&environmentId=env-dev&itemCode=SKU-FG&effectiveDate=2026-06-01&lotSize=25", handler.Requests[2].RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", handler.Requests[2].Headers.Authorization!.Parameter);
+        Assert.Equal("/api/business/v1/engineering/manufacturing-boms/where-used?organizationId=org-001&environmentId=env-dev&componentCode=SKU-RM&effectiveDate=2026-06-01", handler.Requests[3].RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", handler.Requests[3].Headers.Authorization!.Parameter);
     }
 
     [Fact]
@@ -2847,8 +2886,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains("ReleaseEngineeringBomAsync", methodNames);
         Assert.Contains("ListEngineeringBomsAsync", methodNames);
         Assert.Contains("GetEngineeringBomAsync", methodNames);
+        Assert.Contains("GetEngineeringBomExplosionAsync", methodNames);
+        Assert.Contains("GetEngineeringBomWhereUsedAsync", methodNames);
         Assert.Contains("ListManufacturingBomsAsync", methodNames);
         Assert.Contains("GetManufacturingBomAsync", methodNames);
+        Assert.Contains("GetManufacturingBomExplosionAsync", methodNames);
+        Assert.Contains("GetManufacturingBomWhereUsedAsync", methodNames);
         Assert.Contains("ReleaseManufacturingBomAsync", methodNames);
         Assert.Contains("ListRoutingsAsync", methodNames);
         Assert.Contains("GetRoutingAsync", methodNames);
@@ -3986,6 +4029,52 @@ public sealed class BusinessGatewayProxyTests
             };
         }
 
+        if (path.EndsWith("/engineering-boms/explosion", StringComparison.Ordinal)
+            || path.EndsWith("/manufacturing-boms/explosion", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    bomKind = path.Contains("manufacturing-boms", StringComparison.Ordinal) ? "ManufacturingBom" : "EngineeringBom",
+                    selectionMode = "EffectiveBom",
+                    root = new
+                    {
+                        itemCode = "SKU-FG",
+                        parentItemCode = (string?)null,
+                        bomCode = "BOM-FG",
+                        revision = "A",
+                        effectiveDate = "2026-01-01",
+                        level = 0,
+                        path = "SKU-FG",
+                        lineQuantity = 1,
+                        requiredQuantity = 25,
+                        unitOfMeasureCode = string.Empty,
+                        children = Array.Empty<object>(),
+                    },
+                    diagnostics = Array.Empty<object>(),
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
+        if (path.EndsWith("/where-used", StringComparison.Ordinal))
+        {
+            return new
+            {
+                data = new
+                {
+                    componentCode = "SKU-RM",
+                    items = Array.Empty<object>(),
+                },
+                success = true,
+                message = string.Empty,
+                code = 0,
+            };
+        }
+
         return new
         {
             data = new
@@ -4879,6 +4968,12 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleResolveProductionVersionRequest? LastResolveRequest { get; private set; }
 
+    public BusinessConsoleBomExplosionRequest? LastEngineeringBomExplosionRequest { get; private set; }
+
+    public BusinessConsoleManufacturingBomExplosionRequest? LastManufacturingBomExplosionRequest { get; private set; }
+
+    public BusinessConsoleBomWhereUsedRequest? LastBomWhereUsedRequest { get; private set; }
+
     public BusinessConsoleListProductionVersionsRequest? LastProductionVersionListRequest { get; private set; }
 
     public BusinessConsoleReleaseManufacturingBomRequest? LastReleaseManufacturingBomRequest { get; private set; }
@@ -4979,6 +5074,41 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         return Task.FromResult(new BusinessConsoleEngineeringBomItem(bomCode, revision, "ITEM-001", "Published", DateOnly.FromDateTime(DateTime.UtcNow), []));
     }
 
+    public Task<BusinessConsoleBomExplosionResponse> GetEngineeringBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleBomExplosionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastEngineeringBomExplosionRequest = request;
+        return Task.FromResult(new BusinessConsoleBomExplosionResponse(
+            "EngineeringBom",
+            "EffectiveBom",
+            new BusinessConsoleBomExplosionNode(
+                request.ItemCode,
+                null,
+                "EBOM-001",
+                "A",
+                request.EffectiveDate,
+                0,
+                request.ItemCode,
+                1m,
+                request.LotSize,
+                string.Empty,
+                Children: []),
+            []));
+    }
+
+    public Task<BusinessConsoleBomWhereUsedResponse> GetEngineeringBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastBomWhereUsedRequest = request;
+        return Task.FromResult(new BusinessConsoleBomWhereUsedResponse(request.ComponentCode, []));
+    }
+
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -4997,6 +5127,41 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
     {
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleManufacturingBomItem(bomCode, revision, "SKU-001", "EBOM-001:A", "Published", DateOnly.FromDateTime(DateTime.UtcNow), [], []));
+    }
+
+    public Task<BusinessConsoleBomExplosionResponse> GetManufacturingBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleManufacturingBomExplosionRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastManufacturingBomExplosionRequest = request;
+        return Task.FromResult(new BusinessConsoleBomExplosionResponse(
+            "ManufacturingBom",
+            "ProductionVersion",
+            new BusinessConsoleBomExplosionNode(
+                request.SkuCode,
+                null,
+                "MBOM-001",
+                "A",
+                request.EffectiveDate,
+                0,
+                request.SkuCode,
+                1m,
+                request.LotSize,
+                string.Empty,
+                Children: []),
+            []));
+    }
+
+    public Task<BusinessConsoleBomWhereUsedResponse> GetManufacturingBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastBomWhereUsedRequest = request;
+        return Task.FromResult(new BusinessConsoleBomWhereUsedResponse(request.ComponentCode, []));
     }
 
     public Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(

@@ -359,6 +359,16 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleEngineeringContextRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBomExplosionResponse> GetEngineeringBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleBomExplosionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBomWhereUsedResponse> GetEngineeringBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -369,6 +379,16 @@ public interface IBusinessProductEngineeringClient
         string bomCode,
         string revision,
         BusinessConsoleEngineeringContextRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBomExplosionResponse> GetManufacturingBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleManufacturingBomExplosionRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleBomWhereUsedResponse> GetManufacturingBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseManufacturingBomAsync(
@@ -2617,6 +2637,39 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleBomExplosionResponse> GetEngineeringBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleBomExplosionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBomExplosionResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/engineering-boms/explosion?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("itemCode", request.ItemCode),
+                ("effectiveDate", request.EffectiveDate),
+                ("lotSize", request.LotSize),
+                ("bomCode", request.BomCode),
+                ("revision", request.Revision)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleBomWhereUsedResponse> GetEngineeringBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBomWhereUsedResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/engineering-boms/where-used?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("componentCode", request.ComponentCode),
+                ("effectiveDate", request.EffectiveDate)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -2644,6 +2697,39 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/engineering/manufacturing-boms/{Uri.EscapeDataString(bomCode)}/{Uri.EscapeDataString(revision)}?" + ContextQuery(request.OrganizationId, request.EnvironmentId),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleBomExplosionResponse> GetManufacturingBomExplosionAsync(
+        string internalBearerToken,
+        BusinessConsoleManufacturingBomExplosionRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBomExplosionResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/manufacturing-boms/explosion?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("effectiveDate", request.EffectiveDate),
+                ("lotSize", request.LotSize),
+                ("bomCode", request.BomCode),
+                ("revision", request.Revision)),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleBomWhereUsedResponse> GetManufacturingBomWhereUsedAsync(
+        string internalBearerToken,
+        BusinessConsoleBomWhereUsedRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBomWhereUsedResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/manufacturing-boms/where-used?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("componentCode", request.ComponentCode),
+                ("effectiveDate", request.EffectiveDate)),
             null,
             cancellationToken);
 
