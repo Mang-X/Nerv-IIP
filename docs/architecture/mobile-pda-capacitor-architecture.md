@@ -168,7 +168,7 @@ frontend/
 
 PDA 不复用当前 `@nerv-iip/app-shell` 的桌面 `AppShell` 组件。当前 app-shell 是 Console 的 sidebar/topbar chrome，PDA 需要常驻扫描状态、底部动作条、离线队列提示和单手操作布局；强行扩展同一个 shell 会让桌面 Console 与 PDA 的交互边界耦合。
 
-PDA 首批在 `frontend/apps/business-pda/src/components` 内实现 `PdaShell` 和作业布局。可复用的登录恢复、组织/环境上下文、权限解析、Gateway bearer 注入等非视觉逻辑，如果后续在 Console 与 PDA 之间出现真实重复，应抽到更细粒度的 `frontend/packages/auth`、`business-core` 或独立 composable 包，而不是把它们塞进 `@nerv-iip/app-shell`。
+当前首批代码事实是：`frontend/apps/business-pda/src/pages/*` 页面复用 `@nerv-iip/ui-mobile` 的 `AppShellMobile`，PDA app 本地尚未建立 `src/components` 目录，也没有独立 `PdaShell`。作业布局当前由页面、`frontend/apps/business-pda/src/composables/*`、`frontend/packages/business-core` 的任务/SOP 定义和 `frontend/packages/ui-mobile` 组件组合完成。后续如果出现多个页面共享的 PDA 专用 chrome，再在 `frontend/apps/business-pda/src/components` 内抽取 app-local shell；可复用的登录恢复、组织/环境上下文、权限解析、Gateway bearer 注入等非视觉逻辑，如果后续在 Console 与 PDA 之间出现真实重复，应抽到更细粒度的 `frontend/packages/auth`、`business-core` 或独立 composable 包，而不是把它们塞进 `@nerv-iip/app-shell`。
 
 ## Capacitor 配置策略
 
