@@ -27,7 +27,7 @@
 | 齐套与物料 | `/mes/materials` |
 | 派工 | `/mes/dispatch` |
 | 工序执行 | `/mes/operation-tasks` |
-| 报工与完工 | `/mes/reports` |
+| 报工与完工 | `/mes/production-reports` |
 | 完工入库请求 | `/mes/receipts` |
 | 规则排程结果 | `/mes/schedules` |
 
@@ -40,7 +40,7 @@
 5. 在 `/mes/work-orders` 创建或释放工单；进入 `/mes/work-orders/:workOrderId` 查看工序、用料和阻塞原因。
 6. 在 `/mes/materials` 跟踪齐套和领料，必要时联动 WMS/Inventory。
 7. 在 `/mes/dispatch` 和 `/mes/operation-tasks` 派工、开工、暂停、恢复或完工。
-8. 在 `/mes/reports` 记录良品、不良和返工；需要质检时进入 `/mes/quality` 或 Quality 页面。
+8. 在 `/mes/production-reports` 记录良品、不良和返工；需要质检时进入 `/mes/quality` 或 Quality 页面。
 9. 在 `/mes/receipts` 创建完工入库请求，等待 Inventory/WMS 过账事实回写。
 
 ## 业务对象/单据流

@@ -7,7 +7,7 @@
     "dev": "vitepress dev docs --host 127.0.0.1 --port 5181",
     "build": "vitepress build docs",
     "preview": "vitepress preview docs --host 127.0.0.1 --port 5181",
-    "test": "vitest run src/product-docs.contract.test.ts",
+    "test": "vp test run src",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

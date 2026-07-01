@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 const appRoot = process.cwd()
 const docsRoot = join(appRoot, 'docs')
+const workspaceRoot = join(appRoot, '..', '..')
 const internalGapRoot = join(docsRoot, 'internal', 'gaps')
 
 const requiredGuideSections = [
@@ -28,6 +29,12 @@ function listMarkdownFiles(relativePath: string) {
   return readdirSync(absolutePath, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => join(entry.parentPath, entry.name))
+}
+
+function routeExists(route: string) {
+  const typedRouter = readFileSync(join(workspaceRoot, 'apps', 'business-console', 'typed-router.d.ts'), 'utf8')
+
+  return typedRouter.includes(`'${route}'`)
 }
 
 describe('product docs app contract', () => {
@@ -86,6 +93,21 @@ describe('product docs app contract', () => {
       const content = readFileSync(file, 'utf8')
 
       expect(content, `${file} should not expose internal gap wording`).not.toContain('建议 issue 标题')
+    }
+  })
+
+  test('references only real business-console routes in public guide copy', () => {
+    const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
+
+    for (const file of publicFiles) {
+      const content = readFileSync(file, 'utf8')
+      const routes = Array.from(content.matchAll(/`(\/[a-z0-9][a-z0-9/:?-]*)`/g), (match) => match[1])
+        .filter((route) => route.startsWith('/mes') || route.startsWith('/wms') || route.startsWith('/engineering') || route.startsWith('/inventory') || route.startsWith('/planning') || route.startsWith('/quality') || route.startsWith('/master-data'))
+        .filter((route) => !route.includes(':'))
+
+      for (const route of routes) {
+        expect(routeExists(route), `${file} should reference an existing business-console route: ${route}`).toBe(true)
+      }
     }
   })
 })

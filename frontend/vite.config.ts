@@ -100,7 +100,9 @@ export default defineConfig({
         command: 'pnpm -r --if-present test',
         input: [
           'apps/**/src/**',
-          'apps/**/docs/**',
+          'apps/docs/docs/**',
+          '!apps/docs/docs/.vitepress/dist/**',
+          '!apps/docs/docs/.vitepress/cache/**',
           'apps/**/vite.config.ts',
           'packages/**/src/**',
           'packages/**/tsconfig.json',
