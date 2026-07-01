@@ -1,6 +1,19 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
+import type {
+  BusinessConsoleApprovalChainResponse,
+  BusinessConsoleBarcodePrintBatchResponse,
+  BusinessConsoleMaintenanceAssetReliabilityEnvelope,
+  BusinessConsoleSchedulingPlanSummaryResponse,
+  BusinessConsoleSearchResponse,
+  BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleWorkbenchSummaryResponse,
+  CancelBusinessConsolePlanningDemandData,
+  GetBusinessConsoleEngineeringStandardOperationData,
+  SearchBusinessConsoleObjectsData,
+} from './business-console'
 import {
   listConsoleNotificationMessagesQueryOptions,
   listConsoleNotificationTasksQueryOptions,
@@ -149,5 +162,119 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+  })
+
+  it('exports deep Business Console generated capabilities through stable api-client entry points', () => {
+    const expectedFunctions = [
+      'getBusinessConsoleWorkbenchSummaryQueryOptions',
+      'searchBusinessConsoleObjectsQueryOptions',
+      'listBusinessConsoleBarcodeRulesQueryOptions',
+      'createOrUpdateBusinessConsoleBarcodeRuleMutationOptions',
+      'listBusinessConsoleBarcodeTemplatesQueryOptions',
+      'createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions',
+      'listBusinessConsoleBarcodePrintBatchesQueryOptions',
+      'createBusinessConsoleBarcodePrintBatchMutationOptions',
+      'getBusinessConsoleBarcodePrintBatchQueryOptions',
+      'listBusinessConsoleBarcodeScansQueryOptions',
+      'recordBusinessConsoleBarcodeScanMutationOptions',
+      'listBusinessConsoleApprovalTemplatesQueryOptions',
+      'createOrUpdateBusinessConsoleApprovalTemplateMutationOptions',
+      'listBusinessConsoleApprovalChainsQueryOptions',
+      'startBusinessConsoleApprovalChainMutationOptions',
+      'getBusinessConsoleApprovalChainQueryOptions',
+      'listBusinessConsoleApprovalTasksQueryOptions',
+      'listBusinessConsoleApprovalDecisionsQueryOptions',
+      'resolveBusinessConsoleApprovalStepMutationOptions',
+      'listBusinessConsoleApprovalDelegationsQueryOptions',
+      'createBusinessConsoleApprovalDelegationMutationOptions',
+      'revokeBusinessConsoleApprovalDelegationMutationOptions',
+      'listBusinessConsoleTelemetryTagsQueryOptions',
+      'listBusinessConsoleTelemetryAlarmRulesQueryOptions',
+      'createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions',
+      'recordBusinessConsoleTelemetrySampleMutationOptions',
+      'listBusinessConsoleTelemetryAlarmsQueryOptions',
+      'postBusinessConsoleTelemetryAlarmMutationOptions',
+      'queryBusinessConsoleTelemetryDeviceHistoryQueryOptions',
+      'queryBusinessConsoleTelemetryOeeQueryOptions',
+      'queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions',
+      'previewBusinessConsoleSchedulingPlanMutationOptions',
+      'listBusinessConsoleSchedulingPlansQueryOptions',
+      'createBusinessConsoleSchedulingPlanMutationOptions',
+      'getBusinessConsoleSchedulingPlanQueryOptions',
+      'getBusinessConsoleSchedulingPlanGanttQueryOptions',
+      'releaseBusinessConsoleSchedulingPlanMutationOptions',
+      'listBusinessConsoleMaintenanceSparePartsQueryOptions',
+      'createBusinessConsoleMaintenanceSparePartMutationOptions',
+      'queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions',
+      'queryBusinessConsoleMaintenanceAvailabilityWindowsQueryOptions',
+      'getBusinessConsoleEngineeringBomQueryOptions',
+      'getBusinessConsoleEngineeringManufacturingBomQueryOptions',
+      'getBusinessConsoleEngineeringRoutingQueryOptions',
+      'getBusinessConsoleEngineeringStandardOperationQueryOptions',
+      'cancelBusinessConsolePlanningDemandMutationOptions',
+      'getBusinessConsoleWorkbenchSummary',
+      'searchBusinessConsoleObjects',
+      'listBusinessConsoleBarcodeRules',
+      'createOrUpdateBusinessConsoleBarcodeRule',
+      'listBusinessConsoleBarcodeTemplates',
+      'createOrUpdateBusinessConsoleBarcodeTemplate',
+      'listBusinessConsoleBarcodePrintBatches',
+      'createBusinessConsoleBarcodePrintBatch',
+      'getBusinessConsoleBarcodePrintBatch',
+      'listBusinessConsoleBarcodeScans',
+      'recordBusinessConsoleBarcodeScan',
+      'listBusinessConsoleApprovalTemplates',
+      'createOrUpdateBusinessConsoleApprovalTemplate',
+      'listBusinessConsoleApprovalChains',
+      'startBusinessConsoleApprovalChain',
+      'getBusinessConsoleApprovalChain',
+      'listBusinessConsoleApprovalTasks',
+      'listBusinessConsoleApprovalDecisions',
+      'resolveBusinessConsoleApprovalStep',
+      'listBusinessConsoleApprovalDelegations',
+      'createBusinessConsoleApprovalDelegation',
+      'revokeBusinessConsoleApprovalDelegation',
+      'listBusinessConsoleTelemetryTags',
+      'listBusinessConsoleTelemetryAlarmRules',
+      'createOrUpdateBusinessConsoleTelemetryAlarmRule',
+      'recordBusinessConsoleTelemetrySample',
+      'listBusinessConsoleTelemetryAlarms',
+      'postBusinessConsoleTelemetryAlarm',
+      'queryBusinessConsoleTelemetryDeviceHistory',
+      'queryBusinessConsoleTelemetryOee',
+      'queryBusinessConsoleTelemetryRuntimeAvailability',
+      'previewBusinessConsoleSchedulingPlan',
+      'listBusinessConsoleSchedulingPlans',
+      'createBusinessConsoleSchedulingPlan',
+      'getBusinessConsoleSchedulingPlan',
+      'getBusinessConsoleSchedulingPlanGantt',
+      'releaseBusinessConsoleSchedulingPlan',
+      'listBusinessConsoleMaintenanceSpareParts',
+      'createBusinessConsoleMaintenanceSparePart',
+      'queryBusinessConsoleMaintenanceAssetReliability',
+      'queryBusinessConsoleMaintenanceAvailabilityWindows',
+      'getBusinessConsoleEngineeringBom',
+      'getBusinessConsoleEngineeringManufacturingBom',
+      'getBusinessConsoleEngineeringRouting',
+      'cancelBusinessConsolePlanningDemand',
+      'getBusinessConsoleEngineeringStandardOperation',
+    ] as const
+
+    for (const functionName of expectedFunctions) {
+      expect(businessConsoleClient[functionName], functionName).toBeTypeOf('function')
+    }
+  })
+
+  it('exports stable Business Console deep capability types', () => {
+    expectTypeOf<BusinessConsoleWorkbenchSummaryResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleSearchResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleBarcodePrintBatchResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleApprovalChainResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleSchedulingPlanSummaryResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMaintenanceAssetReliabilityEnvelope>().toBeObject()
+    expectTypeOf<CancelBusinessConsolePlanningDemandData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleEngineeringStandardOperationData>().toBeObject()
+    expectTypeOf<SearchBusinessConsoleObjectsData>().toBeObject()
   })
 })
