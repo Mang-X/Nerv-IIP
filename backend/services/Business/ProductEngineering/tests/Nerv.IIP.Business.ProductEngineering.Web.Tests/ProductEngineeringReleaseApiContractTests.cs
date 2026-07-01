@@ -478,13 +478,15 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createdAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var rev9 = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "9", "SKU-FG")
             .AddLine("SKU-OLD", 1m, "EA");
         rev9.Release(new DateOnly(2026, 1, 1));
-        await Task.Delay(5);
+        SetCreatedAtUtc(rev9, createdAt);
         var rev10 = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "10", "SKU-FG")
             .AddLine("SKU-NEW", 1m, "EA");
         rev10.Release(new DateOnly(2026, 1, 1));
+        SetCreatedAtUtc(rev10, createdAt.AddMinutes(1));
         dbContext.EngineeringBoms.AddRange(rev9, rev10);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -537,13 +539,15 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createdAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var oldBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "A", "SKU-FG")
             .AddLine("SKU-RM", 1m, "EA");
         oldBom.Release(new DateOnly(2026, 1, 1));
-        await Task.Delay(5);
+        SetCreatedAtUtc(oldBom, createdAt);
         var currentBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "B", "SKU-FG")
             .AddLine("SKU-RM", 2m, "EA");
         currentBom.Release(new DateOnly(2026, 3, 1));
+        SetCreatedAtUtc(currentBom, createdAt.AddMinutes(1));
         var otherParent = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-OTHER", "A", "SKU-OTHER")
             .AddLine("SKU-RM", 4m, "EA");
         otherParent.Release(new DateOnly(2026, 2, 1));
@@ -575,13 +579,15 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createdAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var oldMbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
             .AddMaterialLine("SKU-RM", 1m, "EA", 0m);
         oldMbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
-        await Task.Delay(5);
+        SetCreatedAtUtc(oldMbom, createdAt);
         var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "B", "SKU-FG")
             .AddMaterialLine("SKU-RM", 2m, "EA", 0.02m, isPhantom: false, referenceDesignators: "P1");
         mbom.ReleaseFromEngineeringBom("EBOM-FG:B", EngineeringVersionStatus.Published, new DateOnly(2026, 3, 1));
+        SetCreatedAtUtc(mbom, createdAt.AddMinutes(1));
         dbContext.ManufacturingBoms.AddRange(oldMbom, mbom);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -2004,6 +2010,20 @@ public sealed class ProductEngineeringReleaseApiContractTests
     private static string NormalizeValidationPropertyName(string propertyName)
     {
         return propertyName.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+    }
+
+    private static void SetCreatedAtUtc<TAggregate>(TAggregate aggregate, DateTime createdAtUtc)
+    {
+        var field = typeof(TAggregate).GetField(
+            "<CreatedAtUtc>k__BackingField",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+        if (field is null)
+        {
+            throw new InvalidOperationException($"Aggregate {typeof(TAggregate).Name} does not expose a CreatedAtUtc backing field.");
+        }
+
+        field.SetValue(aggregate, createdAtUtc);
     }
 
     private static StandardOperation NewStandardOperation(string operationCode, string workCenterCode)
