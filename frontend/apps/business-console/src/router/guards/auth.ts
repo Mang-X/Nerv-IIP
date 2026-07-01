@@ -23,10 +23,6 @@ export function installAuthGuard(router: Router) {
       return true
     }
 
-    if (to.path === '/forbidden') {
-      return true
-    }
-
     return {
       path: '/forbidden',
       query: {

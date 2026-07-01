@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { sanitizeRedirectPath } from '@/router/redirects'
 import { Button } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -12,7 +13,7 @@ definePage({
 })
 
 const route = useRoute()
-const returnPath = computed(() => typeof route.query.from === 'string' ? route.query.from : '/')
+const returnPath = computed(() => sanitizeRedirectPath(route.query.from))
 </script>
 
 <template>
