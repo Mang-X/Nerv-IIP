@@ -6,6 +6,7 @@ const appRoot = process.cwd()
 const docsRoot = join(appRoot, 'docs')
 const workspaceRoot = join(appRoot, '..', '..')
 const internalGapRoot = join(docsRoot, 'internal', 'gaps')
+const businessConsolePagesRoot = join(workspaceRoot, 'apps', 'business-console', 'src', 'pages')
 
 const requiredGuideSections = [
   '适用角色',
@@ -31,11 +32,46 @@ function listMarkdownFiles(relativePath: string) {
     .map((entry) => join(entry.parentPath, entry.name))
 }
 
-function routeExists(route: string) {
-  const typedRouter = readFileSync(join(workspaceRoot, 'apps', 'business-console', 'typed-router.d.ts'), 'utf8')
+function pagePathToRoute(pagePath: string) {
+  const routeSegments = pagePath
+    .replace(/\\/g, '/')
+    .replace(/\.vue$/, '')
+    .split('/')
+    .filter((segment) => segment !== 'index')
+    .map((segment) => {
+      if (segment.startsWith('[...') && segment.endsWith(']')) {
+        return `:${segment.slice(4, -1)}(.*)`
+      }
 
-  return typedRouter.includes(`'${route}'`)
+      if (segment.startsWith('[') && segment.endsWith(']')) {
+        return `:${segment.slice(1, -1)}`
+      }
+
+      return segment
+    })
+
+  return routeSegments.length === 0 ? '/' : `/${routeSegments.join('/')}`
 }
+
+function listBusinessConsoleRoutes() {
+  const pageFiles = readdirSync(businessConsolePagesRoot, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .filter((entry) => entry.name.endsWith('.vue'))
+    .filter((entry) => !entry.parentPath.includes(`${join('components')}`))
+    .filter((entry) => !entry.parentPath.includes(`${join('dialogs')}`))
+    .filter((entry) => !entry.parentPath.includes(`${join('drawers')}`))
+    .filter((entry) => !entry.parentPath.includes(`${join('fragments')}`))
+    .map((entry) => {
+      const absolutePath = join(entry.parentPath, entry.name)
+      const relativePath = absolutePath.slice(businessConsolePagesRoot.length + 1)
+
+      return pagePathToRoute(relativePath)
+    })
+
+  return new Set(pageFiles)
+}
+
+const businessConsoleRoutes = listBusinessConsoleRoutes()
 
 describe('product docs app contract', () => {
   test('publishes at least three complete end-to-end getting-started paths', () => {
@@ -106,7 +142,10 @@ describe('product docs app contract', () => {
         .filter((route) => !route.includes(':'))
 
       for (const route of routes) {
-        expect(routeExists(route), `${file} should reference an existing business-console route: ${route}`).toBe(true)
+        expect(
+          businessConsoleRoutes.has(route),
+          `${file} should reference an existing business-console route: ${route}`,
+        ).toBe(true)
       }
     }
   })
