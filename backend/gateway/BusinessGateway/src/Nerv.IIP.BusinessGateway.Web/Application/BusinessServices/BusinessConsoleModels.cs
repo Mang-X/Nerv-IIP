@@ -1050,7 +1050,93 @@ public sealed record BusinessConsoleEngineeringBomItem(
 public sealed record BusinessConsoleEngineeringBomLine(
     string ChildItemCode,
     decimal Quantity,
-    string UnitOfMeasureCode);
+    string UnitOfMeasureCode,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? ReferenceDesignators = null,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
+
+public sealed record BusinessConsoleBomExplosionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ItemCode,
+    DateOnly EffectiveDate,
+    decimal LotSize = 1m,
+    string? BomCode = null,
+    string? Revision = null);
+
+public sealed record BusinessConsoleManufacturingBomExplosionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    DateOnly EffectiveDate,
+    decimal LotSize = 1m,
+    string? BomCode = null,
+    string? Revision = null);
+
+public sealed record BusinessConsoleBomWhereUsedRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ComponentCode,
+    DateOnly EffectiveDate);
+
+public sealed record BusinessConsoleBomExplosionDiagnostic(
+    string Code,
+    string Severity,
+    string ItemCode,
+    string Message,
+    string Path);
+
+public sealed record BusinessConsoleBomExplosionNode(
+    string ItemCode,
+    string? ParentItemCode,
+    string? BomCode,
+    string? Revision,
+    DateOnly? EffectiveDate,
+    int Level,
+    string Path,
+    decimal LineQuantity,
+    decimal RequiredQuantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    bool Backflush = false,
+    IReadOnlyCollection<BusinessConsoleBomExplosionNode>? Children = null);
+
+public sealed record BusinessConsoleBomExplosionResponse(
+    string BomKind,
+    string SelectionMode,
+    BusinessConsoleBomExplosionNode Root,
+    IReadOnlyCollection<BusinessConsoleBomExplosionDiagnostic> Diagnostics);
+
+public sealed record BusinessConsoleBomWhereUsedItem(
+    string BomKind,
+    string BomCode,
+    string Revision,
+    string ParentItemCode,
+    DateOnly? EffectiveDate,
+    decimal LineQuantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    bool Backflush = false);
+
+public sealed record BusinessConsoleBomWhereUsedResponse(
+    string ComponentCode,
+    IReadOnlyCollection<BusinessConsoleBomWhereUsedItem> Items);
 
 public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
     string OrganizationId,
@@ -1136,7 +1222,14 @@ public sealed record BusinessConsoleManufacturingBomMaterialLine(
     string SkuCode,
     decimal Quantity,
     string UnitOfMeasureCode,
-    decimal ScrapRate);
+    decimal ScrapRate,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record BusinessConsoleRecipeLine(
     string ParameterCode,

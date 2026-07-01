@@ -342,6 +342,51 @@ public sealed class GetEngineeringBomEndpoint(ISender sender)
     }
 }
 
+public sealed record GetEngineeringBomExplosionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ItemCode,
+    DateOnly EffectiveDate,
+    decimal LotSize = 1m,
+    string? BomCode = null,
+    string? Revision = null);
+
+public sealed class GetEngineeringBomExplosionEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetEngineeringBomExplosionRequest, ResponseData<BomExplosionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetEngineeringBomExplosionEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetEngineeringBomExplosionRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetEngineeringBomExplosionQuery(req.OrganizationId, req.EnvironmentId, req.ItemCode, req.EffectiveDate, req.LotSize, req.BomCode, req.Revision), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetEngineeringBomWhereUsedRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ComponentCode,
+    DateOnly EffectiveDate);
+
+public sealed class GetEngineeringBomWhereUsedEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetEngineeringBomWhereUsedRequest, ResponseData<BomWhereUsedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetEngineeringBomWhereUsedEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetEngineeringBomWhereUsedRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetEngineeringBomWhereUsedQuery(req.OrganizationId, req.EnvironmentId, req.ComponentCode, req.EffectiveDate), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record GetManufacturingBomRequest(string OrganizationId, string EnvironmentId, string BomCode, string Revision);
 
 public sealed class GetManufacturingBomEndpoint(ISender sender)
@@ -355,6 +400,51 @@ public sealed class GetManufacturingBomEndpoint(ISender sender)
     public override async Task HandleAsync(GetManufacturingBomRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetManufacturingBomQuery(req.OrganizationId, req.EnvironmentId, req.BomCode, req.Revision), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetManufacturingBomExplosionRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    DateOnly EffectiveDate,
+    decimal LotSize = 1m,
+    string? BomCode = null,
+    string? Revision = null);
+
+public sealed class GetManufacturingBomExplosionEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetManufacturingBomExplosionRequest, ResponseData<BomExplosionResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetManufacturingBomExplosionEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetManufacturingBomExplosionRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetManufacturingBomExplosionQuery(req.OrganizationId, req.EnvironmentId, req.SkuCode, req.EffectiveDate, req.LotSize, req.BomCode, req.Revision), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record GetManufacturingBomWhereUsedRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ComponentCode,
+    DateOnly EffectiveDate);
+
+public sealed class GetManufacturingBomWhereUsedEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetManufacturingBomWhereUsedRequest, ResponseData<BomWhereUsedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetManufacturingBomWhereUsedEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetManufacturingBomWhereUsedRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetManufacturingBomWhereUsedQuery(req.OrganizationId, req.EnvironmentId, req.ComponentCode, req.EffectiveDate), ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }
 }
@@ -450,8 +540,12 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(GetEngineeringItemEndpoint), "GET", "/api/business/v1/engineering/items/{itemCode}/{revision}", EngineeringPermissionCodes.ItemsRead, "getBusinessEngineeringItem"),
         new(typeof(ReleaseEngineeringBomEndpoint), "POST", "/api/business/v1/engineering/engineering-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessEngineeringBom"),
         new(typeof(GetEngineeringBomEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBom"),
+        new(typeof(GetEngineeringBomExplosionEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomExplosion"),
+        new(typeof(GetEngineeringBomWhereUsedEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/where-used", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomWhereUsed"),
         new(typeof(ReleaseManufacturingBomEndpoint), "POST", "/api/business/v1/engineering/manufacturing-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessManufacturingBom"),
         new(typeof(GetManufacturingBomEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBom"),
+        new(typeof(GetManufacturingBomExplosionEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBomExplosion"),
+        new(typeof(GetManufacturingBomWhereUsedEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/where-used", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBomWhereUsed"),
         new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(GetRoutingEndpoint), "GET", "/api/business/v1/engineering/routings/{routingCode}/{revision}", EngineeringPermissionCodes.RoutingsRead, "getBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),

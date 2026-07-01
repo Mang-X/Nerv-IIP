@@ -1234,6 +1234,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     childItemCode?: string;
     quantity?: number;
     unitOfMeasureCode?: string;
+    isPhantom?: boolean;
+    alternateGroup?: string | null;
+    alternatePriority?: number | null;
+    referenceDesignators?: string | null;
+    scrapRate?: number;
+    yieldRate?: number;
+    backflush?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListEngineeringBomsRequest = {
@@ -1245,6 +1252,82 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringBomIt
 };
 
 export type NervIipBusinessGatewayWebEndpointsProductEngineeringBusinessConsoleGetEngineeringBomRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomExplosionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionResponse = {
+    bomKind?: string;
+    selectionMode?: string;
+    root?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionNode;
+    diagnostics?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionDiagnostic>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionNode = {
+    itemCode?: string;
+    parentItemCode?: string | null;
+    bomCode?: string | null;
+    revision?: string | null;
+    effectiveDate?: string | null;
+    level?: number;
+    path?: string;
+    lineQuantity?: number;
+    requiredQuantity?: number;
+    unitOfMeasureCode?: string;
+    scrapRate?: number;
+    yieldRate?: number;
+    isPhantom?: boolean;
+    alternateGroup?: string | null;
+    alternatePriority?: number | null;
+    substituteSkuCodes?: string | null;
+    referenceDesignators?: string | null;
+    backflush?: boolean;
+    children?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionNode> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionDiagnostic = {
+    code?: string;
+    severity?: string;
+    itemCode?: string;
+    message?: string;
+    path?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomExplosionRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomWhereUsedResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomWhereUsedResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomWhereUsedResponse = {
+    componentCode?: string;
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomWhereUsedItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomWhereUsedItem = {
+    bomKind?: string;
+    bomCode?: string;
+    revision?: string;
+    parentItemCode?: string;
+    effectiveDate?: string | null;
+    lineQuantity?: number;
+    unitOfMeasureCode?: string;
+    scrapRate?: number;
+    yieldRate?: number;
+    isPhantom?: boolean;
+    alternateGroup?: string | null;
+    alternatePriority?: number | null;
+    substituteSkuCodes?: string | null;
+    referenceDesignators?: string | null;
+    backflush?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomWhereUsedRequest = {
     [key: string]: never;
 };
 
@@ -1273,6 +1356,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     unitOfMeasureCode?: string;
     scrapRate?: number;
+    isPhantom?: boolean;
+    alternateGroup?: string | null;
+    alternatePriority?: number | null;
+    substituteSkuCodes?: string | null;
+    referenceDesignators?: string | null;
+    yieldRate?: number;
+    backflush?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecipeLine = {
@@ -1290,6 +1380,10 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleManufacturingBom
 };
 
 export type NervIipBusinessGatewayWebEndpointsProductEngineeringBusinessConsoleGetManufacturingBomRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomExplosionRequest = {
     [key: string]: never;
 };
 
@@ -6605,6 +6699,85 @@ export type GetBusinessConsoleEngineeringBomResponses = {
 
 export type GetBusinessConsoleEngineeringBomResponse = GetBusinessConsoleEngineeringBomResponses[keyof GetBusinessConsoleEngineeringBomResponses];
 
+export type GetBusinessConsoleEngineeringBomExplosionData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        itemCode: string;
+        effectiveDate: string;
+        lotSize?: number;
+        bomCode?: string | null;
+        revision?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/engineering-boms/explosion';
+};
+
+export type GetBusinessConsoleEngineeringBomExplosionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringBomExplosionError = GetBusinessConsoleEngineeringBomExplosionErrors[keyof GetBusinessConsoleEngineeringBomExplosionErrors];
+
+export type GetBusinessConsoleEngineeringBomExplosionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomExplosionResponse;
+};
+
+export type GetBusinessConsoleEngineeringBomExplosionResponse = GetBusinessConsoleEngineeringBomExplosionResponses[keyof GetBusinessConsoleEngineeringBomExplosionResponses];
+
+export type GetBusinessConsoleEngineeringBomWhereUsedData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        componentCode: string;
+        effectiveDate: string;
+    };
+    url: '/api/business-console/v1/engineering/engineering-boms/where-used';
+};
+
+export type GetBusinessConsoleEngineeringBomWhereUsedErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringBomWhereUsedError = GetBusinessConsoleEngineeringBomWhereUsedErrors[keyof GetBusinessConsoleEngineeringBomWhereUsedErrors];
+
+export type GetBusinessConsoleEngineeringBomWhereUsedResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomWhereUsedResponse;
+};
+
+export type GetBusinessConsoleEngineeringBomWhereUsedResponse = GetBusinessConsoleEngineeringBomWhereUsedResponses[keyof GetBusinessConsoleEngineeringBomWhereUsedResponses];
+
 export type ListBusinessConsoleEngineeringManufacturingBomsData = {
     body?: never;
     path?: never;
@@ -6671,6 +6844,85 @@ export type GetBusinessConsoleEngineeringManufacturingBomResponses = {
 };
 
 export type GetBusinessConsoleEngineeringManufacturingBomResponse = GetBusinessConsoleEngineeringManufacturingBomResponses[keyof GetBusinessConsoleEngineeringManufacturingBomResponses];
+
+export type GetBusinessConsoleEngineeringManufacturingBomExplosionData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode: string;
+        effectiveDate: string;
+        lotSize?: number;
+        bomCode?: string | null;
+        revision?: string | null;
+    };
+    url: '/api/business-console/v1/engineering/manufacturing-boms/explosion';
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomExplosionErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomExplosionError = GetBusinessConsoleEngineeringManufacturingBomExplosionErrors[keyof GetBusinessConsoleEngineeringManufacturingBomExplosionErrors];
+
+export type GetBusinessConsoleEngineeringManufacturingBomExplosionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomExplosionResponse;
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomExplosionResponse = GetBusinessConsoleEngineeringManufacturingBomExplosionResponses[keyof GetBusinessConsoleEngineeringManufacturingBomExplosionResponses];
+
+export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        componentCode: string;
+        effectiveDate: string;
+    };
+    url: '/api/business-console/v1/engineering/manufacturing-boms/where-used';
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedError = GetBusinessConsoleEngineeringManufacturingBomWhereUsedErrors[keyof GetBusinessConsoleEngineeringManufacturingBomWhereUsedErrors];
+
+export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomWhereUsedResponse;
+};
+
+export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedResponse = GetBusinessConsoleEngineeringManufacturingBomWhereUsedResponses[keyof GetBusinessConsoleEngineeringManufacturingBomWhereUsedResponses];
 
 export type ReleaseBusinessConsoleEngineeringManufacturingBomData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseManufacturingBomRequest;

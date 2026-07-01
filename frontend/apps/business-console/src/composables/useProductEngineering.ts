@@ -16,10 +16,14 @@ import {
   createBusinessConsoleEngineeringItemRevisionMutationOptions,
   createBusinessConsoleEngineeringProductionVersionMutationOptions,
   getBusinessConsoleEngineeringBom,
+  getBusinessConsoleEngineeringBomExplosion,
+  getBusinessConsoleEngineeringBomWhereUsed,
   getBusinessConsoleEngineeringChange,
   getBusinessConsoleEngineeringDocument,
   getBusinessConsoleEngineeringItem,
   getBusinessConsoleEngineeringManufacturingBom,
+  getBusinessConsoleEngineeringManufacturingBomExplosion,
+  getBusinessConsoleEngineeringManufacturingBomWhereUsed,
   getBusinessConsoleEngineeringRouting,
   listBusinessConsoleEngineeringBomsQueryOptions,
   listBusinessConsoleEngineeringChangesQueryOptions,
@@ -39,6 +43,10 @@ import {
   releaseBusinessConsoleEngineeringRoutingMutationOptions,
   resolveBusinessConsoleEngineeringProductionVersion,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
+  type BusinessConsoleBomExplosionEnvelope,
+  type BusinessConsoleBomExplosionResponse,
+  type BusinessConsoleBomWhereUsedEnvelope,
+  type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleCreateEngineeringItemRevisionRequest,
   type BusinessConsoleCreateProductionVersionRequest,
   type BusinessConsoleEngineeringBomDetailEnvelope,
@@ -150,6 +158,19 @@ export interface EngineeringChangeListFilters {
   take: number
 }
 
+export interface BomExplosionInput {
+  code: string
+  effectiveDate: string
+  lotSize?: number
+  bomCode?: string
+  revision?: string
+}
+
+export interface BomWhereUsedInput {
+  componentCode: string
+  effectiveDate: string
+}
+
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
@@ -181,6 +202,109 @@ function isBusinessQuery(id: string) {
 }
 
 function ignoreBackgroundError(_error: unknown) {}
+
+export function useBomAnalysis() {
+  const context = useBusinessContextStore()
+  const explosion = shallowRef<BusinessConsoleBomExplosionResponse>()
+  const whereUsed = shallowRef<BusinessConsoleBomWhereUsedResponse>()
+  const pending = ref(false)
+  const error = ref<unknown>()
+
+  async function run<T>(work: () => Promise<T>): Promise<T | undefined> {
+    pending.value = true
+    error.value = undefined
+    try {
+      return await work()
+    }
+    catch (err) {
+      error.value = err
+      throw err
+    }
+    finally {
+      pending.value = false
+    }
+  }
+
+  function commonQuery() {
+    return {
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+    }
+  }
+
+  return {
+    explosion,
+    whereUsed,
+    pending,
+    error,
+    loadEngineeringExplosion: (input: BomExplosionInput) =>
+      run(async () => {
+        const res = await getBusinessConsoleEngineeringBomExplosion({
+          query: {
+            ...commonQuery(),
+            itemCode: input.code,
+            effectiveDate: input.effectiveDate,
+            ...optionalQuery('lotSize', input.lotSize),
+            ...optionalQuery('bomCode', input.bomCode),
+            ...optionalQuery('revision', input.revision),
+          },
+        })
+        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(
+          res as { data?: BusinessConsoleBomExplosionEnvelope },
+        )
+        whereUsed.value = undefined
+        return explosion.value
+      }),
+    loadManufacturingExplosion: (input: BomExplosionInput) =>
+      run(async () => {
+        const res = await getBusinessConsoleEngineeringManufacturingBomExplosion({
+          query: {
+            ...commonQuery(),
+            skuCode: input.code,
+            effectiveDate: input.effectiveDate,
+            ...optionalQuery('lotSize', input.lotSize),
+            ...optionalQuery('bomCode', input.bomCode),
+            ...optionalQuery('revision', input.revision),
+          },
+        })
+        explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(
+          res as { data?: BusinessConsoleBomExplosionEnvelope },
+        )
+        whereUsed.value = undefined
+        return explosion.value
+      }),
+    loadEngineeringWhereUsed: (input: BomWhereUsedInput) =>
+      run(async () => {
+        const res = await getBusinessConsoleEngineeringBomWhereUsed({
+          query: {
+            ...commonQuery(),
+            componentCode: input.componentCode,
+            effectiveDate: input.effectiveDate,
+          },
+        })
+        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(
+          res as { data?: BusinessConsoleBomWhereUsedEnvelope },
+        )
+        explosion.value = undefined
+        return whereUsed.value
+      }),
+    loadManufacturingWhereUsed: (input: BomWhereUsedInput) =>
+      run(async () => {
+        const res = await getBusinessConsoleEngineeringManufacturingBomWhereUsed({
+          query: {
+            ...commonQuery(),
+            componentCode: input.componentCode,
+            effectiveDate: input.effectiveDate,
+          },
+        })
+        whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(
+          res as { data?: BusinessConsoleBomWhereUsedEnvelope },
+        )
+        explosion.value = undefined
+        return whereUsed.value
+      }),
+  }
+}
 
 /**
  * 生产版本列表（list + filters）+ 三件套写操作（create/update/archive）。

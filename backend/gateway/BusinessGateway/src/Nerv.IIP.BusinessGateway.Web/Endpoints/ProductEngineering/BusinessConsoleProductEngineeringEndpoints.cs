@@ -236,6 +236,58 @@ public sealed class GetBusinessConsoleEngineeringBomEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/engineering-boms/explosion")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringBomExplosion")]
+public sealed class GetBusinessConsoleEngineeringBomExplosionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBomExplosionRequest, BusinessConsoleBomExplosionResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleBomExplosionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBomExplosionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleBomExplosionRequest request) => "engineering-bom";
+
+    protected override string? ResourceId(BusinessConsoleBomExplosionRequest request) => request.ItemCode;
+
+    protected override Task<BusinessConsoleBomExplosionResponse> ForwardAsync(
+        BusinessConsoleBomExplosionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringBomExplosionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/engineering-boms/where-used")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringBomWhereUsed")]
+public sealed class GetBusinessConsoleEngineeringBomWhereUsedEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBomWhereUsedRequest, BusinessConsoleBomWhereUsedResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleBomWhereUsedRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBomWhereUsedRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleBomWhereUsedRequest request) => "engineering-bom-component";
+
+    protected override string? ResourceId(BusinessConsoleBomWhereUsedRequest request) => request.ComponentCode;
+
+    protected override Task<BusinessConsoleBomWhereUsedResponse> ForwardAsync(
+        BusinessConsoleBomWhereUsedRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetEngineeringBomWhereUsedAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpGet("/api/business-console/v1/engineering/manufacturing-boms")]
 [BusinessGatewayOperationId("listBusinessConsoleEngineeringManufacturingBoms")]
 public sealed class ListBusinessConsoleEngineeringManufacturingBomsEndpoint(
@@ -287,6 +339,58 @@ public sealed class GetBusinessConsoleEngineeringManufacturingBomEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         engineering.GetManufacturingBomAsync(tokenProvider.BearerToken, request.BomCode, request.Revision, new BusinessConsoleEngineeringContextRequest(request.OrganizationId, request.EnvironmentId), cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/manufacturing-boms/explosion")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringManufacturingBomExplosion")]
+public sealed class GetBusinessConsoleEngineeringManufacturingBomExplosionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleManufacturingBomExplosionRequest, BusinessConsoleBomExplosionResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleManufacturingBomExplosionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleManufacturingBomExplosionRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleManufacturingBomExplosionRequest request) => "manufacturing-bom";
+
+    protected override string? ResourceId(BusinessConsoleManufacturingBomExplosionRequest request) => request.SkuCode;
+
+    protected override Task<BusinessConsoleBomExplosionResponse> ForwardAsync(
+        BusinessConsoleManufacturingBomExplosionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetManufacturingBomExplosionAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpGet("/api/business-console/v1/engineering/manufacturing-boms/where-used")]
+[BusinessGatewayOperationId("getBusinessConsoleEngineeringManufacturingBomWhereUsed")]
+public sealed class GetBusinessConsoleEngineeringManufacturingBomWhereUsedEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleBomWhereUsedRequest, BusinessConsoleBomWhereUsedResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringBomsRead)
+{
+    protected override string OrganizationId(BusinessConsoleBomWhereUsedRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleBomWhereUsedRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleBomWhereUsedRequest request) => "manufacturing-bom-component";
+
+    protected override string? ResourceId(BusinessConsoleBomWhereUsedRequest request) => request.ComponentCode;
+
+    protected override Task<BusinessConsoleBomWhereUsedResponse> ForwardAsync(
+        BusinessConsoleBomWhereUsedRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.GetManufacturingBomWhereUsedAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Product Engineering")]
@@ -782,6 +886,29 @@ public sealed class BusinessConsoleReleaseEngineeringBomRequestValidator : Valid
     }
 }
 
+public sealed class BusinessConsoleBomExplosionRequestValidator : Validator<BusinessConsoleBomExplosionRequest>
+{
+    public BusinessConsoleBomExplosionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LotSize).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.BomCode).MaximumLength(100);
+        RuleFor(x => x.Revision).MaximumLength(50);
+    }
+}
+
+public sealed class BusinessConsoleBomWhereUsedRequestValidator : Validator<BusinessConsoleBomWhereUsedRequest>
+{
+    public BusinessConsoleBomWhereUsedRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ComponentCode).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class BusinessConsoleReleaseManufacturingBomRequestValidator : Validator<BusinessConsoleReleaseManufacturingBomRequest>
 {
     public BusinessConsoleReleaseManufacturingBomRequestValidator()
@@ -807,6 +934,19 @@ public sealed class BusinessConsoleReleaseManufacturingBomRequestValidator : Val
             line.RuleFor(x => x.TargetValue).NotEmpty().MaximumLength(200);
             line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
         });
+    }
+}
+
+public sealed class BusinessConsoleManufacturingBomExplosionRequestValidator : Validator<BusinessConsoleManufacturingBomExplosionRequest>
+{
+    public BusinessConsoleManufacturingBomExplosionRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LotSize).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.BomCode).MaximumLength(100);
+        RuleFor(x => x.Revision).MaximumLength(50);
     }
 }
 

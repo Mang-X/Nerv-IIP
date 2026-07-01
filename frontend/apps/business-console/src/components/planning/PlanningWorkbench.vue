@@ -38,8 +38,9 @@ import {
   TabsProList,
   TabsProTrigger,
 } from '@nerv-iip/ui'
-import { CornerDownRightIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CornerDownRightIcon, NetworkIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
+import { useRouter } from 'vue-router'
 
 const {
   createDemandError,
@@ -66,6 +67,7 @@ const {
   suggestionsError,
   suggestionsPending,
 } = useBusinessPlanning()
+const router = useRouter()
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
 const { skus } = useBusinessSkus()
@@ -323,6 +325,35 @@ function inputDegradationSourceLabel(source: string) {
     'master-data-planning-parameters': '主数据规划参数',
   } as Record<string, string>)[source] ?? source
 }
+
+function parseVersionReference(reference?: string | null) {
+  if (!reference) return {}
+  const separator = reference.lastIndexOf(':')
+  if (separator <= 0 || separator >= reference.length - 1) return {}
+  return {
+    bomCode: reference.slice(0, separator),
+    revision: reference.slice(separator + 1),
+  }
+}
+
+function bomAnalysisQuery(row: BusinessConsoleMrpPeggingItem) {
+  return {
+    kind: 'manufacturing',
+    view: 'tree',
+    skuCode: row.parentSkuCode ?? row.componentSkuCode ?? '',
+    componentCode: row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode ? row.componentSkuCode : undefined,
+    effectiveDate: selectedRun.value?.horizonStart ?? new Date().toISOString().slice(0, 10),
+    lotSize: String(row.quantity ?? 1),
+    ...parseVersionReference(row.manufacturingBomReference),
+  }
+}
+
+function openBomContext(row: BusinessConsoleMrpPeggingItem) {
+  void router.push({
+    path: '/engineering/bom-analysis',
+    query: bomAnalysisQuery(row),
+  })
+}
 </script>
 
 <template>
@@ -547,9 +578,15 @@ function inputDegradationSourceLabel(source: string) {
           </template>
           <template #cell-quantity="{ row }"><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template>
           <template #cell-engineeringRef="{ row }">
-            <div class="flex flex-col gap-0.5">
-              <span>{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '—' }}</span>
-              <span v-if="row.routingReference" class="text-xs text-muted-foreground">工艺 {{ row.routingReference }}</span>
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span>{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '—' }}</span>
+                <span v-if="row.routingReference" class="text-xs text-muted-foreground">工艺 {{ row.routingReference }}</span>
+              </div>
+              <ButtonPro v-if="row.parentSkuCode || row.componentSkuCode" size="sm" type="button" variant="ghost" @click="openBomContext(row)">
+                <NetworkIcon aria-hidden="true" />
+                查看 BOM
+              </ButtonPro>
             </div>
           </template>
         </DataTablePro>

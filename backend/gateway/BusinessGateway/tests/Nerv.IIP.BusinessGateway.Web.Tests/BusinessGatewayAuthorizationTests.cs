@@ -794,9 +794,13 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/items/ITEM-001/A", BusinessGatewayPermissions.EngineeringItemsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/EBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/explosion?itemCode=FG-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/where-used?componentCode=RM-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/MBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/explosion?skuCode=FG-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/where-used?componentCode=RM-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/manufacturing-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings/RTG-001/A", BusinessGatewayPermissions.EngineeringRoutingsRead);

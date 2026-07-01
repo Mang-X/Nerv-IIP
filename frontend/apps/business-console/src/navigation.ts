@@ -112,6 +112,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
         { title: '工程物料', icon: BoxIcon, to: { path: '/engineering/items' }, requiredPermissions: [P.engineeringItemsRead] },
         { title: '设计 BOM', icon: NetworkIcon, to: { path: '/engineering/ebom' }, requiredPermissions: [P.engineeringBomsRead] },
         { title: '制造 BOM', icon: GitForkIcon, to: { path: '/engineering/mbom' }, requiredPermissions: [P.engineeringBomsRead] },
+        { title: 'BOM 分析', icon: FolderTreeIcon, to: { path: '/engineering/bom-analysis' }, requiredPermissions: [P.engineeringBomsRead] },
       ],
     },
     {
