@@ -39,7 +39,7 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '维护工单' } })
+definePage({ meta: { requiresAuth: true, title: '维护工单', requiredPermissions: ['business.maintenance.work-orders.read'] } })
 
 const {
   workOrders,

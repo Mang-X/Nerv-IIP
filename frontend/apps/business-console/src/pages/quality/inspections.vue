@@ -37,7 +37,7 @@ import { ClipboardCheckIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '检验任务与记录' } })
+definePage({ meta: { requiresAuth: true, title: '检验任务与记录', requiredPermissions: ['business.quality.inspection-records.read'] } })
 
 const route = useRoute()
 const initialInspectionPlanKeyword = firstQuery(route.query.inspectionPlanId)

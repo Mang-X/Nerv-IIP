@@ -48,7 +48,7 @@ import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 import { mergeReferenceOptions } from '@/data/masterDataReference'
 
-definePage({ meta: { requiresAuth: true, title: '计量单位' } })
+definePage({ meta: { requiresAuth: true, title: '计量单位', requiredPermissions: ['business.masterdata.products.read'] } })
 
 interface Option { value: string, label: string }
 

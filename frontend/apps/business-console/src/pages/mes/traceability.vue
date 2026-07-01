@@ -19,7 +19,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '追溯查询' } })
+definePage({ meta: { requiresAuth: true, title: '追溯查询', requiredPermissions: ['business.mes.traceability.read'] } })
 
 const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } = useMesTraceability()
 

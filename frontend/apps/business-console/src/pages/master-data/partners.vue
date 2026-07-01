@@ -36,7 +36,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '业务伙伴' } })
+definePage({ meta: { requiresAuth: true, title: '业务伙伴', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 const {
   createPartner,

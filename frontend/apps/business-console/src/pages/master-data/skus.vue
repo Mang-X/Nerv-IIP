@@ -52,7 +52,7 @@ import {
   mergeReferenceOptions,
 } from '@/data/masterDataReference'
 
-definePage({ meta: { requiresAuth: true, title: '物料与产品' } })
+definePage({ meta: { requiresAuth: true, title: '物料与产品', requiredPermissions: ['business.masterdata.products.read'] } })
 
 const {
   createSku,

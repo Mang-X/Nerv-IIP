@@ -59,7 +59,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '生产版本' } })
+definePage({ meta: { requiresAuth: true, title: '生产版本', requiredPermissions: ['business.engineering.production-versions.read'] } })
 
 const {
   archiveProductionVersion,

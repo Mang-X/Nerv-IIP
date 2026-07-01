@@ -16,7 +16,7 @@ import { EyeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备报警' } })
+definePage({ meta: { requiresAuth: true, title: '设备报警', requiredPermissions: ['business.iiot.alarms.read'] } })
 
 const router = useRouter()
 const { alarms, alarmsError, alarmsPending, refreshAlarms } = useBusinessEquipmentAlarms()

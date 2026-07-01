@@ -12,7 +12,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '报工记录' } })
+definePage({ meta: { requiresAuth: true, title: '报工记录', requiredPermissions: ['business.mes.reporting.read'] } })
 
 const {
   filters,

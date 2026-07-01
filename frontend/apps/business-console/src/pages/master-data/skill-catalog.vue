@@ -40,7 +40,7 @@ import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '技能目录' } })
+definePage({ meta: { requiresAuth: true, title: '技能目录', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 const {
   archiveSkill,

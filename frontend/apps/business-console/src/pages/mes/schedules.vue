@@ -32,7 +32,7 @@ import {
 import { PlayIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '规则排程' } })
+definePage({ meta: { requiresAuth: true, title: '规则排程', requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'] } })
 
 const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
 

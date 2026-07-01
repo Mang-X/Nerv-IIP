@@ -22,7 +22,7 @@ import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '质量与不良' } })
+definePage({ meta: { requiresAuth: true, title: '质量与不良', requiredPermissions: ['business.mes.quality.read'] } })
 
 const route = useRoute()
 const { filters, qualityItems, qualityItemsError, qualityItemsPending, qualityItemsTotal, refreshQualityItems } = useMesRelatedQualityItems()

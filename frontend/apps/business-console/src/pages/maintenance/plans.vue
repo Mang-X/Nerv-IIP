@@ -34,7 +34,7 @@ import {
 import { CalendarClockIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '保养计划' } })
+definePage({ meta: { requiresAuth: true, title: '保养计划', requiredPermissions: ['business.maintenance.plans.read'] } })
 
 const {
   plans,

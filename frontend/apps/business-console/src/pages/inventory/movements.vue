@@ -28,7 +28,7 @@ import { SendIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '库存移动过账' } })
+definePage({ meta: { requiresAuth: true, title: '库存移动过账', requiredPermissions: ['business.inventory.movements.create'] } })
 
 const route = useRoute()
 const businessContext = useBusinessContextStore()

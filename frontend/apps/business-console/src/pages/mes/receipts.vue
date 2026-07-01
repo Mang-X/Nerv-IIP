@@ -36,7 +36,7 @@ import { EyeIcon, PackageCheckIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '完工入库' } })
+definePage({ meta: { requiresAuth: true, title: '完工入库', requiredPermissions: ['business.mes.receipts.read'] } })
 
 const {
   createReceiptRequest,

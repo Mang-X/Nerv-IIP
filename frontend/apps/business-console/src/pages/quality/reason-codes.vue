@@ -44,7 +44,7 @@ import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '原因码目录' } })
+definePage({ meta: { requiresAuth: true, title: '原因码目录', requiredPermissions: ['business.quality.ncr.manage'] } })
 
 const {
   archiveReason,

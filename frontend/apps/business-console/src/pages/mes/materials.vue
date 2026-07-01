@@ -23,7 +23,7 @@ import { ArrowUpRightIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '领料与齐套' } })
+definePage({ meta: { requiresAuth: true, title: '领料与齐套', requiredPermissions: ['business.mes.materials.read'] } })
 
 const {
   filters,

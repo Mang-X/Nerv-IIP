@@ -36,7 +36,7 @@ import { RefreshCwIcon, UserCheckIcon } from 'lucide-vue-next'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '派工看板' } })
+definePage({ meta: { requiresAuth: true, title: '派工看板', requiredPermissions: ['business.mes.dispatch.read'] } })
 
 const {
   assignDispatchTask,

@@ -6,6 +6,11 @@ definePage({
   meta: {
     requiresAuth: true,
     title: '需求与计划',
+    requiredPermissions: [
+      'business.planning.demands.read',
+      'business.planning.mrp.read',
+      'business.planning.suggestions.manage',
+    ],
   },
 })
 </script>

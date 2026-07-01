@@ -46,7 +46,7 @@ import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '不合格品处理' } })
+definePage({ meta: { requiresAuth: true, title: '不合格品处理', requiredPermissions: ['business.quality.ncr.read'] } })
 
 const route = useRoute()
 const initialNcrKeyword = firstQuery(route.query.ncrId)

@@ -34,7 +34,7 @@ import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '生产计划' } })
+definePage({ meta: { requiresAuth: true, title: '生产计划', requiredPermissions: ['business.mes.plans.read'] } })
 
 const {
   convertPlanToWorkOrder,

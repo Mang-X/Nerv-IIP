@@ -53,7 +53,7 @@ import {
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工单与派工' } })
+definePage({ meta: { requiresAuth: true, title: '工单与派工', requiredPermissions: ['business.mes.work-orders.read'] } })
 
 type Row = BusinessConsoleMesWorkOrderItem
 

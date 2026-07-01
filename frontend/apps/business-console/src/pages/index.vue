@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { BadgePro } from '@nerv-iip/ui'
 
 definePage({
   meta: {
     requiresAuth: true,
     title: '业务工作台',
+    requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.workbench],
   },
 })
 
