@@ -82,13 +82,13 @@
 | `frontend/packages/app-shell/src/AppShell.vue` | 旧两级侧栏壳层，仍接收 `navItems`；迁移期保留以兼容尚未迁移的消费方。 | 已被 T 型 `AppShellT` 取代为长期形态；新页面不应再用旧 `AppShell`。 |
 | `frontend/packages/app-shell/src/AppShellT.vue` | FE-3 落地的 T 型壳层：顶部一级能力区（`NavTopDomains`，超出进入“更多”溢出）、左侧域内菜单（`NavSide`）、命令搜索入口（⌘/Ctrl+K + 按钮，占位待 FE-13）、顶部用户菜单、近期/星标入口；基于 FE-2 `AppShellInset`（dashboard-01 inset）。类型 `NavDomain`/`NavLink`/`NavGroup`/`SideNav`/`OverflowStrategy`/`ShellUser` 位于 `@nerv-iip/app-shell` 稳定导出。 | 命令搜索面板实装、应用切换器（九宫格）strategy 仍待后续；Console 已随 FE-10 迁入 `AppShellT`。 |
 | `frontend/apps/console/src/layouts/DefaultLayout.vue` | 已随 FE-10 迁移到 `AppShellT`：顶部一级域（实例/通知/业务/IAM）+ IAM 域内菜单（用户/角色/会话）+ route→域解析 + 用户菜单/退出。IAM 用户/角色/会话三页已随 FE-10 batch 2 迁到 FE-2 块（`PageHeader`/`Toolbar`/`DataTable`/`DataTablePagination` + 行常用操作显式按钮，文案统一中文，服务端分页/搜索沿用 composable）；运维任务详情/`OperationTimeline` 与通知页已随 batch 3 迁（`PageHeader` + `SectionCards` + `StatusBadge`，删除 `NotificationToolbar`，文案统一中文）；实例看板 `pages/index` + `InstanceTable` + `InstanceDetailPanel` 已随 batch 4 迁（`PageHeader` + `DataTable` + `StatusBadge`，文案中文，状态走 i18n）。至此 FE-10 命名页（IAM/运维/通知/实例）全部 block 化。`pages/business/index`（业务平台状态）已随 batch 5 迁到 `PageHeader` + `SectionCards` + `DataTable` + `StatusBadge` 并中文化，**移除 UI 中的工程 issue 号**（#-引用），以 business-facing 状态/范围语言呈现；`pages/login` + `LoginForm` 经核实早已是 i18n + shadcn 原语（默认 zh-CN 渲染中文），无需迁移。 | 命令搜索入口占位；主题切换待后续补；console 页面 block 化已覆盖全部可见页。 |
-| `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 已迁移到 `AppShellT`，导航模型由 `frontend/apps/business-console/src/navigation.ts` 驱动（顶部能力域 + 域内菜单 + route→域解析 + `permittedBy` RBAC/feature-flag 裁剪钩子），顶部集成命令搜索占位、主题色/亮暗切换和用户菜单。 | RBAC 仅落地裁剪机制，具体 permission code 仍按域逐步挂接；Gateway enforcement 为权威。 |
+| `frontend/apps/business-console/src/layouts/BusinessLayout.vue` | 已迁移到 `AppShellT`，导航模型由 `frontend/apps/business-console/src/navigation.ts` 驱动（顶部能力域 + 域内菜单 + route→域解析 + `permittedBy` RBAC/feature-flag 裁剪钩子），顶部集成命令搜索占位、主题色/亮暗切换和用户菜单。MAN-330/#621 后，顶层域、域内菜单和 route meta 已挂接 BusinessGateway/IAM catalog permission code。 | Gateway enforcement 仍是权威；前端裁剪只做体验收敛。命令搜索面板实装后也必须复用同一 permission 口径。 |
 
 ### AppShell T 型导航解锁路径
 
 约束 #17 不是永久禁止 T 型导航，而是要求先把公共壳层能力做成稳定契约，再迁移 Console 和 Business Console。AppShell 演进由 #236 承接；新增 ERP/WMS/BarcodeLabel/Approval/Telemetry/Maintenance 等大域到可见导航前，必须先完成该 issue 的公共 API 和迁移门禁。
 
-> **状态（2026-06-04 校验，FE-3 / #278 / #236）：最小 API 契约已落地。** `@nerv-iip/app-shell` 已导出 `AppShellT` 及稳定类型，覆盖 `topDomains`、`currentDomainId`、`sideNavItems`（`SideNav`）、`overflowStrategy='more'`、用户菜单、命令搜索入口和近期/星标入口；旧 `navItems` 经 `AppShell` 保留兼容。Business Console 已迁移到 `AppShellT` 并按 `navigation.ts` 做权限/角色/feature-flag 裁剪（机制就位，permission code 逐步挂接）。Console 迁移与命令搜索面板实装仍待后续。门禁已过：`@nerv-iip/app-shell` typecheck + test、Business Console typecheck/build。**因此“新增大域到可见导航前必须先完成 #236”的解锁前置条件已满足。**
+> **状态（2026-07-01 校验，FE-3 / #278 / #236 / MAN-330 #621）：最小 API 契约与 Business Console 权限挂接已落地。** `@nerv-iip/app-shell` 已导出 `AppShellT` 及稳定类型，覆盖 `topDomains`、`currentDomainId`、`sideNavItems`（`SideNav`）、`overflowStrategy='more'`、用户菜单、命令搜索入口和近期/星标入口；旧 `navItems` 经 `AppShell` 保留兼容。Business Console 已迁移到 `AppShellT`，并按 `navigation.ts` 的 `requiredPermissions` 对顶部域和域内菜单做权限裁剪；核心 route-ready 页面也在 `definePage` meta 上声明同一 permission 语义。Console 迁移与命令搜索面板实装仍待后续。门禁已过：`@nerv-iip/app-shell` typecheck + test、Business Console typecheck/build。**因此“新增大域到可见导航前必须先完成 #236”的解锁前置条件已满足。**
 
 | 项 | 要求 |
 | --- | --- |
@@ -320,7 +320,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 > **仓储作业（FE-11 #286，2026-07-01 复核）：** 后端 WMS facade（#264/#374）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 列表已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤，前端用 `usePagedList` + `DataTablePagination`，无假分页；#374 的上架任务、拣货任务和盘点执行 list facade 已接入 Business Console 页面与 PDA WMS 页面。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。
 
-裁剪规则：`permittedBy` 对未声明 `requiredPermissions` 的域/项默认放行（当前为宽松默认，匹配现有 route-ready 行为）；挂接具体 permission code 后按角色裁剪。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13。
+裁剪规则：`BUSINESS_DOMAINS` 顶层域、`DOMAIN_SIDE_NAV` 侧栏项和核心 route-ready 页面 `definePage.meta.requiredPermissions` 使用同一组 BusinessGateway/IAM permission code，均为 OR 语义；用户拥有任一声明权限即可看到对应入口或进入页面。`workbench` 是角色入口，绑定当前 Business Console 已接入业务域和待办来源的权限并随任一业务权限可见。导航隐藏只是 UX，Gateway per-request enforcement 仍是权威；直达无权页面时前端跳转到无权限空态，后端 401/403 仍作为最终保护。命令搜索（⌘/Ctrl+K）入口已在顶部占位，面板实装在 FE-13，搜索结果也必须复用同一裁剪规则。
 
 ## 菜单项升级门禁
 

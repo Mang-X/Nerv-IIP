@@ -19,7 +19,7 @@ import { ArrowLeftIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备详情' } })
+definePage({ meta: { requiresAuth: true, title: '设备详情', requiredPermissions: ['business.iiot.telemetry.read'] } })
 
 const route = useRoute()
 const router = useRouter()

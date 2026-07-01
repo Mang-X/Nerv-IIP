@@ -35,7 +35,7 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '盘点执行' } })
+definePage({ meta: { requiresAuth: true, title: '盘点执行', requiredPermissions: ['business.wms.receipts.read'] } })
 
 const {
   countExecutions,

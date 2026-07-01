@@ -28,7 +28,7 @@ import { ClipboardCheckIcon, EyeIcon, RefreshCwIcon, ShieldCheckIcon, WrenchIcon
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工序执行' } })
+definePage({ meta: { requiresAuth: true, title: '工序执行', requiredPermissions: ['business.mes.operations.read'] } })
 
 type Row = BusinessConsoleMesOperationTaskRow
 

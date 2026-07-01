@@ -21,7 +21,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '采购与供应' } })
+definePage({ meta: { requiresAuth: true, title: '采购与供应', requiredPermissions: ['business.erp.procurement.read'] } })
 
 interface ProcurementRow {
   purchaseOrderNo: string

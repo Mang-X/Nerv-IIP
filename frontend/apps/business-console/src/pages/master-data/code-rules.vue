@@ -38,7 +38,7 @@ import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '编码规则' } })
+definePage({ meta: { requiresAuth: true, title: '编码规则', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 const {
   filters,

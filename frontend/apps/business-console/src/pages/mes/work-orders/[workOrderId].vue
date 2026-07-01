@@ -14,7 +14,7 @@ import { ClipboardCheckIcon, PackageCheckIcon, RefreshCwIcon, ShieldCheckIcon } 
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工单详情' } })
+definePage({ meta: { requiresAuth: true, title: '工单详情', requiredPermissions: ['business.mes.work-orders.read'] } })
 
 const route = useRoute()
 const router = useRouter()

@@ -23,7 +23,7 @@ import { ActivityIcon, BellRingIcon, EyeIcon, RefreshCwIcon, WrenchIcon } from '
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备运行看板' } })
+definePage({ meta: { requiresAuth: true, title: '设备运行看板', requiredPermissions: ['business.iiot.telemetry.read'] } })
 
 const router = useRouter()
 const { activeBlocks, devices, filters, overviewError, overviewPending, refreshOverview } = useBusinessEquipmentOverview()

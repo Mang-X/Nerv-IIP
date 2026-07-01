@@ -68,6 +68,52 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
   })
 
+  it('trims top domains and side navigation by principal permissions', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: ['business.inventory.ledger.read'],
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    const domains = shell.props('topDomains') as Domain[]
+    expect(domains.map((d) => d.id)).toEqual(['workbench', 'inventory'])
+
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量'])
+  })
+
+  it('drops side navigation groups after permission trimming removes every item', () => {
+    routeState.path = '/wms/wcs'
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: ['business.wms.automation.manage'],
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    const domains = shell.props('topDomains') as Domain[]
+    expect(domains.map((d) => d.id)).toEqual(['workbench', 'wms'])
+
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav).toHaveLength(1)
+    expect(sideNav[0]?.items.map((i) => i.title)).toEqual(['WCS 任务'])
+  })
+
   it('resolves WMS routes to the 仓储作业 domain', () => {
     routeState.path = '/wms/inbound'
     const wrapper = mountLayout()

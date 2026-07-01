@@ -61,7 +61,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '排班与日历' } })
+definePage({ meta: { requiresAuth: true, title: '排班与日历', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
 const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')

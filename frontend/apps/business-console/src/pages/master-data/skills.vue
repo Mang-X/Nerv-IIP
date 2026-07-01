@@ -46,7 +46,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { formatDate } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '人员技能' } })
+definePage({ meta: { requiresAuth: true, title: '人员技能', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 // 人员技能：矩阵（工人 × 技能，一屏可读「谁会什么、到期没」）+ 登记 Dialog（录入/更新某工人某技能等级）。
 const matrix = usePersonnelSkillMatrix()

@@ -21,7 +21,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, ref, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '在制跟踪' } })
+definePage({ meta: { requiresAuth: true, title: '在制跟踪', requiredPermissions: ['business.mes.operations.read'] } })
 
 const { filters, refreshWip, wipError, wipPending, wipRows, wipTotal } = useMesWipSummary()
 const { resolveWorkCenter } = useMesDisplayNames()

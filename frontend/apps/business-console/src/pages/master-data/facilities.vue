@@ -47,7 +47,7 @@ import { RouterLink } from 'vue-router'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '工厂结构' } })
+definePage({ meta: { requiresAuth: true, title: '工厂结构', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 // 列表端点有分页上限（默认 take=100），层级树需尽量全量拼装：用较大 take 兜底。
 // 真正全量需后端全量端点（#373），超过此阈值的层级在树底给出提示。

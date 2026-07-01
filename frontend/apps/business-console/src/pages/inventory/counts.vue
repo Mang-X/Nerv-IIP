@@ -27,7 +27,7 @@ import { CheckCircle2Icon, ClipboardPlusIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '库存盘点' } })
+definePage({ meta: { requiresAuth: true, title: '库存盘点', requiredPermissions: ['business.inventory.counts.manage'] } })
 
 const route = useRoute()
 const {
