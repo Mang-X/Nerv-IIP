@@ -84,7 +84,7 @@ describe('business scheduling composable', () => {
     const { detailSelection, planDetail, plans } = useBusinessScheduling()
 
     expect(listBusinessConsoleSchedulingPlansQueryOptions).toHaveBeenCalledWith({
-      query: { organizationId: 'org-002', environmentId: 'prod', pageIndex: 1, pageSize: 20 },
+      query: { organizationId: 'org-002', environmentId: 'prod', pageIndex: 1, pageSize: 100 },
     })
     expect(getBusinessConsoleSchedulingPlanQueryOptions).toHaveBeenCalledWith({
       path: { planId: '' },

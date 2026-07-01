@@ -43,9 +43,8 @@ definePage({
 
 const {
   detailSelection,
-  page,
-  pageSize,
   planDetail,
+  planDetailError,
   planDetailPending,
   plans,
   plansPending,
@@ -61,7 +60,7 @@ const columns: DataTableProColumn<BusinessConsoleSchedulingPlanSummaryResponse>[
   { key: 'planId', header: '排程方案', cellClass: 'font-medium', accessor: (row) => row.planId ?? '未命名方案' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'range', header: '时间范围', accessor: () => '明细中确认' },
-  { key: 'resourceOperations', header: '资源 / 工序', accessor: (row) => `${row.assignmentCount ?? 0} 道工序` },
+  { key: 'operationCount', header: '工序数', accessor: (row) => `${row.assignmentCount ?? 0} 道工序` },
   { key: 'conflicts', header: '冲突摘要', accessor: conflictSummary },
   { key: 'generatedAtUtc', header: '创建时间', width: 'w-44' },
   { key: 'actions', header: '操作', width: 'w-40', align: 'end' },
@@ -73,6 +72,11 @@ const selectedResourceCount = computed(() => {
     .map((load) => load.resourceId)
     .filter((value): value is string => Boolean(value)))
   return resourceIds.size
+})
+const detailFeedback = computed(() => {
+  if (planDetailError.value) return '明细加载失败，请稍后重试。'
+  if (detailSelection.planId) return '未返回方案明细。'
+  return '请选择一个排程方案查看明细。'
 })
 
 function rowKey(row: BusinessConsoleSchedulingPlanSummaryResponse) {
@@ -218,10 +222,7 @@ function reasonLabel(reason?: string | null) {
 
       <TabsProContent value="table" class="grid gap-4">
         <DataTablePro
-          manual
-          :page="page"
-          :page-size="pageSize"
-          :total-items="plans.length"
+          :pagination="false"
           :columns="columns"
           :rows="plans"
           :row-key="rowKey"
@@ -229,8 +230,6 @@ function reasonLabel(reason?: string | null) {
           :searchable="false"
           :column-settings="false"
           empty-message="暂无 APS 排程方案。请先通过排程服务生成方案。"
-          @update:page="page = $event"
-          @update:page-size="(value) => (pageSize = String(value))"
         >
           <template #cell-status="{ row }">
             <StatusBadgePro :label="statusLabel(row.status)" :tone="statusTone(row.status)" />
@@ -365,6 +364,10 @@ function reasonLabel(reason?: string | null) {
             </div>
             <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">未返回冲突或不可排原因。</p>
           </section>
+        </div>
+
+        <div v-else class="mt-6 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground" role="status">
+          {{ detailFeedback }}
         </div>
       </SheetProContent>
     </SheetPro>

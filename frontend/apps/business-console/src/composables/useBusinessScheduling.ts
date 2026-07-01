@@ -31,7 +31,7 @@ function defaultFilters(): SchedulingPlanListFilters {
     organizationId: '',
     environmentId: '',
     pageIndex: 1,
-    pageSize: 20,
+    pageSize: 100,
   }))
 }
 
@@ -75,12 +75,12 @@ export function useBusinessScheduling() {
   const filters = defaultFilters()
   const detailSelection = defaultSelection()
   const page = shallowRef(1)
-  const pageSize = shallowRef('20')
+  const pageSize = shallowRef('100')
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() => {
     filters.pageIndex = page.value
-    filters.pageSize = Number(pageSize.value) || 20
+    filters.pageSize = Number(pageSize.value) || 100
 
     return {
       ...listBusinessConsoleSchedulingPlansQueryOptions({

@@ -11,8 +11,10 @@ const stub = vi.hoisted(() => ({
 }))
 
 const detailSelection = reactive({ planId: '' })
+const detailError = shallowRef<unknown>()
 const detail = computed(() => detailSelection.planId
-  ? {
+  === 'plan-001'
+    ? {
       planId: detailSelection.planId,
       status: 'generated',
       generatedAtUtc: '2026-07-01T09:30:00Z',
@@ -51,23 +53,34 @@ const detail = computed(() => detailSelection.planId
         message: '瓶颈资源产能不足',
       }],
     }
-  : undefined)
+    : undefined)
 
 vi.mock('@/composables/useBusinessScheduling', () => ({
   useBusinessScheduling: () => ({
     detailSelection,
     page: shallowRef(1),
-    pageSize: shallowRef('20'),
+    pageSize: shallowRef('100'),
     planDetail: detail,
+    planDetailError: detailError,
     planDetailPending: shallowRef(false),
-    plans: computed(() => [{
-      planId: 'plan-001',
-      status: 'generated',
-      generatedAtUtc: '2026-07-01T09:30:00Z',
-      assignmentCount: 8,
-      conflictCount: 1,
-      unscheduledOperationCount: 2,
-    }]),
+    plans: computed(() => [
+      {
+        planId: 'plan-001',
+        status: 'generated',
+        generatedAtUtc: '2026-07-01T09:30:00Z',
+        assignmentCount: 8,
+        conflictCount: 1,
+        unscheduledOperationCount: 2,
+      },
+      {
+        planId: 'plan-empty',
+        status: 'preview',
+        generatedAtUtc: '2026-07-01T10:00:00Z',
+        assignmentCount: 0,
+        conflictCount: 0,
+        unscheduledOperationCount: 0,
+      },
+    ]),
     plansPending: shallowRef(false),
     releasePlan: stub.releasePlan,
     releasePlanPending: shallowRef(false),
@@ -92,6 +105,7 @@ const sheetStubs = {
 
 beforeEach(() => {
   detailSelection.planId = ''
+  detailError.value = undefined
   stub.releasePlan.mockClear()
   stub.toastError.mockClear()
   stub.toastSuccess.mockClear()
@@ -108,6 +122,17 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('8')
     expect(wrapper.text()).toContain('1 项冲突')
     expect(wrapper.text()).toContain('2 项未排')
+  })
+
+  it('uses a single-page table while the facade does not return a total count', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const table = wrapper.findComponent({ name: 'DataTablePro' })
+    expect(table.props('pagination')).toBe(false)
+    expect(table.props('manual')).not.toBe(true)
+    expect(wrapper.text()).toContain('工序数')
+    expect(wrapper.text()).not.toContain('资源 / 工序')
   })
 
   it('shows a clear Gantt placeholder without fabricated schedule blocks', async () => {
@@ -142,5 +167,28 @@ describe('APS scheduling workbench page', () => {
 
     expect(stub.releasePlan).toHaveBeenCalledWith('plan-001')
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('shows explicit detail feedback when a plan detail request fails', async () => {
+    detailError.value = new Error('network')
+    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').filter((button) => button.text().includes('明细'))[1]!.trigger('click')
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-empty')
+    expect(wrapper.text()).toContain('明细加载失败，请稍后重试')
+  })
+
+  it('shows explicit detail feedback when the facade returns no detail payload', async () => {
+    const wrapper = mount(SchedulingPage, { global: { stubs: { ...layoutStub, ...sheetStubs } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').filter((button) => button.text().includes('明细'))[1]!.trigger('click')
+    await flushPromises()
+
+    expect(detailSelection.planId).toBe('plan-empty')
+    expect(wrapper.text()).toContain('未返回方案明细')
   })
 })
