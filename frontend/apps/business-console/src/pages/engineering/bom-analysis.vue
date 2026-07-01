@@ -237,6 +237,10 @@ function flagLabels(row: Pick<TreeRow, 'isPhantom' | 'backflush' | 'alternateGro
   return labels
 }
 
+function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
+  return !!form.componentCode && row.itemCode?.toLowerCase() === form.componentCode.trim().toLowerCase()
+}
+
 function diagnosticTone(severity?: string | null): StatusTone {
   return (severity ?? '').toLowerCase() === 'error' ? 'danger' : 'warning'
 }
@@ -354,9 +358,12 @@ function formatError(value: unknown) {
     >
       <template #cell-itemCode="{ row }">
         <div class="flex items-center gap-2" :style="{ paddingLeft: `${row.depth * 1.25}rem` }">
-          <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
-          <div class="flex flex-col gap-0.5">
-            <span>{{ row.itemCode || '无' }}</span>
+            <span class="text-muted-foreground">{{ row.hasChildren ? '▾' : '•' }}</span>
+            <div class="flex flex-col gap-0.5">
+            <span class="inline-flex items-center gap-2">
+              {{ row.itemCode || '无' }}
+              <StatusBadgePro v-if="isContextNode(row)" label="追溯节点" tone="info" />
+            </span>
             <span v-if="row.parentItemCode" class="text-xs text-muted-foreground">上级 {{ row.parentItemCode }}</span>
           </div>
         </div>
@@ -382,7 +389,10 @@ function formatError(value: unknown) {
       empty-message="当前条件没有 BOM 爆炸结果。"
     >
       <template #cell-itemCode="{ row }">
-        <span :style="{ paddingLeft: `${row.depth * 1.25}rem` }">{{ row.itemCode || '无' }}</span>
+        <span class="inline-flex items-center gap-2" :style="{ paddingLeft: `${row.depth * 1.25}rem` }">
+          {{ row.itemCode || '无' }}
+          <StatusBadgePro v-if="isContextNode(row)" label="追溯节点" tone="info" />
+        </span>
       </template>
       <template #cell-lineQuantity="{ row }">{{ formatQty(row.lineQuantity) }}</template>
       <template #cell-requiredQuantity="{ row }">{{ formatQty(row.requiredQuantity) }}</template>

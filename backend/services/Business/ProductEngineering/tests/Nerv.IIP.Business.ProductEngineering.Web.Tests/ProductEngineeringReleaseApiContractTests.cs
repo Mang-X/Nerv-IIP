@@ -422,7 +422,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             new GetManufacturingBomExplosionQuery("org-001", "env-dev", "SKU-FG", new DateOnly(2026, 6, 1), 50m),
             CancellationToken.None);
 
-        Assert.Equal("ProductionVersion", response.SelectionMode);
+        Assert.Equal("RootProductionVersion", response.SelectionMode);
         Assert.Equal("MBOM-FG", response.Root.BomCode);
         Assert.Equal("B", response.Root.Revision);
         var material = Assert.Single(response.Root.Children!);
@@ -454,15 +454,135 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Engineering_bom_explosion_detects_root_cycle_case_insensitively()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var bomA = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-A", "A", "SKU-A")
+            .AddLine("sku-a", 1m, "EA");
+        bomA.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.Add(bomA);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringBomExplosionQueryHandler(dbContext).Handle(
+            new GetEngineeringBomExplosionQuery("org-001", "env-dev", "SKU-A", new DateOnly(2026, 6, 1), 1m),
+            CancellationToken.None);
+
+        Assert.Contains(response.Diagnostics, x => x.Code == "cycle-detected" && x.ItemCode == "sku-a");
+    }
+
+    [Fact]
+    public async Task Engineering_bom_explosion_uses_created_time_tiebreaker_for_same_effective_date()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var rev9 = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "9", "SKU-FG")
+            .AddLine("SKU-OLD", 1m, "EA");
+        rev9.Release(new DateOnly(2026, 1, 1));
+        await Task.Delay(5);
+        var rev10 = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "10", "SKU-FG")
+            .AddLine("SKU-NEW", 1m, "EA");
+        rev10.Release(new DateOnly(2026, 1, 1));
+        dbContext.EngineeringBoms.AddRange(rev9, rev10);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringBomExplosionQueryHandler(dbContext).Handle(
+            new GetEngineeringBomExplosionQuery("org-001", "env-dev", "SKU-FG", new DateOnly(2026, 6, 1), 1m),
+            CancellationToken.None);
+
+        Assert.Equal("10", response.Root.Revision);
+        Assert.Equal("SKU-NEW", Assert.Single(response.Root.Children!).ItemCode);
+    }
+
+    [Fact]
+    public async Task Manufacturing_bom_explosion_reports_unresolved_production_version_before_effective_fallback()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var effectiveMbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
+            .AddMaterialLine("SKU-RM", 1m, "EA", 0m);
+        effectiveMbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        dbContext.ManufacturingBoms.Add(effectiveMbom);
+        dbContext.ProductionVersions.Add(ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG",
+            "legacy-version-id",
+            "ROUTE-FG:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            1,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetManufacturingBomExplosionQueryHandler(dbContext).Handle(
+            new GetManufacturingBomExplosionQuery("org-001", "env-dev", "SKU-FG", new DateOnly(2026, 6, 1), 1m),
+            CancellationToken.None);
+
+        Assert.Equal("EffectiveBom", response.SelectionMode);
+        Assert.Contains(response.Diagnostics, x => x.Code == "production-version-unresolved" && x.ItemCode == "SKU-FG");
+        Assert.Equal("MBOM-FG", response.Root.BomCode);
+    }
+
+    [Fact]
+    public async Task Engineering_bom_where_used_returns_only_current_effective_parent_versions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var oldBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "A", "SKU-FG")
+            .AddLine("SKU-RM", 1m, "EA");
+        oldBom.Release(new DateOnly(2026, 1, 1));
+        await Task.Delay(5);
+        var currentBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FG", "B", "SKU-FG")
+            .AddLine("SKU-RM", 2m, "EA");
+        currentBom.Release(new DateOnly(2026, 3, 1));
+        var otherParent = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-OTHER", "A", "SKU-OTHER")
+            .AddLine("SKU-RM", 4m, "EA");
+        otherParent.Release(new DateOnly(2026, 2, 1));
+        dbContext.EngineeringBoms.AddRange(oldBom, currentBom, otherParent);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringBomWhereUsedQueryHandler(dbContext).Handle(
+            new GetEngineeringBomWhereUsedQuery("org-001", "env-dev", "SKU-RM", new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+
+        Assert.Collection(
+            response.Items.OrderBy(x => x.ParentItemCode),
+            usage =>
+            {
+                Assert.Equal("SKU-FG", usage.ParentItemCode);
+                Assert.Equal("B", usage.Revision);
+                Assert.Equal(2m, usage.LineQuantity);
+            },
+            usage =>
+            {
+                Assert.Equal("SKU-OTHER", usage.ParentItemCode);
+                Assert.Equal("A", usage.Revision);
+            });
+    }
+
+    [Fact]
     public async Task Manufacturing_bom_where_used_returns_direct_released_parent_context()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
+        var oldMbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "A", "SKU-FG")
+            .AddMaterialLine("SKU-RM", 1m, "EA", 0m);
+        oldMbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        await Task.Delay(5);
+        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-FG", "B", "SKU-FG")
             .AddMaterialLine("SKU-RM", 2m, "EA", 0.02m, isPhantom: false, referenceDesignators: "P1");
-        mbom.ReleaseFromEngineeringBom("EBOM-FG:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
-        dbContext.ManufacturingBoms.Add(mbom);
+        mbom.ReleaseFromEngineeringBom("EBOM-FG:B", EngineeringVersionStatus.Published, new DateOnly(2026, 3, 1));
+        dbContext.ManufacturingBoms.AddRange(oldMbom, mbom);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new GetManufacturingBomWhereUsedQueryHandler(dbContext).Handle(
@@ -473,6 +593,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal("ManufacturingBom", usage.BomKind);
         Assert.Equal("MBOM-FG", usage.BomCode);
         Assert.Equal("SKU-FG", usage.ParentItemCode);
+        Assert.Equal(new DateOnly(2026, 3, 1), usage.EffectiveDate);
         Assert.Equal(2m, usage.LineQuantity);
         Assert.Equal(0.02m, usage.ScrapRate);
         Assert.Equal("P1", usage.ReferenceDesignators);

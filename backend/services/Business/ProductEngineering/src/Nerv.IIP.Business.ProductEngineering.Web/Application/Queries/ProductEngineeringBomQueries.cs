@@ -105,7 +105,7 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
             line: null,
             request.EffectiveDate,
             diagnostics,
-            [request.ItemCode]);
+            BomTraversal.CreateRootAncestors(request.ItemCode));
 
         return new BomExplosionResponse("EngineeringBom", request.BomCode is null ? "EffectiveBom" : "ExplicitVersion", root, diagnostics);
     }
@@ -222,6 +222,12 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
             line.Backflush,
             children);
 
+    internal static EngineeringBom? SelectEffectiveBom(
+        IEnumerable<EngineeringBom> boms,
+        string itemCode,
+        DateOnly effectiveDate) =>
+        SelectEngineeringBom(boms, itemCode, effectiveDate, null, null);
+
     private static EngineeringBom? SelectEngineeringBom(
         IEnumerable<EngineeringBom> boms,
         string itemCode,
@@ -246,7 +252,7 @@ public sealed class GetEngineeringBomExplosionQueryHandler(ApplicationDbContext 
 
         return query
             .OrderByDescending(x => x.EffectiveDate)
-            .ThenByDescending(x => x.Revision)
+            .ThenByDescending(x => x.CreatedAtUtc)
             .FirstOrDefault();
     }
 
@@ -264,7 +270,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
     {
         var boms = await LoadManufacturingBomsAsync(request.OrganizationId, request.EnvironmentId, cancellationToken);
         var diagnostics = new List<BomExplosionDiagnostic>();
-        var selection = await SelectManufacturingBomAsync(boms, request, cancellationToken)
+        var selection = await SelectManufacturingBomAsync(boms, request, diagnostics, cancellationToken)
             ?? throw new KnownException($"No published manufacturing BOM can resolve SKU '{request.SkuCode}' for {request.EffectiveDate:yyyy-MM-dd} and lot size {request.LotSize}.");
         var root = BuildManufacturingNode(
             boms,
@@ -279,7 +285,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
             line: null,
             request.EffectiveDate,
             diagnostics,
-            [selection.Bom.SkuCode]);
+            BomTraversal.CreateRootAncestors(selection.Bom.SkuCode));
 
         return new BomExplosionResponse("ManufacturingBom", selection.Mode, root, diagnostics);
     }
@@ -287,6 +293,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
     private async Task<ManufacturingBomSelection?> SelectManufacturingBomAsync(
         IReadOnlyCollection<ManufacturingBom> boms,
         GetManufacturingBomExplosionQuery request,
+        List<BomExplosionDiagnostic> diagnostics,
         CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(request.BomCode))
@@ -321,8 +328,24 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
                 var bom = SelectManufacturingBom(boms, request.SkuCode, request.EffectiveDate, bomCode, revision);
                 if (bom is not null)
                 {
-                    return new ManufacturingBomSelection(bom, "ProductionVersion");
+                    return new ManufacturingBomSelection(bom, "RootProductionVersion");
                 }
+
+                diagnostics.Add(new BomExplosionDiagnostic(
+                    "production-version-unresolved",
+                    "warning",
+                    request.SkuCode,
+                    $"Production version references MBOM '{productionVersion}', but no matching published manufacturing BOM resolved on {request.EffectiveDate:yyyy-MM-dd}. Falling back to effective BOM selection.",
+                    request.SkuCode));
+            }
+            else
+            {
+                diagnostics.Add(new BomExplosionDiagnostic(
+                    "production-version-unresolved",
+                    "warning",
+                    request.SkuCode,
+                    $"Production version references MBOM '{productionVersion}' in an unsupported format. Expected 'bomCode:revision'; falling back to effective BOM selection.",
+                    request.SkuCode));
             }
         }
 
@@ -442,6 +465,12 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
             line.Backflush,
             children);
 
+    internal static ManufacturingBom? SelectEffectiveBom(
+        IEnumerable<ManufacturingBom> boms,
+        string skuCode,
+        DateOnly effectiveDate) =>
+        SelectManufacturingBom(boms, skuCode, effectiveDate, null, null);
+
     private static ManufacturingBom? SelectManufacturingBom(
         IEnumerable<ManufacturingBom> boms,
         string skuCode,
@@ -466,7 +495,7 @@ public sealed class GetManufacturingBomExplosionQueryHandler(ApplicationDbContex
 
         return query
             .OrderByDescending(x => x.EffectiveDate)
-            .ThenByDescending(x => x.Revision)
+            .ThenByDescending(x => x.CreatedAtUtc)
             .FirstOrDefault();
     }
 
@@ -484,7 +513,7 @@ public sealed class GetEngineeringBomWhereUsedQueryHandler(ApplicationDbContext 
 {
     public async Task<BomWhereUsedResponse> Handle(GetEngineeringBomWhereUsedQuery request, CancellationToken cancellationToken)
     {
-        var items = await dbContext.EngineeringBoms
+        var boms = await dbContext.EngineeringBoms
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -492,8 +521,14 @@ public sealed class GetEngineeringBomWhereUsedQueryHandler(ApplicationDbContext 
                 x.Status == EngineeringVersionStatus.Published &&
                 x.EffectiveDate != null &&
                 x.EffectiveDate <= request.EffectiveDate)
+            .ToArrayAsync(cancellationToken);
+
+        var items = boms
+            .GroupBy(x => x.ParentItemCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => GetEngineeringBomExplosionQueryHandler.SelectEffectiveBom(group, group.Key, request.EffectiveDate))
+            .OfType<EngineeringBom>()
             .SelectMany(
-                bom => bom.Lines.Where(line => line.ChildItemCode == request.ComponentCode),
+                bom => bom.Lines.Where(line => string.Equals(line.ChildItemCode, request.ComponentCode, StringComparison.OrdinalIgnoreCase)),
                 (bom, line) => new BomWhereUsedItem(
                     "EngineeringBom",
                     bom.BomCode,
@@ -512,7 +547,7 @@ public sealed class GetEngineeringBomWhereUsedQueryHandler(ApplicationDbContext 
                     line.Backflush))
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new BomWhereUsedResponse(request.ComponentCode, items);
     }
@@ -523,7 +558,7 @@ public sealed class GetManufacturingBomWhereUsedQueryHandler(ApplicationDbContex
 {
     public async Task<BomWhereUsedResponse> Handle(GetManufacturingBomWhereUsedQuery request, CancellationToken cancellationToken)
     {
-        var items = await dbContext.ManufacturingBoms
+        var boms = await dbContext.ManufacturingBoms
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
@@ -531,8 +566,14 @@ public sealed class GetManufacturingBomWhereUsedQueryHandler(ApplicationDbContex
                 x.Status == EngineeringVersionStatus.Published &&
                 x.EffectiveDate != null &&
                 x.EffectiveDate <= request.EffectiveDate)
+            .ToArrayAsync(cancellationToken);
+
+        var items = boms
+            .GroupBy(x => x.SkuCode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => GetManufacturingBomExplosionQueryHandler.SelectEffectiveBom(group, group.Key, request.EffectiveDate))
+            .OfType<ManufacturingBom>()
             .SelectMany(
-                bom => bom.MaterialLines.Where(line => line.SkuCode == request.ComponentCode),
+                bom => bom.MaterialLines.Where(line => string.Equals(line.SkuCode, request.ComponentCode, StringComparison.OrdinalIgnoreCase)),
                 (bom, line) => new BomWhereUsedItem(
                     "ManufacturingBom",
                     bom.BomCode,
@@ -551,7 +592,7 @@ public sealed class GetManufacturingBomWhereUsedQueryHandler(ApplicationDbContex
                     line.Backflush))
             .OrderBy(x => x.BomCode)
             .ThenBy(x => x.Revision)
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new BomWhereUsedResponse(request.ComponentCode, items);
     }
@@ -566,4 +607,10 @@ file static class BomQuantityMath
         var effectiveYield = yieldRate <= 0m ? 1m : yieldRate;
         return parentRequired * lineQuantity * (1m + scrapRate) / effectiveYield;
     }
+}
+
+file static class BomTraversal
+{
+    public static HashSet<string> CreateRootAncestors(string itemCode) =>
+        new(StringComparer.OrdinalIgnoreCase) { itemCode };
 }
