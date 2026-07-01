@@ -16,6 +16,8 @@ const SCHEDULING_QUERY_IDS = [
   'getBusinessConsoleSchedulingPlan',
   'getBusinessConsoleSchedulingPlanGantt',
 ]
+// TODO(#630): restore real pagination when the Scheduling summary facade returns total/horizon.
+const SINGLE_PAGE_PLAN_LIST_SIZE = 100
 
 export interface SchedulingPlanListFilters extends BusinessContextFields {
   pageIndex: number
@@ -31,7 +33,7 @@ function defaultFilters(): SchedulingPlanListFilters {
     organizationId: '',
     environmentId: '',
     pageIndex: 1,
-    pageSize: 100,
+    pageSize: SINGLE_PAGE_PLAN_LIST_SIZE,
   }))
 }
 
@@ -75,12 +77,12 @@ export function useBusinessScheduling() {
   const filters = defaultFilters()
   const detailSelection = defaultSelection()
   const page = shallowRef(1)
-  const pageSize = shallowRef('100')
+  const pageSize = shallowRef(String(SINGLE_PAGE_PLAN_LIST_SIZE))
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() => {
     filters.pageIndex = page.value
-    filters.pageSize = Number(pageSize.value) || 100
+    filters.pageSize = Number(pageSize.value) || SINGLE_PAGE_PLAN_LIST_SIZE
 
     return {
       ...listBusinessConsoleSchedulingPlansQueryOptions({
