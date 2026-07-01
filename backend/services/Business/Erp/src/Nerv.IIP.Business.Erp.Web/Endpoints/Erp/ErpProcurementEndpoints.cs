@@ -47,7 +47,9 @@ public sealed record CreatePurchaseRequisitionFromSuggestionRequest(
     DateOnly RequiredDate,
     string? IdempotencyKey = null);
 
-public sealed record CreatePurchaseRequisitionFromSuggestionResponse(PurchaseRequisitionId PurchaseRequisitionId);
+public sealed record CreatePurchaseRequisitionFromSuggestionResponse(
+    PurchaseRequisitionId PurchaseRequisitionId,
+    string RequisitionNo);
 
 public sealed record CreateRequestForQuotationRequest(
     string OrganizationId,
@@ -159,7 +161,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
 
     public override async Task HandleAsync(CreatePurchaseRequisitionFromSuggestionRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
+        var result = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.RequisitionNo,
@@ -170,7 +172,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
             req.Quantity,
             req.RequiredDate,
             req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(id).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(result.PurchaseRequisitionId, result.RequisitionNo).AsResponseData(), cancellation: ct);
     }
 }
 

@@ -383,6 +383,9 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcceptedResponse = {
     accepted?: boolean;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleFailWmsWcsTaskRequest = {
@@ -1821,6 +1824,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     requiredDate?: string;
     status?: string;
     reasonCode?: string;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningSuggestionListRequest = {
@@ -3628,6 +3634,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpPurchas
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionResponse = {
     purchaseRequisitionId?: string;
+    requisitionNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionRequest = {

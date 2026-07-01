@@ -19585,6 +19585,18 @@
         "properties": {
           "accepted": {
             "type": "boolean"
+          },
+          "downstreamService": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -24732,6 +24744,18 @@
           },
           "reasonCode": {
             "type": "string"
+          },
+          "downstreamService": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "downstreamDocumentId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -31855,6 +31879,10 @@
         "properties": {
           "purchaseRequisitionId": {
             "type": "string"
+          },
+          "requisitionNo": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

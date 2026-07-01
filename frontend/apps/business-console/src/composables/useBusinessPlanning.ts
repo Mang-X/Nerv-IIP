@@ -1,4 +1,5 @@
 import {
+  acceptBusinessConsolePlanningSuggestionMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
@@ -48,6 +49,11 @@ export interface PlanningDemandForm {
   quantity: number
   dueDate: string
   idempotencyKey: string
+}
+
+export interface PlanningSuggestionAcceptInput {
+  suggestionId: string
+  suggestionType: string
 }
 
 const PLANNING_QUERY_IDS = [
@@ -131,9 +137,6 @@ export function useBusinessPlanning() {
   const runSelection = defaultRunSelection()
   // 计划建议「分型筛选」(生产/采购)，纯前端过滤，不带入后端查询。
   const suggestionTypeFilter = reactive<PlanningSuggestionTypeFilter>({ type: '' })
-  // 注：接受/批量接受建议已移除。后端 accept 校验器要求 DownstreamDocumentId 必填，
-  // 但下游真实单据创建尚未实现（#461/#472），前端只能拼造假单号提交并被持久化，
-  // 等于把未创建的 MES/ERP 单据标记成已承接。建议页降为只读视图，待真实下游单号落地后再恢复。
   const queryCache = useQueryCache()
 
   const demandsQuery = useQuery(() =>
@@ -189,6 +192,30 @@ export function useBusinessPlanning() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
   })
+  const acceptSuggestionMutation = useMutation({
+    ...acceptBusinessConsolePlanningSuggestionMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+
+  function downstreamTargetForSuggestion(suggestionType: string) {
+    if (suggestionType === 'planned-work-order') {
+      return {
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+      }
+    }
+
+    if (suggestionType === 'planned-purchase') {
+      return {
+        downstreamService: 'BusinessErp',
+        downstreamDocumentType: 'PurchaseRequisition',
+      }
+    }
+
+    throw new Error('当前计划建议类型暂不支持接受。')
+  }
 
   function syncContext() {
     suggestionFilters.organizationId = filters.organizationId
@@ -200,6 +227,24 @@ export function useBusinessPlanning() {
   }
 
   return {
+    acceptSuggestion: (input: PlanningSuggestionAcceptInput) => {
+      const target = downstreamTargetForSuggestion(input.suggestionType)
+      return acceptSuggestionMutation.mutateAsync({
+        path: { suggestionId: input.suggestionId },
+        query: {
+          organizationId: suggestionFilters.organizationId,
+          environmentId: suggestionFilters.environmentId,
+        },
+        body: {
+          downstreamService: target.downstreamService,
+          downstreamDocumentType: target.downstreamDocumentType,
+          downstreamDocumentId: null,
+          idempotencyKey: `planning-accept:${suggestionFilters.organizationId}:${suggestionFilters.environmentId}:${input.suggestionId}`,
+        },
+      })
+    },
+    acceptSuggestionError: acceptSuggestionMutation.error,
+    acceptSuggestionPending: acceptSuggestionMutation.isLoading,
     createDemandError: createDemandMutation.error,
     createDemandPending: createDemandMutation.isLoading,
     createOrUpdateDemand: () =>
