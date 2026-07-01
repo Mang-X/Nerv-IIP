@@ -61,6 +61,10 @@ foreach ($expected in @(
     '5103 Ops',
     '5104 FileStorage',
     '5105 Console',
+    '5120 BusinessScheduling',
+    '5125 BusinessConsole',
+    '5126 BusinessPDA',
+    '5180 DesignSystem',
     '15432 PostgreSQL',
     '9000 MinIO API',
     '9001 MinIO Console'

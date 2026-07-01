@@ -677,7 +677,7 @@ Add a current-status sentence:
 Change the repository table current baseline row to:
 
 ```markdown
-| Current baseline | 第五阶段 Release-grade Persistence Foundation 已合入；当前第六阶段规划推进 schema governance hardening，状态见 [implementation-readiness.md](implementation-readiness.md) 与 [schema-governance design](../superpowers/specs/2026-05-17-schema-governance-migration-hardening-design.md)。 |
+| Current baseline | 第五阶段 Release-grade Persistence Foundation 已合入；本计划是历史执行记录，不是当前状态源。当前状态见 [implementation-readiness.md](../../architecture/implementation-readiness.md)，原始设计输入见 [schema-governance design](../specs/2026-05-17-schema-governance-migration-hardening-design.md)。 |
 ```
 
 - [ ] **Step 3: Update schema catalog known gaps**
