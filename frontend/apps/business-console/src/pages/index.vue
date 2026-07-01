@@ -112,6 +112,7 @@ function statusVariant(status: string | null | undefined): 'success' | 'warning'
 function describeSourceStatus(status: BusinessConsoleWorkbenchSourceStatus) {
   return {
     label: sourceLabel(status.source),
+    source: normalize(status.source),
     status: normalize(status.status),
     statusLabel: statusLabel(status.status),
     variant: statusVariant(status.status),
@@ -220,6 +221,10 @@ function formatDateTime(value: string) {
         <BadgePro variant="neutral">PC 工作台</BadgePro>
       </div>
 
+      <section v-if="summaryPending" class="rounded-lg border bg-background p-3">
+        <p class="text-sm text-muted-foreground">正在刷新工作台摘要。</p>
+      </section>
+
       <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="kpi in availableKpis"
@@ -230,7 +235,7 @@ function formatDateTime(value: string) {
           <p class="mt-2 text-2xl font-semibold text-foreground">{{ kpi.value ?? 0 }}</p>
           <p class="mt-1 text-sm font-medium text-foreground">{{ kpiLabel(kpi) }}</p>
         </div>
-        <div v-if="availableKpis.length === 0" class="rounded-lg border bg-background p-4 md:col-span-2 xl:col-span-4">
+        <div v-if="!summaryPending && availableKpis.length === 0" class="rounded-lg border bg-background p-4 md:col-span-2 xl:col-span-4">
           <p class="text-sm font-medium text-foreground">暂无可显示指标</p>
           <p class="mt-1 text-sm text-muted-foreground">当前角色没有可汇总的跨域指标，或来源暂不可用。</p>
         </div>
@@ -251,7 +256,7 @@ function formatDateTime(value: string) {
                 <p class="text-sm font-medium text-foreground">{{ todoLabel(item) }}</p>
                 <p class="mt-0.5 text-sm text-muted-foreground">{{ todoMeta(item) }}</p>
               </div>
-              <div v-if="todoItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无待处理事项</div>
+              <div v-if="!summaryPending && todoItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无待处理事项</div>
             </div>
           </article>
 
@@ -268,7 +273,7 @@ function formatDateTime(value: string) {
                 <p class="text-sm font-medium text-foreground">{{ messageLabel(item) }}</p>
                 <p class="mt-0.5 text-sm text-muted-foreground">{{ messageMeta(item) }}</p>
               </div>
-              <div v-if="messageItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无未读消息</div>
+              <div v-if="!summaryPending && messageItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无未读消息</div>
             </div>
           </article>
 
@@ -290,7 +295,7 @@ function formatDateTime(value: string) {
                 <span class="block text-sm font-medium text-foreground">{{ alertLabel(item) }}</span>
                 <span class="mt-0.5 block text-sm text-muted-foreground">{{ alertMeta(item) }}</span>
               </RouterLink>
-              <div v-if="alertItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无当前预警</div>
+              <div v-if="!summaryPending && alertItems.length === 0" class="px-4 py-6 text-sm text-muted-foreground">暂无当前预警</div>
             </div>
           </article>
         </section>
@@ -303,13 +308,14 @@ function formatDateTime(value: string) {
           <div class="grid gap-2 p-3">
             <div
               v-for="source in sourceStatusList"
-              :key="source.label"
+              :key="source.source || source.label"
               class="flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+              :data-source="source.source || source.label"
             >
               <span class="text-sm font-medium text-foreground">{{ source.label }}</span>
               <BadgePro :variant="source.variant">{{ source.statusLabel }}</BadgePro>
             </div>
-            <div v-if="sourceStatusList.length === 0" class="px-1 py-3 text-sm text-muted-foreground">正在等待来源状态。</div>
+            <div v-if="!summaryPending && sourceStatusList.length === 0" class="px-1 py-3 text-sm text-muted-foreground">正在等待来源状态。</div>
           </div>
         </section>
       </div>
@@ -337,9 +343,8 @@ function formatDateTime(value: string) {
         </div>
       </section>
 
-      <section v-if="summaryPending || summaryError" class="rounded-lg border bg-background p-3">
-        <p v-if="summaryPending" class="text-sm text-muted-foreground">正在刷新工作台摘要。</p>
-        <p v-else class="text-sm text-muted-foreground">工作台摘要暂不可用，请稍后刷新。</p>
+      <section v-if="summaryError" class="rounded-lg border bg-background p-3">
+        <p class="text-sm text-muted-foreground">工作台摘要暂不可用，请稍后刷新。</p>
       </section>
     </section>
   </BusinessLayout>

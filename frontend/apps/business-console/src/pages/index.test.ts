@@ -7,6 +7,7 @@ import { createBusinessConsoleI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 
 const coladaState = vi.hoisted(() => ({
+  isLoading: false,
   queryData: undefined as unknown,
 }))
 
@@ -21,7 +22,7 @@ vi.mock('@pinia/colada', () => ({
   useQuery: vi.fn(() => ({
     data: shallowRef(coladaState.queryData),
     error: shallowRef(),
-    isLoading: shallowRef(false),
+    isLoading: shallowRef(coladaState.isLoading),
     refetch: vi.fn(),
   })),
 }))
@@ -59,6 +60,7 @@ function mountWorkbench(permissionCodes: string[]) {
 
 describe('business workbench page', () => {
   beforeEach(() => {
+    coladaState.isLoading = false
     coladaState.queryData = {
       success: true,
       data: {
@@ -103,6 +105,23 @@ describe('business workbench page', () => {
     }
   })
 
+  it('does not show negative empty states while the summary is loading', async () => {
+    coladaState.isLoading = true
+    coladaState.queryData = undefined
+
+    const wrapper = mountWorkbench(['business.mes.work-orders.read'])
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('正在刷新工作台摘要')
+    expect(text).not.toContain('暂无可显示指标')
+    expect(text).not.toContain('当前角色没有可汇总的跨域指标')
+    expect(text).not.toContain('暂无待处理事项')
+    expect(text).not.toContain('暂无未读消息')
+    expect(text).not.toContain('暂无当前预警')
+    expect(text).not.toContain('正在等待来源状态')
+  })
+
   it('renders the facade summary instead of local static workbench items', async () => {
     const wrapper = mountWorkbench([
       'business.mes.work-orders.read',
@@ -140,5 +159,27 @@ describe('business workbench page', () => {
     expect(links).not.toContain('/mes/work-orders')
     expect(links).not.toContain('/quality/ncrs')
     expect(wrapper.text()).not.toContain('工单与派工')
+  })
+
+  it('keeps raw source identifiers for unmapped source status entries', async () => {
+    coladaState.queryData = {
+      success: true,
+      data: {
+        kpis: [],
+        todos: { status: 'available', total: 0, items: [] },
+        messages: { status: 'available', total: 0, unread: 0, items: [] },
+        alerts: { status: 'available', total: 0, critical: 0, items: [] },
+        sourceStatuses: [
+          { source: 'BusinessERP', status: 'available' },
+          { source: 'BusinessScheduling', status: 'unavailable' },
+        ],
+      },
+    }
+
+    const wrapper = mountWorkbench(['business.erp.procurement.read'])
+    await flushPromises()
+
+    expect(wrapper.find('[data-source="BusinessERP"]').exists()).toBe(true)
+    expect(wrapper.find('[data-source="BusinessScheduling"]').exists()).toBe(true)
   })
 })
