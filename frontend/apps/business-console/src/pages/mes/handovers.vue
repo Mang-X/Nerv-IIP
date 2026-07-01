@@ -21,7 +21,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '班次交接' } })
+definePage({ meta: { requiresAuth: true, title: '班次交接', requiredPermissions: ['business.mes.handovers.read'] } })
 
 const { filters, handovers, handoversError, handoversPending, handoversTotal, refreshHandovers } = useMesShiftHandovers()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })

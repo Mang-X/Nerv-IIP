@@ -17,7 +17,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '生产准备检查' } })
+definePage({ meta: { requiresAuth: true, title: '生产准备检查', requiredPermissions: ['business.mes.foundation.read'] } })
 
 const { filters, readiness, readinessError, readinessPending, refreshReadiness } = useMesFoundationReadiness()
 

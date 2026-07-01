@@ -25,7 +25,7 @@ import { ClipboardListIcon, MoveRightIcon, RefreshCwIcon } from 'lucide-vue-next
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '库存可用量' } })
+definePage({ meta: { requiresAuth: true, title: '库存可用量', requiredPermissions: ['business.inventory.ledger.read'] } })
 
 const route = useRoute()
 const router = useRouter()

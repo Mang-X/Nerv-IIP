@@ -51,7 +51,7 @@ import {
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '销售管理' } })
+definePage({ meta: { requiresAuth: true, title: '销售管理', requiredPermissions: ['business.erp.sales.read'] } })
 
 // 销售漏斗：商机 → 报价（含审批） → 销售订单 → 发货单（同一业务域，页内 Tabs 组织）
 const opportunities = useErpOpportunities()

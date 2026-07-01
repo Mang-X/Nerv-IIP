@@ -46,7 +46,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: 'EBOM 设计BOM' } })
+definePage({ meta: { requiresAuth: true, title: 'EBOM 设计BOM', requiredPermissions: ['business.engineering.boms.read'] } })
 
 const {
   eboms,

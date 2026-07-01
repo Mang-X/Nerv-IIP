@@ -22,7 +22,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '设备与停机' } })
+definePage({ meta: { requiresAuth: true, title: '设备与停机', requiredPermissions: ['business.mes.downtime.read'] } })
 
 const { downtimeEvents, downtimeEventsError, downtimeEventsPending, downtimeEventsTotal, filters, refreshDowntimeEvents } = useMesDowntimeEvents()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })

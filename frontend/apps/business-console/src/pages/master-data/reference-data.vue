@@ -33,7 +33,7 @@ import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '数据字典' } })
+definePage({ meta: { requiresAuth: true, title: '数据字典', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 // 平台预置的受控值分组（CodeSet → 中文名，对齐产品文档 §5.1）。Phase 1 作左侧固定主列表，
 // Phase 2 后端字典就绪后可改为动态拉取，UI 不变。

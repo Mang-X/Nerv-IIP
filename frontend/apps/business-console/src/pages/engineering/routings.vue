@@ -47,7 +47,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '工艺路线' } })
+definePage({ meta: { requiresAuth: true, title: '工艺路线', requiredPermissions: ['business.engineering.routings.read'] } })
 
 const {
   routings,

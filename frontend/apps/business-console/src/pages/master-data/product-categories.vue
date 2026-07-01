@@ -44,7 +44,7 @@ import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '产品分类' } })
+definePage({ meta: { requiresAuth: true, title: '产品分类', requiredPermissions: ['business.masterdata.products.read'] } })
 
 const {
   archiveCategory,

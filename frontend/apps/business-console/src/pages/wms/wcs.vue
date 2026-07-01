@@ -31,7 +31,7 @@ import {
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon, XCircleIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: 'WCS 任务' } })
+definePage({ meta: { requiresAuth: true, title: 'WCS 任务', requiredPermissions: ['business.wms.automation.manage'] } })
 
 const {
   filters,

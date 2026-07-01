@@ -38,7 +38,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '工程文档' } })
+definePage({ meta: { requiresAuth: true, title: '工程文档', requiredPermissions: ['business.engineering.documents.read'] } })
 
 const {
   documents,

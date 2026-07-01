@@ -17,7 +17,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 
-const permissionCodes = computed(() => principal.value?.permissionCodes ?? undefined)
+const permissionCodes = computed(() => principal.value ? principal.value.permissionCodes ?? [] : undefined)
 
 const currentDomainId = computed(() => resolveDomainId(route.path))
 

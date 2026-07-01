@@ -46,7 +46,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '组织与班组' } })
+definePage({ meta: { requiresAuth: true, title: '组织与班组', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 // 层级树需尽量全量拼装：用较大 take 兜底（真正全量需后端全量端点 #373）。
 const TREE_TAKE = 200

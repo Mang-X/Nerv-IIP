@@ -22,7 +22,7 @@ import {
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef, watch } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '产能影响' } })
+definePage({ meta: { requiresAuth: true, title: '产能影响', requiredPermissions: ['business.mes.capacity.read'] } })
 
 const {
   capacityImpacts,

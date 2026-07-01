@@ -24,7 +24,7 @@ import {
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '生产驾驶舱' } })
+definePage({ meta: { requiresAuth: true, title: '生产驾驶舱', requiredPermissions: ['business.mes.overview.read'] } })
 
 const { blockers, counts, overviewError, overviewPending, pendingWork, refreshOverview } = useMesOverview()
 

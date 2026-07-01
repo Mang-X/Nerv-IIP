@@ -41,7 +41,7 @@ import {
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '收货入库' } })
+definePage({ meta: { requiresAuth: true, title: '收货入库', requiredPermissions: ['business.wms.receipts.read'] } })
 
 const {
   filters,

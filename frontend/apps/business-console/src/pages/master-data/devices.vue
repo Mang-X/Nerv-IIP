@@ -38,7 +38,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '设备台账' } })
+definePage({ meta: { requiresAuth: true, title: '设备台账', requiredPermissions: ['business.masterdata.resources.read'] } })
 
 const CRITICALITY_OPTIONS = [
   { value: 'high', label: '高（关键设备）' },

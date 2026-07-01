@@ -50,7 +50,7 @@ import {
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '财务' } })
+definePage({ meta: { requiresAuth: true, title: '财务', requiredPermissions: ['business.erp.finance.read'] } })
 
 const { summary, summaryError, summaryPending, refreshSummary } = useErpFinanceSummary()
 

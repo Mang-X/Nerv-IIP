@@ -46,7 +46,7 @@ import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
-definePage({ meta: { requiresAuth: true, title: '标准工序' } })
+definePage({ meta: { requiresAuth: true, title: '标准工序', requiredPermissions: ['business.engineering.standard-operations.read'] } })
 
 const {
   archiveStandardOperation,
