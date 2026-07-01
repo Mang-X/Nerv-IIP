@@ -227,6 +227,19 @@ importers:
         specifier: 1.6.3
         version: 1.6.3(@algolia/client-search@5.54.1)(@types/node@25.8.0)(esbuild@0.28.1)(jiti@2.7.0)(postcss@8.5.14)(search-insights@2.17.3)(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0)
 
+  apps/docs:
+    dependencies:
+      vue:
+        specifier: 3.5.34
+        version: 3.5.34(typescript@6.0.3)
+    devDependencies:
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      vitepress:
+        specifier: 1.6.3
+        version: 1.6.3(@algolia/client-search@5.54.1)(@types/node@25.8.0)(esbuild@0.28.1)(jiti@2.7.0)(postcss@8.5.14)(search-insights@2.17.3)(stylus@0.57.0)(typescript@6.0.3)(yaml@2.9.0)
+
   packages/api-client:
     dependencies:
       '@hey-api/client-fetch':

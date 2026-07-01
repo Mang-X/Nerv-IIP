@@ -22,6 +22,7 @@ Nerv-IIP/
       business-console/
       business-pda/
       design-system/
+      docs/
     packages/
       ui/
       ui-mobile/
@@ -51,10 +52,10 @@ Nerv-IIP/
 
 ### frontend
 
-- apps：真实前端应用入口。当前包含主平台 `console`、业务 PC 控制台 `business-console`、一线作业 PDA `business-pda` 和 `design-system` 文档/预览站。
+- apps：真实前端应用入口。当前包含主平台 `console`、业务 PC 控制台 `business-console`、一线作业 PDA `business-pda`、`design-system` 文档/预览站和 `docs` 产品文档站。
 - packages：共享 UI、移动 UI、API 客户端、壳层、认证复用和业务前端内核包。当前包含 `ui`、`ui-mobile`、`app-shell`、`api-client`、`auth` 和 `business-core`；`layer-base`、`layer-platform`、`shared-types` 等只作为长期边界预留，未出现真实复用前不得创建空包。
 - frontend 不放后端工程、Connector Host 工程或部署脚本。
-- 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console。
+- 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console；面向最终用户的产品文档正文放在 `frontend/apps/docs`，不放入 Business Console 页面。
 
 ### backend
 

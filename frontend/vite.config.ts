@@ -13,6 +13,7 @@ export default defineConfig({
       'apps/console/typed-router.d.ts',
       'apps/business-console/dist/**',
       'apps/business-console/typed-router.d.ts',
+      'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/openapi/**',
       'packages/api-client/src/generated/**',
     ],
@@ -61,6 +62,7 @@ export default defineConfig({
       'apps/console/typed-router.d.ts',
       'apps/business-console/dist/**',
       'apps/business-console/typed-router.d.ts',
+      'apps/docs/docs/.vitepress/dist/**',
       'packages/api-client/src/generated/**',
     ],
   },
@@ -98,6 +100,9 @@ export default defineConfig({
         command: 'pnpm -r --if-present test',
         input: [
           'apps/**/src/**',
+          'apps/docs/docs/**',
+          '!apps/docs/docs/.vitepress/dist/**',
+          '!apps/docs/docs/.vitepress/cache/**',
           'apps/**/vite.config.ts',
           'packages/**/src/**',
           'packages/**/tsconfig.json',
@@ -106,7 +111,7 @@ export default defineConfig({
       },
       'workspace:build': {
         command:
-          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/design-system build',
+          'pnpm --filter @nerv-iip/console --filter @nerv-iip/business-console --filter @nerv-iip/design-system --filter @nerv-iip/docs build',
         dependsOn: ['workspace:typecheck'],
         input: [
           'apps/console/index.html',
@@ -125,6 +130,9 @@ export default defineConfig({
           'apps/design-system/docs/**',
           'apps/design-system/package.json',
           'apps/design-system/tsconfig.json',
+          'apps/docs/docs/**',
+          'apps/docs/package.json',
+          'apps/docs/tsconfig.json',
           'packages/api-client/src/**',
           'packages/app-shell/src/**',
           'packages/auth/src/**',
@@ -136,6 +144,7 @@ export default defineConfig({
           'apps/console/dist/**',
           'apps/business-console/dist/**',
           'apps/design-system/docs/.vitepress/dist/**',
+          'apps/docs/docs/.vitepress/dist/**',
         ],
       },
     },
