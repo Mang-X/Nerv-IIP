@@ -130,7 +130,14 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
-  'planning': [{ items: [{ title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.planning] }] }],
+  'planning': [
+    {
+      items: [
+        { title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' }, requiredPermissions: [P.planningDemandsRead, P.planningMrpRead, P.planningSuggestionsManage] },
+        { title: '排产工作台', icon: CalendarCogIcon, to: { path: '/scheduling' }, requiredPermissions: [P.schedulingPlansRead] },
+      ],
+    },
+  ],
   'erp': [
     {
       items: [
@@ -242,6 +249,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/master-data')) return 'master-data'
   if (isUnder(path, '/engineering')) return 'engineering'
   if (isUnder(path, '/planning')) return 'planning'
+  if (isUnder(path, '/scheduling')) return 'planning'
   if (isUnder(path, '/erp')) return 'erp'
   if (isUnder(path, '/mes')) return 'mes'
   if (isUnder(path, '/quality')) return 'quality'
