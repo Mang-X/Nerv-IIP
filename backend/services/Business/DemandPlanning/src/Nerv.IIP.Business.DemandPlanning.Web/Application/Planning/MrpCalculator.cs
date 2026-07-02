@@ -261,7 +261,7 @@ public static class MrpCalculator
                     first.ScrapRate,
                     first.YieldRate,
                     first.RequirementType == "component" ? "component" : demandPegging.FirstOrDefault()?.SourceType ?? "unknown",
-                    BuildFormula(grossRequirement, supply.OnHandQuantity, supply.ReservedQuantity, supply.SafetyStockQuantity, supply.UsedScheduledReceiptQuantity, netRequirement, first.ScrapRate, first.YieldRate),
+                    BuildFormula(grossRequirement, supply.UsedAvailableQuantity, supply.UsedScheduledReceiptQuantity, netRequirement, first.ScrapRate, first.YieldRate),
                     first.UomConversions,
                     []);
                 suggestions.AddRange(plannedQuantities.Select(quantity => new CalculatedPlanningSuggestion(
@@ -648,15 +648,13 @@ public static class MrpCalculator
 
     private static string BuildFormula(
         decimal grossDemandQuantity,
-        decimal onHandQuantity,
-        decimal reservedQuantity,
-        decimal safetyStockQuantity,
+        decimal availableToNetQuantity,
         decimal scheduledReceiptQuantity,
         decimal netRequirementQuantity,
         decimal scrapRate,
         decimal yieldRate)
     {
-        var formula = $"{grossDemandQuantity:g29} - {onHandQuantity:g29} + {reservedQuantity:g29} + {safetyStockQuantity:g29} - {scheduledReceiptQuantity:g29} = {netRequirementQuantity:g29}";
+        var formula = $"{grossDemandQuantity:g29} - {availableToNetQuantity:g29} - {scheduledReceiptQuantity:g29} = {netRequirementQuantity:g29}";
         return scrapRate > 0m || yieldRate != 1m
             ? $"{formula}; scrap/yield {scrapRate:g29}/{yieldRate:g29}"
             : formula;

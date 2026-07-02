@@ -33,8 +33,34 @@ public sealed class MrpCalculatorTests
         Assert.Equal(2m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
         Assert.Equal(4m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
         Assert.Equal(4m, explanation.GetProperty("plannedQuantity").GetDecimal());
-        Assert.Contains("10 - 8 + 0 + 2 - 0 = 4", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+        Assert.Contains("10 - 6 - 0 = 4", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
         Assert.Empty(explanation.GetProperty("degradationSources").EnumerateArray());
+    }
+
+    [Fact]
+    public void Net_requirement_formula_uses_actual_available_quantity_when_safety_stock_exceeds_available()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 12m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("availableToNetQuantity").GetDecimal());
+        Assert.Equal(12m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
+        Assert.Equal(10m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Contains("10 - 0 - 0 = 10", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
     }
 
     [Fact]
