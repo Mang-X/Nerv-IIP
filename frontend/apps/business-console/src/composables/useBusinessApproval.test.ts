@@ -223,4 +223,36 @@ describe('business approval composable', () => {
       })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
+
+  it('uses the latest actor when approval identity changes after setup', async () => {
+    const actor = shallowRef({ actorType: 'user', actorRef: 'approver-a' })
+    const approval = useBusinessApproval(actor)
+
+    actor.value = { actorType: 'user', actorRef: 'approver-b' }
+    await approval.resolveTask({
+      chainId: 'chain-2',
+      stepNo: 10,
+      decision: 'Approve',
+    })
+    await approval.createDelegation({
+      delegatorActorType: 'user',
+      delegatorActorRef: 'approver-b',
+      delegateActorType: 'user',
+      delegateActorRef: 'approver-c',
+    })
+    await approval.revokeDelegation('delegation-2')
+
+    expect(vi.mocked(resolveBusinessConsoleApprovalStepMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith(expect.objectContaining({
+        body: expect.objectContaining({ actorRef: 'approver-b' }),
+      }))
+    expect(vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith(expect.objectContaining({
+        body: expect.objectContaining({ createdBy: 'approver-b' }),
+      }))
+    expect(vi.mocked(revokeBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith(expect.objectContaining({
+        body: { revokedBy: 'approver-b' },
+      }))
+  })
 })

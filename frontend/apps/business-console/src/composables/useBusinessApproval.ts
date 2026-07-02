@@ -24,7 +24,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 const DEFAULT_TAKE = 10
 
@@ -141,9 +141,10 @@ function isApprovalQuery(entry: UseQueryEntry) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
-export function useBusinessApproval(actor: ApprovalActor) {
+export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>) {
   const businessContext = useBusinessContextStore()
   const queryCache = useQueryCache()
+  const actor = computed(() => toValue(actorInput))
 
   const templateFilters = defaultPaged<ApprovalTemplateFilters>()
   const chainFilters = defaultPaged<ApprovalChainFilters>()
@@ -186,8 +187,8 @@ export function useBusinessApproval(actor: ApprovalActor) {
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
-        actorType: actor.actorType,
-        actorRef: actor.actorRef,
+        actorType: actor.value.actorType,
+        actorRef: actor.value.actorRef,
         skip: taskFilters.skip,
         take: taskFilters.take,
       },
@@ -294,7 +295,7 @@ export function useBusinessApproval(actor: ApprovalActor) {
           effectiveFromUtc: optionalText(payload.effectiveFromUtc),
           effectiveToUtc: optionalText(payload.effectiveToUtc),
           reason: optionalNullableText(payload.reason),
-          createdBy: actor.actorRef,
+          createdBy: actor.value.actorRef,
         },
       }),
     createDelegationError: createDelegationMutation.error,
@@ -332,8 +333,8 @@ export function useBusinessApproval(actor: ApprovalActor) {
         body: {
           organizationId: businessContext.organizationId,
           environmentId: businessContext.environmentId,
-          actorType: actor.actorType,
-          actorRef: actor.actorRef,
+          actorType: actor.value.actorType,
+          actorRef: actor.value.actorRef,
           decision: payload.decision,
           comment: optionalNullableText(payload.comment),
         },
@@ -347,7 +348,7 @@ export function useBusinessApproval(actor: ApprovalActor) {
           organizationId: businessContext.organizationId,
           environmentId: businessContext.environmentId,
         },
-        body: { revokedBy: actor.actorRef },
+        body: { revokedBy: actor.value.actorRef },
       }),
     revokeDelegationError: revokeDelegationMutation.error,
     revokeDelegationPending: revokeDelegationMutation.isLoading,

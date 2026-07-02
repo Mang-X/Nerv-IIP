@@ -74,7 +74,7 @@ const actor = computed(() => ({ actorType: 'user', actorRef: actorRef.value }))
 const canReadApprovals = computed(() => permissionCodes.value.includes(P.approvalsRead) || permissionCodes.value.includes(P.approvalsManage))
 const canManageApprovals = computed(() => permissionCodes.value.includes(P.approvalsManage))
 
-const approval = useBusinessApproval(actor.value)
+const approval = useBusinessApproval(actor)
 const taskPager = usePagedList(approval.taskFilters)
 const chainPager = usePagedList(approval.chainFilters)
 const decisionPager = usePagedList(approval.decisionFilters)
@@ -88,7 +88,6 @@ const decisionForm = reactive({
   decision: 'Approve',
   comment: '',
 })
-const decisionError = shallowRef('')
 
 const delegationOpen = shallowRef(false)
 const delegationForm = reactive({
@@ -191,7 +190,6 @@ function openTaskDecision(row: BusinessConsoleApprovalTaskItem, decision: string
   decisionForm.stepNo = row.stepNo
   decisionForm.decision = decision
   decisionForm.comment = ''
-  decisionError.value = ''
   taskDecisionOpen.value = true
 }
 
@@ -217,8 +215,7 @@ async function submitTaskDecision() {
     taskDecisionOpen.value = false
     notifySuccess(`审批任务已${decisionLabel(decisionForm.decision)}`)
   } catch (error) {
-    decisionError.value = '审批处理失败，请稍后重试。'
-    notifyError(error, decisionError.value)
+    notifyError(error, '审批处理失败，请稍后重试。')
   }
 }
 
@@ -252,21 +249,21 @@ async function submitDelegation() {
   }
 
   try {
+    delegationError.value = ''
     await approval.createDelegation({
       delegatorActorType: 'user',
       delegatorActorRef: delegationForm.delegatorActorRef.trim(),
       delegateActorType: 'user',
       delegateActorRef: delegationForm.delegateActorRef.trim(),
       documentType: delegationForm.documentType,
-      effectiveFromUtc: delegationForm.effectiveFromUtc,
-      effectiveToUtc: delegationForm.effectiveToUtc,
+      effectiveFromUtc: delegationForm.effectiveFromUtc ? toIsoFromLocalInput(delegationForm.effectiveFromUtc) : undefined,
+      effectiveToUtc: delegationForm.effectiveToUtc ? toIsoFromLocalInput(delegationForm.effectiveToUtc) : undefined,
       reason: delegationForm.reason,
     })
     delegationOpen.value = false
     notifySuccess('审批委托已生效')
   } catch (error) {
-    delegationError.value = '委托保存失败，请稍后重试。'
-    notifyError(error, delegationError.value)
+    notifyError(error, '委托保存失败，请稍后重试。')
   }
 }
 
@@ -308,6 +305,7 @@ async function submitTemplate() {
   }
 
   try {
+    templateError.value = ''
     await approval.saveTemplate({
       templateCode: templateForm.templateCode.trim(),
       documentType: templateForm.documentType.trim(),
@@ -324,9 +322,13 @@ async function submitTemplate() {
     templateOpen.value = false
     notifySuccess('审批模板已保存')
   } catch (error) {
-    templateError.value = '模板保存失败，请稍后重试。'
-    notifyError(error, templateError.value)
+    notifyError(error, '模板保存失败，请稍后重试。')
   }
+}
+
+function toIsoFromLocalInput(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toISOString()
 }
 </script>
 
@@ -545,7 +547,6 @@ async function submitTemplate() {
             <FieldProLabel for="approval-comment">处理意见</FieldProLabel>
             <InputPro id="approval-comment" v-model="decisionForm.comment" autocomplete="off" />
           </FieldPro>
-          <FieldProError v-if="decisionError" :errors="[decisionError]" />
           <DialogProFooter>
             <DialogProClose as-child>
               <ButtonPro type="button" variant="outline">取消</ButtonPro>

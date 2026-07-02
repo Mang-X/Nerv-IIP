@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import ApprovalPage from './index.vue'
 
 const approvalState = vi.hoisted(() => ({
+  createDelegation: vi.fn(async () => undefined),
   resolveTask: vi.fn(async () => undefined),
   revokeDelegation: vi.fn(async () => undefined),
 }))
@@ -19,7 +20,7 @@ vi.mock('@/composables/useBusinessApproval', () => ({
     chainsTotal: computed(() => 1),
     chainsError: shallowRef(undefined),
     chainFilters: reactive({ status: undefined, startedBy: undefined, sourceService: undefined, documentType: undefined, documentId: undefined, skip: 0, take: 10 }),
-    createDelegation: vi.fn(),
+    createDelegation: approvalState.createDelegation,
     createDelegationError: shallowRef(undefined),
     createDelegationPending: shallowRef(false),
     decisions: computed(() => [{ decisionId: 'decision-1', chainId: 'chain-1', decision: 'Approve', actorRef: 'manager-a', documentType: '采购订单', documentId: 'PO-260701-001' }]),
@@ -94,6 +95,13 @@ function mountApproval(permissionCodes: string[]) {
       stubs: {
         BusinessLayout: { template: '<main><slot /></main>' },
         DataTablePro: tableStub,
+        DialogPro: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
+        DialogProClose: { template: '<span><slot /></span>' },
+        DialogProContent: { template: '<section><slot /></section>' },
+        DialogProDescription: { template: '<p><slot /></p>' },
+        DialogProFooter: { template: '<footer><slot /></footer>' },
+        DialogProHeader: { template: '<header><slot /></header>' },
+        DialogProTitle: { template: '<h2><slot /></h2>' },
         RowActions: { template: '<div data-testid="row-actions"><slot /></div>' },
         DropdownMenuProItem: { emits: ['click'], template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>' },
         PageHeader: { props: ['title'], template: '<header><h1>{{ title }}</h1><slot /><slot name="actions" /></header>' },
@@ -107,6 +115,7 @@ function mountApproval(permissionCodes: string[]) {
 }
 
 beforeEach(() => {
+  approvalState.createDelegation.mockClear()
   approvalState.resolveTask.mockClear()
   approvalState.revokeDelegation.mockClear()
 })
@@ -142,5 +151,25 @@ describe('approval center page permissions and actions', () => {
     expect(wrapper.findAll('button').some((button) => button.text().includes('通过'))).toBe(false)
     expect(wrapper.findAll('button').some((button) => button.text().includes('撤销'))).toBe(false)
     expect(wrapper.text()).toContain('没有审批处理权限')
+  })
+
+  it('converts delegation datetime-local values to UTC ISO strings before submit', async () => {
+    const wrapper = mountApproval(['business.approvals.read', 'business.approvals.manage'])
+    await flushPromises()
+
+    const newDelegation = wrapper.findAll('button').find((button) => button.text().includes('新建委托'))!
+    await newDelegation.trigger('click')
+    await wrapper.find('#approval-delegate').setValue('manager-c')
+    await wrapper.find('#approval-delegation-from').setValue('2026-07-01T09:30')
+    await wrapper.find('#approval-delegation-to').setValue('2026-07-03T18:45')
+    const delegationForm = wrapper.findAll('form').find((form) => form.find('#approval-delegate').exists())!
+    await delegationForm.trigger('submit')
+
+    expect(approvalState.createDelegation).toHaveBeenCalledWith(expect.objectContaining({
+      delegatorActorRef: 'manager-a',
+      delegateActorRef: 'manager-c',
+      effectiveFromUtc: new Date('2026-07-01T09:30').toISOString(),
+      effectiveToUtc: new Date('2026-07-03T18:45').toISOString(),
+    }))
   })
 })
