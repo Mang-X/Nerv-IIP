@@ -48,6 +48,8 @@ const GOLD_STANDARD_PAGES = [
   'wms/outbound.vue',
   'wms/wcs.vue',
   'wms/counts.vue',
+  'barcode/rules.vue',
+  'barcode/templates.vue',
   'maintenance/work-orders.vue',
   'maintenance/plans.vue',
   'erp/index.vue',
