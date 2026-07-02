@@ -1,6 +1,6 @@
-# 工程资料到生产版本
+# 基础资料到工程资料与生产版本
 
-这条路径帮助工程、工艺和生产准备角色把可生产的产品版本准备出来。它不承诺完整 PLM/PDM 能力，只覆盖当前 Business Console 已暴露的工程资料页面和生产版本窄化工作台。
+这条路径帮助工程、工艺和生产准备角色从基础资料进入工程资料维护，并把可生产的产品版本准备出来。它不承诺完整 PLM/PDM 能力，只覆盖当前 Business Console 已暴露的基础资料、工程资料页面和生产版本窄化工作台。
 
 ## 适用角色
 
@@ -16,17 +16,21 @@
 
 ## 页面入口
 
-| 目标 | Business Console 路由 |
-| --- | --- |
-| 工程资料工作台 | `/engineering` |
-| 工程物料 | `/engineering/items` |
-| 工程文档 | `/engineering/documents` |
-| EBOM | `/engineering/ebom` |
-| MBOM | `/engineering/mbom` |
-| 标准工序 | `/engineering/standard-operations` |
-| 工艺路线 | `/engineering/routings` |
-| 生产版本 | `/engineering/production-versions` |
-| ECO/ECN | `/engineering/eco` |
+| 环节 | Business Console 路由 | 当前事实或缺口 |
+| --- | --- | --- |
+| 物料与产品 | `/master-data/skus` | 已在基础数据域暴露，用于确认 SKU、UOM、分类和生命周期。 |
+| 计量单位 | `/master-data/units` | 已在基础数据域暴露，用于确认产品和组件的单位。 |
+| 工厂结构 | `/master-data/facilities` | 已在基础数据域暴露，用于确认工厂、产线和工作中心。 |
+| 设备台账 | `/master-data/devices` | 已在基础数据域暴露，用于确认设备资产。 |
+| 工程资料工作台 | `/engineering` | 已有 route-ready 汇总页；顶部导航默认进入生产版本页。 |
+| 工程物料 | `/engineering/items` | 已在产品工程域暴露。 |
+| 工程文档 | `/engineering/documents` | 已在产品工程域暴露，可按物料和文档类型过滤。 |
+| EBOM | `/engineering/ebom` | 已在产品工程域暴露。 |
+| MBOM | `/engineering/mbom` | 已在产品工程域暴露。 |
+| 标准工序 | `/engineering/standard-operations` | 已在产品工程域暴露。 |
+| 工艺路线 | `/engineering/routings` | 已在产品工程域暴露。 |
+| 生产版本 | `/engineering/production-versions` | 已在产品工程域暴露，是计划和 MES 引用的关键结果。 |
+| ECO/ECN | `/engineering/eco` | 已在产品工程域暴露；延迟生效切换仍是缺口。 |
 
 ## 操作步骤
 
@@ -49,11 +53,12 @@ SKU -> EngineeringItem -> EngineeringDocument -> EBOM -> MBOM -> StandardOperati
 - ProductionVersion 需要真实 MBOM、Routing、SKU 和有效日期校验；同一 SKU 的 active 有效窗不能重叠。
 - ECO/ECN release 会在同一事务内归档受影响版本。
 
-## 成功结果
+## 结果校验
 
-- 计划、MES 和工程工作台能按 SKU 找到已发布生产版本。
-- Routing 中的工序保存标准工序快照，后续执行不会被标准工序名称或工时漂移直接改写。
-- MBOM 与 EBOM 的关键物料关系可解释，不把设计结构和制造领料结构混为一谈。
+- 在 `/engineering/production-versions` 能按 SKU 找到 `Published` 生产版本，且版本绑定了有效 MBOM、Routing 和有效日期。
+- 在 `/engineering/routings` 能看到 Routing 发布时保存的标准工序快照，后续标准工序名称或工时调整不会直接改写已发布路线。
+- 在 `/engineering/mbom` 和 `/engineering/ebom` 能解释关键物料关系，不把设计结构和制造领料结构混为一谈。
+- 如果上述结果无法出现，当前卡点通常在基础资料缺失、版本有效期重叠、标准工序未启用或 ECO/ECN 变更规则未补齐。
 
 ## 常见失败/空态
 

@@ -17,19 +17,20 @@
 
 ## 页面入口
 
-| 目标 | Business Console 路由 |
-| --- | --- |
-| 需求与 MRP | `/planning` |
-| MES 生产驾驶舱 | `/mes` |
-| 生产计划 | `/mes/plans` |
-| 工单列表 | `/mes/work-orders` |
-| 工单详情 | `/mes/work-orders/:workOrderId` |
-| 齐套与物料 | `/mes/materials` |
-| 派工 | `/mes/dispatch` |
-| 工序执行 | `/mes/operation-tasks` |
-| 报工与完工 | `/mes/production-reports` |
-| 完工入库请求 | `/mes/receipts` |
-| 规则排程结果 | `/mes/schedules` |
+| 环节 | Business Console 路由 | 当前事实或缺口 |
+| --- | --- | --- |
+| 需求与 MRP | `/planning` | 已在需求与计划域暴露，用于需求、MRP 和计划建议。 |
+| 排产工作台 | `/scheduling` | 已在需求与计划域暴露，消费 APS lite / Scheduling facade；甘特仍是缺口。 |
+| MES 生产驾驶舱 | `/mes` | 已在制造执行域暴露。 |
+| 生产计划 | `/mes/plans` | 已在制造执行域暴露，可查看来源计划和转工单状态。 |
+| 工单列表 | `/mes/work-orders` | 已在制造执行域暴露。 |
+| 工单详情 | `/mes/work-orders/:workOrderId` | 已有对象详情页；不作为常驻菜单。 |
+| 齐套与物料 | `/mes/materials` | 已在制造执行域暴露。 |
+| 派工 | `/mes/dispatch` | 已在制造执行域暴露。 |
+| 工序执行 | `/mes/operation-tasks` | 已在制造执行域暴露。 |
+| 报工记录 | `/mes/production-reports` | 已在制造执行域暴露。 |
+| 完工入库请求 | `/mes/receipts` | 已在制造执行域暴露。 |
+| 规则排程结果 | `/mes/schedules` | 已在制造执行域暴露为过渡入口，不等同高级 APS。 |
 
 ## 操作步骤
 
@@ -53,17 +54,19 @@ Demand -> MRP Run -> Planning Suggestion -> APS/Scheduling Result -> Production 
 - 工单从创建、释放、执行中到完成；工序任务可经历待派工、执行中、暂停、完成或异常。
 - 报工产生良品、不良、返工等执行事实，完工入库请求等待库存过账结果。
 
-## 成功结果
+## 结果校验
 
-- 生产主管能在 MES 驾驶舱看到工单、工序、在制、阻塞和角色待办。
-- 完工入库请求能形成库存移动请求，并由 Inventory/WMS 回写过账成功或失败事实。
-- 计划员能把需求、MRP 建议、排程结果和生产执行状态连起来解释。
+- 在 `/planning` 能看到需求、MRP 结果和计划建议的处理状态。
+- 在 `/mes/plans` 或 `/mes/work-orders` 能追到计划进入生产计划、工单和工序任务后的状态。
+- 在 `/mes/production-reports` 能看到良品、不良和返工等报工事实。
+- 在 `/mes/receipts` 能看到完工入库请求，并能通过库存移动或失败诊断解释 Inventory/WMS 回写结果。
+- 如果链路中断，当前卡点通常是生产版本缺失、物料或设备上下文不足、排程结果无法转工单，或过账失败诊断入口不够直达。
 
 ## 常见失败/空态
 
 - `/mes/foundation` 无上下文：先选择 SKU、生产版本、工作中心、设备或工单，不把全局 readiness 误判为业务阻塞。
 - 计划建议无法执行：通常缺生产版本、物料可用性、工作中心能力或设备运行事实。
-- 工单详情为空：确认工单 ID 来自当前组织/环境，不使用演示默认 ID 假设。
+- 工单详情为空：确认工单号来自当前组织/环境和当前列表，不使用未确认的默认编号。
 - 完工入库失败：查看 Inventory posting failed 或 WMS movement request 失败诊断。
 
 ## 当前限制

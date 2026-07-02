@@ -15,9 +15,17 @@ const requiredGuideSections = [
   '操作步骤',
   '业务对象/单据流',
   '状态变化',
-  '成功结果',
+  '结果校验',
   '常见失败/空态',
   '当前限制',
+]
+
+const requiredGapSections = [
+  '能力缺失',
+  '操作不连贯',
+  '手填 ID',
+  '术语不清',
+  '反馈不足',
 ]
 
 function readDocsFile(relativePath: string) {
@@ -121,6 +129,10 @@ describe('product docs app contract', () => {
 
       expect(content).toContain('## 证据页面')
       expect(content).toContain('## 建议 issue 标题')
+
+      for (const section of requiredGapSections) {
+        expect(content, `${file} should include ${section}`).toContain(`### ${section}`)
+      }
     }
 
     const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
@@ -129,6 +141,9 @@ describe('product docs app contract', () => {
       const content = readFileSync(file, 'utf8')
 
       expect(content, `${file} should not expose internal gap wording`).not.toContain('建议 issue 标题')
+      expect(content, `${file} should avoid development-only demo wording`).not.toMatch(/\bdemo\b/i)
+      expect(content, `${file} should avoid development-only seed wording`).not.toMatch(/\bseed(?:ed|ing)?\b/i)
+      expect(content, `${file} should avoid development-only mock wording`).not.toMatch(/\bmock\b/i)
     }
   })
 
@@ -138,7 +153,21 @@ describe('product docs app contract', () => {
     for (const file of publicFiles) {
       const content = readFileSync(file, 'utf8')
       const routes = Array.from(content.matchAll(/`(\/[a-z0-9][a-z0-9/:?-]*)`/g), (match) => match[1])
-        .filter((route) => route.startsWith('/mes') || route.startsWith('/wms') || route.startsWith('/engineering') || route.startsWith('/inventory') || route.startsWith('/planning') || route.startsWith('/quality') || route.startsWith('/master-data'))
+        .filter((route) =>
+          route.startsWith('/approval')
+          || route.startsWith('/barcode')
+          || route.startsWith('/engineering')
+          || route.startsWith('/equipment')
+          || route.startsWith('/erp')
+          || route.startsWith('/inventory')
+          || route.startsWith('/maintenance')
+          || route.startsWith('/master-data')
+          || route.startsWith('/mes')
+          || route.startsWith('/planning')
+          || route.startsWith('/quality')
+          || route.startsWith('/scheduling')
+          || route.startsWith('/wms'),
+        )
         .filter((route) => !route.includes(':'))
 
       for (const route of routes) {
