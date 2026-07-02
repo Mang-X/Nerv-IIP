@@ -222,9 +222,23 @@ describe('business document approval panel', () => {
     })
 
     expect(wrapper.text()).toContain('尚未关联审批链')
-    expect(wrapper.text()).not.toContain('Running')
     expect(wrapper.text()).not.toContain('质量经理复核')
     expect(findButton(wrapper, '关联此审批链')).toBeUndefined()
+  })
+
+  it('allows a new business document to explicitly choose an existing approval chain', async () => {
+    const wrapper = mount(BusinessDocumentApprovalPanel, {
+      props: {
+        modelValue: '',
+        sourceService: 'product-engineering',
+        documentType: 'engineering-change-order',
+      },
+      global: { stubs: uiStubs },
+    })
+
+    await wrapper.find('select').setValue('chain-1')
+
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['chain-1'])
   })
 
   it('keeps legacy text approval references visible when they are not real chain ids', () => {

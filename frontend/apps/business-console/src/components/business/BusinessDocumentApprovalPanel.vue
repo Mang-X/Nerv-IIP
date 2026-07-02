@@ -233,7 +233,7 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         <StatusBadgePro v-if="selectedChain?.status" :value="selectedChain.status" />
       </div>
 
-      <FieldPro v-if="hasDurableDocumentId && approval.chains.value.length">
+      <FieldPro v-if="approval.chains.value.length">
         <FieldProLabel>关联已有审批链</FieldProLabel>
         <SelectPro :model-value="displayedChainId" @update:model-value="chooseChain">
           <SelectProTrigger><SelectProValue placeholder="选择审批链" /></SelectProTrigger>
