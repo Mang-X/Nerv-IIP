@@ -1,0 +1,161 @@
+<script setup lang="ts">
+import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
+import type { DataTableProColumn } from '@nerv-iip/ui'
+import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import {
+  describeTelemetryOeeLimitations,
+  formatOeeRate,
+  useBusinessTelemetryOee,
+} from '@/composables/useBusinessTelemetry'
+import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import {
+  BadgePro,
+  ButtonPro,
+  DataTablePro,
+  InputPro,
+  PageHeader,
+  SectionCard,
+  SectionCards,
+  Toolbar,
+} from '@nerv-iip/ui'
+import { LineChartIcon, RefreshCwIcon, Settings2Icon } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+
+definePage({ meta: { requiresAuth: true, title: 'OEE 与可用性', requiredPermissions: ['business.iiot.telemetry.read'] } })
+
+const route = useRoute()
+const { availabilityWindows, filters, oee, oeeError, oeePending, refreshOee, runtimeAvailabilityError } = useBusinessTelemetryOee({
+  deviceAssetId: routeQuery('deviceAssetId'),
+})
+
+const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
+const limitation = describeTelemetryOeeLimitations()
+const blockedWindowCount = computed(() => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length)
+
+const columns: DataTableProColumn<EquipmentRuntimeAvailabilityWindow>[] = [
+  { key: 'availabilityStatus', header: '状态', width: 'w-24' },
+  { key: 'reason', header: '原因', accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label },
+  { key: 'severity', header: '级别', width: 'w-24' },
+  { key: 'startUtc', header: '开始', width: 'w-44' },
+  { key: 'endUtc', header: '结束', width: 'w-44' },
+  { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
+]
+
+function routeQuery(key: string) {
+  const value = route.query[key]
+  return Array.isArray(value) ? value[0] ?? '' : value?.toString() ?? ''
+}
+function availabilityLabel(value?: string | null) {
+  const labels: Record<string, string> = { available: '可用', unavailable: '不可用', unknown: '未知' }
+  return value ? labels[value.toLowerCase()] ?? value : '未知'
+}
+function availabilityVariant(value?: string | null) {
+  if (value === 'available') return 'success'
+  if (value === 'unavailable') return 'danger'
+  return 'neutral'
+}
+function severityLabel(value?: string | null) {
+  const labels: Record<string, string> = { blocked: '阻塞', critical: '严重', info: '信息', warning: '预警' }
+  return value ? labels[value.toLowerCase()] ?? value : '未知'
+}
+function severityVariant(value?: string | null) {
+  const severity = value?.toLowerCase()
+  if (severity === 'critical' || severity === 'blocked') return 'danger'
+  if (severity === 'warning') return 'warning'
+  return 'neutral'
+}
+function formatDateTime(value?: string | null) {
+  if (!value) return '无'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+</script>
+
+<template>
+  <BusinessLayout>
+    <PageHeader title="OEE 与可用性" :breadcrumbs="[{ label: '设备监控（IoT）' }]" :count="filters.deviceAssetId || '选择设备'">
+      <template #actions>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/equipment/telemetry/history', query: { deviceAssetId: filters.deviceAssetId } }">
+            <LineChartIcon aria-hidden="true" />
+            历史趋势
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment/telemetry/alarm-rules"><Settings2Icon aria-hidden="true" />报警规则</RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="oeePending || !filters.deviceAssetId.trim()" @click="refreshOee">
+          <RefreshCwIcon aria-hidden="true" />
+          查询
+        </ButtonPro>
+      </template>
+    </PageHeader>
+
+    <Toolbar :show-search="false">
+      <template #filters>
+        <InputPro v-model="filters.deviceAssetId" class="h-9 w-56" placeholder="设备编号" aria-label="设备编号" />
+        <InputPro v-model="filters.windowStartUtc" class="h-9 w-64" placeholder="开始时间 ISO" aria-label="开始时间" />
+        <InputPro v-model="filters.windowEndUtc" class="h-9 w-64" placeholder="结束时间 ISO" aria-label="结束时间" />
+      </template>
+    </Toolbar>
+
+    <p class="rounded-lg border bg-muted/30 p-3 text-sm leading-6 text-muted-foreground">{{ limitation }}</p>
+    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+
+    <SectionCards :columns="4">
+      <SectionCard description="可用率" :value="formatOeeRate(oee?.availabilityRate)" hint="按运行状态持续时间计算" />
+      <SectionCard description="加载率" :value="formatOeeRate(oee?.loadingRate)" hint="排除计划停机窗口" />
+      <SectionCard description="OEE P0" :value="formatOeeRate(oee?.oeeRate)" hint="仅用于设备运行事实覆盖判断" />
+      <SectionCard description="状态样本" :value="oee?.stateSampleCount ?? 0" hint="当前窗口内状态事实" />
+    </SectionCards>
+
+    <div class="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div class="rounded-lg border bg-card p-4">
+        <h2 class="text-sm font-semibold text-foreground">P0 口径</h2>
+        <div class="mt-4 grid gap-3 text-sm">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">性能系数</span>
+            <BadgePro class="rounded-sm" variant="warning">{{ oee?.performanceRateEstimated ? '未测量' : formatOeeRate(oee?.performanceRate) }}</BadgePro>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">质量系数</span>
+            <BadgePro class="rounded-sm" variant="warning">{{ oee?.qualityRateEstimated ? '未测量' : formatOeeRate(oee?.qualityRate) }}</BadgePro>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-muted-foreground">不可用窗口</span>
+            <span class="font-medium text-foreground">{{ blockedWindowCount }}</span>
+          </div>
+        </div>
+      </div>
+
+      <DataTablePro
+        :columns="columns"
+        :rows="availabilityWindows"
+        :row-key="(r) => `${r.deviceAssetId}-${r.reasonCode}-${r.startUtc}`"
+        :loading="oeePending"
+        :searchable="false"
+        :column-settings="false"
+        empty-message="请输入设备编号和时间范围后查询设备可用性窗口。"
+      >
+        <template #cell-availabilityStatus="{ row }">
+          <BadgePro class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{ availabilityLabel(row.availabilityStatus) }}</BadgePro>
+        </template>
+        <template #cell-reason="{ row }">
+          <div class="grid gap-1">
+            <span class="font-medium text-foreground">{{ describeEquipmentReason(row.reasonCode ?? '').label }}</span>
+            <span class="text-xs text-muted-foreground">{{ describeEquipmentReason(row.reasonCode ?? '').nextStep }}</span>
+          </div>
+        </template>
+        <template #cell-severity="{ row }">
+          <BadgePro class="rounded-sm" :variant="severityVariant(row.severity)">{{ severityLabel(row.severity) }}</BadgePro>
+        </template>
+        <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
+        <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
+      </DataTablePro>
+    </div>
+  </BusinessLayout>
+</template>
