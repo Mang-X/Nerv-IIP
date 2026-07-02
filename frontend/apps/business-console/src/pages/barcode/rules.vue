@@ -29,8 +29,9 @@ import {
   StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '条码规则', requiredPermissions: ['business.barcodes.templates.manage'] } })
 
@@ -65,10 +66,15 @@ const {
   saveRulePending,
 } = useBarcodeRules()
 
+const route = useRoute()
 const open = shallowRef(false)
 const showErrors = shallowRef(false)
-const keyword = shallowRef('')
+const editingRuleCode = shallowRef<string | null>(null)
+const keyword = shallowRef(firstQuery(route.query.ruleCode))
 const statusFilter = shallowRef('all')
+const page = shallowRef(1)
+const pageSize = shallowRef('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 
 const form = reactive({
   ruleCode: '',
@@ -89,17 +95,37 @@ const columns: DataTableProColumn<BusinessConsoleBarcodeRuleItem>[] = [
   { key: 'gs1CompanyPrefixLength', header: 'GS1 前缀', width: 'w-32' },
   { key: 'allowedSourceDocumentTypes', header: '适用场景' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'skuLink', header: '物料使用', align: 'end', width: 'w-40' },
+  { key: 'skuLink', header: '物料使用', width: 'w-52' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 watch(keyword, (value) => {
   filters.keyword = value.trim() || undefined
   filters.skip = 0
+  page.value = 1
+}, { immediate: true })
+
+watch(
+  () => route.query.ruleCode,
+  (value) => {
+    const ruleCode = firstQuery(value)
+    if (ruleCode) keyword.value = ruleCode
+  },
+)
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
+
+watch(pageSize, () => {
+  page.value = 1
 })
 
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
   filters.skip = 0
+  page.value = 1
 })
 
 const errorMessage = computed(() => rulesError.value instanceof Error ? rulesError.value.message : '')
@@ -128,6 +154,10 @@ function statusLabel(value?: string | null) {
   return value === 'disabled' ? '停用' : '启用'
 }
 
+function firstQuery(value: unknown) {
+  return Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '')
+}
+
 function resetForm() {
   Object.assign(form, {
     ruleCode: '',
@@ -139,7 +169,24 @@ function resetForm() {
     allowedSourceDocumentTypes: [],
     status: 'active',
   })
+  editingRuleCode.value = null
   showErrors.value = false
+}
+
+function openEdit(row: BusinessConsoleBarcodeRuleItem) {
+  Object.assign(form, {
+    ruleCode: row.ruleCode ?? '',
+    barcodeType: row.barcodeType ?? 'code128',
+    prefix: row.prefix ?? '',
+    length: row.length ?? 18,
+    checksumRule: row.checksumRule ?? 'none',
+    gs1CompanyPrefixLength: row.gs1CompanyPrefixLength ? String(row.gs1CompanyPrefixLength) : '',
+    allowedSourceDocumentTypes: [...(row.allowedSourceDocumentTypes ?? [])],
+    status: row.status === 'disabled' ? 'disabled' : 'active',
+  })
+  editingRuleCode.value = row.ruleCode ?? null
+  showErrors.value = false
+  open.value = true
 }
 
 function toggleSource(value: string, checked: boolean) {
@@ -201,8 +248,8 @@ async function submitRule() {
           </DialogProTrigger>
           <DialogProContent class="sm:max-w-2xl">
             <DialogProHeader>
-              <DialogProTitle>新建或更新条码规则</DialogProTitle>
-              <DialogProDescription>规则编码相同则更新。GS1 类型必须填写公司前缀长度。</DialogProDescription>
+              <DialogProTitle>{{ editingRuleCode ? `编辑条码规则 · ${editingRuleCode}` : '新建条码规则' }}</DialogProTitle>
+              <DialogProDescription>{{ editingRuleCode ? '修改条码规则配置，规则编码不可修改。' : '创建条码规则。GS1 类型必须填写公司前缀长度。' }}</DialogProDescription>
             </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitRule">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -211,7 +258,8 @@ async function submitRule() {
               <FieldProGroup class="grid gap-3 sm:grid-cols-2">
                 <FieldPro :data-invalid="showErrors && !form.ruleCode.trim()">
                   <FieldProLabel for="barcode-rule-code">规则编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-rule-code" v-model="form.ruleCode" autocomplete="off" />
+                  <InputPro id="barcode-rule-code" v-model="form.ruleCode" autocomplete="off" :readonly="Boolean(editingRuleCode)" />
+                  <FieldProDescription v-if="editingRuleCode">规则编码由后端作为更新键，不可在编辑时修改。</FieldProDescription>
                 </FieldPro>
                 <FieldPro>
                   <FieldProLabel>状态</FieldProLabel>
@@ -292,6 +340,12 @@ async function submitRule() {
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="rulesTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="rules"
       row-key="barcodeRuleId"
@@ -310,9 +364,16 @@ async function submitRule() {
         <StatusBadgePro :value="row.status === 'disabled' ? 'disabled' : 'active'" :label="statusLabel(row.status)" />
       </template>
       <template #cell-skuLink="{ row }">
-        <RouterLink class="text-sm text-primary underline-offset-4 hover:underline" :to="{ path: '/master-data/skus', query: { barcodeRule: row.ruleCode } }">
-          查看使用该规则的物料
-        </RouterLink>
+        <div class="grid gap-1 text-sm">
+          <RouterLink class="text-primary underline-offset-4 hover:underline" to="/master-data/skus">打开物料页</RouterLink>
+          <span class="text-xs text-muted-foreground">按默认条码规则反查待 SKU facade 支持。</span>
+        </div>
+      </template>
+      <template #cell-actions="{ row }">
+        <ButtonPro size="sm" variant="ghost" type="button" :disabled="!row.ruleCode" @click="openEdit(row)">
+          <PencilIcon aria-hidden="true" />
+          编辑
+        </ButtonPro>
       </template>
     </DataTablePro>
   </BusinessLayout>

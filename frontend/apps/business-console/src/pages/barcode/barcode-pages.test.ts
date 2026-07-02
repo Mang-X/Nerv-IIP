@@ -8,6 +8,9 @@ import TemplatesPage from './templates.vue'
 const barcode = vi.hoisted(() => ({
   saveRule: vi.fn(),
   saveTemplate: vi.fn(),
+  route: { query: {} as Record<string, unknown> },
+  ruleFilters: undefined as undefined | { keyword?: string, skip: number, take: number },
+  templateFilters: undefined as undefined | { skip: number, take: number },
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -15,50 +18,62 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('vue-router', () => ({
+  useRoute: () => barcode.route,
+}))
+
 vi.mock('@/composables/useBusinessBarcode', () => ({
-  useBarcodeRules: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, keyword: '', status: undefined }),
-    rules: computed(() => [
-      {
-        barcodeRuleId: 'rule-1',
-        ruleCode: 'GS1-CASE',
-        barcodeType: 'gs1-128',
-        prefix: '0691234',
-        length: 18,
-        checksumRule: 'gs1-mod10',
-        gs1CompanyPrefixLength: 7,
-        allowedSourceDocumentTypes: ['inventory.receipt', 'production.report'],
-        status: 'active',
-      },
-    ]),
-    rulesError: shallowRef(undefined),
-    rulesPending: shallowRef(false),
-    rulesTotal: computed(() => 1),
-    refreshRules: vi.fn(),
-    saveRule: barcode.saveRule,
-    saveRulePending: shallowRef(false),
-    saveRuleError: shallowRef(undefined),
-  }),
-  useBarcodeTemplates: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, status: undefined }),
-    templates: computed(() => [
-      {
-        templateId: 'tpl-1',
-        templateCode: 'SKU_BOX',
-        templateName: '外箱标签',
-        templateFileId: 'file-label-box',
-        variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
-        status: 'active',
-      },
-    ]),
-    templatesError: shallowRef(undefined),
-    templatesPending: shallowRef(false),
-    templatesTotal: computed(() => 1),
-    refreshTemplates: vi.fn(),
-    saveTemplate: barcode.saveTemplate,
-    saveTemplatePending: shallowRef(false),
-    saveTemplateError: shallowRef(undefined),
-  }),
+  useBarcodeRules: () => {
+    const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, keyword: '', status: undefined })
+    barcode.ruleFilters = filters
+    return {
+      filters,
+      rules: computed(() => [
+        {
+          barcodeRuleId: 'rule-1',
+          ruleCode: 'GS1-CASE',
+          barcodeType: 'gs1-128',
+          prefix: '0691234',
+          length: 18,
+          checksumRule: 'gs1-mod10',
+          gs1CompanyPrefixLength: 7,
+          allowedSourceDocumentTypes: ['inventory.receipt', 'production.report'],
+          status: 'active',
+        },
+      ]),
+      rulesError: shallowRef(undefined),
+      rulesPending: shallowRef(false),
+      rulesTotal: computed(() => 1),
+      refreshRules: vi.fn(),
+      saveRule: barcode.saveRule,
+      saveRulePending: shallowRef(false),
+      saveRuleError: shallowRef(undefined),
+    }
+  },
+  useBarcodeTemplates: () => {
+    const filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100, status: undefined })
+    barcode.templateFilters = filters
+    return {
+      filters,
+      templates: computed(() => [
+        {
+          templateId: 'tpl-1',
+          templateCode: 'SKU_BOX',
+          templateName: '外箱标签',
+          templateFileId: 'file-label-box',
+          variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
+          status: 'active',
+        },
+      ]),
+      templatesError: shallowRef(undefined),
+      templatesPending: shallowRef(false),
+      templatesTotal: computed(() => 1),
+      refreshTemplates: vi.fn(),
+      saveTemplate: barcode.saveTemplate,
+      saveTemplatePending: shallowRef(false),
+      saveTemplateError: shallowRef(undefined),
+    }
+  },
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
@@ -91,11 +106,15 @@ function setInput(wrapper: ReturnType<typeof mount>, selector: string, value: st
 describe('barcode pages', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    barcode.route.query = {}
+    barcode.ruleFilters = undefined
+    barcode.templateFilters = undefined
     barcode.saveRule.mockResolvedValue(undefined)
     barcode.saveTemplate.mockResolvedValue(undefined)
   })
 
-  it('renders rule maintenance with source usage and SKU cross-link', async () => {
+  it('renders rule maintenance with source usage, explicit SKU gap, and route-seeded keyword', async () => {
+    barcode.route.query = { ruleCode: 'GS1-CASE' }
     const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
     await flushPromises()
 
@@ -104,7 +123,9 @@ describe('barcode pages', () => {
     expect(wrapper.text()).toContain('GS1 公司前缀 7 位')
     expect(wrapper.text()).toContain('收货入库')
     expect(wrapper.text()).toContain('生产报工')
-    expect(wrapper.text()).toContain('查看使用该规则的物料')
+    expect(wrapper.text()).toContain('按默认条码规则反查待 SKU facade 支持')
+    expect(barcode.ruleFilters?.keyword).toBe('GS1-CASE')
+    expect(barcode.ruleFilters?.take).toBe(10)
   })
 
   it('blocks GS1 rule submission without company prefix length', async () => {
@@ -154,6 +175,28 @@ describe('barcode pages', () => {
     }))
   })
 
+  it('prefills an existing barcode rule for update', async () => {
+    const wrapper = mount(RulesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('编辑'))!.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#barcode-rule-code').element as HTMLInputElement).value).toBe('GS1-CASE')
+    expect(wrapper.find('#barcode-rule-code').attributes('readonly')).toBeDefined()
+    expect((wrapper.find('#barcode-rule-prefix').element as HTMLInputElement).value).toBe('0691234')
+
+    await setInput(wrapper, '#barcode-rule-prefix', '0699999')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      ruleCode: 'GS1-CASE',
+      prefix: '0699999',
+      gs1CompanyPrefixLength: 7,
+    }))
+  })
+
   it('renders and saves a label template with field schema text', async () => {
     const wrapper = mount(TemplatesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
     await flushPromises()
@@ -180,6 +223,28 @@ describe('barcode pages', () => {
       templateFileId: 'file-pallet',
       variableSchemaJson: '{"fields":["sscc","lotNo"]}',
       status: 'active',
+    }))
+  })
+
+  it('prefills an existing label template for update', async () => {
+    const wrapper = mount(TemplatesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('编辑'))!.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.find('#barcode-template-code').element as HTMLInputElement).value).toBe('SKU_BOX')
+    expect(wrapper.find('#barcode-template-code').attributes('readonly')).toBeDefined()
+    expect((wrapper.find('#barcode-template-file').element as HTMLInputElement).value).toBe('file-label-box')
+
+    await setInput(wrapper, '#barcode-template-name', '外箱标签 V2')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(barcode.saveTemplate).toHaveBeenCalledWith(expect.objectContaining({
+      templateCode: 'SKU_BOX',
+      templateName: '外箱标签 V2',
+      templateFileId: 'file-label-box',
     }))
   })
 })

@@ -29,7 +29,7 @@ import {
   StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { PencilIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 definePage({ meta: { requiresAuth: true, title: '标签模板', requiredPermissions: ['business.barcodes.templates.manage'] } })
@@ -52,7 +52,11 @@ const {
 
 const open = shallowRef(false)
 const showErrors = shallowRef(false)
+const editingTemplateCode = shallowRef<string | null>(null)
 const statusFilter = shallowRef('all')
+const page = shallowRef(1)
+const pageSize = shallowRef('10')
+const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 
 const form = reactive({
   templateCode: '',
@@ -68,11 +72,22 @@ const columns: DataTableProColumn<BusinessConsoleBarcodeTemplateItem>[] = [
   { key: 'templateFileId', header: '模板文件', width: 'w-40', accessor: (r) => r.templateFileId ?? '无' },
   { key: 'variableSchemaJson', header: '字段说明' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
 ]
 
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
   filters.skip = 0
+  page.value = 1
+})
+
+watch([page, pageSize], () => {
+  filters.skip = (page.value - 1) * pageSizeNumber.value
+  filters.take = pageSizeNumber.value
+}, { immediate: true })
+
+watch(pageSize, () => {
+  page.value = 1
 })
 
 const errorMessage = computed(() => templatesError.value instanceof Error ? templatesError.value.message : '')
@@ -102,7 +117,21 @@ function resetForm() {
     variableSchemaJson: '{"fields":["skuCode","lotNo","expiryDate"]}',
     status: 'active',
   })
+  editingTemplateCode.value = null
   showErrors.value = false
+}
+
+function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
+  Object.assign(form, {
+    templateCode: row.templateCode ?? '',
+    templateName: row.templateName ?? '',
+    templateFileId: row.templateFileId ?? '',
+    variableSchemaJson: row.variableSchemaJson ?? '{"fields":["skuCode","lotNo","expiryDate"]}',
+    status: row.status === 'disabled' ? 'disabled' : 'active',
+  })
+  editingTemplateCode.value = row.templateCode ?? null
+  showErrors.value = false
+  open.value = true
 }
 
 function fieldSummary(value?: string | null) {
@@ -166,8 +195,8 @@ async function submitTemplate() {
           </DialogProTrigger>
           <DialogProContent class="sm:max-w-2xl">
             <DialogProHeader>
-              <DialogProTitle>新建或更新标签模板</DialogProTitle>
-              <DialogProDescription>模板编码相同则更新。模板文件由文件服务管理，本页只维护引用和字段结构。</DialogProDescription>
+              <DialogProTitle>{{ editingTemplateCode ? `编辑标签模板 · ${editingTemplateCode}` : '新建标签模板' }}</DialogProTitle>
+              <DialogProDescription>{{ editingTemplateCode ? '修改标签模板引用和字段结构，模板编码不可修改。' : '创建标签模板。模板文件由文件服务管理，本页只维护引用和字段结构。' }}</DialogProDescription>
             </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitTemplate">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
@@ -176,7 +205,8 @@ async function submitTemplate() {
               <FieldProGroup class="grid gap-3 sm:grid-cols-2">
                 <FieldPro :data-invalid="showErrors && !form.templateCode.trim()">
                   <FieldProLabel for="barcode-template-code">模板编码 <span class="text-destructive">*</span></FieldProLabel>
-                  <InputPro id="barcode-template-code" v-model="form.templateCode" autocomplete="off" />
+                  <InputPro id="barcode-template-code" v-model="form.templateCode" autocomplete="off" :readonly="Boolean(editingTemplateCode)" />
+                  <FieldProDescription v-if="editingTemplateCode">模板编码由后端作为更新键，不可在编辑时修改。</FieldProDescription>
                 </FieldPro>
                 <FieldPro :data-invalid="showErrors && !form.templateName.trim()">
                   <FieldProLabel for="barcode-template-name">模板名称 <span class="text-destructive">*</span></FieldProLabel>
@@ -230,6 +260,12 @@ async function submitTemplate() {
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="templatesTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="templates"
       row-key="templateId"
@@ -246,6 +282,12 @@ async function submitTemplate() {
       </template>
       <template #cell-status="{ row }">
         <StatusBadgePro :value="row.status === 'disabled' ? 'disabled' : 'active'" :label="statusLabel(row.status)" />
+      </template>
+      <template #cell-actions="{ row }">
+        <ButtonPro size="sm" variant="ghost" type="button" :disabled="!row.templateCode" @click="openEdit(row)">
+          <PencilIcon aria-hidden="true" />
+          编辑
+        </ButtonPro>
       </template>
     </DataTablePro>
   </BusinessLayout>
