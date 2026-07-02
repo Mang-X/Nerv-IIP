@@ -7,7 +7,7 @@ hero:
   tagline: 用三条端到端路径理解当前产品主线，并用流程图识别单据、状态和限制。
   actions:
     - theme: brand
-      text: 工程资料到生产版本
+      text: 基础资料到工程资料
       link: /getting-started/engineering-to-production
     - theme: alt
       text: 计划到完工入库
@@ -27,7 +27,7 @@ features:
 
 ## 推荐阅读顺序
 
-1. [工程资料到生产版本](/getting-started/engineering-to-production)：先建立 SKU、EBOM、MBOM、工艺路线和生产版本。
+1. [基础资料到工程资料](/getting-started/engineering-to-production)：先确认 SKU、UOM、工厂资源，再建立 EBOM、MBOM、工艺路线和生产版本。
 2. [需求计划到完工入库](/getting-started/planning-to-finished-goods)：从需求、MRP 和 APS 到生产工单、报工与完工入库。
 3. [仓储收发与库存闭环](/getting-started/wms-inventory-cycle)：理解收货、上架、库存、拣货、出库和库存移动。
 4. [核心流程图](/processes/)：用五张图快速对照工程资料、计划生产、仓储库存、质量审批和设备维护。

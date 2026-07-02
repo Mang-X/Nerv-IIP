@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import AvailabilityPage from './availability.vue'
 import CountsPage from './counts.vue'
 import MovementsPage from './movements.vue'
 
@@ -16,12 +17,38 @@ const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
 const routerState = vi.hoisted(() => ({ push: vi.fn() }))
 
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
   useRoute: () => routeState,
   useRouter: () => routerState,
 }))
 
 vi.mock('@/composables/useBusinessInventory', () => ({
+  useInventoryAvailability: () => ({
+    availability: computed(() => ({ onHandQuantity: 10, availableQuantity: 8, reservedQuantity: 2 })),
+    availabilityError: ref(undefined),
+    availabilityLines: computed(() => [
+      {
+        locationCode: 'A-01',
+        lotNo: 'LOT-001',
+        serialNo: 'SN-001',
+        qualityStatus: 'available',
+        ownerType: 'owned',
+        onHandQuantity: 10,
+        availableQuantity: 8,
+      },
+    ]),
+    availabilityPending: ref(false),
+    filters: {
+      environmentId: 'env-dev',
+      organizationId: 'org-001',
+      qualityStatus: 'available',
+      ownerType: 'owned',
+      siteCode: 'S1',
+      skuCode: 'SKU-001',
+      uomCode: 'EA',
+    },
+    refreshAvailability: vi.fn(),
+  }),
   useInventoryCounts: () => ({
     confirmAdjustment: inventoryState.confirmAdjustment,
     confirmAdjustmentError: ref(undefined),
@@ -88,7 +115,7 @@ function mountInventoryPage(component: unknown) {
       plugins: [createPinia()],
       stubs: {
         ...uiStubs,
-        RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+        RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
       },
     },
   })
@@ -113,6 +140,15 @@ describe('inventory workflow pages', () => {
     const wrapper = mountInventoryPage(MovementsPage)
 
     expect(wrapper.find('[data-ui-table]').exists()).toBe(true)
+  })
+
+  it('links inventory lot context to barcode scan records', () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+
+    const link = wrapper.findAll('[data-router-link]').find((item) => item.text().includes('扫码记录'))
+    expect(link?.attributes('data-to')).toContain('/barcode/scans')
+    expect(link?.attributes('data-to')).toContain('inventory.count')
+    expect(link?.attributes('data-to')).toContain('LOT-001')
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {

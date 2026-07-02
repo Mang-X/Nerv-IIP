@@ -40,6 +40,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
+import { RouterLink } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '收货入库', requiredPermissions: ['business.wms.receipts.read'] } })
 
@@ -206,6 +207,15 @@ const columns: DataTableProColumn<InboundRow>[] = [
 function rowKey(row: InboundRow) {
   return row.inboundOrderId ?? row.inboundOrderNo ?? '入库单'
 }
+function scanRecordRoute(row: InboundRow) {
+  return {
+    path: '/barcode/scans',
+    query: {
+      sourceWorkflow: 'wms.receiving',
+      sourceDocumentId: row.inboundOrderNo ?? row.inboundOrderId ?? undefined,
+    },
+  }
+}
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
@@ -273,16 +283,21 @@ function formatError(error: unknown) {
     >
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <ButtonPro
-          size="sm"
-          type="button"
-          variant="outline"
-          :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
-          :disabled="isCompleted(row) || !row.inboundOrderId"
-          @click="openComplete(row)"
-        >
-          完成入库
-        </ButtonPro>
+        <div class="flex justify-end gap-2">
+          <ButtonPro size="sm" type="button" variant="ghost" as-child>
+            <RouterLink :to="scanRecordRoute(row)">扫码记录</RouterLink>
+          </ButtonPro>
+          <ButtonPro
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
+            :disabled="isCompleted(row) || !row.inboundOrderId"
+            @click="openComplete(row)"
+          >
+            完成入库
+          </ButtonPro>
+        </div>
       </template>
     </DataTablePro>
 

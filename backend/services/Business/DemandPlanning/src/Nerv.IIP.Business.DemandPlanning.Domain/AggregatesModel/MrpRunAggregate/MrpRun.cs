@@ -15,7 +15,10 @@ public sealed record PlanningInputSnapshot(
     string ProductionEngineeringSnapshotSource,
     string InventorySnapshotSource,
     int DemandCount,
-    int AvailabilityCount);
+    int AvailabilityCount,
+    IReadOnlyCollection<string>? InputSources = null,
+    DateOnly? InputCoverageStart = null,
+    DateOnly? InputCoverageEnd = null);
 
 public static class PlanningInputDegradation
 {
@@ -50,6 +53,7 @@ public static class PlanningInputDegradation
 public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 {
     private IReadOnlyCollection<string>? inputDegradationSources;
+    private IReadOnlyCollection<string>? inputSources;
 
     private MrpRun()
     {
@@ -77,6 +81,14 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
     public MrpRunStatus Status { get; private set; }
     public string ProductionEngineeringSnapshotSource { get; private set; } = string.Empty;
     public string InventorySnapshotSource { get; private set; } = string.Empty;
+    public string InputSourceSummary { get; private set; } = string.Empty;
+    public IReadOnlyCollection<string> InputSources =>
+        inputSources ??= InputSourceSummary
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    public DateOnly? InputCoverageStart { get; private set; }
+    public DateOnly? InputCoverageEnd { get; private set; }
     public bool HasInputDegradation => InputDegradationSources.Count > 0;
     public IReadOnlyCollection<string> InputDegradationSources =>
         inputDegradationSources ??= PlanningInputDegradation.FromSnapshotSources(
@@ -103,6 +115,14 @@ public sealed class MrpRun : Entity<MrpRunId>, IAggregateRoot
 
         ProductionEngineeringSnapshotSource = DemandPlanningText.Required(snapshot.ProductionEngineeringSnapshotSource);
         InventorySnapshotSource = DemandPlanningText.Required(snapshot.InventorySnapshotSource);
+        inputSources = (snapshot.InputSources ?? [])
+            .Where(source => !string.IsNullOrWhiteSpace(source))
+            .Select(source => source.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        InputSourceSummary = string.Join(';', inputSources);
+        InputCoverageStart = snapshot.InputCoverageStart;
+        InputCoverageEnd = snapshot.InputCoverageEnd;
         inputDegradationSources = PlanningInputDegradation.FromSnapshotSources(
             ProductionEngineeringSnapshotSource,
             InventorySnapshotSource);

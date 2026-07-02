@@ -90,7 +90,15 @@ const routerLinkStubs = {
   RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs }
+const approvalPanelStub = {
+  BusinessDocumentApprovalPanel: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<section data-testid="approval-panel"><button type="button" @click="$emit(\'update:modelValue\', \'APR-9\')">关联审批链</button><span>{{ modelValue }}</span></section>',
+  },
+}
+
+const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs, ...approvalPanelStub }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -174,7 +182,7 @@ describe('engineering eco page', () => {
     await flushPromises()
 
     await wrapper.find('#eco-reason').setValue('工艺优化')
-    await wrapper.find('#eco-approval').setValue('APR-9')
+    await findButton(wrapper, '关联审批链')!.trigger('click')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     // 受影响版本：第一个 select 是对象种类
     await wrapper.findAll('select')[0]!.setValue('Routing')

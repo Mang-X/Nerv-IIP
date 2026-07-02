@@ -6,6 +6,7 @@ import type {
   BusinessConsoleReleaseEngineeringChangeRequest,
 } from '@nerv-iip/api-client'
 import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
+import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringChanges } from '@/composables/useProductEngineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -21,7 +22,6 @@ import {
   DialogProTitle,
   DialogProTrigger,
   FieldPro,
-  FieldProDescription,
   FieldProGroup,
   FieldProLabel,
   InputPro,
@@ -320,7 +320,7 @@ function riskTone(severity?: string | null): StatusTone {
             <DialogProHeader>
               <DialogProTitle>发布工程变更</DialogProTitle>
               <DialogProDescription>
-                变更一步发布并即时生效（无多步审批）。填写变更原因、审批参考、生效日与受影响版本。带 * 为必填项。
+                变更一步发布并即时生效。先关联真实审批链，再填写变更原因、生效日与受影响版本。带 * 为必填项。
               </DialogProDescription>
             </DialogProHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
@@ -334,12 +334,17 @@ function riskTone(severity?: string | null): StatusTone {
                   <FieldProLabel for="eco-reason">变更原因 <span class="text-destructive">*</span></FieldProLabel>
                   <InputPro id="eco-reason" v-model="form.reason" placeholder="说明本次变更的内容与原因" />
                 </FieldPro>
+                <BusinessDocumentApprovalPanel
+                  v-model="form.approvalReferenceId"
+                  title="变更审批链"
+                  source-service="product-engineering"
+                  document-type="engineering-change-order"
+                  :allow-start="false"
+                />
+                <p v-if="showErrors && !approvalValid" class="text-sm text-destructive" role="alert">
+                  请先关联一条真实审批链，再发布工程变更。
+                </p>
                 <div class="grid gap-3 sm:grid-cols-2">
-                  <FieldPro :data-invalid="showErrors && !approvalValid">
-                    <FieldProLabel for="eco-approval">审批参考 <span class="text-destructive">*</span></FieldProLabel>
-                    <InputPro id="eco-approval" v-model="form.approvalReferenceId" placeholder="审批单 / 决议引用 ID" />
-                    <FieldProDescription>记录线下审批的引用编号，便于追溯。</FieldProDescription>
-                  </FieldPro>
                   <FieldPro :data-invalid="showErrors && !effectiveValid">
                     <FieldProLabel>生效日 <span class="text-destructive">*</span></FieldProLabel>
                     <DatePickerPro v-model="form.effectiveDate" placeholder="选择生效日" class="w-full" />
@@ -515,10 +520,14 @@ function riskTone(severity?: string | null): StatusTone {
               <span class="text-muted-foreground">状态</span>
               <StatusBadgePro :label="ecoStatus(viewTarget.status).label" :tone="ecoStatus(viewTarget.status).tone" />
             </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">审批参考</span>
-              <span class="font-medium break-all text-right">{{ viewTarget.approvalReferenceId || '—' }}</span>
-            </div>
+            <BusinessDocumentApprovalPanel
+              :model-value="viewTarget.approvalReferenceId ?? ''"
+              title="变更审批链"
+              source-service="product-engineering"
+              document-type="engineering-change-order"
+              :document-id="viewTarget.changeNumber ?? undefined"
+              :allow-start="false"
+            />
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">生效日</span>
               <span class="font-medium">{{ viewTarget.effectiveDate ? formatDate(viewTarget.effectiveDate) : '即时' }}</span>

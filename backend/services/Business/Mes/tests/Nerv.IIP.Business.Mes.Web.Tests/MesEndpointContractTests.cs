@@ -1223,47 +1223,66 @@ public sealed class MesEndpointContractTests
         Assert.Equal("FGR-002", Assert.Single(receipts.Items).RequestNo);
     }
 
-    [Theory]
-    [InlineData("/api/business/v1/mes/schedules/run")]
-    [InlineData("/api/business/v1/mes/work-orders/rush")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/close")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/hold")]
-    [InlineData("/api/business/v1/mes/work-orders/WO-001/cancel")]
-    public async Task Mes_write_endpoints_require_internal_service_authentication(string route)
+    [Fact]
+    public async Task Mes_endpoints_require_internal_service_authentication()
     {
-        await using var factory = new WebApplicationFactory<Program>();
-        using var client = factory.CreateClient();
-
-        var response = await client.PostAsJsonAsync(route, new
+        var factory = new WebApplicationFactory<Program>();
+        try
         {
-            organizationId = "org-001",
-            environmentId = "env-dev",
-            trigger = "Manual",
-            workOrderId = "WO-RUSH",
-            skuId = "SKU-R",
-            productionVersionId = "PV-001",
-            quantity = 1,
-            dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
-            workCenterId = "WC-A",
-            durationMinutes = 60
-        });
+            using var client = factory.CreateClient();
 
-        Assert.True(
-            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Expected auth failure but received {(int)response.StatusCode}.");
+            foreach (var route in MesWriteAuthRoutes)
+            {
+                var postResponse = await client.PostAsJsonAsync(route, new
+                {
+                    organizationId = "org-001",
+                    environmentId = "env-dev",
+                    trigger = "Manual",
+                    workOrderId = "WO-RUSH",
+                    skuId = "SKU-R",
+                    productionVersionId = "PV-001",
+                    quantity = 1,
+                    dueUtc = DateTimeOffset.Parse("2026-05-22T12:00:00Z"),
+                    workCenterId = "WC-A",
+                    durationMinutes = 60
+                });
+
+                Assert.True(
+                    postResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                    $"Expected auth failure for {route} but received {(int)postResponse.StatusCode}.");
+            }
+
+            var queryResponse = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
+
+            Assert.True(
+                queryResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
+                $"Expected auth failure for MES work-order query but received {(int)queryResponse.StatusCode}.");
+        }
+        finally
+        {
+            await DisposeAuthOnlyFactoryAsync(factory);
+        }
     }
 
-    [Fact]
-    public async Task Mes_work_order_query_endpoint_requires_internal_service_authentication()
+    private static readonly string[] MesWriteAuthRoutes =
+    [
+        "/api/business/v1/mes/schedules/run",
+        "/api/business/v1/mes/work-orders/rush",
+        "/api/business/v1/mes/work-orders/WO-001/close",
+        "/api/business/v1/mes/work-orders/WO-001/hold",
+        "/api/business/v1/mes/work-orders/WO-001/cancel",
+    ];
+
+    private static async ValueTask DisposeAuthOnlyFactoryAsync(WebApplicationFactory<Program> factory)
     {
-        await using var factory = new WebApplicationFactory<Program>();
-        using var client = factory.CreateClient();
-
-        var response = await client.GetAsync("/api/business/v1/mes/work-orders?organizationId=org-001&environmentId=env-dev");
-
-        Assert.True(
-            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"Expected auth failure but received {(int)response.StatusCode}.");
+        try
+        {
+            await factory.DisposeAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // CAP/TestHost can race during auth-only factory cleanup; the auth response was already asserted.
+        }
     }
 
     public static IEnumerable<object[]> EndpointTypes()

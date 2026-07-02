@@ -47,7 +47,7 @@ Phase 3（#628 / MAN-337 已补）
 └─ ECO 预览   /engineering/eco                  [发布前 affected downstream preview：MBOM/Routing/PV/MRP/MES/APS 候选] ✅
 规划中（依赖后端 #397，未交付前用字典过渡，不假做）
 └─ 标准工序   /engineering/standard-operations  [工序主数据：默认工作中心+标准工时]  ⏳ #397
-注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。影响预览不自动修改下游单据。文档 fileId 为文本登记，文件上传端点未接入。
+注：ECO 后端为一步 release，无独立草稿/审批中间态；页面只呈现「已发布」真实态，不假做审批看板。2026-07-02 起，Business Console 的 ECO 发布/查看入口接入 BusinessApproval 真实审批链选择与状态查看，`approvalReferenceId` 由真实 `chainId` 关联，不再提供自由文本审批参考；这不改变 ProductEngineering 自身 release 校验。影响预览不自动修改下游单据。文档 fileId 为文本登记，文件上传端点未接入。
 
 ### 标准工序（工序主数据，⏳ 规划，依赖 #397）
 - **问题**：当前工艺路线的工序名走通用数据字典（`reference-data`，`codeSet=operation`），只有 code+名，**无默认工作中心/标准工时**；建路线时每行工作中心、工时仍逐行手填。成熟系统（SAP 标准工序 CA21 / 参考工序集 CA11、Oracle Standard Operations）把工序建模为**独立工程主数据**，预绑默认工作中心+标准工时+控制码，选工序即带出默认值。

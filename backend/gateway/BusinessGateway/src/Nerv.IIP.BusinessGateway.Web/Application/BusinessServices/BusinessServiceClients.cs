@@ -497,6 +497,34 @@ public interface IBusinessProductEngineeringClient
 
 public interface IBusinessPlanningClient
 {
+    Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
+        string internalBearerToken,
+        BusinessConsoleMpsListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMpsBucketItem> CreateMpsBucketAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMpsBucketRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMpsBucketItem> UpdateMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleUpdateMpsBucketRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReviewMpsBucketRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReleaseMpsBucketRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
         BusinessConsolePlanningContextRequest request,
@@ -3019,6 +3047,92 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
 public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
     : BusinessServiceHttpClient(httpClient), IBusinessPlanningClient
 {
+    public Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
+        string internalBearerToken,
+        BusinessConsoleMpsListRequest request,
+        CancellationToken cancellationToken) =>
+        ListMpsBucketsCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleMpsListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<DownstreamMpsBucketItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/mps?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("fromDate", request.FromDate),
+                ("toDate", request.ToDate),
+                ("status", request.Status)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleMpsBucketListResponse(items.Select(ToBusinessConsoleMpsBucket).ToArray());
+    }
+
+    public async Task<BusinessConsoleMpsBucketItem> CreateMpsBucketAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMpsBucketItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/planning/mps",
+            request,
+            cancellationToken);
+        return ToBusinessConsoleMpsBucket(response);
+    }
+
+    public async Task<BusinessConsoleMpsBucketItem> UpdateMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleUpdateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMpsBucketItem>(
+            internalBearerToken,
+            HttpMethod.Put,
+            $"/api/business/v1/planning/mps/{Uri.EscapeDataString(mpsId)}",
+            request,
+            cancellationToken);
+        return ToBusinessConsoleMpsBucket(response);
+    }
+
+    public async Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReviewMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMpsBucketItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/planning/mps/{Uri.EscapeDataString(mpsId)}/review?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            request,
+            cancellationToken);
+        return ToBusinessConsoleMpsBucket(response);
+    }
+
+    public async Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReleaseMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamMpsBucketItem>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/planning/mps/{Uri.EscapeDataString(mpsId)}/release?" + PlanningContextQuery(request.OrganizationId, request.EnvironmentId),
+            request,
+            cancellationToken);
+        return ToBusinessConsoleMpsBucket(response);
+    }
+
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
         BusinessConsolePlanningContextRequest request,
@@ -3088,11 +3202,15 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             request,
             cancellationToken);
         var inputDegradationSources = response.InputDegradationSources ?? [];
+        var inputSources = response.InputSources ?? [];
         return new BusinessConsoleRunMrpResponse(
             response.RunId,
             response.SuggestionCount,
             response.HasInputDegradation,
-            inputDegradationSources);
+            inputDegradationSources,
+            inputSources,
+            response.InputCoverageStart,
+            response.InputCoverageEnd);
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -3123,7 +3241,10 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.ProductionEngineeringSnapshotSource,
             x.InventorySnapshotSource,
             x.HasInputDegradation,
-            x.InputDegradationSources ?? [])).ToArray());
+            x.InputDegradationSources ?? [],
+            x.InputSources ?? [],
+            x.InputCoverageStart,
+            x.InputCoverageEnd)).ToArray());
     }
 
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
@@ -3206,6 +3327,33 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
     private static string PlanningContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
+    private static BusinessConsoleMpsBucketItem ToBusinessConsoleMpsBucket(DownstreamMpsBucketItem item) =>
+        new(
+            item.MpsId,
+            item.SkuCode,
+            item.UomCode,
+            item.SiteCode,
+            item.BucketDate,
+            item.Quantity,
+            MpsStatusName(item.Status),
+            item.ReviewedBy,
+            item.ReviewedAtUtc,
+            item.ReleasedBy,
+            item.ReleasedAtUtc);
+
+    private static string MpsStatusName(JsonElement status) => status.ValueKind switch
+    {
+        JsonValueKind.Number => status.GetInt32() switch
+        {
+            0 => "Draft",
+            1 => "Reviewed",
+            2 => "Released",
+            var value => value.ToString(CultureInfo.InvariantCulture),
+        },
+        JsonValueKind.String => status.GetString() ?? string.Empty,
+        _ => status.ToString(),
+    };
+
     private static string MrpRunStatusName(int status) =>
         status switch
         {
@@ -3227,11 +3375,27 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
+    private sealed record DownstreamMpsBucketItem(
+        string MpsId,
+        string SkuCode,
+        string UomCode,
+        string SiteCode,
+        DateOnly BucketDate,
+        decimal Quantity,
+        JsonElement Status,
+        string? ReviewedBy,
+        DateTimeOffset? ReviewedAtUtc,
+        string? ReleasedBy,
+        DateTimeOffset? ReleasedAtUtc);
+
     private sealed record DownstreamRunMrpResponse(
         string RunId,
         int SuggestionCount,
         bool HasInputDegradation,
-        IReadOnlyCollection<string>? InputDegradationSources);
+        IReadOnlyCollection<string>? InputDegradationSources,
+        IReadOnlyCollection<string>? InputSources,
+        DateOnly? InputCoverageStart,
+        DateOnly? InputCoverageEnd);
 
     private sealed record DownstreamMrpRunItem(
         string RunId,
@@ -3244,7 +3408,10 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         string ProductionEngineeringSnapshotSource,
         string InventorySnapshotSource,
         bool HasInputDegradation,
-        IReadOnlyCollection<string>? InputDegradationSources);
+        IReadOnlyCollection<string>? InputDegradationSources,
+        IReadOnlyCollection<string>? InputSources,
+        DateOnly? InputCoverageStart,
+        DateOnly? InputCoverageEnd);
 
     private sealed record DownstreamPlanningSuggestionItem(
         string SuggestionId,

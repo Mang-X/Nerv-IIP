@@ -13,6 +13,7 @@ import {
   listBusinessConsoleApprovalTemplatesQueryOptions,
   resolveBusinessConsoleApprovalStepMutationOptions,
   revokeBusinessConsoleApprovalDelegationMutationOptions,
+  startBusinessConsoleApprovalChainMutationOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessApproval } from './useBusinessApproval'
@@ -59,6 +60,9 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   revokeBusinessConsoleApprovalDelegationMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars })),
+  })),
+  startBusinessConsoleApprovalChainMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: { chainId: 'chain-started-1', vars } })),
   })),
 }))
 
@@ -158,7 +162,7 @@ describe('business approval composable', () => {
     expect(approval.delegations.value[0]?.delegationId).toBe('delegation-1')
   })
 
-  it('submits approval task decisions, templates, and delegations through stable api-client mutations', async () => {
+  it('submits approval task decisions, templates, chain starts, and delegations through stable api-client mutations', async () => {
     const approval = useBusinessApproval({ actorType: 'user', actorRef: 'approver-a' })
 
     await approval.resolveTask({
@@ -173,6 +177,12 @@ describe('business approval composable', () => {
       version: 3,
       isActive: true,
       steps: [{ stepNo: 10, stepName: '采购经理', approverType: 'role', approverRef: 'buyer-manager' }],
+    })
+    await approval.startChain({
+      templateCode: 'ncr-disposition-default',
+      sourceService: 'quality',
+      documentType: 'quality-ncr',
+      documentId: 'NCR-260701-001',
     })
     await approval.createDelegation({
       delegatorActorType: 'user',
@@ -205,6 +215,19 @@ describe('business approval composable', () => {
           templateCode: 'purchase-order',
           version: 3,
         }),
+      })
+    expect(vi.mocked(startBusinessConsoleApprovalChainMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith({
+        body: {
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          templateCode: 'ncr-disposition-default',
+          sourceService: 'quality',
+          documentType: 'quality-ncr',
+          documentId: 'NCR-260701-001',
+          documentLineId: null,
+          startedBy: 'approver-a',
+        },
       })
     expect(vi.mocked(createBusinessConsoleApprovalDelegationMutationOptions).mock.results[0]?.value.mutation)
       .toHaveBeenCalledWith({
