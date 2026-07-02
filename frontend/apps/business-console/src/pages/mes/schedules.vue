@@ -6,6 +6,7 @@ import type {
 import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesSchedules } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   ButtonPro,
   DataTablePro,
@@ -35,15 +36,25 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 definePage({ meta: { requiresAuth: true, title: '规则排程', requiredPermissions: ['business.mes.schedules.read', 'business.mes.schedules.manage'] } })
 
 const { lastSchedule, runSchedule, runScheduleError, runSchedulePending } = useMesSchedules()
+const businessContext = useBusinessContextStore()
 
 const runSuccess = shallowRef('')
 const scheduleSheetOpen = shallowRef(false)
 
 const runForm = reactive({
-  organizationId: 'org-001',
-  environmentId: 'env-dev',
+  organizationId: businessContext.organizationId,
+  environmentId: businessContext.environmentId,
   trigger: 'Manual',
 })
+
+watch(
+  () => [businessContext.organizationId, businessContext.environmentId] as const,
+  ([organizationId, environmentId]) => {
+    runForm.organizationId = organizationId
+    runForm.environmentId = environmentId
+  },
+  { flush: 'sync', immediate: true },
+)
 
 const assignments = computed<BusinessConsoleScheduledOperation[]>(() => lastSchedule.value?.assignments ?? [])
 const affectedWorkOrderIds = computed(() => lastSchedule.value?.affectedWorkOrderIds ?? [])
@@ -169,6 +180,9 @@ function isNonEmpty(value: string) {
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitScheduleRun">
           <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+          <p v-if="!isNonEmpty(runForm.organizationId) || !isNonEmpty(runForm.environmentId)" class="text-sm text-muted-foreground" role="status">
+            请先完成业务上下文选择。
+          </p>
           <p v-if="runSuccess" class="text-sm text-success" role="status">{{ runSuccess }}</p>
 
           <FieldProGroup class="grid gap-3">

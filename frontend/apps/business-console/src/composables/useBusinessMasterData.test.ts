@@ -82,6 +82,7 @@ vi.mock('@pinia/colada', () => ({
 describe('business master data composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()

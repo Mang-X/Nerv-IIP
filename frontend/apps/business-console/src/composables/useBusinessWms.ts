@@ -35,6 +35,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -70,13 +71,13 @@ export interface WmsWarehouseTaskListFilters extends WmsListFilters {
 }
 
 function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
-  }) as T
+  }) as T)
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -120,7 +121,7 @@ function makeIdempotencyKey(): string {
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
   const inboundOrdersQuery = useQuery(() =>
-    listBusinessConsoleWmsInboundOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsInboundOrdersQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('skuCode', filters.skuCode),
@@ -133,7 +134,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
         ...optionalQuery('ownerType', filters.ownerType),
         ...optionalQuery('ownerId', filters.ownerId),
       },
-    }),
+    }), filters),
   )
 
   const completeMutation = useMutation({
@@ -180,9 +181,9 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
 export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {}) {
   const filters = defaultFilters<WmsListFilters>(initialFilters)
   const outboundOrdersQuery = useQuery(() =>
-    listBusinessConsoleWmsOutboundOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsOutboundOrdersQueryOptions({
       query: baseQuery(filters),
-    }),
+    }), filters),
   )
 
   const completeMutation = useMutation({
@@ -225,14 +226,14 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
 export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWcsTaskListFilters>(initialFilters)
   const wcsTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsWcsTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsWcsTasksQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('externalTaskId', filters.externalTaskId),
         ...optionalQuery('warehouseTaskId', filters.warehouseTaskId),
         ...optionalQuery('failed', filters.failed),
       },
-    }),
+    }), filters),
   )
 
   function withQuery() {
@@ -294,9 +295,9 @@ function warehouseTaskQuery(filters: WmsWarehouseTaskListFilters) {
 export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const putawayTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsPutawayTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsPutawayTasksQueryOptions({
       query: warehouseTaskQuery(filters),
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
@@ -330,9 +331,9 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
 export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const pickingTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsPickingTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsPickingTasksQueryOptions({
       query: warehouseTaskQuery(filters),
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
@@ -366,12 +367,12 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
 export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const countExecutionsQuery = useQuery(() =>
-    listBusinessConsoleWmsCountExecutionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsCountExecutionsQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('locationCode', filters.locationCode),
       },
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({

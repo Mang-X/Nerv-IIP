@@ -2,9 +2,10 @@
 import { AppShellT } from '@nerv-iip/app-shell'
 import { ThemePicker, ThemeToggle } from '@nerv-iip/ui'
 import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   BUSINESS_DOMAINS,
   DOMAIN_SIDE_NAV,
@@ -15,6 +16,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const businessContext = useBusinessContextStore()
 const { principal } = storeToRefs(auth)
 
 const permissionCodes = computed(() => principal.value ? principal.value.permissionCodes ?? [] : undefined)
@@ -36,6 +38,17 @@ const shellUser = computed(() => {
   if (!p) return undefined
   return { name: p.loginName ?? p.principalId ?? '已登录用户', email: p.email }
 })
+
+watch(
+  principal,
+  (value) => {
+    businessContext.patchContext({
+      organizationId: value?.organizationId ?? '',
+      environmentId: value?.environmentId ?? '',
+    })
+  },
+  { immediate: true },
+)
 
 async function signOut() {
   await auth.logout()

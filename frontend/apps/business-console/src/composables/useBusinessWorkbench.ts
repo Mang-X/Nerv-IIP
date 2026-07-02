@@ -11,6 +11,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { hasBusinessContext } from './businessContextBinding'
 
 const WORKBENCH_TAKE = 8
 
@@ -30,15 +31,16 @@ function isAvailable(status: string | null | undefined) {
 
 export function useBusinessWorkbenchSummary() {
   const businessContext = useBusinessContextStore()
-  const summaryQuery = useQuery(() =>
-    getBusinessConsoleWorkbenchSummaryQueryOptions({
+  const summaryQuery = useQuery(() => ({
+    ...getBusinessConsoleWorkbenchSummaryQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
         take: WORKBENCH_TAKE,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   const summary = computed(() =>
     unwrapData<BusinessConsoleWorkbenchSummaryResponse, BusinessConsoleWorkbenchSummaryEnvelope>(
@@ -56,7 +58,7 @@ export function useBusinessWorkbenchSummary() {
     messageItems: computed<BusinessConsoleWorkbenchMessageItem[]>(() =>
       isAvailable(summary.value?.messages?.status) ? summary.value?.messages?.items ?? [] : [],
     ),
-    refreshWorkbenchSummary: summaryQuery.refetch,
+    refreshWorkbenchSummary: () => hasBusinessContext(businessContext) ? summaryQuery.refetch() : Promise.resolve(),
     sourceStatuses: computed<BusinessConsoleWorkbenchSourceStatus[]>(() =>
       summary.value?.sourceStatuses ?? [],
     ),

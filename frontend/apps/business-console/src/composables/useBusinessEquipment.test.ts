@@ -92,6 +92,7 @@ vi.mock('@pinia/colada', () => ({
 describe('business equipment composables', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()

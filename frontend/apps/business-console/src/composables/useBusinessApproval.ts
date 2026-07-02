@@ -27,6 +27,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { hasBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
 
@@ -163,8 +164,8 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
   const delegationFilters = defaultPaged<ApprovalDelegationFilters>({ status: 'Active' })
   const chainDetailSelection = reactive({ chainId: '' })
 
-  const templateQuery = useQuery(() =>
-    listBusinessConsoleApprovalTemplatesQueryOptions({
+  const templateQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalTemplatesQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -174,10 +175,11 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         take: templateFilters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
-  const chainQuery = useQuery(() =>
-    listBusinessConsoleApprovalChainsQueryOptions({
+  const chainQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalChainsQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -190,10 +192,11 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         take: chainFilters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
-  const taskQuery = useQuery(() =>
-    listBusinessConsoleApprovalTasksQueryOptions({
+  const taskQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalTasksQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -203,10 +206,11 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         take: taskFilters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
-  const decisionQuery = useQuery(() =>
-    listBusinessConsoleApprovalDecisionsQueryOptions({
+  const decisionQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalDecisionsQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -220,10 +224,11 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         take: decisionFilters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
-  const delegationQuery = useQuery(() =>
-    listBusinessConsoleApprovalDelegationsQueryOptions({
+  const delegationQuery = useQuery(() => ({
+    ...listBusinessConsoleApprovalDelegationsQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -235,7 +240,8 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         take: delegationFilters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   const chainDetailQuery = useQuery(() => ({
     ...getBusinessConsoleApprovalChainQueryOptions({
@@ -245,7 +251,7 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
         environmentId: businessContext.environmentId,
       },
     }),
-    enabled: chainDetailSelection.chainId.trim().length > 0,
+    enabled: hasBusinessContext(businessContext) && chainDetailSelection.chainId.trim().length > 0,
   }))
 
   const invalidateApprovalQueries = () =>

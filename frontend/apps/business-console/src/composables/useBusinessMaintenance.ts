@@ -31,6 +31,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, hasBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -59,13 +60,13 @@ export interface MaintenanceAvailabilityFilters {
 }
 
 function defaultFilters(initial: Partial<MaintenanceListFilters> = {}): MaintenanceListFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
-  })
+  }))
 }
 
 function defaultWindowRange() {
@@ -80,24 +81,24 @@ function defaultWindowRange() {
 }
 
 function defaultReliabilityFilters(initial: Partial<MaintenanceReliabilityFilters> = {}): MaintenanceReliabilityFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     deviceAssetId: '',
     ...defaultWindowRange(),
     ...initial,
-  })
+  }))
 }
 
 function defaultAvailabilityFilters(initial: Partial<MaintenanceAvailabilityFilters> = {}): MaintenanceAvailabilityFilters {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     deviceAssetIds: '',
     workCenterIds: '',
     ...defaultWindowRange(),
     ...initial,
-  })
+  }))
 }
 
 function optionalQuery<TKey extends string>(key: TKey, value: string) {
@@ -120,14 +121,14 @@ function unwrapData<TData>(envelope: { success?: boolean, data?: TData | null } 
 export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const workOrdersQuery = useQuery(() =>
-    listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMaintenanceWorkOrdersQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
@@ -166,14 +167,14 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
 export function useMaintenanceInspections(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const inspectionsQuery = useQuery(() =>
-    listBusinessConsoleMaintenanceInspectionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMaintenanceInspectionsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const recordMutation = useMutation({
@@ -202,14 +203,14 @@ export function useMaintenanceInspections(initialFilters: Partial<MaintenanceLis
 export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const sparePartsQuery = useQuery(() =>
-    listBusinessConsoleMaintenanceSparePartsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMaintenanceSparePartsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
@@ -237,7 +238,7 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
 
 export function useMaintenanceReliability(initialFilters: Partial<MaintenanceReliabilityFilters> = {}) {
   const filters = defaultReliabilityFilters(initialFilters)
-  const reliabilityEnabled = computed(() => filters.deviceAssetId.trim().length > 0)
+  const reliabilityEnabled = computed(() => hasBusinessContext(filters) && filters.deviceAssetId.trim().length > 0)
   const reliabilityQuery = useQuery(() => ({
     ...queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions({
       path: { deviceAssetId: filters.deviceAssetId.trim() },
@@ -266,7 +267,7 @@ export function useMaintenanceReliability(initialFilters: Partial<MaintenanceRel
 
 export function useMaintenanceAvailabilityWindows(initialFilters: Partial<MaintenanceAvailabilityFilters> = {}) {
   const filters = defaultAvailabilityFilters(initialFilters)
-  const availabilityEnabled = computed(() => filters.deviceAssetIds.trim().length > 0)
+  const availabilityEnabled = computed(() => hasBusinessContext(filters) && filters.deviceAssetIds.trim().length > 0)
   const availabilityQuery = useQuery(() => ({
     ...queryBusinessConsoleMaintenanceAvailabilityWindowsQueryOptions({
       query: {
@@ -297,14 +298,14 @@ export function useMaintenanceAvailabilityWindows(initialFilters: Partial<Mainte
 export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilters> = {}) {
   const filters = defaultFilters(initialFilters)
   const plansQuery = useQuery(() =>
-    listBusinessConsoleMaintenancePlansQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMaintenancePlansQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
