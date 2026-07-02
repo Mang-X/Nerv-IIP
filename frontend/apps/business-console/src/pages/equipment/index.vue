@@ -19,7 +19,7 @@ import {
   SectionCards,
   Toolbar,
 } from '@nerv-iip/ui'
-import { ActivityIcon, BellRingIcon, EyeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
+import { ActivityIcon, BellRingIcon, EyeIcon, GaugeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -72,6 +72,9 @@ function formatError(error: unknown) {
         <ButtonPro size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/alarms"><BellRingIcon aria-hidden="true" />查看报警</RouterLink>
         </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment/telemetry/oee"><GaugeIcon aria-hidden="true" />OEE 与可用性</RouterLink>
+        </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -121,6 +124,12 @@ function formatError(error: unknown) {
           <RowActions :label="`设备操作 ${row.deviceAssetId ?? ''}`">
             <DropdownMenuProItem as-child>
               <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />查看详情</RouterLink>
+            </DropdownMenuProItem>
+            <DropdownMenuProItem as-child>
+              <RouterLink :to="{ path: '/equipment/telemetry/oee', query: { deviceAssetId: row.deviceAssetId } }">
+                <GaugeIcon aria-hidden="true" />
+                OEE 与可用性
+              </RouterLink>
             </DropdownMenuProItem>
             <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
               <WrenchIcon aria-hidden="true" />

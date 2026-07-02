@@ -12,7 +12,7 @@ import {
   SectionCard,
   SectionCards,
 } from '@nerv-iip/ui'
-import { EyeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
+import { EyeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -65,6 +65,9 @@ function formatError(error: unknown) {
         <ButtonPro size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment">设备看板</RouterLink>
         </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink to="/equipment/telemetry/alarm-rules"><Settings2Icon aria-hidden="true" />报警规则</RouterLink>
+        </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="alarmsPending" @click="refreshAlarms">
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -100,6 +103,12 @@ function formatError(error: unknown) {
         <RowActions :label="`报警操作 ${row.alarmEventId ?? ''}`">
           <DropdownMenuProItem as-child>
             <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />设备详情</RouterLink>
+          </DropdownMenuProItem>
+          <DropdownMenuProItem as-child>
+            <RouterLink :to="{ path: '/equipment/telemetry/history', query: { deviceAssetId: row.deviceAssetId } }">
+              <LineChartIcon aria-hidden="true" />
+              历史趋势
+            </RouterLink>
           </DropdownMenuProItem>
           <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
             <WrenchIcon aria-hidden="true" />

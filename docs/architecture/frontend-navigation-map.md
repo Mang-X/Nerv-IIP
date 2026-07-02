@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates、BusinessApproval 审批中心）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates、BusinessApproval 审批中心、IndustrialTelemetry tags/alarm-rules/history/OEE）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -62,7 +62,7 @@
 | Gateway | 已有 facade | 尚未有正式 facade/页面的重点能力与导航优先级 |
 | --- | --- | --- |
 | PlatformGateway | Console auth、AppHub 实例列表/详情、Ops restart 与任务详情、IAM 用户/角色/权限 catalog/会话、Notification 消息/任务、FileStorage 上传会话/元数据/download grant 管理 facade。 | P1：Ops 任务列表/审批页、服务健康聚合；P2：FileStorage 管理页、审计日志、DLQ 管理、ExternalClient；P3：SSO/OIDC/MFA、性能基线和渠道配置。 |
-| BusinessGateway | MasterData SKU/资源 lifecycle、typed list、workshop/team-member、BusinessPartner 多角色/taxId；Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement/Sales/Finance 窄化 facade、Scheduling/APS lite、设备运行事实、MES PC 工作台、WMS 收货/出库/上架任务/拣货任务/盘点执行/WCS 读面 facade、BarcodeLabel 规则/模板/打印批次/扫码记录分页 facade、BusinessApproval 模板/流程/记录/委托 facade、全局对象搜索后端 facade（MES 工单、SKU、当前报警；Inventory batch/lot 与设备列表搜索当前返回 unsupported）、IndustrialTelemetry tags/alarm-rules/alarms/history/OEE/runtime-availability facade、Maintenance 工单/计划/点检/备件/availability-windows/reliability facade。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：前端 Cmd/K 面板、BarcodeLabel、BusinessApproval、IndustrialTelemetry rule/OEE 页面；P3：预测、CRM-lite、CAPA 和高级分析。 |
+| BusinessGateway | MasterData SKU/资源 lifecycle、typed list、workshop/team-member、BusinessPartner 多角色/taxId；Inventory 可用量/移动/盘点、Quality 检验/NCR、ProductEngineering MBOM/工艺路线/生产版本、DemandPlanning 需求/MRP/建议、ERP Procurement/Sales/Finance 窄化 facade、Scheduling/APS lite、设备运行事实、MES PC 工作台、WMS 收货/出库/上架任务/拣货任务/盘点执行/WCS 读面 facade、BarcodeLabel 规则/模板/打印批次/扫码记录分页 facade、BusinessApproval 模板/流程/记录/委托 facade、全局对象搜索后端 facade（MES 工单、SKU、当前报警；Inventory batch/lot 与设备列表搜索当前返回 unsupported）、IndustrialTelemetry tags/alarm-rules/alarms/history/OEE/runtime-availability facade、Maintenance 工单/计划/点检/备件/availability-windows/reliability facade。 | P1：当前 route-ready 页面硬化和工作台最低可用性；P2：前端 Cmd/K 面板；P3：预测、CRM-lite、CAPA 和高级分析。 |
 
 当前 `frontend/apps/business-console/src/pages/erp/index.vue`、`erp/sales.vue` 和 `erp/finance.vue` 已分别承载采购与供应、销售管理和财务窄化页面；不能据此把完整 ERP 菜单、月结、税务、银行或完整财务报表标为已交付。
 
@@ -276,7 +276,11 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 制造执行 | `/mes/schedules` | 已落地（FE-8 金标准，过渡定位） | 规则排程按 FE-4 原型重做（PageHeader + SectionCards + 结果 DataTable + 分页 + 运行 Dialog）；不是 APS 权威，也不包含甘特。 |
 | 设备异常 | `/equipment` | 已落地（FE-9 金标准） | 设备运行看板按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[设备范围] + 设备 DataTable + 当前阻塞面板）；行/阻塞「记录停机」带 deviceAssetId 跳 `/mes/downtime`（MES 设备联动）；不显示 organization/environment/debug/source metadata。 |
 | 设备异常 | `/equipment/alarms` | 已落地（FE-9 金标准） | 设备报警按 FE-4 原型重做（PageHeader + SectionCards + 报警 DataTable + RowActions[设备详情/记录停机]）；只展示业务可读状态，互链设备详情与 MES 停机。 |
-| 设备异常 | `/equipment/:deviceAssetId` | 已落地（FE-9 金标准，非菜单） | 设备详情按 FE-4 原型重做（PageHeader + SectionCards + 状态/报警卡 + 可用性窗口 DataTable）；由看板/报警进入，「记录停机」联动 MES。报警规则维护/OEE 后端已随 #266/#325 就绪，对应维护页作为后续（FE-11 设备监控）增量，本期未建。 |
+| 设备异常 | `/equipment/:deviceAssetId` | 已落地（FE-9 金标准，非菜单） | 设备详情按 FE-4 原型重做（PageHeader + SectionCards + 状态/报警卡 + 可用性窗口 DataTable）；由看板/报警进入，「记录停机」联动 MES，并可跳转历史趋势、OEE 与报警规则维护。 |
+| 设备监控（IoT） | `/equipment/telemetry/tags` | 已落地 | 采集标签正式 PC 页面，消费 BusinessGateway telemetry tags facade 和 `@nerv-iip/api-client` stable export；按设备筛选，行内跳设备详情、历史趋势和 OEE。 |
+| 设备监控（IoT） | `/equipment/telemetry/alarm-rules` | 已落地 | 报警规则正式 PC 页面，消费 alarm-rules list/create-or-update facade；列表按设备/启停筛选，维护动作使用 `business.iiot.alarm-rules.manage`，错误和保存结果有反馈。 |
+| 设备监控（IoT） | `/equipment/telemetry/history` | 已落地 | 历史趋势页面，按设备、采集标签和时间窗口查看真实 telemetry device history；不伪造实时曲线或独立大屏。 |
+| 设备监控（IoT） | `/equipment/telemetry/oee` | 已落地 | OEE/runtime availability 页面，消费 OEE 与 runtime-availability facade；P0 明确只把设备运行状态用于可用率，性能/质量不宣传为真实测量值。 |
 | 系统管理 | `/mes/foundation` | 过渡/诊断 | 数据就绪检查只作为系统诊断，不是 MES 一线主菜单优先入口。 |
 
 ## Business Console 能力目录
@@ -296,7 +300,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库、出库、上架任务、拣货任务、盘点执行和 WCS 任务读面 facade，并支持服务端分页与状态过滤；#374 后上架/拣货/盘点 list 还支持库位过滤，操作员过滤参数存在但因 WMS 暂无 assigned operator 字段时返回空集。Business Console 已接入 `/wms/inbound`、`/wms/outbound`、`/wms/putaway`、`/wms/picking`、`/wms/counts` 和 `/wms/wcs`；后续仓储作业深化应继续内嵌 Inventory 可用量、批次、冻结和预留视图。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、移动、盘点已落地；批次/序列号/预留/冻结/分析后置。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
 | 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | 条码规则 `/barcode/rules` 与标签模板 `/barcode/templates` 已接入 BusinessGateway BarcodeLabel facade 和 `@nerv-iip/api-client` 稳定导出；打印管理和扫码记录仍只保留后端 facade，业务扫码动作嵌入 MES/WMS/盘点流程，不在 PC 页伪造扫码闭环。 |
-| 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警规则、报警、设备时间线、P0 OEE 聚合和 runtime availability 服务读面；P0 OEE 的 availability 按状态持续时间计算，performance/quality 为估算占位，响应标志在 P0 期间保持 true（无状态数据窗口下数值为 0 但仍非真实测量值）。#207 已提供设备运行看板、设备详情和报警 route-ready 页面。BusinessGateway 已提供 tags、alarm-rules、alarms、device history、OEE、runtime availability 和 equipment alarms 分页 facade；正式 rule/OEE 页面仍待接入，设备接入配置、凭据和控制命令仍在外部/Connector 边界。 |
+| 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警规则、报警、设备时间线、P0 OEE 聚合和 runtime availability 服务读面；P0 OEE 的 availability 按状态持续时间计算，performance/quality 为估算占位，响应标志在 P0 期间保持 true（无状态数据窗口下数值为 0 但仍非真实测量值）。#207 已提供设备运行看板、设备详情和报警 route-ready 页面；#638 已接入 tags、alarm-rules、history、OEE/runtime availability 正式 PC 页面。设备接入配置、凭据、PLC/DCS/SCADA 控制命令和完整报警处置闭环仍在外部/Connector 或后续边界。 |
 | 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检、备件需求、可靠性指标和事件消费；BusinessGateway 已提供工单列表/详情、保养计划、点检列表/记录、备件列表/创建、availability-windows 和 reliability facade。Business Console 已接入 `/maintenance/work-orders`、`/maintenance/plans`、`/maintenance/inspections`、`/maintenance/spare-parts`、`/maintenance/reliability` 和 `/maintenance/availability`；设备资产主数据仍归 MasterData，完整维修费用视图仍待后续。 |
 | 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端与 BusinessGateway facade 已落地，Business Console `/approval` 已提供审批模板、流程实例、我的任务、决策记录和委托设置页面；业务待办入口仍放数字化工作台，审批中心只承载处理、配置、审计和委托维护。Ops 运维审批仍归平台 Ops。 |
 | 外协加工（P2 候选） | 外协订单、外协发料、外协收货、外协结算 | 不作为当前默认一级域。首选挂在 ERP Procurement + MES/WMS 流程下；只有出现独立事实源、BusinessGateway facade 和高频角色工作台需求时，才升级为独立能力区或服务。 |
@@ -316,7 +320,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 库存管理 | 库存可用量 `/inventory/availability`、库存移动 `/inventory/movements`、库存盘点 `/inventory/counts` |
 | 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、上架任务 `/wms/putaway`、出库发货 `/wms/outbound`、拣货任务 `/wms/picking`、WCS 任务 `/wms/wcs`、盘点执行 `/wms/counts` |
 | 经营管理（“更多”内） | 采购与供应 `/erp`、销售管理 `/erp/sales`、财务 `/erp/finance` |
-| 设备监控（“更多”内） | 设备运行看板 `/equipment`、设备报警 `/equipment/alarms`、维护工单 `/maintenance/work-orders`、保养计划 `/maintenance/plans`、点检记录 `/maintenance/inspections`、备件需求 `/maintenance/spare-parts`、可靠性指标 `/maintenance/reliability`、可用窗口 `/maintenance/availability` |
+| 设备监控（“更多”内） | 运行监控：设备运行看板 `/equipment`、设备报警 `/equipment/alarms`、采集标签 `/equipment/telemetry/tags`、报警规则 `/equipment/telemetry/alarm-rules`、历史趋势 `/equipment/telemetry/history`、OEE 与可用性 `/equipment/telemetry/oee`；维护保养：维护工单 `/maintenance/work-orders`、保养计划 `/maintenance/plans`、点检记录 `/maintenance/inspections`、备件需求 `/maintenance/spare-parts`、可靠性指标 `/maintenance/reliability`、可用窗口 `/maintenance/availability` |
 | 条码标签（“更多”内） | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates` |
 | 审批中心（“更多”内） | 审批中心 `/approval`（模板配置 / 流程实例 / 我的任务 / 决策记录 / 委托设置） |
 

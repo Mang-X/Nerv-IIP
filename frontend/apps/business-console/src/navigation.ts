@@ -28,6 +28,7 @@ import {
   HashIcon,
   LayersIcon,
   LayoutDashboardIcon,
+  LineChartIcon,
   NetworkIcon,
   PackageCheckIcon,
   PackageIcon,
@@ -37,6 +38,7 @@ import {
   RouteIcon,
   RulerIcon,
   SearchIcon,
+  Settings2Icon,
   ShieldAlertIcon,
   ShieldCheckIcon,
   TrendingUpIcon,
@@ -238,6 +240,10 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '设备运行看板', icon: ActivityIcon, to: { path: '/equipment' }, requiredPermissions: [P.iiotTelemetryRead] },
         { title: '设备报警', icon: BellRingIcon, to: { path: '/equipment/alarms' }, requiredPermissions: [P.iiotAlarmsRead] },
+        { title: '采集标签', icon: HashIcon, to: { path: '/equipment/telemetry/tags' }, requiredPermissions: [P.iiotTelemetryRead] },
+        { title: '报警规则', icon: Settings2Icon, to: { path: '/equipment/telemetry/alarm-rules' }, requiredPermissions: [P.iiotAlarmsRead, P.iiotAlarmRulesManage] },
+        { title: '历史趋势', icon: LineChartIcon, to: { path: '/equipment/telemetry/history' }, requiredPermissions: [P.iiotTelemetryRead] },
+        { title: 'OEE 与可用性', icon: GaugeIcon, to: { path: '/equipment/telemetry/oee' }, requiredPermissions: [P.iiotTelemetryRead] },
       ],
     },
     {

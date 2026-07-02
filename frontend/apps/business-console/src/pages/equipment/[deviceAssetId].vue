@@ -15,7 +15,7 @@ import {
   SectionCard,
   SectionCards,
 } from '@nerv-iip/ui'
-import { ArrowLeftIcon, CalendarRangeIcon, RefreshCwIcon, TrendingUpIcon, WrenchIcon } from 'lucide-vue-next'
+import { ArrowLeftIcon, CalendarRangeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon, TrendingUpIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -104,6 +104,18 @@ function formatError(error: unknown) {
         <ButtonPro size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
         </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/equipment/telemetry/history', query: { deviceAssetId: filters.deviceAssetId } }">
+            <LineChartIcon aria-hidden="true" />
+            历史趋势
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/equipment/telemetry/oee', query: { deviceAssetId: filters.deviceAssetId } }">
+            <GaugeIcon aria-hidden="true" />
+            OEE 与可用性
+          </RouterLink>
+        </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" @click="recordDowntime">
           <WrenchIcon aria-hidden="true" />
           记录停机
@@ -174,6 +186,9 @@ function formatError(error: unknown) {
                 <BadgePro class="rounded-sm" :variant="severityVariant(alarm.severity)">{{ severityLabel(alarm.severity) }}</BadgePro>
               </div>
               <p class="text-xs text-muted-foreground">{{ formatDateTime(alarm.raisedAtUtc) }}</p>
+              <ButtonPro size="sm" type="button" variant="outline" class="justify-self-start" as-child>
+                <RouterLink to="/equipment/telemetry/alarm-rules"><Settings2Icon aria-hidden="true" />维护规则</RouterLink>
+              </ButtonPro>
             </div>
             <div v-if="!activeAlarms.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
               当前设备没有未解除报警。

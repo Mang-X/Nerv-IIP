@@ -34,6 +34,35 @@ describe('business console maintenance navigation', () => {
   })
 })
 
+describe('business console telemetry navigation', () => {
+  it('groups formal telemetry pages under equipment monitoring', () => {
+    const equipmentItems = DOMAIN_SIDE_NAV.equipment?.flatMap((section) => section.items) ?? []
+    const paths = equipmentItems.map((item) => pathOf(item.to))
+
+    expect(resolveDomainId('/equipment/telemetry/tags')).toBe('equipment')
+    expect(resolveDomainId('/equipment/telemetry/alarm-rules')).toBe('equipment')
+    expect(resolveDomainId('/equipment/telemetry/history')).toBe('equipment')
+    expect(resolveDomainId('/equipment/telemetry/oee')).toBe('equipment')
+    expect(paths).toContain('/equipment/telemetry/tags')
+    expect(paths).toContain('/equipment/telemetry/alarm-rules')
+    expect(paths).toContain('/equipment/telemetry/history')
+    expect(paths).toContain('/equipment/telemetry/oee')
+  })
+
+  it('uses read permissions for telemetry analysis and manage permission for alarm-rule maintenance', () => {
+    const equipmentItems = DOMAIN_SIDE_NAV.equipment?.flatMap((section) => section.items) ?? []
+    const tags = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/tags')
+    const alarmRules = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/alarm-rules')
+    const history = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/history')
+    const oee = equipmentItems.find((item) => pathOf(item.to) === '/equipment/telemetry/oee')
+
+    expect(tags?.requiredPermissions).toEqual([P.iiotTelemetryRead])
+    expect(alarmRules?.requiredPermissions).toEqual([P.iiotAlarmsRead, P.iiotAlarmRulesManage])
+    expect(history?.requiredPermissions).toEqual([P.iiotTelemetryRead])
+    expect(oee?.requiredPermissions).toEqual([P.iiotTelemetryRead])
+  })
+})
+
 describe('business console approval navigation', () => {
   it('adds a dedicated approval center domain with read/manage permissions', () => {
     const approvalItems = DOMAIN_SIDE_NAV.approval?.flatMap((section) => section.items) ?? []
