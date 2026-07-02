@@ -38,8 +38,10 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+const routerLinkStub = vi.hoisted(() => ({ props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' }))
+
 vi.mock('vue-router', () => ({
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  RouterLink: routerLinkStub,
   useRoute: () => barcode.route,
 }))
 
@@ -373,7 +375,7 @@ describe('barcode pages', () => {
       sourceDocumentId: 'WO-001',
       printBatchId: 'pb-1',
     }
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('打印批次')
@@ -386,8 +388,19 @@ describe('barcode pages', () => {
     expect(barcode.printBatchFilters?.take).toBe(10)
   })
 
+  it('maps print batch source objects to scan workflow filters when drilling into scans', async () => {
+    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    await flushPromises()
+
+    const scanLink = wrapper.findAll('[data-router-link]').find((link) => link.text().includes('扫码记录'))
+
+    expect(scanLink?.attributes('data-to')).toContain('"path":"/barcode/scans"')
+    expect(scanLink?.attributes('data-to')).toContain('"sourceWorkflow":"production.report"')
+    expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
+  })
+
   it('creates a print batch with template, source object, and quantity', async () => {
-    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: { props: ['to'], template: '<a><slot /></a>' } } } })
+    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
     await flushPromises()
 
     await wrapper.findAll('button').find((b) => b.text().includes('新建打印批次'))!.trigger('click')
@@ -409,6 +422,30 @@ describe('barcode pages', () => {
       sourceDocumentId: 'COUNT-001',
       requestedQuantity: 3,
     }))
+  })
+
+  it('reuses the print batch idempotency key while retrying the same dialog submission', async () => {
+    barcode.createPrintBatch.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined)
+    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    await flushPromises()
+
+    await wrapper.findAll('button').find((b) => b.text().includes('新建打印批次'))!.trigger('click')
+    await flushPromises()
+    await setInput(wrapper, '#barcode-print-template', 'tpl-2')
+    await setInput(wrapper, '#barcode-print-source-type', 'inventory.count')
+    await setInput(wrapper, '#barcode-print-source-id', 'COUNT-001')
+    await setInput(wrapper, '#barcode-print-quantity', '3')
+    await flushPromises()
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const firstKey = barcode.createPrintBatch.mock.calls[0][0].idempotencyKey
+    const secondKey = barcode.createPrintBatch.mock.calls[1][0].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(secondKey).toBe(firstKey)
   })
 
   it('renders scan audit records with workflow filters and business failure copy', async () => {

@@ -19,6 +19,10 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+vi.mock('vue-router', () => ({
+  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
+}))
+
 vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInboundOrders: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
@@ -174,6 +178,19 @@ describe('WMS operate actions', () => {
       qualityStatus: 'available',
       ownerType: 'owned',
     })
+  })
+
+  it('links inbound orders to scan records through the SPA router', async () => {
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const scanLink = wrapper.get('[data-router-link]')
+    const target = scanLink.attributes('data-to')
+
+    expect(scanLink.text()).toContain('扫码记录')
+    expect(target).toContain('"path":"/barcode/scans"')
+    expect(target).toContain('"sourceWorkflow":"wms.receiving"')
+    expect(target).toContain('"sourceDocumentId":"IB-1"')
   })
 
   it('blocks inbound creation when a required line field or positive quantity is missing', async () => {

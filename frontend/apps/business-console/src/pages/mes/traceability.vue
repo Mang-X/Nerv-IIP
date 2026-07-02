@@ -31,7 +31,7 @@ const batchModel = computed({
   set: (value: string) => { filters.batchOrSerial = value; filters.materialLotId = value },
 })
 const scanRecordQuery = computed(() => ({
-  sourceWorkflow: filters.mode === 'work-order' ? 'production.report' : 'production.report',
+  sourceWorkflow: filters.mode === 'work-order' ? 'production.report' : undefined,
   sourceDocumentId: filters.workOrderId || batchModel.value || undefined,
   scannedValue: batchModel.value || undefined,
 }))

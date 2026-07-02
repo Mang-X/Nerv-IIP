@@ -73,6 +73,7 @@ const open = shallowRef(false)
 const showErrors = shallowRef(false)
 const sourceFilter = shallowRef('all')
 const statusFilter = shallowRef('all')
+const createIdempotencyKey = shallowRef('')
 const form = reactive({
   labelTemplateId: '',
   sourceDocumentType: '',
@@ -131,12 +132,14 @@ const canCreate = computed(() =>
 )
 
 function openCreate() {
+  const sourceDocumentId = filters.sourceDocumentId ?? 'manual'
   Object.assign(form, {
     labelTemplateId: '',
     sourceDocumentType: filters.sourceDocumentType ?? '',
-    sourceDocumentId: filters.sourceDocumentId ?? '',
+    sourceDocumentId: sourceDocumentId === 'manual' ? '' : sourceDocumentId,
     requestedQuantity: '1',
   })
+  createIdempotencyKey.value = newPrintBatchIdempotencyKey(sourceDocumentId)
   showErrors.value = false
   open.value = true
 }
@@ -159,7 +162,7 @@ async function submitCreate() {
       sourceDocumentType: form.sourceDocumentType.trim(),
       sourceDocumentId,
       requestedQuantity: Number(form.requestedQuantity),
-      idempotencyKey: `print-${sourceDocumentId}-${Date.now()}`,
+      idempotencyKey: createIdempotencyKey.value || newPrintBatchIdempotencyKey(sourceDocumentId),
     })
     const nextId = response?.data?.printBatchId
     if (nextId) filters.selectedPrintBatchId = nextId
@@ -169,6 +172,26 @@ async function submitCreate() {
   catch (error) {
     notifyError(error)
   }
+}
+
+function scanWorkflowForPrintBatch(sourceDocumentType?: string | null) {
+  if (sourceDocumentType === 'work-order') return 'production.report'
+  const supported = new Set(['production.report', 'wms.receiving', 'inventory.count', 'quality.inspection', 'inventory.adjustment'])
+  return sourceDocumentType && supported.has(sourceDocumentType) ? sourceDocumentType : undefined
+}
+
+function scanRecordRoute(batch: BusinessConsoleBarcodePrintBatchItem) {
+  return {
+    path: '/barcode/scans',
+    query: {
+      sourceWorkflow: scanWorkflowForPrintBatch(batch.sourceDocumentType),
+      sourceDocumentId: batch.sourceDocumentId ?? undefined,
+    },
+  }
+}
+
+function newPrintBatchIdempotencyKey(sourceDocumentId: string) {
+  return `print-${sourceDocumentId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function sourceLabel(value?: string | null) {
@@ -320,15 +343,7 @@ function formatError(error: unknown) {
             </p>
           </div>
           <ButtonPro v-if="printBatchDetail?.sourceDocumentId" size="sm" variant="outline" as-child>
-            <RouterLink
-              :to="{
-                path: '/barcode/scans',
-                query: {
-                  sourceWorkflow: printBatchDetail.sourceDocumentType,
-                  sourceDocumentId: printBatchDetail.sourceDocumentId,
-                },
-              }"
-            >
+            <RouterLink :to="scanRecordRoute(printBatchDetail)">
               扫码记录
             </RouterLink>
           </ButtonPro>
