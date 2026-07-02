@@ -81,6 +81,22 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
 
 public sealed record ListPlanningSuggestionsQuery(string OrganizationId, string EnvironmentId, string? Status) : IQuery<IReadOnlyCollection<PlanningSuggestionResponse>>;
 
+public sealed record NetRequirementExplanationResponse(
+    decimal GrossDemandQuantity,
+    decimal OnHandQuantity,
+    decimal ReservedQuantity,
+    decimal AvailableToNetQuantity,
+    decimal ScheduledReceiptQuantity,
+    decimal SafetyStockQuantity,
+    decimal NetRequirementQuantity,
+    decimal PlannedQuantity,
+    decimal ScrapRate,
+    decimal YieldRate,
+    string PrimarySourceType,
+    string Formula,
+    IReadOnlyCollection<string> UomConversions,
+    IReadOnlyCollection<string> DegradationSources);
+
 public sealed record PlanningSuggestionResponse(
     PlanningSuggestionId SuggestionId,
     MrpRunId MrpRunId,
@@ -95,7 +111,8 @@ public sealed record PlanningSuggestionResponse(
     string ReasonCode,
     string? AcceptedDownstreamService,
     string? AcceptedDownstreamDocumentType,
-    string? AcceptedDownstreamDocumentId);
+    string? AcceptedDownstreamDocumentId,
+    NetRequirementExplanationResponse NetRequirementExplanation);
 
 public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListPlanningSuggestionsQuery, IReadOnlyCollection<PlanningSuggestionResponse>>
@@ -110,7 +127,12 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
             query = query.Where(x => x.Status == status);
         }
 
-        return await query.OrderBy(x => x.RequiredDate).ThenBy(x => x.SkuCode)
+        var suggestions = await query.OrderBy(x => x.RequiredDate).ThenBy(x => x.SkuCode)
+            .ToListAsync(cancellationToken);
+        var runIds = suggestions.Select(x => x.MrpRunId).Distinct().ToArray();
+        var degradationByRunId = await LoadDegradationByRunIdAsync(dbContext, runIds, cancellationToken);
+
+        return suggestions
             .Select(x => new PlanningSuggestionResponse(
                 x.Id,
                 x.MrpRunId,
@@ -125,8 +147,46 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.ReasonCode,
                 x.AcceptedDownstreamService,
                 x.AcceptedDownstreamDocumentType,
-                x.AcceptedDownstreamDocumentId))
+                x.AcceptedDownstreamDocumentId,
+                ToExplanation(x, degradationByRunId.GetValueOrDefault(x.MrpRunId, []))))
+            .ToArray();
+    }
+
+    private static async Task<Dictionary<MrpRunId, IReadOnlyCollection<string>>> LoadDegradationByRunIdAsync(
+        ApplicationDbContext dbContext,
+        IReadOnlyCollection<MrpRunId> runIds,
+        CancellationToken cancellationToken)
+    {
+        var runs = await dbContext.MrpRuns.AsNoTracking()
+            .Where(x => runIds.Contains(x.Id))
             .ToListAsync(cancellationToken);
+        return runs.ToDictionary(x => x.Id, x => x.InputDegradationSources);
+    }
+
+    private static NetRequirementExplanationResponse ToExplanation(
+        PlanningSuggestion suggestion,
+        IReadOnlyCollection<string> degradationSources)
+    {
+        return new NetRequirementExplanationResponse(
+            suggestion.GrossDemandQuantity,
+            suggestion.OnHandQuantity,
+            suggestion.ReservedQuantity,
+            suggestion.AvailableToNetQuantity,
+            suggestion.ScheduledReceiptQuantity,
+            suggestion.SafetyStockQuantity,
+            suggestion.NetRequirementQuantity,
+            suggestion.PlannedQuantity,
+            suggestion.ScrapRate,
+            suggestion.YieldRate,
+            suggestion.PrimarySourceType,
+            suggestion.Formula,
+            SplitList(suggestion.UomConversionSummary),
+            degradationSources);
+    }
+
+    private static IReadOnlyCollection<string> SplitList(string value)
+    {
+        return value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
 
@@ -141,7 +201,9 @@ public sealed record PeggingLinkResponse(
     decimal Quantity,
     string? ProductionVersionReference,
     string? ManufacturingBomReference,
-    string? RoutingReference);
+    string? RoutingReference,
+    string SourceType,
+    decimal GrossDemandQuantity);
 
 public sealed class ListMrpPeggingQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpPeggingQuery, IReadOnlyCollection<PeggingLinkResponse>>
@@ -163,7 +225,9 @@ public sealed class ListMrpPeggingQueryHandler(ApplicationDbContext dbContext)
                 link.Quantity,
                 link.ProductionVersionReference,
                 link.ManufacturingBomReference,
-                link.RoutingReference)))
+                link.RoutingReference,
+                link.SourceType,
+                link.GrossDemandQuantity)))
             .ToArray();
     }
 }

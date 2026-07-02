@@ -263,14 +263,15 @@ Source:
 3. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260523103405_InitialDemandPlanningSchema.cs`
 4. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260527073227_AddNumberingCounters.cs`
 5. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260612073626_AddCodingTables.cs`
+6. `backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Infrastructure/Migrations/20260702093625_AddMrpNetRequirementExplanation.cs`
 
 | Table | Kind | Purpose | Key columns | Index intent | Lifecycle |
 | --- | --- | --- | --- | --- | --- |
 | `demand_sources` | business | DemandPlanning 拥有的销售订单、预测、安全库存等需求来源事实。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + demand_code` 是业务唯一键；保留 SKU、数量、需求日期和来源单据引用。 | 业务唯一索引防重复录入；SKU/日期/状态索引用于 MPS/MRP 输入扫描。 | 创建或调整后作为计划输入保留；不会创建正式销售、采购或生产单据。 |
 | `master_production_schedules` | business | 日粒度 MPS bucket，固化 MRP 展开前的主生产计划口径。 | `id` 为 Guid v7 强类型 ID；记录 SKU、bucket date、计划数量和 UOM。 | SKU/bucket date 索引用于按物料和日期展开净需求。 | 由计划运行或手工调整生成，历史保留用于追踪 MRP 输入。 |
 | `mrp_runs` | business | MRP 计算运行头和输入快照元数据。 | `id` 为 Guid v7 强类型 ID；`run_id` 为外部可见运行编号；保存计划窗口、状态和输入快照摘要。 | run id 唯一索引支持幂等读取；状态/创建时间索引用于运行列表。 | 每次 MRP 运行生成独立事实；不直接创建 ERP/MES 正式单据。 |
-| `planning_suggestions` | business | MRP 生成的计划采购建议和计划工单建议。 | `id` 为 Guid v7 强类型 ID；记录 suggestion id、建议类型、SKU、数量、需求日期、提前期偏置后的下达日期和状态。 | run id/status 索引用于按 MRP run 查看建议；SKU/date 索引用于计划员筛选。 | 可被接受、拒绝或关闭；接受只表达建议状态，不越权写 ERP/MES。 |
-| `mrp_pegging_links` | business | 从计划建议回溯到需求、BOM 展开和库存快照的 pegging 链路。 | `id` 为 Guid v7 强类型 ID；记录 suggestion、demand、parent/child 关系和数量。 | suggestion id 索引用于读取建议追溯；run id 索引用于诊断整次展开。 | 随 MRP run 与建议生成后保留，用于解释计划结果。 |
+| `planning_suggestions` | business | MRP 生成的计划采购建议和计划工单建议，并持久化计划员可读的净需求解释。 | `id` 为 Guid v7 强类型 ID；记录 suggestion id、建议类型、SKU、数量、需求日期、提前期偏置后的下达日期和状态；`gross_demand_quantity`、`on_hand_quantity`、`reserved_quantity`、`available_to_net_quantity`、`scheduled_receipt_quantity`、`safety_stock_quantity`、`net_requirement_quantity`、`planned_quantity`、`scrap_rate`、`yield_rate`、`primary_source_type`、`formula` 和 `uom_conversion_summary` 保存本次 MRP 输入快照与公式。 | run id/status 索引用于按 MRP run 查看建议；SKU/date 索引用于计划员筛选。 | 可被接受、拒绝或关闭；接受只表达建议状态，不越权写 ERP/MES；净需求解释随建议保留，避免前端或下游服务重算 MRP。 |
+| `mrp_pegging_links` | business | 从计划建议回溯到需求、BOM 展开、在途供应和库存快照的 pegging 链路。 | `id` 为 Guid v7 强类型 ID；记录 suggestion、demand、parent/child 关系、数量、`source_type` 和 `gross_demand_quantity`，用于区分销售、预测、安全库存、MPS、组件展开和在途来源。 | suggestion id 索引用于读取建议追溯；run id 索引用于诊断整次展开。 | 随 MRP run 与建议生成后保留，用于解释计划结果和来源跳转；不建立跨服务 FK。 |
 | `code_counters` | business | DemandPlanning service-local 编码计数器，用于需求来源等普通创建请求自动分配业务 code。 | `organization_id + environment_id + rule_key + site_code + reset_key` 是计数器唯一范围；`current_value` 和 `version` 维护已分配序列与乐观并发。 | 唯一索引保护同一编码规则范围只有一个 counter。 | 创建请求按需创建并递增；不由用户直接维护。 |
 | `code_idempotency_keys` | business | DemandPlanning 创建请求幂等键记录，把客户端 key 绑定到已分配业务 code 和 payload fingerprint。 | `organization_id + environment_id + rule_key + idempotency_key` 是唯一键；`code` 保存首次分配结果。 | 唯一索引阻止同一 key 在同一规则内重复创建不同资源。 | 随创建请求写入，保留用于重试去重和冲突诊断。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部索引用于投递扫描和过期清理。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -698,7 +699,7 @@ Known gaps:
 | BusinessInventory | `inventory` | Implemented | Yes | Yes | No | 已有库存地点、库存台账、库存移动、盘点任务和盘点调整 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessQuality | `quality` | Implemented | Yes | Yes | No | 已有 NCR、InspectionPlan、InspectionRecord、persistent DLQ schema、MES defect source 唯一约束、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMES | `mes` | Implemented | Yes | Yes | No | 已有工单、工序任务、物料需求快照、领料/线边接收、报工、报工物料批次消耗、不良记录、完工入库请求、排产结果、工作中心不可用窗口、设备映射、班次交接、numbering counter/idempotency tables 和 persistent DLQ schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
-| BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、pegging、带 required/release date 的计划建议和 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
+| BusinessDemandPlanning | `demand_planning` | Implemented | Yes | Yes | No | 已有需求来源、MPS、MRP run、带来源类型和 gross demand 的 pegging、带 required/release date 和净需求解释的计划建议，以及 numbering counter/idempotency tables schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BarcodeLabel | `barcode` | Implemented | Yes | Yes | No | 已有条码规则、标签模板、打印批次、打印项、扫码记录、GS1 序列化字段和 EPCIS 最小追溯事件 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessApproval | `business_approval` | Implemented | Yes | Yes | No | 已有审批模板、审批链、审批步骤、审批决定、审批委托、会签/或签策略、简单条件路由、超时通知标记和代理审批审计字段 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | WMS | `wms` | Implemented | Yes | Yes | No | 已有入库、出库、仓库任务、盘点执行、WCS 任务和库存移动请求元数据 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |

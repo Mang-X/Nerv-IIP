@@ -24765,6 +24765,13 @@
           "routingReference": {
             "type": "string",
             "nullable": true
+          },
+          "sourceType": {
+            "type": "string"
+          },
+          "grossDemandQuantity": {
+            "type": "number",
+            "format": "decimal"
           }
         }
       },
@@ -24841,6 +24848,14 @@
           "reasonCode": {
             "type": "string"
           },
+          "netRequirementExplanation": {
+            "nullable": true,
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation"
+              }
+            ]
+          },
           "downstreamService": {
             "type": "string",
             "nullable": true
@@ -24852,6 +24867,70 @@
           "downstreamDocumentId": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "grossDemandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "onHandQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "reservedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "availableToNetQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scheduledReceiptQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "safetyStockQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "netRequirementQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "plannedQuantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "scrapRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "yieldRate": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "primarySourceType": {
+            "type": "string"
+          },
+          "formula": {
+            "type": "string"
+          },
+          "uomConversions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "degradationSources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

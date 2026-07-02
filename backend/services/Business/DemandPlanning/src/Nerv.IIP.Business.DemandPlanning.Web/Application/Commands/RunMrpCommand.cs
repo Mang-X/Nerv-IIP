@@ -72,6 +72,20 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
                 calculatedSuggestion.RequiredDate,
                 calculatedSuggestion.ReleaseDate,
                 calculatedSuggestion.ReasonCode);
+            suggestion.SetNetRequirementExplanation(
+                calculatedSuggestion.NetRequirementExplanation.GrossDemandQuantity,
+                calculatedSuggestion.NetRequirementExplanation.OnHandQuantity,
+                calculatedSuggestion.NetRequirementExplanation.ReservedQuantity,
+                calculatedSuggestion.NetRequirementExplanation.AvailableToNetQuantity,
+                calculatedSuggestion.NetRequirementExplanation.ScheduledReceiptQuantity,
+                calculatedSuggestion.NetRequirementExplanation.SafetyStockQuantity,
+                calculatedSuggestion.NetRequirementExplanation.NetRequirementQuantity,
+                calculatedSuggestion.NetRequirementExplanation.PlannedQuantity,
+                calculatedSuggestion.NetRequirementExplanation.ScrapRate,
+                calculatedSuggestion.NetRequirementExplanation.YieldRate,
+                calculatedSuggestion.NetRequirementExplanation.PrimarySourceType,
+                calculatedSuggestion.NetRequirementExplanation.Formula,
+                string.Join(';', calculatedSuggestion.NetRequirementExplanation.UomConversions));
             foreach (var link in calculatedSuggestion.PeggingLinks)
             {
                 suggestion.AddPeggingLink(
@@ -82,7 +96,9 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
                     link.Quantity,
                     link.ProductionVersionReference,
                     link.ManufacturingBomReference,
-                    link.RoutingReference);
+                    link.RoutingReference,
+                    link.SourceType,
+                    link.GrossDemandQuantity);
             }
 
             dbContext.PlanningSuggestions.Add(suggestion);

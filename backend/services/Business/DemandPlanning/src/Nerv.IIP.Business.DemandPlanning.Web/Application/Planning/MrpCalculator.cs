@@ -19,13 +19,16 @@ public sealed record DemandSnapshot(
     string UomCode,
     string SiteCode,
     decimal Quantity,
-    DateOnly DueDate);
+    DateOnly DueDate,
+    string DemandType = "sales-order");
 
 public sealed record InventoryAvailabilitySnapshot(
     string SkuCode,
     string UomCode,
     string SiteCode,
-    decimal AvailableQuantity);
+    decimal AvailableQuantity,
+    decimal OnHandQuantity = 0m,
+    decimal ReservedQuantity = 0m);
 
 public sealed record ProductionVersionSnapshot(
     string ParentSkuCode,
@@ -40,7 +43,9 @@ public sealed record BomComponentSnapshot(
     string ParentSkuCode,
     string ComponentSkuCode,
     string ComponentUomCode,
-    decimal QuantityPerParent);
+    decimal QuantityPerParent,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m);
 
 public sealed record ScheduledReceiptSnapshot(
     string SkuCode,
@@ -86,6 +91,7 @@ public sealed record CalculatedPlanningSuggestion(
     DateOnly RequiredDate,
     DateOnly ReleaseDate,
     string ReasonCode,
+    CalculatedNetRequirementExplanation NetRequirementExplanation,
     IReadOnlyCollection<CalculatedPeggingLink> PeggingLinks);
 
 public sealed record CalculatedPeggingLink(
@@ -96,7 +102,25 @@ public sealed record CalculatedPeggingLink(
     decimal Quantity,
     string? ProductionVersionReference,
     string? ManufacturingBomReference,
-    string? RoutingReference);
+    string? RoutingReference,
+    string SourceType,
+    decimal GrossDemandQuantity);
+
+public sealed record CalculatedNetRequirementExplanation(
+    decimal GrossDemandQuantity,
+    decimal OnHandQuantity,
+    decimal ReservedQuantity,
+    decimal AvailableToNetQuantity,
+    decimal ScheduledReceiptQuantity,
+    decimal SafetyStockQuantity,
+    decimal NetRequirementQuantity,
+    decimal PlannedQuantity,
+    decimal ScrapRate,
+    decimal YieldRate,
+    string PrimarySourceType,
+    string Formula,
+    IReadOnlyCollection<string> UomConversions,
+    IReadOnlyCollection<string> DegradationSources);
 
 public static class MrpCalculator
 {
@@ -111,7 +135,10 @@ public static class MrpCalculator
         var availability = input.Availability
             .Select(x => NormalizeAvailability(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
-            .ToDictionary(x => x.Key, x => x.Sum(y => y.AvailableQuantity));
+            .ToDictionary(x => x.Key, x => new InventoryAvailabilityState(
+                x.Sum(y => ResolveOnHandQuantity(y)),
+                x.Sum(y => y.ReservedQuantity),
+                x.Sum(y => y.AvailableQuantity)));
         var scheduledReceipts = input.ScheduledReceipts
             .Select(x => NormalizeScheduledReceipt(x, planningParameters, converter))
             .GroupBy(x => ItemKey.Create(x.SkuCode, x.UomCode, x.SiteCode))
@@ -168,6 +195,7 @@ public static class MrpCalculator
                         x.First().DemandSourceReference,
                         x.First().ParentSkuCode,
                         x.First().ComponentSkuCode,
+                        x.First().SourceType,
                         x.Sum(y => y.Quantity)))
                     .ToArray();
                 planningParameters.TryGetValue(SkuSiteKey.Create(first.SkuCode, first.SiteCode), out var planningParameter);
@@ -206,7 +234,9 @@ public static class MrpCalculator
                         x.Quantity,
                         peggingVersion?.ProductionVersionReference,
                         peggingVersion?.ManufacturingBomReference,
-                        peggingVersion?.RoutingReference))
+                        peggingVersion?.RoutingReference,
+                        x.SourceType,
+                        x.Quantity))
                     .Concat(supply.UsedReceipts.Select(x => new CalculatedPeggingLink(
                         "scheduled-receipt",
                         $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
@@ -215,8 +245,25 @@ public static class MrpCalculator
                         x.Quantity,
                         peggingVersion?.ProductionVersionReference,
                         peggingVersion?.ManufacturingBomReference,
-                        peggingVersion?.RoutingReference)))
+                        peggingVersion?.RoutingReference,
+                        "scheduled-receipt",
+                        x.Quantity)))
                     .ToArray();
+                var explanation = new CalculatedNetRequirementExplanation(
+                    grossRequirement,
+                    supply.OnHandQuantity,
+                    supply.ReservedQuantity,
+                    supply.UsedAvailableQuantity,
+                    supply.UsedScheduledReceiptQuantity,
+                    supply.SafetyStockQuantity,
+                    netRequirement,
+                    plannedQuantity,
+                    first.ScrapRate,
+                    first.YieldRate,
+                    first.RequirementType == "component" ? "component" : demandPegging.FirstOrDefault()?.SourceType ?? "unknown",
+                    BuildFormula(grossRequirement, supply.OnHandQuantity, supply.ReservedQuantity, supply.SafetyStockQuantity, supply.UsedScheduledReceiptQuantity, netRequirement, first.ScrapRate, first.YieldRate),
+                    first.UomConversions,
+                    []);
                 suggestions.AddRange(plannedQuantities.Select(quantity => new CalculatedPlanningSuggestion(
                     suggestionType,
                     first.SkuCode,
@@ -226,6 +273,7 @@ public static class MrpCalculator
                     group.Key.RequiredDate,
                     releaseDate,
                     reasonCode,
+                    explanation with { PlannedQuantity = quantity },
                     peggingLinks)));
 
                 if (!isMakeItem || !componentsByParent.TryGetValue(first.SkuCode, out var components))
@@ -242,12 +290,17 @@ public static class MrpCalculator
                     }
 
                     var componentUomCode = ResolvePlanningUom(component.ComponentSkuCode, first.SiteCode, component.ComponentUomCode, planningParameters);
-                    var componentRequirement = ConvertQuantity(
+                    var componentBaseQuantity = plannedQuantity * component.QuantityPerParent;
+                    var componentScrapRate = Math.Max(0m, component.ScrapRate);
+                    var componentYieldRate = component.YieldRate <= 0m ? 1m : component.YieldRate;
+                    var componentRequiredBeforeUom = componentBaseQuantity * (1m + componentScrapRate) / componentYieldRate;
+                    var conversion = ConvertQuantity(
                         component.ComponentSkuCode,
                         component.ComponentUomCode,
                         componentUomCode,
-                        plannedQuantity * component.QuantityPerParent,
+                        componentRequiredBeforeUom,
                         converter);
+                    var componentRequirement = conversion.Quantity;
                     AddPendingRequirement(pendingByLowLevel, lowLevelCodes, new Requirement(
                         component.ComponentSkuCode,
                         componentUomCode,
@@ -262,7 +315,11 @@ public static class MrpCalculator
                                 Quantity = ApportionByGrossRequirement(componentRequirement, x.Quantity, grossRequirement),
                             })
                             .ToArray(),
-                        [.. first.Path, normalizedComponent]));
+                        [.. first.Path, normalizedComponent],
+                        "component",
+                        componentScrapRate,
+                        componentYieldRate,
+                        [.. first.UomConversions, .. conversion.Summaries]));
                 }
             }
         }
@@ -276,15 +333,19 @@ public static class MrpCalculator
         UomConverter converter)
     {
         var planningUom = ResolvePlanningUom(demand.SkuCode, demand.SiteCode, demand.UomCode, planningParameters);
-        var quantity = ConvertQuantity(demand.SkuCode, demand.UomCode, planningUom, demand.Quantity, converter);
+        var conversion = ConvertQuantity(demand.SkuCode, demand.UomCode, planningUom, demand.Quantity, converter);
         return new Requirement(
             demand.SkuCode,
             planningUom,
             demand.SiteCode,
-            quantity,
+            conversion.Quantity,
             demand.DueDate,
-            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, quantity)],
-            [Normalize(demand.SkuCode)]);
+            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, SourceTypeFromDemandType(demand.DemandType), conversion.Quantity)],
+            [Normalize(demand.SkuCode)],
+            "demand",
+            0m,
+            1m,
+            conversion.Summaries);
     }
 
     private static InventoryAvailabilitySnapshot NormalizeAvailability(
@@ -293,10 +354,15 @@ public static class MrpCalculator
         UomConverter converter)
     {
         var planningUom = ResolvePlanningUom(availability.SkuCode, availability.SiteCode, availability.UomCode, planningParameters);
+        var availableConversion = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.AvailableQuantity, converter);
+        var onHandConversion = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, ResolveOnHandQuantity(availability), converter);
+        var reservedConversion = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.ReservedQuantity, converter);
         return availability with
         {
             UomCode = planningUom,
-            AvailableQuantity = ConvertQuantity(availability.SkuCode, availability.UomCode, planningUom, availability.AvailableQuantity, converter),
+            AvailableQuantity = availableConversion.Quantity,
+            OnHandQuantity = onHandConversion.Quantity,
+            ReservedQuantity = reservedConversion.Quantity,
         };
     }
 
@@ -306,10 +372,11 @@ public static class MrpCalculator
         UomConverter converter)
     {
         var planningUom = ResolvePlanningUom(receipt.SkuCode, receipt.SiteCode, receipt.UomCode, planningParameters);
+        var conversion = ConvertQuantity(receipt.SkuCode, receipt.UomCode, planningUom, receipt.Quantity, converter);
         return receipt with
         {
             UomCode = planningUom,
-            Quantity = ConvertQuantity(receipt.SkuCode, receipt.UomCode, planningUom, receipt.Quantity, converter),
+            Quantity = conversion.Quantity,
         };
     }
 
@@ -325,16 +392,20 @@ public static class MrpCalculator
             : fallbackUomCode;
     }
 
-    private static decimal ConvertQuantity(
+    private static QuantityConversion ConvertQuantity(
         string triggerSkuCode,
         string fromUomCode,
         string toUomCode,
         decimal quantity,
         UomConverter converter)
     {
-        return string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal)
-            ? quantity
-            : converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
+        if (string.Equals(Normalize(fromUomCode), Normalize(toUomCode), StringComparison.Ordinal))
+        {
+            return new QuantityConversion(quantity, []);
+        }
+
+        var converted = converter.Convert(triggerSkuCode, fromUomCode, toUomCode, quantity);
+        return new QuantityConversion(converted, [$"{quantity} {fromUomCode} -> {converted} {toUomCode}"]);
     }
 
     private static SupplyConsumption ConsumeSupply(
@@ -342,16 +413,21 @@ public static class MrpCalculator
         decimal requiredQuantity,
         DateOnly requiredDate,
         decimal safetyStockQuantity,
-        IDictionary<ItemKey, decimal> availability,
+        IDictionary<ItemKey, InventoryAvailabilityState> availability,
         IReadOnlyDictionary<ItemKey, List<ScheduledReceiptState>> scheduledReceipts)
     {
         var remainingRequirement = requiredQuantity;
-        var availableQuantity = availability.TryGetValue(key, out var available) ? available : 0m;
+        var availableState = availability.TryGetValue(key, out var state)
+            ? state
+            : new InventoryAvailabilityState(0m, 0m, 0m);
+        var availableQuantity = availableState.AvailableQuantity;
         var availableForNetting = Math.Max(0, availableQuantity - safetyStockQuantity);
         var usedAvailable = Math.Min(availableForNetting, remainingRequirement);
         if (usedAvailable > 0)
         {
-            availability[key] = availableQuantity - usedAvailable;
+            availableState.AvailableQuantity = availableQuantity - usedAvailable;
+            availableState.OnHandQuantity = Math.Max(0m, availableState.OnHandQuantity - usedAvailable);
+            availability[key] = availableState;
             remainingRequirement -= usedAvailable;
         }
 
@@ -376,7 +452,14 @@ public static class MrpCalculator
             }
         }
 
-        return new SupplyConsumption(Math.Max(0, remainingRequirement), usedReceipts);
+        return new SupplyConsumption(
+            Math.Max(0, remainingRequirement),
+            Math.Max(0m, availableState.OnHandQuantity + usedAvailable),
+            availableState.ReservedQuantity,
+            usedAvailable,
+            usedReceipts.Sum(x => x.Quantity),
+            safetyStockQuantity,
+            usedReceipts);
     }
 
     private static IReadOnlyCollection<decimal> ApplyLotSizing(
@@ -544,6 +627,41 @@ public static class MrpCalculator
         return grossRequirement <= 0m ? 0m : totalQuantity * sourceQuantity / grossRequirement;
     }
 
+    private static decimal ResolveOnHandQuantity(InventoryAvailabilitySnapshot availability)
+    {
+        return availability.OnHandQuantity > 0m || availability.ReservedQuantity > 0m
+            ? availability.OnHandQuantity
+            : availability.AvailableQuantity;
+    }
+
+    private static string SourceTypeFromDemandType(string demandType)
+    {
+        return Normalize(demandType) switch
+        {
+            "SALES-ORDER" or "SALES" => "sales",
+            "FORECAST" => "forecast",
+            "SAFETY-STOCK" or "SAFETYSTOCK" => "safety-stock",
+            "MPS" or "MASTER-PRODUCTION-SCHEDULE" => "mps",
+            _ => "demand",
+        };
+    }
+
+    private static string BuildFormula(
+        decimal grossDemandQuantity,
+        decimal onHandQuantity,
+        decimal reservedQuantity,
+        decimal safetyStockQuantity,
+        decimal scheduledReceiptQuantity,
+        decimal netRequirementQuantity,
+        decimal scrapRate,
+        decimal yieldRate)
+    {
+        var formula = $"{grossDemandQuantity:g29} - {onHandQuantity:g29} + {reservedQuantity:g29} + {safetyStockQuantity:g29} - {scheduledReceiptQuantity:g29} = {netRequirementQuantity:g29}";
+        return scrapRate > 0m || yieldRate != 1m
+            ? $"{formula}; scrap/yield {scrapRate:g29}/{yieldRate:g29}"
+            : formula;
+    }
+
     private static string Normalize(string value) => value.Trim().ToUpperInvariant();
 
     private readonly record struct ItemKey(string SkuCode, string UomCode, string SiteCode)
@@ -564,7 +682,7 @@ public static class MrpCalculator
 
     private sealed record RequirementBucket(ItemKey Key, DateOnly RequiredDate);
 
-    private sealed record DemandPegging(string DemandSourceReference, string ParentSkuCode, string? ComponentSkuCode, decimal Quantity);
+    private sealed record DemandPegging(string DemandSourceReference, string ParentSkuCode, string? ComponentSkuCode, string SourceType, decimal Quantity);
 
     private sealed record Requirement(
         string SkuCode,
@@ -573,7 +691,11 @@ public static class MrpCalculator
         decimal Quantity,
         DateOnly RequiredDate,
         IReadOnlyCollection<DemandPegging> DemandPegging,
-        IReadOnlyCollection<string> Path);
+        IReadOnlyCollection<string> Path,
+        string RequirementType,
+        decimal ScrapRate,
+        decimal YieldRate,
+        IReadOnlyCollection<string> UomConversions);
 
     private sealed class ScheduledReceiptState(ScheduledReceiptSnapshot snapshot)
     {
@@ -586,7 +708,23 @@ public static class MrpCalculator
 
     private sealed record UsedScheduledReceipt(string SourceSystem, string SourceDocumentType, string SourceDocumentId, decimal Quantity);
 
-    private sealed record SupplyConsumption(decimal Shortage, IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts);
+    private sealed record SupplyConsumption(
+        decimal Shortage,
+        decimal OnHandQuantity,
+        decimal ReservedQuantity,
+        decimal UsedAvailableQuantity,
+        decimal UsedScheduledReceiptQuantity,
+        decimal SafetyStockQuantity,
+        IReadOnlyCollection<UsedScheduledReceipt> UsedReceipts);
+
+    private sealed record QuantityConversion(decimal Quantity, IReadOnlyCollection<string> Summaries);
+
+    private sealed class InventoryAvailabilityState(decimal onHandQuantity, decimal reservedQuantity, decimal availableQuantity)
+    {
+        public decimal OnHandQuantity { get; set; } = onHandQuantity;
+        public decimal ReservedQuantity { get; } = reservedQuantity;
+        public decimal AvailableQuantity { get; set; } = availableQuantity;
+    }
 
     private sealed class UomConverter
     {

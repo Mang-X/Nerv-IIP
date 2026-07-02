@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +25,8 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
 public sealed class DemandPlanningEndpointContractTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public void DemandPlanning_endpoints_expose_issue_128_routes_permissions_policies_and_operation_ids()
     {
@@ -142,6 +145,38 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Contains(suggestions, x => x.SuggestionType == "planned-purchase" && x.SkuCode == "SKU-RM-1000" && x.Quantity == 19m);
         var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId), CancellationToken.None);
         Assert.Contains(pegging, x => x.DemandSourceReference == "DEMAND-001" && x.ProductionVersionReference == "PV-001" && x.ManufacturingBomReference == "MBOM-001");
+    }
+
+    [Fact]
+    public async Task Mrp_queries_return_persisted_net_requirement_explanations_and_source_types()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateDemandSourceCommandHandler(dbContext).Handle(
+            new CreateOrUpdateDemandSourceCommand("org-001", "env-dev", "sales-order", "SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 10m, new DateOnly(2026, 6, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new RunMrpCommandHandler(dbContext, new DemandPlanningFixtureInputSnapshotProvider(dbContext));
+
+        var result = await handler.Handle(new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var suggestions = await new ListPlanningSuggestionsQueryHandler(dbContext)
+            .Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", null), CancellationToken.None);
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        using var suggestionDocument = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
+        var explanation = suggestionDocument.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(2m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal("sales", explanation.GetProperty("primarySourceType").GetString());
+
+        var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId), CancellationToken.None);
+        var demandPegging = Assert.Single(pegging, x => x.SuggestionId == workOrder.SuggestionId && x.DemandSourceReference == "SO-1001");
+        using var peggingDocument = JsonDocument.Parse(JsonSerializer.Serialize(demandPegging, JsonOptions));
+        Assert.Equal("sales", peggingDocument.RootElement.GetProperty("sourceType").GetString());
+        Assert.Equal(10m, peggingDocument.RootElement.GetProperty("grossDemandQuantity").GetDecimal());
     }
 
     [Theory]

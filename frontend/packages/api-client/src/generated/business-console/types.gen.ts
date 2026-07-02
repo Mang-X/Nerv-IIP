@@ -1799,6 +1799,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     productionVersionReference?: string | null;
     manufacturingBomReference?: string | null;
     routingReference?: string | null;
+    sourceType?: string;
+    grossDemandQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebEndpointsPlanningBusinessConsoleMrpPeggingRequest = {
@@ -1824,9 +1826,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     requiredDate?: string;
     status?: string;
     reasonCode?: string;
+    netRequirementExplanation?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation | null;
     downstreamService?: string | null;
     downstreamDocumentType?: string | null;
     downstreamDocumentId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation = {
+    grossDemandQuantity?: number;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableToNetQuantity?: number;
+    scheduledReceiptQuantity?: number;
+    safetyStockQuantity?: number;
+    netRequirementQuantity?: number;
+    plannedQuantity?: number;
+    scrapRate?: number;
+    yieldRate?: number;
+    primarySourceType?: string;
+    formula?: string;
+    uomConversions?: Array<string>;
+    degradationSources?: Array<string>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningSuggestionListRequest = {

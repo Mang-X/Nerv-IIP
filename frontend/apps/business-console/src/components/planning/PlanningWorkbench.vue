@@ -261,6 +261,7 @@ const runColumns: DataTableProColumn<BusinessConsoleMrpRunItem>[] = [
 const peggingColumns: DataTableProColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'demandSourceReference', header: '需求来源', cellClass: 'font-medium' },
   { key: 'peggingType', header: '展开类型', width: 'w-28' },
+  { key: 'sourceType', header: '来源类型', width: 'w-28' },
   { key: 'sku', header: '物料层级' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'engineeringRef', header: '工程引用' },
@@ -330,6 +331,19 @@ function reasonLabel(value?: string | null) {
   // 未知码一律降级为通用中文，绝不回显原始英文码。
   return map[value ?? ''] ?? '按计划规则形成'
 }
+function sourceTypeLabel(value?: string | null) {
+  const map: Record<string, string> = {
+    sales: '销售来源',
+    'sales-order': '销售来源',
+    forecast: '预测来源',
+    safety: '安全库存来源',
+    'safety-stock': '安全库存来源',
+    mps: 'MPS 来源',
+    component: '组件展开',
+    'scheduled-receipt': '在途来源',
+  }
+  return map[(value ?? '').toLowerCase()] ?? '来源未分类'
+}
 function isOpen(status?: string | null) {
   return status?.toLowerCase() === 'open'
 }
@@ -353,6 +367,10 @@ function formatDate(value?: string | null) {
 }
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
+}
+function formatRatio(value?: number | null) {
+  if (value === null || value === undefined) return '—'
+  return value === 1 ? '1' : value.toString()
 }
 function inputDegradationLabel(sources?: readonly string[] | null) {
   return sources && sources.length > 0 ? sources.map(inputDegradationSourceLabel).join('、') : '正常'
@@ -390,6 +408,42 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
   void router.push({
     path: '/engineering/bom-analysis',
     query: bomAnalysisQuery(row),
+  })
+}
+
+function explanationRows(row: BusinessConsolePlanningSuggestionItem) {
+  const explanation = row.netRequirementExplanation
+  if (!explanation) return []
+  return [
+    { label: '总需求', value: explanation.grossDemandQuantity },
+    { label: '现有库存', value: explanation.onHandQuantity },
+    { label: '预留', value: explanation.reservedQuantity },
+    { label: '可抵扣库存', value: explanation.availableToNetQuantity },
+    { label: '在途', value: explanation.scheduledReceiptQuantity },
+    { label: '安全库存', value: explanation.safetyStockQuantity },
+    { label: '净需求', value: explanation.netRequirementQuantity },
+    { label: '建议量', value: explanation.plannedQuantity },
+  ]
+}
+
+function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
+  const sourceType = (row.sourceType ?? '').toLowerCase()
+  if (sourceType === 'component' || row.manufacturingBomReference || row.productionVersionReference) {
+    openBomContext(row)
+    return
+  }
+
+  if (sourceType === 'scheduled-receipt') {
+    void router.push({ path: '/erp', query: { keyword: row.demandSourceReference } })
+    return
+  }
+
+  void router.push({
+    path: '/planning',
+    query: {
+      source: row.demandSourceReference,
+      runId: runSelection.runId,
+    },
   })
 }
 </script>
@@ -597,6 +651,17 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
           <template #cell-peggingType="{ row }">
             <StatusBadgePro :label="peggingTypeLabel(row.peggingType).label" :tone="peggingTypeLabel(row.peggingType).tone" />
           </template>
+          <template #cell-sourceType="{ row }">
+            <StatusBadgePro :label="sourceTypeLabel(row.sourceType)" tone="neutral" />
+          </template>
+          <template #cell-demandSourceReference="{ row }">
+            <div class="flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate">{{ row.demandSourceReference }}</span>
+              <ButtonPro size="sm" type="button" variant="ghost" @click="openPeggingSource(row)">
+                <ExternalLinkIcon aria-hidden="true" />
+              </ButtonPro>
+            </div>
+          </template>
           <template #cell-sku="{ row }">
             <div :class="isComponentRow(row) ? 'flex items-start gap-1.5 pl-5' : 'flex flex-col gap-0.5'">
               <CornerDownRightIcon v-if="isComponentRow(row)" class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -666,7 +731,36 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
         </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
-        <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
+        <template #cell-reasonCode="{ row }">
+          <div class="grid min-w-80 gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span>{{ reasonLabel(row.reasonCode) }}</span>
+              <StatusBadgePro
+                v-if="row.netRequirementExplanation"
+                :label="sourceTypeLabel(row.netRequirementExplanation.primarySourceType)"
+                tone="info"
+              />
+            </div>
+            <div v-if="row.netRequirementExplanation" class="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2 text-xs">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span class="font-medium text-foreground">净需求公式</span>
+                <span class="font-mono tabular-nums text-muted-foreground">{{ row.netRequirementExplanation.formula }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-1 sm:grid-cols-4">
+                <div v-for="item in explanationRows(row)" :key="item.label" class="min-w-0 rounded border border-border/60 bg-background px-2 py-1">
+                  <div class="text-muted-foreground">{{ item.label }}</div>
+                  <div class="tabular-nums text-foreground">{{ item.value ?? 0 }}</div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                <span>scrap {{ formatRatio(row.netRequirementExplanation.scrapRate) }}</span>
+                <span>yield {{ formatRatio(row.netRequirementExplanation.yieldRate) }}</span>
+                <span v-if="row.netRequirementExplanation.uomConversions?.length">单位 {{ row.netRequirementExplanation.uomConversions.join('；') }}</span>
+                <span v-if="row.netRequirementExplanation.degradationSources?.length">退化 {{ inputDegradationLabel(row.netRequirementExplanation.degradationSources) }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
         <template #cell-downstream="{ row }">
           <ButtonPro
             v-if="row.downstreamDocumentId"

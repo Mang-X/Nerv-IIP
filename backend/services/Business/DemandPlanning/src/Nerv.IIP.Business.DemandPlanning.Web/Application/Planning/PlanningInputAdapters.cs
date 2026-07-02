@@ -398,7 +398,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         DateOnly horizonEnd,
         CancellationToken cancellationToken)
     {
-        return await dbContext.DemandSources
+        var demandSources = await dbContext.DemandSources
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
@@ -406,8 +406,30 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
+        var mpsSources = await dbContext.MasterProductionSchedules
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.BucketDate >= horizonStart
+                && x.BucketDate <= horizonEnd)
+            .OrderBy(x => x.BucketDate)
+            .ThenBy(x => x.SkuCode)
+            .Select(x => new DemandSnapshot(
+                $"MPS:{x.SkuCode}:{x.BucketDate:O}",
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                x.BucketDate,
+                "mps"))
+            .ToListAsync(cancellationToken);
+
+        return demandSources.Concat(mpsSources)
+            .OrderBy(x => x.DueDate)
+            .ThenBy(x => x.DemandSourceReference, StringComparer.Ordinal)
+            .ToArray();
     }
 }
 
@@ -483,7 +505,9 @@ public sealed class HttpPlanningProductEngineeringSnapshotClient(HttpClient http
                 selectedBom.SkuCode,
                 line.SkuCode,
                 line.UnitOfMeasureCode,
-                line.Quantity * (1 + line.ScrapRate)))
+                line.Quantity,
+                Math.Max(0m, line.ScrapRate),
+                1m))
                 .ToArray();
 
         return new ProductEngineeringSkuSnapshot(version, components);
@@ -1009,7 +1033,13 @@ public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) :
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<InventoryAvailabilityResponse>>(cancellationToken);
         var body = envelope?.Data ?? throw new InvalidOperationException("Inventory returned an empty response envelope.");
-        return new InventoryAvailabilitySnapshot(body.SkuCode, body.UomCode, body.SiteCode, body.AvailableQuantity);
+        return new InventoryAvailabilitySnapshot(
+            body.SkuCode,
+            body.UomCode,
+            body.SiteCode,
+            body.AvailableQuantity,
+            body.OnHandQuantity,
+            body.ReservedQuantity);
     }
 }
 
@@ -1224,7 +1254,7 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
 
         return new PlanningInputSnapshotResult(

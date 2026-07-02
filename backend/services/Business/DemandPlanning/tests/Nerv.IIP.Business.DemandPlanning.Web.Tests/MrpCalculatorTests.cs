@@ -1,9 +1,64 @@
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
+using System.Text.Json;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
 public sealed class MrpCalculatorTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void Suggestions_expose_net_requirement_formula_from_real_mrp_inputs()
+    {
+        var input = NewInput(
+            availability:
+            [
+                new InventoryAvailabilitySnapshot("SKU-FG-1000", "pcs", "SITE-01", 8m),
+            ],
+            planningParameters:
+            [
+                new PlanningParameterSnapshot("SKU-FG-1000", "pcs", "SITE-01", 0, 2m, null, null, null),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var workOrder = Assert.Single(suggestions, x => x.SuggestionType == "planned-work-order");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(workOrder, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("reservedQuantity").GetDecimal());
+        Assert.Equal(6m, explanation.GetProperty("availableToNetQuantity").GetDecimal());
+        Assert.Equal(0m, explanation.GetProperty("scheduledReceiptQuantity").GetDecimal());
+        Assert.Equal(2m, explanation.GetProperty("safetyStockQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("plannedQuantity").GetDecimal());
+        Assert.Contains("10 - 8 + 0 + 2 - 0 = 4", explanation.GetProperty("formula").GetString(), StringComparison.Ordinal);
+        Assert.Empty(explanation.GetProperty("degradationSources").EnumerateArray());
+    }
+
+    [Fact]
+    public void Component_suggestions_explain_scrap_yield_and_component_source()
+    {
+        var input = NewInput(
+            availability: [],
+            bomComponents:
+            [
+                new BomComponentSnapshot("SKU-FG-1000", "SKU-RM-1000", "pcs", 2m, ScrapRate: 0.1m, YieldRate: 0.8m),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input);
+
+        var purchase = Assert.Single(suggestions, x => x.SuggestionType == "planned-purchase");
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(purchase, JsonOptions));
+        var explanation = document.RootElement.GetProperty("netRequirementExplanation");
+        Assert.Equal(27.5m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(0.1m, explanation.GetProperty("scrapRate").GetDecimal());
+        Assert.Equal(0.8m, explanation.GetProperty("yieldRate").GetDecimal());
+        Assert.Equal("component", explanation.GetProperty("primarySourceType").GetString());
+        Assert.Contains("scrap/yield", explanation.GetProperty("formula").GetString(), StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public void Deterministic_fixture_creates_work_order_8_and_purchase_19()
     {

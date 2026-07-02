@@ -962,6 +962,104 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_suggestions_expose_net_requirement_explanation()
+    {
+        var planning = new RecordingPlanningClient
+        {
+            SuggestionsResponse = new BusinessConsolePlanningSuggestionListResponse([
+                new BusinessConsolePlanningSuggestionItem(
+                    "suggestion-001",
+                    "mrp-run-001",
+                    "planned-purchase",
+                    "SKU-RM-001",
+                    "pcs",
+                    "SITE-01",
+                    4m,
+                    new DateOnly(2026, 6, 1),
+                    "Open",
+                    "component-net-requirement",
+                    new BusinessConsoleNetRequirementExplanation(
+                        10m,
+                        8m,
+                        0m,
+                        8m,
+                        0m,
+                        2m,
+                        4m,
+                        4m,
+                        0m,
+                        1m,
+                        "sales",
+                        "10 - 8 + 0 + 2 - 0 = 4",
+                        [],
+                        ["scheduled-receipts"])),
+            ]),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev&status=Open");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var explanation = document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("netRequirementExplanation");
+        Assert.Equal(10m, explanation.GetProperty("grossDemandQuantity").GetDecimal());
+        Assert.Equal(8m, explanation.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(4m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
+        Assert.Equal("sales", explanation.GetProperty("primarySourceType").GetString());
+        Assert.Equal("10 - 8 + 0 + 2 - 0 = 4", explanation.GetProperty("formula").GetString());
+        Assert.Equal("scheduled-receipts", explanation.GetProperty("degradationSources")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Planning_mrp_pegging_exposes_source_type_and_gross_demand()
+    {
+        var planning = new RecordingPlanningClient
+        {
+            PeggingResponse = new BusinessConsoleMrpPeggingListResponse([
+                new BusinessConsoleMrpPeggingItem(
+                    "suggestion-001",
+                    "demand",
+                    "SO-1001",
+                    "SKU-FG-001",
+                    "SKU-RM-001",
+                    10m,
+                    null,
+                    "MBOM-001:A",
+                    null,
+                    "sales",
+                    10m),
+            ]),
+        };
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
+        Assert.Equal("sales", item.GetProperty("sourceType").GetString());
+        Assert.Equal(10m, item.GetProperty("grossDemandQuantity").GetDecimal());
+    }
+
+    [Fact]
     public async Task Planning_demand_cancel_uses_internal_service_token_for_downstream_business_service()
     {
         var planning = new RecordingPlanningClient();
@@ -5466,6 +5564,12 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     public BusinessConsoleAcceptedResponse AcceptedSuggestionResponse { get; init; } =
         new(true, "BusinessMes", "WorkOrder", "WO-001");
 
+    public BusinessConsoleMrpPeggingListResponse PeggingResponse { get; init; } =
+        new([]);
+
+    public BusinessConsolePlanningSuggestionListResponse SuggestionsResponse { get; init; } =
+        new([]);
+
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
         BusinessConsolePlanningContextRequest request,
@@ -5542,7 +5646,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsoleMrpPeggingListResponse([]));
+        return Task.FromResult(PeggingResponse);
     }
 
     public Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
@@ -5552,7 +5656,7 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         SuggestionListCallCount++;
         LastInternalToken = internalBearerToken;
-        return Task.FromResult(new BusinessConsolePlanningSuggestionListResponse([]));
+        return Task.FromResult(SuggestionsResponse);
     }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(

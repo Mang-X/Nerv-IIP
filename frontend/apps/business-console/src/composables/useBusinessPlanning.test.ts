@@ -118,7 +118,14 @@ describe('business planning composable', () => {
     })
     coladaState.queryDataById.set('getBusinessConsolePlanningMrpPegging', {
       success: true,
-      data: { items: [{ suggestionId: 'suggestion-1', demandSourceReference: 'SO-1001' }] },
+      data: {
+        items: [{
+          suggestionId: 'suggestion-1',
+          demandSourceReference: 'SO-1001',
+          sourceType: 'sales',
+          grossDemandQuantity: 10,
+        }],
+      },
     })
 
     const { demands, mrpRuns, pegging, runSelection, suggestions } = useBusinessPlanning()
@@ -144,6 +151,8 @@ describe('business planning composable', () => {
     expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
+    expect(pegging.value[0]?.sourceType).toBe('sales')
+    expect(pegging.value[0]?.grossDemandQuantity).toBe(10)
   })
 
   it('starts with a blank demand form instead of demo production values', () => {
