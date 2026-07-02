@@ -37,7 +37,8 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '维护工单', requiredPermissions: ['business.maintenance.work-orders.read'] } })
 
@@ -56,6 +57,7 @@ const {
   filters,
 } = useMaintenanceWorkOrders()
 const { page, pageSize } = usePagedList(filters)
+const route = useRoute()
 
 const priorityOptions = [
   { label: '高', value: 'high' },
@@ -107,6 +109,7 @@ const completeError = shallowRef('')
 const listErrorMessage = computed(() => formatError(workOrdersError.value))
 const createErrorMessage = computed(() => createError.value || formatError(createWorkOrderError.value))
 const completeErrorMessage = computed(() => completeError.value || formatError(completeWorkOrderError.value))
+const queryPrefilled = shallowRef(false)
 
 type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
 const columns: DataTableProColumn<WorkOrderRow>[] = [
@@ -130,11 +133,11 @@ function rowKey(row: WorkOrderRow) {
   return row.workOrderId ?? '维护工单'
 }
 
-function openCreate() {
-  createForm.deviceAssetId = ''
+function openCreate(prefill: Partial<typeof createForm> = {}) {
+  createForm.deviceAssetId = prefill.deviceAssetId ?? ''
   createForm.priority = 'medium'
-  createForm.openedBy = ''
-  createForm.sourceAlarmId = ''
+  createForm.openedBy = prefill.openedBy ?? ''
+  createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
   createError.value = ''
   createOpen.value = true
 }
@@ -212,6 +215,19 @@ function formatDateTime(value?: string | null) {
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
+
+watch(
+  () => route.query,
+  (query) => {
+    if (queryPrefilled.value) return
+    const deviceAssetId = typeof query.deviceAssetId === 'string' ? query.deviceAssetId : ''
+    const sourceAlarmId = typeof query.sourceAlarmId === 'string' ? query.sourceAlarmId : ''
+    if (!deviceAssetId && !sourceAlarmId) return
+    queryPrefilled.value = true
+    openCreate({ deviceAssetId, sourceAlarmId })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
