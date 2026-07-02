@@ -16,6 +16,7 @@ public static class IamPermissionCatalog
         ["iam.roles.manage"] = "Create IAM roles and update role permissions.",
         ["iam.sessions.read"] = "Read IAM user sessions.",
         ["iam.sessions.revoke"] = "Revoke IAM user sessions.",
+        ["iam.security-audit.read"] = "Read IAM security audit records.",
         ["connectors.registrations.write"] = "Register connector hosts.",
         ["connectors.heartbeats.write"] = "Write connector host heartbeats.",
         ["connectors.state-snapshots.write"] = "Write connector host state snapshots.",

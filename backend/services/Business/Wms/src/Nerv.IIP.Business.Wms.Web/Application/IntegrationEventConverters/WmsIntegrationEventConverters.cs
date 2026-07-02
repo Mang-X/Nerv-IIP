@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Wms;
@@ -39,12 +40,36 @@ public sealed class InboundOrderCompletedIntegrationEventConverter
     {
         var order = domainEvent.InboundOrder;
         var line = order.Lines.First();
+        var status = order.Status.ToString();
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.InboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
             $"wms:inbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.InboundOrderNo}",
-            new WmsIntegrationPayload(order.InboundOrderNo, line.LineNo, line.SkuCode, line.UomCode, order.SiteCode, line.StagingLocationCode, line.ReceivedQuantity, order.Status.ToString(), null, null));
+            new WmsIntegrationPayload(
+                order.InboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                order.SiteCode,
+                line.StagingLocationCode,
+                line.ReceivedQuantity,
+                status,
+                null,
+                null,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.StagingLocationCode,
+                        x.ReceivedQuantity,
+                        x.QualityStatus))
+                    .ToArray(),
+                order.SourceDocumentType,
+                order.SourceDocumentId));
     }
 }
 
@@ -55,12 +80,77 @@ public sealed class OutboundOrderCompletedIntegrationEventConverter
     {
         var order = domainEvent.OutboundOrder;
         var line = order.Lines.First();
+        var status = order.Status.ToString();
+        var publicQuantity = PublicOutboundQuantity(line);
         return WmsIntegrationEventFactory.NewEvent(
             WmsIntegrationEventTypes.OutboundOrderCompleted,
             order.OrganizationId,
             order.EnvironmentId,
             $"wms:outbound-completed:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
-            new WmsIntegrationPayload(order.OutboundOrderNo, line.LineNo, line.SkuCode, line.UomCode, order.SiteCode, line.PickLocationCode, line.RequestedQuantity, order.Status.ToString(), null, null));
+            new WmsIntegrationPayload(
+                order.OutboundOrderNo,
+                line.LineNo,
+                line.SkuCode,
+                line.UomCode,
+                order.SiteCode,
+                line.PickLocationCode,
+                publicQuantity,
+                status,
+                null,
+                null,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.PickLocationCode,
+                        PublicOutboundQuantity(x),
+                        null))
+                    .ToArray(),
+                order.SourceDocumentType,
+                order.SourceDocumentId));
+    }
+
+    private static decimal PublicOutboundQuantity(OutboundOrderLine line)
+        => line.FulfillmentRecorded ? line.IssuedQuantity : line.RequestedQuantity;
+}
+
+public sealed class OutboundOrderCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<OutboundOrderCancelledDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(OutboundOrderCancelledDomainEvent domainEvent)
+    {
+        var order = domainEvent.OutboundOrder;
+        var line = order.Lines.FirstOrDefault();
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.OutboundOrderCancelled,
+            order.OrganizationId,
+            order.EnvironmentId,
+            $"wms:outbound-cancelled:{order.OrganizationId}:{order.EnvironmentId}:{order.OutboundOrderNo}",
+            new WmsIntegrationPayload(
+                order.OutboundOrderNo,
+                line?.LineNo,
+                line?.SkuCode,
+                line?.UomCode,
+                order.SiteCode,
+                line?.PickLocationCode,
+                null,
+                order.Status.ToString(),
+                "OUTBOUND_CANCELLED",
+                order.CancellationReason,
+                order.Lines
+                    .OrderBy(x => x.LineNo, StringComparer.Ordinal)
+                    .Select(x => new WmsIntegrationPayloadLine(
+                        x.LineNo,
+                        x.SkuCode,
+                        x.UomCode,
+                        order.SiteCode,
+                        x.PickLocationCode,
+                        x.RequestedQuantity,
+                        order.Status.ToString()))
+                    .ToArray()));
     }
 }
 
@@ -124,6 +214,32 @@ public sealed class WcsTaskCompletedIntegrationEventConverter
     }
 }
 
+public sealed class WcsTaskCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<WcsTaskCancelledDomainEvent, WmsIntegrationEvent>
+{
+    public WmsIntegrationEvent Convert(WcsTaskCancelledDomainEvent domainEvent)
+    {
+        var task = domainEvent.WcsTask;
+        return WmsIntegrationEventFactory.NewEvent(
+            WmsIntegrationEventTypes.WcsTaskCancelled,
+            task.OrganizationId,
+            task.EnvironmentId,
+            $"wms:wcs-cancelled:{task.OrganizationId}:{task.EnvironmentId}:{task.AdapterType}:{task.ExternalTaskId}:{task.AttemptCount}",
+            new WmsIntegrationPayload(
+                task.ExternalTaskId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                task.Status.ToString(),
+                "WCS_TASK_CANCELLED",
+                task.FailureMessage,
+                AdapterType: task.AdapterType));
+    }
+}
+
 internal static class WmsIntegrationEventFactory
 {
     public static WmsIntegrationEvent NewEvent(
@@ -175,7 +291,8 @@ internal static class InventoryMovementRequestEventMapping
             request.OwnerType,
             request.OwnerId,
             quantity,
-            requestedAtUtc);
+            requestedAtUtc,
+            request.InventoryReservationId);
     }
 }
 

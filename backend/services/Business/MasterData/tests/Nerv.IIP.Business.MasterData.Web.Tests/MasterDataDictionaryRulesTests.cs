@@ -39,23 +39,92 @@ public sealed class MasterDataDictionaryRulesTests
     }
 
     [Fact]
+    public async Task MasterData_seed_creates_chinese_uom_names_with_authoritative_dimensions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+
+        var units = await dbContext.UnitsOfMeasure
+            .Where(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev")
+            .Select(x => new { x.Code, x.Name, x.DimensionType })
+            .OrderBy(x => x.Code)
+            .ToDictionaryAsync(x => x.Code, x => (x.Name, x.DimensionType), CancellationToken.None);
+
+        Assert.Equal(("克", "weight"), units["g"]);
+        Assert.Equal(("千克", "weight"), units["kg"]);
+        Assert.Equal(("升", "volume"), units["l"]);
+        Assert.Equal(("分钟", "time"), units["min"]);
+        Assert.Equal(("件", "count"), units["pcs"]);
+    }
+
+    [Fact]
     public async Task MasterData_seed_disables_obsolete_system_dictionary_codes_without_deleting_them()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "product-category", "finished-good", "Finished Good"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "batch-tracking-policy", "lot", "Lot Tracking"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "serial-tracking-policy", "serial", "Serial Tracking"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "180d", "180 Days"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "shelf-life-policy", "365d", "365 Days"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "mass", "Mass"));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "uom-dimension", "quantity", "Quantity"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
 
-        var obsolete = await dbContext.ReferenceDataCodes.SingleAsync(x =>
+        foreach (var (codeSet, code) in new[]
+        {
+            ("product-category", "finished-good"),
+            ("batch-tracking-policy", "lot"),
+            ("serial-tracking-policy", "serial"),
+            ("shelf-life-policy", "180d"),
+            ("shelf-life-policy", "365d"),
+            ("uom-dimension", "mass"),
+            ("uom-dimension", "quantity")
+        })
+        {
+            var obsolete = await dbContext.ReferenceDataCodes.SingleAsync(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.CodeSet == codeSet &&
+                x.Code == code,
+                CancellationToken.None);
+            Assert.True(obsolete.Disabled);
+        }
+    }
+
+    [Fact]
+    public async Task MasterData_seed_repairs_existing_authoritative_names_and_uom_dimensions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "dry", "Dry"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+
+        var dry = await dbContext.ReferenceDataCodes.SingleAsync(x =>
             x.OrganizationId == "org-001" &&
             x.EnvironmentId == "env-dev" &&
-            x.CodeSet == "product-category" &&
-            x.Code == "finished-good",
+            x.CodeSet == "storage-condition" &&
+            x.Code == "dry",
             CancellationToken.None);
-        Assert.True(obsolete.Disabled);
+        Assert.Equal("干燥防潮", dry.Name);
+
+        var kg = await dbContext.UnitsOfMeasure.SingleAsync(x =>
+            x.OrganizationId == "org-001" &&
+            x.EnvironmentId == "env-dev" &&
+            x.Code == "kg",
+            CancellationToken.None);
+        Assert.Equal("千克", kg.Name);
+        Assert.Equal("weight", kg.DimensionType);
     }
 
     [Fact]
@@ -231,6 +300,16 @@ public sealed class MasterDataDictionaryRulesTests
             CancellationToken.None);
         Assert.Equal("customer-return", qualityReason.Code);
 
+        var skill = await handler.Handle(
+            new CreateReferenceDataCodeCommand(
+                "org-001",
+                "env-dev",
+                "skill",
+                "packaging",
+                "包装"),
+            CancellationToken.None);
+        Assert.Equal("packaging", skill.Code);
+
         var unknownCodeSet = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateReferenceDataCodeCommand(
                 "org-001",
@@ -318,7 +397,9 @@ public sealed class MasterDataDictionaryRulesTests
             ["barcode-rule"] = ["code128", "customer-spec", "ean13", "gs1-128", "qr"],
             ["uom-dimension"] = ["area", "count", "length", "time", "volume", "weight"],
             ["partner-type"] = ["carrier", "customer", "supplier"],
+            ["skill"] = ["assembly", "cnc-operation", "forklift", "inspection", "welding"],
             ["skill-level"] = ["expert", "intermediate", "junior", "senior"],
+            ["operation"] = ["assembly", "cnc-operation", "inspection", "packaging", "welding"],
             ["quality-reason"] = ["dimension-ng", "missing-part", "scratch", "solder-defect"],
             ["compliance-tag"] = ["msd", "reach", "rohs", "ul"],
             ["device-status"] = ["fault", "idle", "maintenance", "running", "scrapped"],

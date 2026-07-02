@@ -11,7 +11,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Messaging.CAP;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 
 namespace Nerv.IIP.Business.Mes.Infrastructure;
 
@@ -26,7 +26,11 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ProductionReportMaterialConsumption> ProductionReportMaterialConsumptions => Set<ProductionReportMaterialConsumption>();
 
+    public DbSet<OutputLotGenealogy> OutputLotGenealogies => Set<OutputLotGenealogy>();
+
     public DbSet<DefectRecord> DefectRecords => Set<DefectRecord>();
+
+    public DbSet<QualityHoldContext> QualityHoldContexts => Set<QualityHoldContext>();
 
     public DbSet<MaterialRequirement> MaterialRequirements => Set<MaterialRequirement>();
 
@@ -42,9 +46,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<ShiftHandover> ShiftHandovers => Set<ShiftHandover>();
 
-    public DbSet<NumberingCounter> NumberingCounters => Set<NumberingCounter>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
 
-    public DbSet<NumberingIdempotencyKey> NumberingIdempotencyKeys => Set<NumberingIdempotencyKey>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
 
@@ -66,6 +70,23 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     {
         ConfigureStronglyTypedIdValueConverter(configurationBuilder);
         base.ConfigureConventions(configurationBuilder);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            this,
+            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+            cancellationToken);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+            this,
+            () => base.SaveChanges(acceptAllChangesOnSuccess));
     }
 
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)

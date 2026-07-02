@@ -20,6 +20,11 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.DefectReason).HasColumnName("defect_reason").IsRequired().HasMaxLength(200).HasComment("Defect reason code or normalized reason.");
         builder.Property(x => x.BatchNo).HasColumnName("batch_no").HasMaxLength(100).HasComment("Optional batch number reference.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional serial number reference.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional inventory UOM snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Optional inventory site snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Optional inventory location snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.OwnerType).HasColumnName("owner_type").HasMaxLength(50).HasComment("Optional inventory owner type snapshot copied from the source inspection for NCR disposition stock movements.");
+        builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional inventory owner id snapshot copied from the source inspection for NCR disposition stock movements.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("NCR lifecycle status.");
         builder.Property(x => x.DispositionType).HasColumnName("disposition_type").HasMaxLength(50).HasComment("Chosen disposition type.");
         builder.Property(x => x.DispositionApprovalChainId).HasColumnName("disposition_approval_chain_id").HasMaxLength(150).HasComment("Approval chain id for disposition approval.");
@@ -32,7 +37,29 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.UpdatedAtUtc).HasColumnName("updated_at_utc").IsRequired().HasComment("UTC time when the NCR was last changed.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.NcrCode }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Status });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceDocumentId })
+            .HasDatabaseName("ix_ncr_source_document_lookup");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceInspectionRecordId });
+        builder.HasMany(x => x.MrbReviews)
+            .WithOne()
+            .HasForeignKey(x => x.NonconformanceReportId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class MrbReviewEntityTypeConfiguration : IEntityTypeConfiguration<MrbReview>
+{
+    public void Configure(EntityTypeBuilder<MrbReview> builder)
+    {
+        builder.ToTable("ncr_mrb_reviews", tableBuilder =>
+            tableBuilder.HasComment("Quality NCR material review board decisions captured before disposition execution."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("MRB review entry id.");
+        builder.Property(x => x.NonconformanceReportId).HasColumnName("nonconformance_report_id").IsRequired().HasComment("Owning NCR id.");
+        builder.Property(x => x.ReviewerId).HasColumnName("reviewer_id").IsRequired().HasMaxLength(150).HasComment("Reviewer user or committee member public id.");
+        builder.Property(x => x.Decision).HasColumnName("decision").IsRequired().HasMaxLength(50).HasComment("MRB reviewer decision such as approved or rejected.");
+        builder.Property(x => x.Comment).HasColumnName("comment").HasMaxLength(500).HasComment("Optional MRB reviewer comment.");
+        builder.Property(x => x.ReviewedAtUtc).HasColumnName("reviewed_at_utc").IsRequired().HasComment("UTC time when this MRB review was recorded.");
+        builder.HasIndex(x => new { x.NonconformanceReportId, x.ReviewerId });
     }
 }

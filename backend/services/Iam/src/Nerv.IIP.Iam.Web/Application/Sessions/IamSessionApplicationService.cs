@@ -1,6 +1,7 @@
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 
 namespace Nerv.IIP.Iam.Web.Application.Sessions;
 
@@ -16,7 +17,10 @@ public interface IIamSessionApplicationService
 {
     Task<PagedListResponse<SessionResponse>> ListSessionsAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
-    Task RevokeSessionAsync(string sessionId, CancellationToken cancellationToken);
+    Task RevokeSessionAsync(
+        string sessionId,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamSessionApplicationService(InMemoryIamStore store) : IIamSessionApplicationService
@@ -40,8 +44,12 @@ public sealed class InMemoryIamSessionApplicationService(InMemoryIamStore store)
         return Task.FromResult(sessions);
     }
 
-    public Task RevokeSessionAsync(string sessionId, CancellationToken cancellationToken)
+    public Task RevokeSessionAsync(
+        string sessionId,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken)
     {
+        _ = auditContext;
         store.Logout(sessionId);
         return Task.CompletedTask;
     }
@@ -70,9 +78,12 @@ public sealed class PostgreSqlIamSessionApplicationService(
             .ToPagedResponse(options);
     }
 
-    public async Task RevokeSessionAsync(string sessionId, CancellationToken cancellationToken)
+    public async Task RevokeSessionAsync(
+        string sessionId,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken)
     {
-        await auth.RevokeSessionAsync(sessionId, "admin-revoke", cancellationToken);
+        await auth.RevokeSessionAsync(sessionId, "admin-revoke", auditContext, cancellationToken);
     }
 }
 

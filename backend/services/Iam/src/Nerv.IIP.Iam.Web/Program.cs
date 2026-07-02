@@ -4,6 +4,7 @@ using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using Nerv.IIP.Iam.Web.Application.Seed;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Application.Sessions;
 using Nerv.IIP.Iam.Web.Application.Users;
 using Nerv.IIP.Iam.Web.Endpoints;
@@ -49,6 +50,8 @@ if (usesPostgreSql)
     builder.Services.AddScoped<IIamUserApplicationService, PostgreSqlIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, PostgreSqlIamRoleApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, PostgreSqlIamSessionApplicationService>();
+    builder.Services.AddScoped<ISecurityAuditRecorder, SecurityAuditRecorder>();
+    builder.Services.AddScoped<IIamSecurityAuditApplicationService, PostgreSqlIamSecurityAuditApplicationService>();
 }
 else
 {
@@ -58,6 +61,7 @@ else
     builder.Services.AddScoped<IIamUserApplicationService, InMemoryIamUserApplicationService>();
     builder.Services.AddScoped<IIamRoleApplicationService, InMemoryIamRoleApplicationService>();
     builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();
+    builder.Services.AddScoped<IIamSecurityAuditApplicationService, InMemoryIamSecurityAuditApplicationService>();
 }
 builder.Services.AddScoped<IamSeedService>();
 
@@ -69,14 +73,19 @@ if (usesPostgreSql && autoMigrate && !builder.Environment.IsDevelopment())
 }
 
 if (!builder.Environment.IsDevelopment()
-    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKey"]))
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKeys:0:PrivateKeyPem"]))
 {
-    throw new InvalidOperationException("Iam:Jwt:SigningKey is required outside Development.");
+    throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:PrivateKeyPem is required outside Development.");
 }
 if (!builder.Environment.IsDevelopment()
-    && System.Text.Encoding.UTF8.GetByteCount(builder.Configuration["Iam:Jwt:SigningKey"] ?? string.Empty) < 32)
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Jwt:SigningKeys:0:Kid"]))
 {
-    throw new InvalidOperationException("Iam:Jwt:SigningKey must be at least 32 bytes outside Development.");
+    throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:Kid is required outside Development.");
+}
+if (!builder.Environment.IsDevelopment()
+    && string.IsNullOrWhiteSpace(builder.Configuration["Iam:Secrets:Pepper"]))
+{
+    throw new InvalidOperationException("Iam:Secrets:Pepper is required outside Development.");
 }
 var configuredAccessTokenMinutes = builder.Configuration.GetValue("Iam:Jwt:AccessTokenMinutes", 15);
 if (!builder.Environment.IsDevelopment()
@@ -91,6 +100,10 @@ if (!builder.Environment.IsDevelopment()
     && string.Equals(enterpriseIdentityOptions.Mfa.DevelopmentCode, "000000", StringComparison.Ordinal))
 {
     throw new InvalidOperationException("Iam:EnterpriseIdentity:Mfa:DevelopmentCode must be overridden outside Development.");
+}
+if (!builder.Environment.IsDevelopment() && !usesPostgreSql)
+{
+    throw new InvalidOperationException("Persistence:Provider=PostgreSQL is required for IAM outside Development.");
 }
 
 var app = builder.Build();

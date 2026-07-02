@@ -5,7 +5,11 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringIte
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.ServiceAuth;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 
@@ -18,7 +22,8 @@ public sealed record RegisterEngineeringDocumentCommand(
     string FileName,
     string ContentType,
     string DocumentType,
-    string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
+    string? IdempotencyKey = null,
+    string? ItemCode = null) : ICommand<EntityCommandResult>;
 
 public sealed record EntityCommandResult(string Id);
 
@@ -34,46 +39,54 @@ public sealed class RegisterEngineeringDocumentCommandValidator : AbstractValida
         RuleFor(x => x.FileName).NotEmpty().MaximumLength(255);
         RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
         RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ItemCode).MaximumLength(100);
     }
 }
 
-public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class RegisterEngineeringDocumentCommandHandler(IEngineeringDocumentRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<RegisterEngineeringDocumentCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(RegisterEngineeringDocumentCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-document",
-            "EDOC",
+            request.EnvironmentId, "engineering-document",
             request.DocumentNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType),
+            DocumentPayloadFingerprint(request),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering document '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering document '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
         var document = EngineeringDocument.Register(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.Revision,
+            request.ItemCode,
             request.FileId,
             request.FileName,
             request.ContentType,
             request.DocumentType);
         await repository.AddAsync(document, cancellationToken);
         return new EntityCommandResult(document.DocumentNumber);
+    }
+
+    private static string DocumentPayloadFingerprint(RegisterEngineeringDocumentCommand request)
+    {
+        var itemCode = string.IsNullOrWhiteSpace(request.ItemCode) ? null : request.ItemCode.Trim();
+        return itemCode is null
+            ? ProductEngineeringCodingService.Fingerprint(request.Revision, request.FileId, request.FileName, request.ContentType, request.DocumentType)
+            : ProductEngineeringCodingService.Fingerprint(request.Revision, itemCode, request.FileId, request.FileName, request.ContentType, request.DocumentType);
     }
 }
 
@@ -98,36 +111,34 @@ public sealed class CreateEngineeringItemRevisionCommandValidator : AbstractVali
     }
 }
 
-public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItemRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class CreateEngineeringItemRevisionCommandHandler(IEngineeringItemRepository repository, ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<CreateEngineeringItemRevisionCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
 
     public async Task<EntityCommandResult> Handle(CreateEngineeringItemRevisionCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-item",
-            "ITEM",
+            request.EnvironmentId, "engineering-item",
             request.ItemCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.Name, request.Release),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.Name, request.Release),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Engineering item '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering item '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
         var item = EngineeringItem.CreateRevision(
             request.OrganizationId,
             request.EnvironmentId,
-            allocation.Number,
+            allocation.Code,
             request.Revision,
             request.Name,
             request.Release);
@@ -146,7 +157,17 @@ public sealed record ReleaseEngineeringBomCommand(
     IReadOnlyCollection<BomLineCommand> Lines,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record BomLineCommand(string ComponentCode, decimal Quantity, string UnitOfMeasureCode);
+public sealed record BomLineCommand(
+    string ComponentCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    string? ReferenceDesignators = null,
+    decimal ScrapRate = 0m,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed class ReleaseEngineeringBomCommandValidator : AbstractValidator<ReleaseEngineeringBomCommand>
 {
@@ -167,39 +188,67 @@ public sealed class ReleaseEngineeringBomCommandValidator : AbstractValidator<Re
     }
 }
 
-public sealed class ReleaseEngineeringBomCommandHandler(IEngineeringBomRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseEngineeringBomCommandHandler(
+    IEngineeringBomRepository repository,
+    IProductEngineeringMasterDataReferenceValidator? masterDataReferenceValidator = null,
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringBomCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IProductEngineeringMasterDataReferenceValidator _masterDataReferenceValidator = masterDataReferenceValidator ?? NoopProductEngineeringMasterDataReferenceValidator.Instance;
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-bom",
-            "EBOM",
+            request.EnvironmentId, "engineering-bom",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.ParentItemCode, request.EffectiveDate, request.Lines.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.UnitOfMeasureCode}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.GetByBusinessKeyAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken) is not null)
+        if (await repository.GetByBusinessKeyAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken) is not null)
         {
-            throw new KnownException($"Engineering BOM '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Engineering BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var bom = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.ParentItemCode);
-        foreach (var line in request.Lines)
+        if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            bom.AddLine(line.ComponentCode, line.Quantity, line.UnitOfMeasureCode);
+            throw new KnownException($"Engineering BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
         }
 
-        bom.Release(request.EffectiveDate);
+        await _masterDataReferenceValidator.ValidateActiveReferencesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            ProductEngineeringMasterDataReference.ForSkuCodes(
+                [request.ParentItemCode, .. request.Lines.Select(line => line.ComponentCode)]),
+            cancellationToken);
+
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
+        {
+            var draft = EngineeringBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.ParentItemCode);
+            foreach (var line in request.Lines)
+            {
+                draft.AddLine(
+                    line.ComponentCode,
+                    line.Quantity,
+                    line.UnitOfMeasureCode,
+                    line.IsPhantom,
+                    line.AlternateGroup,
+                    line.AlternatePriority,
+                    line.ReferenceDesignators,
+                    line.ScrapRate,
+                    line.YieldRate,
+                    line.Backflush);
+            }
+
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
     }
@@ -218,7 +267,18 @@ public sealed record ReleaseManufacturingBomCommand(
     IReadOnlyCollection<RecipeLineCommand> RecipeLines,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record ManufacturingBomMaterialLineCommand(string SkuCode, decimal Quantity, string UnitOfMeasureCode, decimal ScrapRate);
+public sealed record ManufacturingBomMaterialLineCommand(
+    string SkuCode,
+    decimal Quantity,
+    string UnitOfMeasureCode,
+    decimal ScrapRate,
+    bool IsPhantom = false,
+    string? AlternateGroup = null,
+    int? AlternatePriority = null,
+    IReadOnlyCollection<string>? SubstituteSkuCodes = null,
+    string? ReferenceDesignators = null,
+    decimal YieldRate = 1m,
+    bool Backflush = false);
 
 public sealed record RecipeLineCommand(string ParameterCode, string TargetValue, string UnitOfMeasureCode);
 
@@ -234,36 +294,48 @@ public sealed class ReleaseManufacturingBomCommandValidator : AbstractValidator<
         RuleFor(x => x.EngineeringBomCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EngineeringBomRevision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.MaterialLines).NotEmpty();
+        RuleForEach(x => x.MaterialLines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.SkuCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            line.RuleFor(x => x.Quantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitOfMeasureCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(50);
+            line.RuleFor(x => x.ScrapRate).GreaterThanOrEqualTo(0);
+        });
     }
 }
 
 public sealed class ReleaseManufacturingBomCommandHandler(
     IEngineeringBomRepository engineeringBomRepository,
     IManufacturingBomRepository manufacturingBomRepository,
-    ProductEngineeringNumberingService? numberingService = null)
+    IProductEngineeringMasterDataReferenceValidator? masterDataReferenceValidator = null,
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseManufacturingBomCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IProductEngineeringMasterDataReferenceValidator _masterDataReferenceValidator = masterDataReferenceValidator ?? NoopProductEngineeringMasterDataReferenceValidator.Instance;
 
     public async Task<EntityCommandResult> Handle(ReleaseManufacturingBomCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "manufacturing-bom",
-            "MBOM",
+            request.EnvironmentId, "manufacturing-bom",
             request.BomCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EngineeringBomCode, request.EngineeringBomRevision, request.EffectiveDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await manufacturingBomRepository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Manufacturing BOM '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Manufacturing BOM '{allocation.Code}' revision '{request.Revision}' already exists.");
+        }
+
+        if (await manufacturingBomRepository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Manufacturing BOM '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
         }
 
         var ebom = await engineeringBomRepository.GetByBusinessKeyAsync(
@@ -274,20 +346,52 @@ public sealed class ReleaseManufacturingBomCommandHandler(
             cancellationToken)
             ?? throw new KnownException($"Released engineering BOM '{request.EngineeringBomCode}' revision '{request.EngineeringBomRevision}' was not found.");
 
-        var bom = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.SkuCode);
-        foreach (var line in request.MaterialLines)
-        {
-            bom.AddMaterialLine(line.SkuCode, line.Quantity, line.UnitOfMeasureCode, line.ScrapRate);
-        }
+        ProductEngineeringReleaseValidation.ValidateManufacturingBomMaterialContinuity(ebom, request.SkuCode, request.MaterialLines);
+        await _masterDataReferenceValidator.ValidateActiveReferencesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            ProductEngineeringMasterDataReference.ForSkuCodes(GetManufacturingBomSkuCodes(request)),
+            cancellationToken);
 
-        foreach (var line in request.RecipeLines)
+        var bom = ProductEngineeringReleaseValidation.AsKnownException(() =>
         {
-            bom.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
-        }
+            var draft = ManufacturingBom.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var line in request.MaterialLines)
+            {
+                draft.AddMaterialLine(
+                    line.SkuCode,
+                    line.Quantity,
+                    line.UnitOfMeasureCode,
+                    line.ScrapRate,
+                    line.IsPhantom,
+                    line.AlternateGroup,
+                    line.AlternatePriority,
+                    line.SubstituteSkuCodes is { Count: > 0 } ? string.Join(';', line.SubstituteSkuCodes.Select(x => x.Trim()).Where(x => x.Length > 0)) : null,
+                    line.ReferenceDesignators,
+                    line.YieldRate,
+                    line.Backflush);
+            }
 
-        bom.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            foreach (var line in request.RecipeLines)
+            {
+                draft.AddRecipeLine(line.ParameterCode, line.TargetValue, line.UnitOfMeasureCode);
+            }
+
+            draft.ReleaseFromEngineeringBom($"{ebom.BomCode}:{ebom.Revision}", ebom.Status, request.EffectiveDate);
+            return draft;
+        });
         await manufacturingBomRepository.AddAsync(bom, cancellationToken);
         return new EntityCommandResult(bom.BomCode);
+    }
+
+    private static IReadOnlyCollection<string> GetManufacturingBomSkuCodes(ReleaseManufacturingBomCommand request)
+    {
+        return
+        [
+            request.SkuCode,
+            .. request.MaterialLines.Select(line => line.SkuCode),
+            .. request.MaterialLines.SelectMany(line => line.SubstituteSkuCodes ?? [])
+        ];
     }
 }
 
@@ -301,7 +405,7 @@ public sealed record ReleaseRoutingCommand(
     IReadOnlyCollection<RoutingOperationCommand> Operations,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record RoutingOperationCommand(int Sequence, string WorkCenterCode, string OperationName, int StandardMinutes);
+public sealed record RoutingOperationCommand(int Sequence, string? WorkCenterCode, string OperationCode, string? OperationName, int StandardMinutes = 0);
 
 public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRoutingCommand>
 {
@@ -313,45 +417,296 @@ public sealed class ReleaseRoutingCommandValidator : AbstractValidator<ReleaseRo
         RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Operations).NotEmpty();
+        RuleForEach(x => x.Operations).ChildRules(operation =>
+        {
+            operation.RuleFor(x => x.Sequence).GreaterThan(0);
+            operation.RuleFor(x => x.WorkCenterCode).MaximumLength(100);
+            operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
+            operation.RuleFor(x => x.OperationName).MaximumLength(200);
+            operation.RuleFor(x => x.StandardMinutes).GreaterThanOrEqualTo(0);
+        });
     }
 }
 
-public sealed class ReleaseRoutingCommandHandler(IRoutingRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseRoutingCommandHandler(
+    IRoutingRepository repository,
+    IStandardOperationRepository standardOperationRepository,
+    IProductEngineeringMasterDataReferenceValidator? masterDataReferenceValidator = null,
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseRoutingCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IProductEngineeringMasterDataReferenceValidator _masterDataReferenceValidator = masterDataReferenceValidator ?? NoopProductEngineeringMasterDataReferenceValidator.Instance;
 
     public async Task<EntityCommandResult> Handle(ReleaseRoutingCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "routing",
-            "RTG",
+            request.EnvironmentId, "routing",
             request.RoutingCode,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.WorkCenterCode}:{x.OperationName}:{x.StandardMinutes}")),
+            ProductEngineeringCodingService.Fingerprint(request.Revision, request.SkuCode, request.EffectiveDate, request.Operations.Select(x => $"{x.Sequence}:{x.OperationCode}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, cancellationToken))
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
         {
-            throw new KnownException($"Routing '{allocation.Number}' revision '{request.Revision}' already exists.");
+            throw new KnownException($"Routing '{allocation.Code}' revision '{request.Revision}' already exists.");
         }
 
-        var routing = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Revision, request.SkuCode);
+        if (await repository.HasPublishedRevisionAsync(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, cancellationToken))
+        {
+            throw new KnownException($"Routing '{allocation.Code}' already has a published revision. Archive the current published revision through ECO before releasing a new revision.");
+        }
+
+        var standardOperations = new Dictionary<string, StandardOperation>(StringComparer.Ordinal);
         foreach (var operation in request.Operations)
         {
-            routing.AddOperation(operation.Sequence, operation.WorkCenterCode, operation.OperationName, operation.StandardMinutes);
+            var standardOperation = await standardOperationRepository.GetByCodeAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                operation.OperationCode,
+                cancellationToken)
+                ?? throw new KnownException($"Standard operation '{operation.OperationCode}' was not found.");
+
+            if (!standardOperation.Enabled)
+            {
+                throw new KnownException($"Standard operation '{operation.OperationCode}' is archived and cannot be selected by a new routing version.");
+            }
+
+            standardOperations[operation.OperationCode] = standardOperation;
         }
 
-        routing.Release(request.EffectiveDate);
+        await _masterDataReferenceValidator.ValidateActiveReferencesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            ProductEngineeringMasterDataReference.Distinct(
+                [new ProductEngineeringMasterDataReference("sku", request.SkuCode),
+                    .. standardOperations.Values.Select(operation => new ProductEngineeringMasterDataReference("work-center", operation.DefaultWorkCenterCode))]),
+            cancellationToken);
+
+        var routing = ProductEngineeringReleaseValidation.AsKnownException(() =>
+        {
+            var draft = Routing.CreateDraft(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Revision, request.SkuCode);
+            foreach (var operation in request.Operations)
+            {
+                var standardOperation = standardOperations[operation.OperationCode];
+
+                draft.AddOperation(
+                    operation.Sequence,
+                    standardOperation.DefaultWorkCenterCode,
+                    standardOperation.OperationCode,
+                    standardOperation.OperationName,
+                    standardOperation.StandardSetupMinutes,
+                    standardOperation.StandardRunMinutes,
+                    teardownMinutes: 0,
+                    standardOperation.ControlKey,
+                    standardOperation.RequiresReporting,
+                    standardOperation.RequiresQualityInspection,
+                    standardOperation.IsOutsourced);
+            }
+
+            draft.Release(request.EffectiveDate);
+            return draft;
+        });
         await repository.AddAsync(routing, cancellationToken);
         return new EntityCommandResult(routing.RoutingCode);
     }
+}
+
+internal static class ProductEngineeringReleaseValidation
+{
+    public static void ValidateManufacturingBomMaterialContinuity(
+        EngineeringBom engineeringBom,
+        string manufacturingBomSkuCode,
+        IReadOnlyCollection<ManufacturingBomMaterialLineCommand> materialLines)
+    {
+        var normalizedManufacturingBomSkuCode = manufacturingBomSkuCode.Trim();
+        if (!string.Equals(engineeringBom.ParentItemCode, normalizedManufacturingBomSkuCode, StringComparison.Ordinal))
+        {
+            throw new KnownException($"Manufacturing BOM SKU '{normalizedManufacturingBomSkuCode}' must match referenced EBOM parent SKU '{engineeringBom.ParentItemCode}'.");
+        }
+
+        var requiredEbomChildSkuCodes = engineeringBom.Lines
+            .Where(line => !line.IsPhantom)
+            .Select(line => line.ChildItemCode)
+            .ToHashSet(StringComparer.Ordinal);
+        var mbomMaterialSkuCodes = materialLines
+            .Select(line => line.SkuCode?.Trim() ?? string.Empty)
+            .Where(code => code.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var missingMaterialSkuCodes = requiredEbomChildSkuCodes
+            .Where(code => !mbomMaterialSkuCodes.Contains(code))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (missingMaterialSkuCodes.Length > 0)
+        {
+            throw new KnownException($"Manufacturing BOM is missing material lines for EBOM child SKU(s): {string.Join(", ", missingMaterialSkuCodes)}.");
+        }
+    }
+
+    public static T AsKnownException<T>(Func<T> action)
+    {
+        try
+        {
+            // Keep the action limited to aggregate construction and invariant checks.
+            return action();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+
+    public static void AsKnownException(Action action)
+    {
+        try
+        {
+            // Keep the action limited to aggregate construction and invariant checks.
+            action();
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new KnownException(exception.Message, exception);
+        }
+    }
+}
+
+public sealed record ProductEngineeringMasterDataReference(string ResourceType, string Code)
+{
+    public static IReadOnlyCollection<ProductEngineeringMasterDataReference> ForSkuCodes(IEnumerable<string?> skuCodes)
+    {
+        return Distinct(skuCodes.Select(code => new ProductEngineeringMasterDataReference("sku", code ?? string.Empty)));
+    }
+
+    public static IReadOnlyCollection<ProductEngineeringMasterDataReference> Distinct(IEnumerable<ProductEngineeringMasterDataReference> references)
+    {
+        var results = new List<ProductEngineeringMasterDataReference>();
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var reference in references)
+        {
+            var resourceType = reference.ResourceType.Trim();
+            var code = reference.Code.Trim();
+            if (resourceType.Length == 0 || code.Length == 0)
+            {
+                continue;
+            }
+
+            if (keys.Add($"{resourceType}:{code}"))
+            {
+                results.Add(new ProductEngineeringMasterDataReference(resourceType, code));
+            }
+        }
+
+        return results;
+    }
+}
+
+public interface IProductEngineeringMasterDataReferenceValidator
+{
+    Task ValidateActiveReferencesAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<ProductEngineeringMasterDataReference> references,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class NoopProductEngineeringMasterDataReferenceValidator : IProductEngineeringMasterDataReferenceValidator
+{
+    public static readonly NoopProductEngineeringMasterDataReferenceValidator Instance = new();
+
+    private NoopProductEngineeringMasterDataReferenceValidator()
+    {
+    }
+
+    public Task ValidateActiveReferencesAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<ProductEngineeringMasterDataReference> references,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+}
+
+public sealed class HttpProductEngineeringMasterDataReferenceValidator(HttpClient httpClient, IInternalServiceTokenProvider tokenProvider)
+    : IProductEngineeringMasterDataReferenceValidator
+{
+    public async Task ValidateActiveReferencesAsync(
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<ProductEngineeringMasterDataReference> references,
+        CancellationToken cancellationToken)
+    {
+        if (references.Count == 0)
+        {
+            return;
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/business/v1/master-data/references/validate")
+        {
+            Content = JsonContent.Create(new ValidateMasterDataReferencesRequest(
+                organizationId,
+                environmentId,
+                references.Select(reference => new MasterDataReferenceRequest(reference.ResourceType, reference.Code)).ToArray()))
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"MasterData reference validation failed with status {(int)response.StatusCode}.");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<ValidateMasterDataReferencesResponse>>(cancellationToken);
+        var validation = envelope?.Data ?? throw new KnownException("MasterData reference validation returned an empty response.");
+        if (validation.Valid)
+        {
+            return;
+        }
+
+        var invalidReferences = validation.References
+            .Where(reference => !reference.Exists || !reference.Active)
+            .Select(reference => $"{reference.ResourceType}:{reference.Code}")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        throw new KnownException($"MasterData reference(s) are missing or inactive: {string.Join(", ", invalidReferences)}.");
+    }
+
+    private sealed record ValidateMasterDataReferencesRequest(
+        string OrganizationId,
+        string EnvironmentId,
+        IReadOnlyCollection<MasterDataReferenceRequest> References);
+
+    private sealed record MasterDataReferenceRequest(string ResourceType, string Code);
+
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+
+    private sealed record ValidateMasterDataReferencesResponse(
+        bool Valid,
+        IReadOnlyCollection<MasterDataReferenceResponse> References);
+
+    private sealed record MasterDataReferenceResponse(
+        string ResourceType,
+        string Code,
+        bool Exists,
+        bool Active,
+        string DisplayName,
+        string SnapshotVersion,
+        string DisabledReason);
 }
 
 public sealed record ReleaseEngineeringChangeCommand(
@@ -364,7 +719,7 @@ public sealed record ReleaseEngineeringChangeCommand(
     IReadOnlyCollection<AffectedVersionCommand> AffectedVersions,
     string? IdempotencyKey = null) : ICommand<EntityCommandResult>;
 
-public sealed record AffectedVersionCommand(string VersionKind, string VersionId);
+public sealed record AffectedVersionCommand(string VersionKind, string VersionId, string? SupersededByVersionId = null);
 
 public sealed class ReleaseEngineeringChangeCommandValidator : AbstractValidator<ReleaseEngineeringChangeCommand>
 {
@@ -376,39 +731,391 @@ public sealed class ReleaseEngineeringChangeCommandValidator : AbstractValidator
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.ApprovalReferenceId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AffectedVersions).NotEmpty();
+        RuleForEach(x => x.AffectedVersions).ChildRules(affectedVersion =>
+        {
+            affectedVersion.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
+            affectedVersion.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
+            affectedVersion.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
+        });
     }
 }
 
-public sealed class ReleaseEngineeringChangeCommandHandler(IEngineeringChangeRepository repository, ProductEngineeringNumberingService? numberingService = null)
+public sealed class ReleaseEngineeringChangeCommandHandler(
+    IEngineeringChangeRepository repository,
+    IEngineeringBomRepository engineeringBomRepository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository,
+    IProductionVersionRepository productionVersionRepository,
+    IEngineeringApprovalVerifier? approvalVerifier = null,
+    ProductEngineeringCodingService? codingService = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
-    private readonly ProductEngineeringNumberingService _numberingService = numberingService ?? new ProductEngineeringNumberingService();
+    private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
+    private readonly IEngineeringApprovalVerifier _approvalVerifier = approvalVerifier ?? new RejectingEngineeringApprovalVerifier();
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
-        var allocation = await _numberingService.AllocateAsync(
+        var normalizedAffectedVersions = NormalizeAffectedVersions(request.AffectedVersions);
+        EnsureAcyclicSupersedeTopology(normalizedAffectedVersions);
+        var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId,
-            "engineering-change",
-            "ECO",
+            request.EnvironmentId, "engineering-change",
             request.ChangeNumber,
             request.IdempotencyKey,
-            ProductEngineeringNumberingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, request.AffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}")),
+            ProductEngineeringCodingService.Fingerprint(request.Reason, request.ApprovalReferenceId, request.EffectiveDate, normalizedAffectedVersions.Select(x => $"{x.VersionKind}:{x.VersionId}->{x.SupersededByVersionId ?? string.Empty}")),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
-            return new EntityCommandResult(allocation.Number);
+            return new EntityCommandResult(allocation.Code);
         }
 
-        var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Number, request.Reason)
+        await _approvalVerifier.EnsureApprovedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.ApprovalReferenceId,
+            allocation.Code,
+            cancellationToken);
+
+        var affectedVersions = new List<Action<string, DateOnly>>();
+        var change = EngineeringChange.Open(request.OrganizationId, request.EnvironmentId, allocation.Code, request.Reason)
             .Approve(request.ApprovalReferenceId);
-        foreach (var affectedVersion in request.AffectedVersions)
+        foreach (var affectedVersion in normalizedAffectedVersions)
         {
-            change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId);
+            affectedVersions.Add(await ResolveAffectedVersionAsync(request, affectedVersion, cancellationToken));
+            change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId, affectedVersion.SupersededByVersionId);
         }
 
         change.Release(request.EffectiveDate);
+        foreach (var archive in affectedVersions)
+        {
+            archive(change.ChangeNumber, request.EffectiveDate);
+        }
+
         await repository.AddAsync(change, cancellationToken);
         return new EntityCommandResult(change.ChangeNumber);
     }
+
+    private async Task<Action<string, DateOnly>> ResolveAffectedVersionAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return affectedVersion.VersionKind.Trim().ToLowerInvariant() switch
+        {
+            "engineering-bom" => ArchiveEngineeringBom(await engineeringBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorEngineeringBomAsync(request, affectedVersion, cancellationToken)),
+            "manufacturing-bom" => ArchiveManufacturingBom(await manufacturingBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorManufacturingBomAsync(request, affectedVersion, cancellationToken)),
+            "routing" => ArchiveRouting(await routingRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorRoutingAsync(request, affectedVersion, cancellationToken)),
+            "production-version" => ArchiveProductionVersion(await productionVersionRepository.GetByIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.VersionId,
+                cancellationToken), affectedVersion.VersionId, await GetSuccessorProductionVersionAsync(request, affectedVersion, cancellationToken)),
+            _ => throw new KnownException($"Affected version kind '{affectedVersion.VersionKind}' is not supported.")
+        };
+    }
+
+    private static IReadOnlyList<AffectedVersionCommand> NormalizeAffectedVersions(IEnumerable<AffectedVersionCommand> affectedVersions)
+    {
+        return affectedVersions.Select(affectedVersion => new AffectedVersionCommand(
+            NormalizeRequired(affectedVersion.VersionKind, nameof(AffectedVersionCommand.VersionKind)).ToLowerInvariant(),
+            NormalizeRequired(affectedVersion.VersionId, nameof(AffectedVersionCommand.VersionId)),
+            NormalizeOptional(affectedVersion.SupersededByVersionId))).ToArray();
+    }
+
+    private static void EnsureAcyclicSupersedeTopology(IReadOnlyList<AffectedVersionCommand> affectedVersions)
+    {
+        var edgesByVersion = new Dictionary<string, AffectedVersionCommand>(StringComparer.Ordinal);
+        foreach (var affectedVersion in affectedVersions)
+        {
+            var key = AffectedVersionKey(affectedVersion.VersionKind, affectedVersion.VersionId);
+            if (affectedVersion.SupersededByVersionId is not null &&
+                string.Equals(affectedVersion.VersionId, affectedVersion.SupersededByVersionId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' cannot supersede itself.");
+            }
+
+            if (edgesByVersion.TryGetValue(key, out var existing))
+            {
+                if (!string.Equals(existing.SupersededByVersionId ?? string.Empty, affectedVersion.SupersededByVersionId ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' can only declare one successor in the same engineering change.");
+                }
+
+                throw new KnownException($"Affected {affectedVersion.VersionKind} version '{affectedVersion.VersionId}' is declared more than once in the same engineering change.");
+            }
+
+            edgesByVersion.Add(key, affectedVersion);
+        }
+
+        foreach (var affectedVersion in edgesByVersion.Values)
+        {
+            if (affectedVersion.SupersededByVersionId is null)
+            {
+                continue;
+            }
+
+            var startKey = AffectedVersionKey(affectedVersion.VersionKind, affectedVersion.VersionId);
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var current = affectedVersion;
+            while (current.SupersededByVersionId is not null)
+            {
+                var currentKey = AffectedVersionKey(current.VersionKind, current.VersionId);
+                if (!visited.Add(currentKey))
+                {
+                    throw SupersedeCycleException(affectedVersion, current);
+                }
+
+                var successorKey = AffectedVersionKey(current.VersionKind, current.SupersededByVersionId);
+                if (successorKey == startKey || visited.Contains(successorKey))
+                {
+                    throw SupersedeCycleException(affectedVersion, current);
+                }
+
+                if (!edgesByVersion.TryGetValue(successorKey, out current))
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private static KnownException SupersedeCycleException(AffectedVersionCommand start, AffectedVersionCommand current)
+    {
+        return new KnownException($"Affected {start.VersionKind} version '{start.VersionId}' forms a supersede cycle through '{current.SupersededByVersionId}'.");
+    }
+
+    private static string AffectedVersionKey(string versionKind, string versionId)
+    {
+        return $"{versionKind}\u001F{versionId.ToUpperInvariant()}";
+    }
+
+    private static string NormalizeRequired(string value, string fieldName)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new KnownException($"{fieldName} is required.")
+            : value.Trim();
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrEmpty(normalized) ? null : normalized;
+    }
+
+    private async Task<EngineeringBom?> GetSuccessorEngineeringBomAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await engineeringBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor engineering BOM version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<ManufacturingBom?> GetSuccessorManufacturingBomAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await manufacturingBomRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor manufacturing BOM version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<Routing?> GetSuccessorRoutingAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await routingRepository.GetByVersionIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor routing version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private async Task<ProductionVersion?> GetSuccessorProductionVersionAsync(
+        ReleaseEngineeringChangeCommand request,
+        AffectedVersionCommand affectedVersion,
+        CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(affectedVersion.SupersededByVersionId)
+            ? null
+            : await productionVersionRepository.GetByIdAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                affectedVersion.SupersededByVersionId,
+                cancellationToken)
+            ?? throw new KnownException($"Successor production version '{affectedVersion.SupersededByVersionId}' was not found.");
+    }
+
+    private static Action<string, DateOnly> ArchiveEngineeringBom(EngineeringBom? bom, string versionId, EngineeringBom? successor)
+    {
+        if (bom is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, "engineering BOM", successor.BomCode, versionId);
+        }
+
+        return bom is null
+            ? throw new KnownException($"Engineering BOM version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => bom.Archive(reason));
+    }
+
+    private static Action<string, DateOnly> ArchiveManufacturingBom(ManufacturingBom? bom, string versionId, ManufacturingBom? successor)
+    {
+        if (bom is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.BomCode == bom.BomCode, "manufacturing BOM", successor.BomCode, versionId);
+        }
+
+        return bom is null
+            ? throw new KnownException($"Manufacturing BOM version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => bom.Archive(reason));
+    }
+
+    private static Action<string, DateOnly> ArchiveRouting(Routing? routing, string versionId, Routing? successor)
+    {
+        if (routing is not null && successor is not null)
+        {
+            EnsurePublishedSuccessor(successor.Status, successor.RoutingCode == routing.RoutingCode, "routing", successor.RoutingCode, versionId);
+        }
+
+        return routing is null
+            ? throw new KnownException($"Routing version '{versionId}' was not found.")
+            : (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => routing.Archive(reason));
+    }
+
+    private static Action<string, DateOnly> ArchiveProductionVersion(ProductionVersion? version, string versionId, ProductionVersion? successor)
+    {
+        if (version is not null && successor is not null)
+        {
+            EnsureActiveSuccessor(successor, version, versionId);
+        }
+
+        return version is null
+            ? throw new KnownException($"Production version '{versionId}' was not found.")
+            : successor is null
+                ? (reason, _) => ProductEngineeringReleaseValidation.AsKnownException(() => version.Archive(reason))
+                : (reason, effectiveDate) => ProductEngineeringReleaseValidation.AsKnownException(() => version.SupersedeWith(successor, effectiveDate, reason));
+    }
+
+    private static void EnsurePublishedSuccessor(EngineeringVersionStatus status, bool sameBusinessCode, string versionKind, string successorCode, string versionId)
+    {
+        if (status != EngineeringVersionStatus.Published || !sameBusinessCode)
+        {
+            throw new KnownException($"Successor {versionKind} version '{successorCode}' must be published for the same code before it can supersede '{versionId}'.");
+        }
+    }
+
+    private static void EnsureActiveSuccessor(ProductionVersion successor, ProductionVersion version, string versionId)
+    {
+        if (successor.Status != ProductionVersionStatus.Active || successor.SkuCode != version.SkuCode)
+        {
+            throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
+        }
+    }
+}
+
+public interface IEngineeringApprovalVerifier
+{
+    Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class RejectingEngineeringApprovalVerifier : IEngineeringApprovalVerifier
+{
+    public Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        throw new KnownException("Engineering change release requires a verified approved BusinessApproval chain.");
+    }
+}
+
+public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInternalServiceTokenProvider tokenProvider)
+    : IEngineeringApprovalVerifier
+{
+    public async Task EnsureApprovedAsync(
+        string organizationId,
+        string environmentId,
+        string approvalReferenceId,
+        string changeNumber,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(approvalReferenceId, out _))
+        {
+            throw new KnownException("Engineering change approvalReferenceId must be a BusinessApproval chain id.");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalReferenceId)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' could not be verified.");
+        }
+
+        var envelope = await response.Content.ReadFromJsonAsync<ApprovalChainEnvelope>(cancellationToken);
+        var chain = envelope?.Data ?? throw new KnownException($"BusinessApproval chain '{approvalReferenceId}' returned an empty response.");
+        ValidateApprovedChain(chain, organizationId, environmentId, changeNumber);
+    }
+
+    private static void ValidateApprovedChain(
+        ApprovalChainResponse chain,
+        string organizationId,
+        string environmentId,
+        string changeNumber)
+    {
+        if (!string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(chain.EnvironmentId, environmentId, StringComparison.Ordinal)
+            || !string.Equals(chain.Status, "approved", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.SourceService, "product-engineering", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentType, "engineering-change-order", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(chain.DocumentId, changeNumber, StringComparison.Ordinal))
+        {
+            throw new KnownException("Engineering change release requires an approved BusinessApproval chain for the same ECO document.");
+        }
+    }
+
+    private sealed record ApprovalChainEnvelope(ApprovalChainResponse? Data);
+
+    private sealed record ApprovalChainResponse(
+        string OrganizationId,
+        string EnvironmentId,
+        string Status,
+        string SourceService,
+        string DocumentType,
+        string DocumentId);
 }

@@ -42,6 +42,24 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the business partner was created.");
 
+                    b.Property<string>("CreditCurrencyCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("credit_currency_code")
+                        .HasComment("ISO currency code for the customer credit limit.");
+
+                    b.Property<decimal?>("CreditLimit")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("credit_limit")
+                        .HasComment("Optional customer credit limit used by ERP sales credit checks.");
+
+                    b.Property<string>("DefaultCurrencyCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("default_currency_code")
+                        .HasComment("Optional default transaction currency code for the business partner.");
+
                     b.Property<bool>("Disabled")
                         .HasColumnType("boolean")
                         .HasColumnName("disabled")
@@ -81,11 +99,47 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("partner_type")
                         .HasComment("Primary business partner role kept for backward-compatible list filters.");
 
+                    b.Property<string>("PaymentTermsCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("payment_terms_code")
+                        .HasComment("Optional default payment terms code for supplier or customer transactions.");
+
+                    b.Property<string>("PrimaryAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("primary_address")
+                        .HasComment("Optional primary address summary for procurement, sales or logistics defaults.");
+
+                    b.Property<string>("PrimaryContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("primary_contact_email")
+                        .HasComment("Optional primary contact email address.");
+
+                    b.Property<string>("PrimaryContactName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("primary_contact_name")
+                        .HasComment("Optional primary contact display name.");
+
+                    b.Property<string>("PrimaryContactPhone")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("primary_contact_phone")
+                        .HasComment("Optional primary contact phone number.");
+
                     b.Property<string>("TaxId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("tax_id")
                         .HasComment("Optional tax registration id unique within the organization and environment.");
+
+                    b.Property<string>("TaxRegionCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tax_region_code")
+                        .HasComment("Optional tax region code used by ERP procurement, sales and finance documents.");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -101,11 +155,205 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "TaxId")
                         .IsUnique()
-                        .HasFilter("tax_id IS NOT NULL");
+                        .HasFilter("tax_id IS NOT NULL AND disabled = false");
 
                     b.ToTable("business_partners", "business_masterdata", t =>
                         {
                             t.HasComment("Business master data partners such as suppliers, customers and carriers.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate.CodeRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Code rule aggregate id.");
+
+                    b.Property<string>("AppliesTo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("applies_to")
+                        .HasComment("Resource or document type governed by the code rule.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the code rule was created.");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name")
+                        .HasComment("Human-readable code rule name.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the code rule is valid.");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active")
+                        .HasComment("Whether this code rule is active for new allocations.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the code rule.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Stable code rule key used by application create commands.");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("integer")
+                        .HasColumnName("scope")
+                        .HasComment("Bit flags describing the allocation scope dimensions.");
+
+                    b.Property<string>("SegmentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("segments")
+                        .HasComment("Ordered code rule segment definition JSON.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the code rule was last updated.");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version")
+                        .HasComment("Code rule definition version.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_rules_scope");
+
+                    b.ToTable("code_rules", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data code generation rules available to the coding engine.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate.CodeRuleVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Code rule version record id.");
+
+                    b.Property<string>("AppliesTo")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("applies_to")
+                        .HasComment("Resource or document type governed by this version.");
+
+                    b.Property<string>("ChangeReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("change_reason")
+                        .HasComment("Audited reason for the code rule configuration change.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when this version record was created.");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by")
+                        .HasComment("Operator or system principal that created this version.");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name")
+                        .HasComment("Human-readable code rule name for this version.");
+
+                    b.Property<DateTimeOffset>("EffectiveFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from_utc")
+                        .HasComment("UTC instant when this version may become effective for new allocations.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the code rule version is valid.");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active")
+                        .HasComment("Whether this version allows new allocations when effective.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the code rule version.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Stable code rule key governed by this version.");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("integer")
+                        .HasColumnName("scope")
+                        .HasComment("Bit flags describing allocation scope dimensions for this version.");
+
+                    b.Property<string>("SegmentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("segments")
+                        .HasComment("Ordered code rule segment definition JSON for this version.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("status")
+                        .HasComment("Governance status for this version, such as active or scheduled.");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version")
+                        .HasComment("Monotonic version number within organization, environment and rule key.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "EffectiveFromUtc")
+                        .HasDatabaseName("ix_code_rule_versions_effective");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_rule_versions_scope_version");
+
+                    b.ToTable("code_rule_versions", "business_masterdata", t =>
+                        {
+                            t.HasComment("Versioned audit records for business master data code rule configuration changes.");
                         });
                 });
 
@@ -394,6 +642,83 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate.ProductCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Product category aggregate id.");
+
+                    b.Property<string>("CategoryCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("category_code")
+                        .HasComment("Business unique product category code.");
+
+                    b.Property<string>("CategoryName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("category_name")
+                        .HasComment("Product category display name.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the product category was created.");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description")
+                        .HasComment("Optional product category description.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the product category from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the product category is valid.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the product category.");
+
+                    b.Property<string>("ParentCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("parent_code")
+                        .HasComment("Optional parent category code in the same organization and environment.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the product category was last updated.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "CategoryCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ParentCode", "Disabled");
+
+                    b.ToTable("product_categories", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data product category hierarchy.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate.ProductionLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -549,6 +874,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Shift aggregate id.");
 
+                    b.Property<int>("BreakMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("break_minutes")
+                        .HasComment("Planned break minutes inside the shift window.");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -695,12 +1025,107 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate.Skill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Skill catalog aggregate id.");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the skill was created.");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description")
+                        .HasComment("Optional skill description.");
+
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the skill from active use.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id where the skill is valid.");
+
+                    b.Property<string>("GroupName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("group_name")
+                        .HasComment("Skill group name for catalog organization.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id that owns the skill.");
+
+                    b.Property<bool>("RequiresCertification")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_certification")
+                        .HasComment("Whether this skill requires certification evidence.");
+
+                    b.Property<string>("SkillCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("skill_code")
+                        .HasComment("Business unique skill code.");
+
+                    b.Property<string>("SkillName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("skill_name")
+                        .HasComment("Skill display name.");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc")
+                        .HasComment("UTC time when the skill was last updated.");
+
+                    b.Property<int?>("ValidityMonths")
+                        .HasColumnType("integer")
+                        .HasColumnName("validity_months")
+                        .HasComment("Optional certification validity period in months.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Disabled");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SkillCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "GroupName", "Disabled");
+
+                    b.ToTable("skills", "business_masterdata", t =>
+                        {
+                            t.HasComment("Business master data skill catalog definitions.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate.Sku", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("SKU aggregate id.");
+
+                    b.Property<string>("AbcClass")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("abc_class")
+                        .HasComment("Optional ABC planning classification code.");
 
                     b.Property<string>("BaseUomCode")
                         .IsRequired()
@@ -754,12 +1179,51 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the SKU is valid.");
 
+                    b.Property<int?>("GoodsReceiptProcessingTimeDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("goods_receipt_processing_time_days")
+                        .HasComment("Optional goods receipt processing time in calendar days for planning snapshots.");
+
+                    b.Property<int?>("InHouseProductionTimeDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("in_house_production_time_days")
+                        .HasComment("Optional in-house production lead time in calendar days for manufactured SKU planning.");
+
                     b.Property<string>("InventoryUomCode")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("inventory_uom_code")
                         .HasComment("Default inventory unit of measure code.");
+
+                    b.Property<string>("LifecycleStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("active")
+                        .HasColumnName("lifecycle_status")
+                        .HasComment("SKU lifecycle status such as draft, active, blocked or obsolete.");
+
+                    b.Property<decimal?>("LotSizeMultiple")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("numeric(24,6)")
+                        .HasColumnName("lot_size_multiple")
+                        .HasComment("Optional planned lot size multiple in the SKU base unit of measure.");
+
+                    b.Property<string>("LotSizingPolicy")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("lot_sizing_policy")
+                        .HasComment("Default lot sizing policy used by planning services when no site-specific override exists.");
+
+                    b.Property<bool>("ManufacturingEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("manufacturing_enabled")
+                        .HasComment("Whether manufacturing and MES processes may use this SKU by default.");
 
                     b.Property<string>("ManufacturingUomCode")
                         .IsRequired()
@@ -775,6 +1239,25 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("material_type")
                         .HasComment("Material type such as raw material, finished good, packaging or service.");
 
+                    b.Property<decimal?>("MaximumLotSize")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("numeric(24,6)")
+                        .HasColumnName("maximum_lot_size")
+                        .HasComment("Optional maximum planned lot size in the SKU base unit of measure.");
+
+                    b.Property<decimal?>("MinimumLotSize")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("numeric(24,6)")
+                        .HasColumnName("minimum_lot_size")
+                        .HasComment("Optional minimum planned lot size in the SKU base unit of measure.");
+
+                    b.Property<string>("MrpType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("mrp_type")
+                        .HasComment("Default MRP type consumed as shared SKU planning master data.");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -789,6 +1272,18 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the SKU.");
 
+                    b.Property<int?>("PlannedDeliveryTimeDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("planned_delivery_time_days")
+                        .HasComment("Optional planned delivery lead time in calendar days for externally procured SKU planning.");
+
+                    b.Property<string>("ProcurementType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("procurement_type")
+                        .HasComment("Default procurement type such as make, buy or subcontract for planning snapshots.");
+
                     b.Property<string>("PurchaseUomCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -796,10 +1291,36 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("purchase_uom_code")
                         .HasComment("Default purchasing unit of measure code.");
 
+                    b.Property<bool>("PurchasingEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("purchasing_enabled")
+                        .HasComment("Whether purchasing documents may use this SKU by default.");
+
                     b.Property<bool>("QualityRequired")
                         .HasColumnType("boolean")
                         .HasColumnName("quality_required")
                         .HasComment("Flag that indicates Quality must inspect or release this SKU before unrestricted use.");
+
+                    b.Property<decimal?>("ReorderPointQuantity")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("numeric(24,6)")
+                        .HasColumnName("reorder_point_quantity")
+                        .HasComment("Optional default reorder point quantity in the SKU base unit of measure.");
+
+                    b.Property<decimal?>("SafetyStockQuantity")
+                        .HasPrecision(24, 6)
+                        .HasColumnType("numeric(24,6)")
+                        .HasColumnName("safety_stock_quantity")
+                        .HasComment("Optional default safety stock quantity in the SKU base unit of measure.");
+
+                    b.Property<bool>("SalesEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("sales_enabled")
+                        .HasComment("Whether sales documents may use this SKU by default.");
 
                     b.Property<string>("SalesUomCode")
                         .IsRequired()
@@ -1106,10 +1627,20 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the conversion rule was created.");
 
+                    b.Property<bool>("Disabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("disabled")
+                        .HasComment("Disabled flag that hides the conversion rule from active use.");
+
                     b.Property<DateOnly>("EffectiveFrom")
                         .HasColumnType("date")
                         .HasColumnName("effective_from")
                         .HasComment("Business date from which the conversion rule is effective.");
+
+                    b.Property<DateOnly?>("EffectiveTo")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_to")
+                        .HasComment("Optional business date through which the conversion rule is effective.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -1170,6 +1701,8 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Disabled");
+
                     b.HasIndex("FromUomCode", "ToUomCode");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "FromUomCode", "ToUomCode", "EffectiveFrom")
@@ -1205,12 +1738,29 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("disabled")
                         .HasComment("Disabled flag that hides the work calendar from active use.");
 
+                    b.Property<DateOnly?>("EffectiveFrom")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_from")
+                        .HasComment("Optional local business date from which the calendar is valid.");
+
+                    b.Property<DateOnly?>("EffectiveTo")
+                        .HasColumnType("date")
+                        .HasColumnName("effective_to")
+                        .HasComment("Optional local business date through which the calendar is valid.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id where the work calendar is valid.");
+
+                    b.Property<string>("HolidayCalendarCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("holiday_calendar_code")
+                        .HasComment("Optional external or reusable holiday calendar code referenced by this work calendar.");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1226,6 +1776,15 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id that owns the work calendar.");
 
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasDefaultValue("UTC")
+                        .HasColumnName("timezone")
+                        .HasComment("IANA timezone used to interpret local working days, holidays and exceptions.");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc")
@@ -1240,7 +1799,7 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                     b.ToTable("work_calendars", "business_masterdata", t =>
                         {
-                            t.HasComment("Business master data work calendars defining recurring available working time.");
+                            t.HasComment("Business master data work calendars defining recurring working days, holidays, and exceptions.");
                         });
                 });
 
@@ -1250,6 +1809,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Work center aggregate id.");
+
+                    b.Property<bool>("Bottleneck")
+                        .HasColumnType("boolean")
+                        .HasColumnName("bottleneck")
+                        .HasComment("Whether this work center is treated as a bottleneck resource for planning.");
 
                     b.Property<int>("CapacityMinutesPerDay")
                         .HasColumnType("integer")
@@ -1270,6 +1834,12 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("code")
                         .HasComment("Business unique work center code.");
 
+                    b.Property<string>("CostCenterCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("cost_center_code")
+                        .HasComment("Optional ERP costing cost center code for the work center.");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
@@ -1286,6 +1856,14 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("disabled")
                         .HasComment("Disabled flag that hides the work center from active use.");
+
+                    b.Property<decimal>("EfficiencyRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("efficiency_rate")
+                        .HasComment("Default efficiency rate used to convert nominal capacity to rated capacity.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -1313,6 +1891,13 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("name")
                         .HasComment("Work center display name.");
 
+                    b.Property<int>("NumberOfCapacities")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("number_of_capacities")
+                        .HasComment("Parallel capacity count such as machine count or labor station count.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1338,6 +1923,14 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at_utc")
                         .HasComment("UTC time when the work center was last updated.");
+
+                    b.Property<decimal>("UtilizationRate")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(9, 6)
+                        .HasColumnType("numeric(9,6)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("utilization_rate")
+                        .HasComment("Default utilization rate used to convert nominal capacity to rated capacity.");
 
                     b.Property<string>("WorkshopCode")
                         .HasMaxLength(100)
@@ -1442,12 +2035,12 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingCounter", b =>
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasComment("Numbering counter surrogate identifier.");
+                        .HasComment("Code counter surrogate identifier.");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
@@ -1456,40 +2049,33 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("current_value")
                         .HasComment("Last allocated sequence value within the counter scope.");
 
-                    b.Property<string>("DateSegment")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("date_segment")
-                        .HasComment("Date segment used by the numbering rule, formatted as yyyyMMdd for the current baseline.");
-
-                    b.Property<string>("DocumentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("document_type")
-                        .HasComment("Business document type governed by this counter.");
-
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
-                        .HasComment("Environment scope for the numbering counter.");
+                        .HasComment("Environment scope for the code counter.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
-                        .HasComment("Organization scope for the numbering counter.");
+                        .HasComment("Organization scope for the code counter.");
 
-                    b.Property<string>("Prefix")
+                    b.Property<string>("ResetKey")
                         .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("prefix")
-                        .HasComment("Document number prefix emitted before the date segment.");
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reset_key")
+                        .HasComment("Sequence reset bucket derived from the active code rule.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by this counter.");
 
                     b.Property<string>("SiteCode")
                         .IsRequired()
@@ -1506,36 +2092,36 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DocumentType", "SiteCode", "DateSegment")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "SiteCode", "ResetKey")
                         .IsUnique()
-                        .HasDatabaseName("ux_numbering_counters_scope");
+                        .HasDatabaseName("ux_code_counters_scope");
 
-                    b.ToTable("numbering_counters", "business_masterdata", t =>
+                    b.ToTable("code_counters", "business_masterdata", t =>
                         {
-                            t.HasComment("Service-local numbering counters scoped by organization, environment, document type, optional site and date segment.");
+                            t.HasComment("Service-local code counters scoped by organization, environment, rule key, optional site and reset bucket.");
                         });
                 });
 
-            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingIdempotencyKey", b =>
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeIdempotencyKey", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
-                        .HasComment("Numbering idempotency record surrogate identifier.");
+                        .HasComment("Code idempotency record surrogate identifier.");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("code")
+                        .HasComment("Allocated business code returned for this idempotency key.");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC timestamp when the idempotency key was first recorded.");
-
-                    b.Property<string>("DocumentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("document_type")
-                        .HasComment("Business document type governed by the idempotency key.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -1551,13 +2137,6 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("idempotency_key")
                         .HasComment("Client supplied stable idempotency key for ordinary create requests.");
 
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("number")
-                        .HasComment("Allocated business document number returned for this idempotency key.");
-
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1572,15 +2151,22 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("payload_fingerprint")
                         .HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
 
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by the idempotency key.");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DocumentType", "IdempotencyKey")
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "IdempotencyKey")
                         .IsUnique()
-                        .HasDatabaseName("ux_numbering_idempotency_keys_scope");
+                        .HasDatabaseName("ux_code_idempotency_keys_scope");
 
-                    b.ToTable("numbering_idempotency_keys", "business_masterdata", t =>
+                    b.ToTable("code_idempotency_keys", "business_masterdata", t =>
                         {
-                            t.HasComment("Service-local idempotency records that bind create request keys to allocated document numbers.");
+                            t.HasComment("Service-local idempotency records that bind create request keys to allocated codes.");
                         });
                 });
 
@@ -1696,28 +2282,39 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
             modelBuilder.Entity("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar", b =>
                 {
-                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarWorkingTime", "WorkingTimes", b1 =>
+                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarException", "Exceptions", b1 =>
                         {
                             b1.Property<Guid>("id")
                                 .ValueGeneratedOnAdd()
                                 .HasColumnType("uuid")
                                 .HasColumnName("id")
-                                .HasComment("Work calendar working time row id.");
+                                .HasComment("Work calendar exception row id.");
 
-                            b1.Property<int>("DayOfWeek")
-                                .HasColumnType("integer")
-                                .HasColumnName("day_of_week")
-                                .HasComment("Day of week for the recurring working time.");
+                            b1.Property<DateOnly>("Date")
+                                .HasColumnType("date")
+                                .HasColumnName("date")
+                                .HasComment("Local exception date.");
 
-                            b1.Property<TimeOnly>("EndsAt")
+                            b1.Property<TimeOnly?>("EndsAt")
                                 .HasColumnType("time without time zone")
                                 .HasColumnName("ends_at")
-                                .HasComment("Local end time of the working window.");
+                                .HasComment("Optional local exception end time.");
 
-                            b1.Property<TimeOnly>("StartsAt")
+                            b1.Property<bool>("IsWorkingDay")
+                                .HasColumnType("boolean")
+                                .HasColumnName("is_working_day")
+                                .HasComment("Whether the exception date is treated as a working day.");
+
+                            b1.Property<string>("Reason")
+                                .HasMaxLength(300)
+                                .HasColumnType("character varying(300)")
+                                .HasColumnName("reason")
+                                .HasComment("Optional reason for the calendar exception.");
+
+                            b1.Property<TimeOnly?>("StartsAt")
                                 .HasColumnType("time without time zone")
                                 .HasColumnName("starts_at")
-                                .HasComment("Local start time of the working window.");
+                                .HasComment("Optional local exception start time.");
 
                             b1.Property<Guid>("WorkCalendarId")
                                 .HasColumnType("uuid")
@@ -1728,14 +2325,90 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
 
                             b1.HasIndex("WorkCalendarId");
 
-                            b1.ToTable("work_calendar_working_times", "business_masterdata", t =>
+                            b1.ToTable("work_calendar_exceptions", "business_masterdata", t =>
                                 {
-                                    t.HasComment("Recurring working time windows owned by a business master data work calendar.");
+                                    t.HasComment("Exception dates owned by a business master data work calendar.");
                                 });
 
                             b1.WithOwner()
                                 .HasForeignKey("WorkCalendarId");
                         });
+
+                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarHoliday", "Holidays", b1 =>
+                        {
+                            b1.Property<Guid>("id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("uuid")
+                                .HasColumnName("id")
+                                .HasComment("Work calendar holiday row id.");
+
+                            b1.Property<DateOnly>("Date")
+                                .HasColumnType("date")
+                                .HasColumnName("date")
+                                .HasComment("Local holiday date.");
+
+                            b1.Property<string>("Name")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("name")
+                                .HasComment("Holiday display name.");
+
+                            b1.Property<Guid>("WorkCalendarId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("work_calendar_id")
+                                .HasComment("Owning work calendar aggregate id.");
+
+                            b1.HasKey("id");
+
+                            b1.HasIndex("WorkCalendarId");
+
+                            b1.ToTable("work_calendar_holidays", "business_masterdata", t =>
+                                {
+                                    t.HasComment("Holiday dates owned by a business master data work calendar.");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("WorkCalendarId");
+                        });
+
+                    b.OwnsMany("Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendarWorkingTime", "WorkingTimes", b1 =>
+                        {
+                            b1.Property<Guid>("id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("uuid")
+                                .HasColumnName("id")
+                                .HasComment("Work calendar working day row id.");
+
+                            b1.Property<int>("DayOfWeek")
+                                .HasColumnType("integer")
+                                .HasColumnName("day_of_week")
+                                .HasComment("Day of week for the recurring working day.");
+
+                            b1.Property<Guid>("WorkCalendarId")
+                                .HasColumnType("uuid")
+                                .HasColumnName("work_calendar_id")
+                                .HasComment("Owning work calendar aggregate id.");
+
+                            b1.HasKey("id");
+
+                            b1.HasIndex("WorkCalendarId");
+
+                            b1.HasIndex("WorkCalendarId", "DayOfWeek")
+                                .IsUnique();
+
+                            b1.ToTable("work_calendar_working_times", "business_masterdata", t =>
+                                {
+                                    t.HasComment("Recurring working day markers owned by a business master data work calendar.");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("WorkCalendarId");
+                        });
+
+                    b.Navigation("Exceptions");
+
+                    b.Navigation("Holidays");
 
                     b.Navigation("WorkingTimes");
                 });

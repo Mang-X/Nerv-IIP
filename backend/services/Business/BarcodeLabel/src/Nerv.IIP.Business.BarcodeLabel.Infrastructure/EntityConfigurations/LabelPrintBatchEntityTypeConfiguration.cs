@@ -26,6 +26,10 @@ public sealed class LabelPrintBatchEntityTypeConfiguration : IEntityTypeConfigur
             .WithOne()
             .HasForeignKey(x => x.LabelPrintBatchId)
             .OnDelete(DeleteBehavior.Cascade);
+        builder.HasMany(x => x.EpcisEvents)
+            .WithOne()
+            .HasForeignKey(x => x.LabelPrintBatchId)
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceDocumentType, x.SourceDocumentId });
     }
@@ -43,8 +47,13 @@ public sealed class LabelPrintItemEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.SequenceNo).HasColumnName("sequence_no").IsRequired().HasComment("Generated label sequence number within the print batch.");
         builder.Property(x => x.LabelValue).HasColumnName("label_value").IsRequired().HasMaxLength(200).HasComment("Generated deterministic barcode or label value.");
         builder.Property(x => x.FileId).HasColumnName("file_id").HasMaxLength(150).HasComment("Optional FileStorage file id for rendered label output.");
+        builder.Property(x => x.Gtin).HasColumnName("gtin").HasMaxLength(14).HasComment("Parsed or generated GS1 GTIN including check digit for serialized labels.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Batch or lot number encoded in the generated GS1 label.");
+        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("Serialized unit identifier encoded in the generated GS1 label.");
+        builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI derived from GTIN and serial number for EPCIS traceability.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC time when the print item was generated.");
         builder.HasIndex(x => new { x.LabelPrintBatchId, x.SequenceNo }).IsUnique();
         builder.HasIndex(x => x.LabelValue);
+        builder.HasIndex(x => new { x.Gtin, x.LotNo, x.SerialNumber });
     }
 }

@@ -7,6 +7,7 @@
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Iam\Nerv.IIP.Contracts.Iam.csproj" />
+    <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Coding\Nerv.IIP.Contracts.Coding.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Notification\Nerv.IIP.Contracts.Notification.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Scheduling\Nerv.IIP.Contracts.Scheduling.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.EquipmentRuntime\Nerv.IIP.Contracts.EquipmentRuntime.csproj" />

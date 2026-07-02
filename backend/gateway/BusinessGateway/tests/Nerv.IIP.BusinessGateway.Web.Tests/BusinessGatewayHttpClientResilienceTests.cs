@@ -36,7 +36,7 @@ public sealed class BusinessGatewayHttpClientResilienceTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
-                builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+                builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
                 builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
                 builder.UseSetting("MasterData:BaseUrl", "http://master-data.local");

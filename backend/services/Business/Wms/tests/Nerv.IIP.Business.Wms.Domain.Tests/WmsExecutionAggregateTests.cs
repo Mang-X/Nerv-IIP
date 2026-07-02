@@ -1,3 +1,4 @@
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
@@ -15,7 +16,7 @@ public sealed class WmsExecutionAggregateTests
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
 
         var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" "));
-        var request = inbound.Complete("idem-in-001");
+        var request = Assert.Single(inbound.Complete("idem-in-001"));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
@@ -49,13 +50,24 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Inbound_completion_rejects_empty_persisted_line_set()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+        DomainWmsFactory.ClearInboundLines(inbound);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => inbound.Complete("idem-in-001"));
+
+        Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Outbound_pack_review_requires_idempotency_key_and_creates_inventory_request()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
         outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m);
 
         var exception = Assert.Throws<ArgumentException>(() => outbound.CompletePackReview("PACK-001", true, " "));
-        var request = outbound.CompletePackReview("PACK-001", true, "idem-out-001");
+        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
 
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(OutboundOrderStatus.Completed, outbound.Status);
@@ -65,14 +77,51 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Outbound_pack_review_carries_inventory_reservation_id_to_movement_request()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
+
+        var request = Assert.Single(outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+
+        Assert.Equal("res-001", request.InventoryReservationId);
+    }
+
+    [Fact]
+    public void Outbound_pack_review_rejects_empty_persisted_line_set()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        DomainWmsFactory.ClearOutboundLines(outbound);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => outbound.CompletePackReview("PACK-001", true, "idem-out-001"));
+
+        Assert.Contains("line", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Pick_quantity_cannot_exceed_outbound_line_quantity()
     {
         var outbound = DomainWmsFactory.OutboundOrder();
 
-        var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
+        var exception = Assert.Throws<KnownException>(() =>
             outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 5m));
 
         Assert.Contains("pick", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Outbound_cancel_records_reason_and_raises_domain_event()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder();
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, "res-001");
+
+        outbound.Cancel("customer-cancelled");
+
+        Assert.Equal(OutboundOrderStatus.Cancelled, outbound.Status);
+        Assert.Equal("customer-cancelled", outbound.CancellationReason);
+        Assert.NotNull(outbound.CancelledAtUtc);
+        Assert.Null(outbound.Lines.Single().InventoryReservationId);
+        Assert.Contains(outbound.GetDomainEvents(), x => x is OutboundOrderCancelledDomainEvent);
     }
 
     [Fact]
@@ -97,6 +146,76 @@ public sealed class WmsExecutionAggregateTests
         Assert.Equal(3m, task.ExecutedQuantity);
         Assert.Contains("executed", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Warehouse_task_progress_is_monotonic_and_completed_tasks_are_locked()
+    {
+        var task = WarehouseTask.CreatePicking(
+            "org-001",
+            "env-dev",
+            "TASK-OUT-001",
+            "OUT-001",
+            "LINE-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "PACK-01",
+            4m);
+
+        task.RecordProgress(3m);
+        var regression = Assert.Throws<InvalidOperationException>(() => task.RecordProgress(2m));
+        task.RecordProgress(4m);
+        var completedRewrite = Assert.Throws<InvalidOperationException>(() => task.RecordProgress(4m));
+
+        Assert.Equal(4m, task.ExecutedQuantity);
+        Assert.Equal(WarehouseTaskStatus.Completed, task.Status);
+        Assert.Contains("regress", regression.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("completed", completedRewrite.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Outbound_pack_review_posts_actual_picked_quantity_and_records_backorder()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder(requestedQuantity: 10m);
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 10m, "res-001");
+
+        var request = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["LINE-001"] = 8m,
+            }));
+
+        var line = outbound.Lines.Single();
+        Assert.Equal(8m, request.Quantity);
+        Assert.Equal(8m, line.IssuedQuantity);
+        Assert.Equal(2m, line.BackorderQuantity);
+    }
+
+    [Fact]
+    public void Outbound_pack_review_clamps_cumulative_pick_execution_to_requested_quantity()
+    {
+        var outbound = DomainWmsFactory.OutboundOrder(requestedQuantity: 10m);
+        outbound.CreatePickingTask("TASK-OUT-001", "LINE-001", "LOC-A-01", "PACK-01", 7m, "res-001");
+        outbound.CreatePickingTask("TASK-OUT-002", "LINE-001", "LOC-A-01", "PACK-01", 6m, "res-001");
+
+        var request = Assert.Single(outbound.CompletePackReview(
+            "PACK-001",
+            true,
+            "idem-out-001",
+            new Dictionary<string, decimal>(StringComparer.Ordinal)
+            {
+                ["LINE-001"] = 13m,
+            }));
+
+        var line = outbound.Lines.Single();
+        Assert.Equal(10m, request.Quantity);
+        Assert.Equal(10m, line.IssuedQuantity);
+        Assert.Equal(0m, line.BackorderQuantity);
+    }
 }
 
 internal static class DomainWmsFactory
@@ -113,7 +232,7 @@ internal static class DomainWmsFactory
             [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", "owner-001")]);
     }
 
-    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder OutboundOrder()
+    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder OutboundOrder(decimal requestedQuantity = 4m)
     {
         return Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder.Create(
             "org-001",
@@ -122,7 +241,7 @@ internal static class DomainWmsFactory
             "sales-delivery",
             "SO-001",
             "SITE-01",
-            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", requestedQuantity, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
     }
 
     public static InventoryMovementRequest MovementRequest()
@@ -144,5 +263,21 @@ internal static class DomainWmsFactory
             "company",
             "owner-001",
             5m);
+    }
+
+    public static void ClearInboundLines(Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder inbound)
+    {
+        var lines = (List<InboundOrderLine>)typeof(Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder)
+            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(inbound)!;
+        lines.Clear();
+    }
+
+    public static void ClearOutboundLines(Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder outbound)
+    {
+        var lines = (List<OutboundOrderLine>)typeof(Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder)
+            .GetField("lines", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(outbound)!;
+        lines.Clear();
     }
 }

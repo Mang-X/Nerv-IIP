@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" fill="#111318"/>
+  <rect x="96" y="84" width="1008" height="552" rx="16" fill="#1a1d24" stroke="#30363f" stroke-width="2"/>
+  <path d="M146 164h908M146 250h908M146 336h908M146 422h908M146 508h908" stroke="#30363f" stroke-width="2"/>
+  <path d="M274 118v484M504 118v484M734 118v484M964 118v484" stroke="#272d35" stroke-width="2"/>
+  <circle cx="190" cy="206" r="18" fill="#74d99f"/>
+  <circle cx="190" cy="378" r="18" fill="#e8b961"/>
+  <circle cx="190" cy="550" r="18" fill="#e87575"/>
+  <text x="146" y="74" fill="#f3f5f7" font-family="Inter, Arial" font-size="30" font-weight="600">Quality evidence snapshot</text>
+  <text x="324" y="214" fill="#cfd5dd" font-family="Inter, Arial" font-size="24">Line A torque inspection</text>
+  <text x="324" y="386" fill="#cfd5dd" font-family="Inter, Arial" font-size="24">Calibration warning</text>
+  <text x="324" y="558" fill="#cfd5dd" font-family="Inter, Arial" font-size="24">Rejected batch sample</text>
+</svg>

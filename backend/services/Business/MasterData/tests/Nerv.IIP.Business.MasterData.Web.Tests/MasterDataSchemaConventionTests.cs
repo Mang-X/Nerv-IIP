@@ -3,14 +3,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.CodeRuleAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
@@ -19,7 +22,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCalendarAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkCenterAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
 using Nerv.IIP.Business.MasterData.Infrastructure;
-using Nerv.IIP.Numbering;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Testing.EntityFramework;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
@@ -58,6 +61,8 @@ public sealed class MasterDataSchemaConventionTests
             typeof(Team),
             typeof(TeamMember),
             typeof(PersonnelSkill),
+            typeof(ProductCategory),
+            typeof(Skill),
             typeof(UnitOfMeasure),
             typeof(UomConversion),
             typeof(Site),
@@ -69,8 +74,10 @@ public sealed class MasterDataSchemaConventionTests
             typeof(WorkCalendar),
             typeof(WorkCalendarWorkingTime),
             typeof(DeviceAsset),
-            typeof(NumberingCounter),
-            typeof(NumberingIdempotencyKey),
+            typeof(CodeRule),
+            typeof(CodeRuleVersion),
+            typeof(CodeCounter),
+            typeof(CodeIdempotencyKey),
         };
 
         var failures = new List<string>();

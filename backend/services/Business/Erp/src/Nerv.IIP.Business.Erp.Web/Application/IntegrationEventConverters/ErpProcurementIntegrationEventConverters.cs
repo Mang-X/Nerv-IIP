@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
 
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -48,24 +49,74 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
 }
 
 public sealed class PurchaseReceiptRecordedIntegrationEventConverter
-    : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, ErpIntegrationEvent<PurchaseReceiptRecordedPayload>>
+    : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, PurchaseReceiptRecordedIntegrationEvent>
 {
-    public ErpIntegrationEvent<PurchaseReceiptRecordedPayload> Convert(PurchaseReceiptRecordedDomainEvent domainEvent)
+    public PurchaseReceiptRecordedIntegrationEvent Convert(PurchaseReceiptRecordedDomainEvent domainEvent)
     {
         var receipt = domainEvent.PurchaseReceipt;
-        return Envelope(
+        var payload = new PurchaseReceiptRecordedPayload(
+            PublicId(receipt.Id),
+            receipt.PurchaseReceiptNo,
+            receipt.PurchaseOrderNo,
+            receipt.SupplierCode,
+            receipt.SiteCode,
+            receipt.QualityStatus);
+        return new PurchaseReceiptRecordedIntegrationEvent(
+            EventIds.New(),
             ErpIntegrationEventTypes.PurchaseReceiptRecorded,
+            1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
             receipt.OrganizationId,
             receipt.EnvironmentId,
+            "system:erp",
             EventIds.Idempotency("purchase-receipt-recorded", receipt.OrganizationId, receipt.EnvironmentId, receipt.PurchaseReceiptNo),
-            new PurchaseReceiptRecordedPayload(
-                PublicId(receipt.Id),
-                receipt.PurchaseReceiptNo,
-                receipt.PurchaseOrderNo,
-                receipt.SupplierCode,
-                receipt.SiteCode,
-                receipt.QualityStatus));
+            payload);
     }
+}
+
+public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventConverter
+    : IIntegrationEventConverter<PurchaseReceiptInventoryMovementRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
+{
+    public InventoryMovementRequestedIntegrationEvent Convert(PurchaseReceiptInventoryMovementRequestedDomainEvent domainEvent)
+    {
+        var receipt = domainEvent.PurchaseReceipt;
+        var line = domainEvent.Line;
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency("purchase-receipt-inventory-movement", receipt.OrganizationId, receipt.EnvironmentId, receipt.PurchaseReceiptNo, line.PurchaseOrderLineNo);
+        return new InventoryMovementRequestedIntegrationEvent(
+            EventIds.New(),
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            occurredAtUtc,
+            InventoryIntegrationEventSources.BusinessErp,
+            "system:erp",
+            "system:erp",
+            receipt.OrganizationId,
+            receipt.EnvironmentId,
+            "system:erp",
+            idempotencyKey,
+            new InventoryMovementRequestedPayload(
+                "inbound",
+                InventoryIntegrationEventSources.BusinessErp,
+                receipt.PurchaseReceiptNo,
+                line.PurchaseOrderLineNo,
+                idempotencyKey,
+                line.SkuCode,
+                line.UomCode,
+                receipt.SiteCode,
+                line.LocationCode,
+                line.LotNo,
+                null,
+                ErpQualityStatusNormalizer.NormalizeReceiptQualityStatus(line.QualityStatus),
+                "company",
+                null,
+                line.ReceivedQuantity,
+                occurredAtUtc));
+    }
+
 }
 
 internal static class ErpIntegrationEventConverterHelpers

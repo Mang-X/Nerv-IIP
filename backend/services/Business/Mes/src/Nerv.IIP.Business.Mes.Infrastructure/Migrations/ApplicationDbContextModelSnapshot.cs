@@ -37,12 +37,46 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the receipt request.");
 
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES finished-goods receipt posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES finished-goods receipt request.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES finished-goods receipt request.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<DateTimeOffset?>("PostedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("posted_at_utc")
+                        .HasComment("UTC time when Inventory posted the receipt movement.");
+
+                    b.Property<string>("PostedInventoryMovementId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("posted_inventory_movement_id")
+                        .HasComment("Inventory movement id posted for this receipt request when known.");
+
+                    b.Property<string>("ProducedLotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("produced_lot_no")
+                        .HasComment("Optional produced finished-goods lot number requested for receipt.");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)
@@ -62,12 +96,33 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("requested_at_utc")
                         .HasComment("UTC time when MES requested finished goods receipt.");
 
+                    b.Property<string>("SerialNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Optional produced serial number requested for receipt.");
+
                     b.Property<string>("SkuId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("sku_id")
                         .HasComment("MasterData SKU public id to receive.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Requested")
+                        .HasColumnName("status")
+                        .HasComment("MES finished-goods receipt request lifecycle status.");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Finished goods unit cost carried to Inventory movement requests for moving-average valuation; legacy rows may be null.");
 
                     b.Property<string>("UomCode")
                         .IsRequired()
@@ -117,6 +172,29 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the material issue request.");
+
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES material issue or line-side receipt posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES material issue request.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES material issue request.");
+
+                    b.Property<string>("InventoryPostingRollbackKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("inventory_posting_rollback_key")
+                        .HasComment("MES normalized receipt-step key already rolled back for Inventory posting failure, used to avoid double rollback when both transfer legs fail.");
 
                     b.Property<string>("MaterialId")
                         .IsRequired()
@@ -179,6 +257,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status")
                         .HasComment("Material issue lifecycle status within MES.");
+
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("UNSPECIFIED")
+                        .HasColumnName("uom_code")
+                        .HasComment("Unit of measure code captured for the material issue quantity.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -366,6 +453,20 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("existing_start_utc")
                         .HasComment("Existing UTC start time for in-progress operation preservation.");
 
+                    b.Property<long>("LaborTimeTicks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("labor_time_ticks")
+                        .HasComment("Actual labor time stored as .NET ticks after paused duration deduction.");
+
+                    b.Property<long>("MachineTimeTicks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("machine_time_ticks")
+                        .HasComment("Actual machine time stored as .NET ticks after paused duration deduction.");
+
                     b.Property<int>("OperationSequence")
                         .HasColumnType("integer")
                         .HasColumnName("operation_sequence")
@@ -384,6 +485,18 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<DateTimeOffset?>("PausedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paused_at_utc")
+                        .HasComment("UTC time when the operation entered its current paused interval, if any.");
+
+                    b.Property<long>("PausedDurationTicks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("paused_duration_ticks")
+                        .HasComment("Accumulated paused duration stored as .NET ticks and excluded from actual work time.");
 
                     b.Property<string>("ShiftId")
                         .HasMaxLength(100)
@@ -432,6 +545,94 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.OutputLotGenealogy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Output lot genealogy aggregate id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC time when the output lot genealogy breakpoint was recorded.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the MES genealogy context.");
+
+                    b.Property<string>("OperationTaskId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("MES output operation task id that produced the lot.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("ProducedLotNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("produced_lot_no")
+                        .HasComment("Produced finished-goods lot number assigned by MES.");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("quantity")
+                        .HasComment("Good quantity represented by this output lot breakpoint.");
+
+                    b.Property<string>("ReportNo")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("report_no")
+                        .HasComment("MES production report number that created the output lot breakpoint.");
+
+                    b.Property<string>("SerialNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Optional produced serial number assigned by MES.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES business work order id that produced the lot.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "OperationTaskId")
+                        .HasDatabaseName("ix_output_lot_genealogies_scope_operation");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ProducedLotNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_output_lot_genealogies_scope_lot");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReportNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_output_lot_genealogies_scope_report");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasDatabaseName("ix_output_lot_genealogies_scope_work_order");
+
+                    b.ToTable("output_lot_genealogies", "mes", t =>
+                        {
+                            t.HasComment("MES output lot genealogy breakpoints linking reported finished-goods lots to work orders, operations, reports, and consumed material facts.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", b =>
                 {
                     b.Property<Guid>("Id")
@@ -443,6 +644,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("completes_operation")
                         .HasComment("Whether this report marks the operation as completed.");
+
+                    b.Property<string>("DefectRecordNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("defect_record_no")
+                        .HasComment("Optional MES defect record number linked to this production report.");
 
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
@@ -471,6 +678,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<string>("ProducedLotNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("produced_lot_no")
+                        .HasComment("Optional produced finished-goods lot number for genealogy.");
+
                     b.Property<string>("ReportNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -483,11 +696,29 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("reported_at_utc")
                         .HasComment("UTC time when production was reported.");
 
+                    b.Property<decimal>("ReworkQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("rework_quantity")
+                        .HasComment("Quantity reported as rework for the operation.");
+
                     b.Property<decimal>("ScrapQuantity")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("scrap_quantity")
                         .HasComment("Scrap quantity reported for the operation.");
+
+                    b.Property<string>("ScrapReasonCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("scrap_reason_code")
+                        .HasComment("Optional scrap reason code linked to reported scrap quantity.");
+
+                    b.Property<string>("SerialNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("serial_no")
+                        .HasComment("Optional produced serial number for genealogy.");
 
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
@@ -497,6 +728,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasComment("MES business work order id reported against.");
 
                     b.HasKey("Id");
+
+                    b.HasAlternateKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .HasName("ak_production_reports_scope_report_no");
 
                     b.HasIndex("OperationTaskId")
                         .HasDatabaseName("ix_production_reports_operation_task_id");
@@ -543,6 +777,23 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the material consumption fact.");
 
+                    b.Property<DateTimeOffset?>("InventoryPostingFailedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("inventory_posting_failed_at_utc")
+                        .HasComment("UTC time when Inventory rejected the latest MES production material consumption posting.");
+
+                    b.Property<string>("InventoryPostingFailureCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inventory_posting_failure_code")
+                        .HasComment("Last Inventory posting failure code returned for this MES production material consumption.");
+
+                    b.Property<string>("InventoryPostingFailureMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("inventory_posting_failure_message")
+                        .HasComment("Last Inventory posting failure message returned for this MES production material consumption.");
+
                     b.Property<string>("MaterialId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -585,6 +836,15 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("report_no")
                         .HasComment("MES production report number that consumed this material lot.");
 
+                    b.Property<string>("UomCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("UNSPECIFIED")
+                        .HasColumnName("uom_code")
+                        .HasComment("Unit of measure code copied from the line-side material issue request.");
+
                     b.Property<string>("WorkOrderId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -617,6 +877,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Defect record aggregate id.");
 
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when the MES defect was closed by non-rework disposition.");
+
                     b.Property<string>("DefectCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -631,12 +896,36 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("defect_no")
                         .HasComment("MES defect record number allocated by the service numbering counter.");
 
+                    b.Property<string>("DispositionReferenceId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("disposition_reference_id")
+                        .HasComment("Downstream disposition reference such as rework work order, scrap movement or return document.");
+
+                    b.Property<string>("DispositionType")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("disposition_type")
+                        .HasComment("Quality disposition type accepted for this MES defect.");
+
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the defect record.");
+
+                    b.Property<string>("NcrCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ncr_code")
+                        .HasComment("Quality NCR business code linked to this MES defect when disposition is known.");
+
+                    b.Property<string>("NcrId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("ncr_id")
+                        .HasComment("Quality NCR public id linked to this MES defect when disposition is known.");
 
                     b.Property<string>("OperationTaskId")
                         .HasMaxLength(100)
@@ -691,6 +980,112 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("defect_records", "mes", t =>
                         {
                             t.HasComment("MES in-process defect facts recorded against work orders and optional operation tasks.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.QualityHoldContext", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Quality hold context id.");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean")
+                        .HasColumnName("active")
+                        .HasComment("Whether this Quality context currently blocks MES release or operation start.");
+
+                    b.Property<string>("DispositionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("disposition_reason")
+                        .HasComment("Optional Quality disposition or rejection reason for the hold context.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id for the quality hold context.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("event_type")
+                        .HasComment("Latest Quality integration event type applied to this context.");
+
+                    b.Property<string>("InspectionPlanId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inspection_plan_id")
+                        .HasComment("Optional Quality inspection plan id used for the inspection result.");
+
+                    b.Property<string>("InspectionRecordId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("inspection_record_id")
+                        .HasComment("Quality inspection record id that last updated this hold context.");
+
+                    b.Property<string>("OperationTaskId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("operation_task_id")
+                        .HasComment("Optional MES operation task id affected by the inspection result.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recorded_at_utc")
+                        .HasComment("UTC time when the latest Quality inspection result was recorded.");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("result")
+                        .HasComment("Latest Quality inspection result for the MES execution context.");
+
+                    b.Property<string>("SourceDocumentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_document_id")
+                        .HasComment("Source document id referenced by the Quality inspection record.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_service")
+                        .HasComment("Source service referenced by the Quality inspection record.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work order id affected by the inspection result.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceService", "SourceDocumentId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_quality_hold_contexts_scope_source");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "Active")
+                        .HasDatabaseName("ix_quality_hold_contexts_scope_work_order_active");
+
+                    b.ToTable("quality_hold_contexts", "mes", t =>
+                        {
+                            t.HasComment("MES quality hold contexts projected from Quality inspection result facts for work order release and start gates.");
                         });
                 });
 
@@ -950,6 +1345,23 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Work order aggregate id.");
 
+                    b.Property<string>("CancelReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("cancel_reason")
+                        .HasComment("Reason code or text for cancelling the work order.");
+
+                    b.Property<DateTimeOffset?>("ClosedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at_utc")
+                        .HasComment("UTC time when the completed work order was closed.");
+
+                    b.Property<decimal>("CompletedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("completed_quantity")
+                        .HasComment("Cumulative good production quantity reported against the work order.");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
@@ -967,12 +1379,24 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id for the work order execution context.");
 
+                    b.Property<string>("HoldReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("hold_reason")
+                        .HasComment("Reason code or text for holding the work order.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<decimal>("OverReceiptTolerancePercent")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("numeric(9,4)")
+                        .HasColumnName("over_receipt_tolerance_percent")
+                        .HasComment("Allowed over-production tolerance percentage for cumulative reported quantity.");
 
                     b.Property<int>("Priority")
                         .HasColumnType("integer")
@@ -990,6 +1414,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("quantity")
                         .HasComment("Planned production quantity.");
+
+                    b.Property<decimal>("ScrapQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("scrap_quantity")
+                        .HasComment("Cumulative scrap quantity reported against the work order.");
 
                     b.Property<string>("SkuId")
                         .IsRequired()
@@ -1047,17 +1477,11 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasComment("BusinessMES integration event consumer name.");
 
-                    b.Property<string>("DedupeKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasComment("BusinessMES dedupe key associated with the processed event.");
-
                     b.Property<string>("EventId")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasComment("Source integration event identifier unique within a consumer.");
+                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
 
                     b.Property<string>("EventType")
                         .IsRequired()
@@ -1068,6 +1492,12 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.Property<int>("EventVersion")
                         .HasColumnType("integer")
                         .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("Deterministic BusinessMES idempotency key unique within a consumer.");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -1081,9 +1511,9 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ConsumerName", "EventId")
+                    b.HasIndex("ConsumerName", "IdempotencyKey")
                         .IsUnique()
-                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
+                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
 
                     b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
                         .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");
@@ -1091,6 +1521,141 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "mes", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessMES for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code counter surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CurrentValue")
+                        .HasColumnType("bigint")
+                        .HasColumnName("current_value")
+                        .HasComment("Last allocated sequence value within the counter scope.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the code counter.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the code counter.");
+
+                    b.Property<string>("ResetKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reset_key")
+                        .HasComment("Sequence reset bucket derived from the active code rule.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by this counter.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Optional site or plant scope; empty string means global within organization and environment.");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token incremented whenever the counter advances.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "SiteCode", "ResetKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_counters_scope");
+
+                    b.ToTable("code_counters", "mes", t =>
+                        {
+                            t.HasComment("Service-local code counters scoped by organization, environment, rule key, optional site and reset bucket.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeIdempotencyKey", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code idempotency record surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("code")
+                        .HasComment("Allocated business code returned for this idempotency key.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC timestamp when the idempotency key was first recorded.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the idempotency key.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Client supplied stable idempotency key for ordinary create requests.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the idempotency key.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by the idempotency key.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_idempotency_keys_scope");
+
+                    b.ToTable("code_idempotency_keys", "mes", t =>
+                        {
+                            t.HasComment("Service-local idempotency records that bind create request keys to allocated codes.");
                         });
                 });
 
@@ -1191,148 +1756,6 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("integration_event_dead_letters", "mes", t =>
                         {
                             t.HasComment("Integration events rejected before business handling and retained for replay triage.");
-                        });
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingCounter", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasComment("Numbering counter surrogate identifier.");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("CurrentValue")
-                        .HasColumnType("bigint")
-                        .HasColumnName("current_value")
-                        .HasComment("Last allocated sequence value within the counter scope.");
-
-                    b.Property<string>("DateSegment")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)")
-                        .HasColumnName("date_segment")
-                        .HasComment("Date segment used by the numbering rule, formatted as yyyyMMdd for the current baseline.");
-
-                    b.Property<string>("DocumentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("document_type")
-                        .HasComment("Business document type governed by this counter.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Environment scope for the numbering counter.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Organization scope for the numbering counter.");
-
-                    b.Property<string>("Prefix")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("prefix")
-                        .HasComment("Document number prefix emitted before the date segment.");
-
-                    b.Property<string>("SiteCode")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("site_code")
-                        .HasComment("Optional site or plant scope; empty string means global within organization and environment.");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint")
-                        .HasColumnName("version")
-                        .HasComment("Optimistic concurrency token incremented whenever the counter advances.");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DocumentType", "SiteCode", "DateSegment")
-                        .IsUnique()
-                        .HasDatabaseName("ux_numbering_counters_scope");
-
-                    b.ToTable("numbering_counters", "mes", t =>
-                        {
-                            t.HasComment("Service-local numbering counters scoped by organization, environment, document type, optional site and date segment.");
-                        });
-                });
-
-            modelBuilder.Entity("Nerv.IIP.Numbering.NumberingIdempotencyKey", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasComment("Numbering idempotency record surrogate identifier.");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc")
-                        .HasComment("UTC timestamp when the idempotency key was first recorded.");
-
-                    b.Property<string>("DocumentType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("document_type")
-                        .HasComment("Business document type governed by the idempotency key.");
-
-                    b.Property<string>("EnvironmentId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("environment_id")
-                        .HasComment("Environment scope for the idempotency key.");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)")
-                        .HasColumnName("idempotency_key")
-                        .HasComment("Client supplied stable idempotency key for ordinary create requests.");
-
-                    b.Property<string>("Number")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("number")
-                        .HasComment("Allocated business document number returned for this idempotency key.");
-
-                    b.Property<string>("OrganizationId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("organization_id")
-                        .HasComment("Organization scope for the idempotency key.");
-
-                    b.Property<string>("PayloadFingerprint")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("payload_fingerprint")
-                        .HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DocumentType", "IdempotencyKey")
-                        .IsUnique()
-                        .HasDatabaseName("ux_numbering_idempotency_keys_scope");
-
-                    b.ToTable("numbering_idempotency_keys", "mes", t =>
-                        {
-                            t.HasComment("Service-local idempotency records that bind create request keys to allocated document numbers.");
                         });
                 });
 
@@ -1490,6 +1913,33 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasConstraintName("fk_operation_tasks_work_orders");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.OutputLotGenealogy", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "OperationTaskId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "OperationTaskIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_output_lot_genealogies_operation_tasks");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "ReportNo")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_output_lot_genealogies_reports");
+
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_output_lot_genealogies_work_orders");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReport", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate.OperationTask", null)
@@ -1529,6 +1979,17 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_defect_records_work_orders");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate.QualityHoldContext", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "EnvironmentId", "WorkOrderId")
+                        .HasPrincipalKey("OrganizationId", "EnvironmentId", "WorkOrderIdValue")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_quality_hold_contexts_work_orders");
                 });
 
             modelBuilder.Entity("Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate.WorkOrder", b =>

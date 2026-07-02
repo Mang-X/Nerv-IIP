@@ -6,6 +6,21 @@ namespace Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspec
 
 public partial record MaintenanceInspectionId : IGuidStronglyTypedId;
 
+public static class MaintenanceInspectionResults
+{
+    private static readonly string[] FailedResults = ["failed", "fail", "blocked", "not-ok", "not ok", "nok", "ng", "不合格"];
+
+    public static string Normalize(string result)
+    {
+        return MaintenanceText.Required(result, nameof(result)).ToLowerInvariant();
+    }
+
+    public static bool IsFailed(string result)
+    {
+        return FailedResults.Contains(Normalize(result), StringComparer.Ordinal);
+    }
+}
+
 public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAggregateRoot
 {
     private MaintenanceInspection()
@@ -30,7 +45,7 @@ public sealed class MaintenanceInspection : Entity<MaintenanceInspectionId>, IAg
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
         EnvironmentId = MaintenanceText.Required(environmentId, nameof(environmentId));
         Inspector = MaintenanceText.Required(inspector, nameof(inspector));
-        Result = MaintenanceText.Required(result, nameof(result));
+        Result = MaintenanceInspectionResults.Normalize(result);
         InspectedAtUtc = inspectedAtUtc.ToUniversalTime();
         PlanId = planId;
         WorkOrderId = workOrderId;

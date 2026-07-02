@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -57,6 +58,48 @@ public sealed class InventoryIntegrationEventTests
         Assert.Equal("inventory.StockAvailabilityChanged", integrationEvent.EventType);
         Assert.Equal(4m, integrationEvent.Payload.OnHandQuantity);
         Assert.Equal(4m, integrationEvent.Payload.AvailableQuantity);
+    }
+
+    [Fact]
+    public void Stock_movement_posting_failed_event_uses_required_adr0011_envelope_shape()
+    {
+        var integrationEvent = new StockMovementPostingFailedIntegrationEvent(
+            "evt-failed-001",
+            InventoryIntegrationEventTypes.StockMovementPostingFailed,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-15T00:00:00Z"),
+            InventoryIntegrationEventSources.BusinessInventory,
+            "corr-001",
+            "cause-001",
+            "org-001",
+            "env-dev",
+            "system:business-inventory",
+            "inventory:stock-movement-posting-failed:org-001:env-dev:wms:OUT-001:idem-out-001",
+            new StockMovementPostingFailedPayload(
+                "outbound",
+                "wms",
+                "OUT-001",
+                "LINE-001",
+                "idem-out-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                -5m,
+                "NEGATIVE_ON_HAND",
+                "Stock movement would make on-hand quantity negative.",
+                DateTimeOffset.Parse("2026-06-15T00:00:00Z")));
+        var json = JsonSerializer.Serialize(integrationEvent, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal("inventory.StockMovementPostingFailed", integrationEvent.EventType);
+        Assert.Equal("NEGATIVE_ON_HAND", integrationEvent.Payload.FailureCode);
+        Assert.Equal("OUT-001", integrationEvent.Payload.SourceDocumentId);
+        Assert.Contains("\"eventType\":\"inventory.StockMovementPostingFailed\"", json, StringComparison.Ordinal);
     }
 
     private sealed class StubInventoryIntegrationEventContextAccessor(

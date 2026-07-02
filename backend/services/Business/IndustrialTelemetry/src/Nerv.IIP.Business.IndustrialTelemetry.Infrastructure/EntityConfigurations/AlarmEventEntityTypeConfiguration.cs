@@ -14,6 +14,11 @@ public sealed class AlarmEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.DeviceAssetId).IsRequired().HasMaxLength(150).HasColumnName("device_asset_id").HasComment("Referenced MasterData device asset identifier.");
         builder.Property(x => x.AlarmCode).IsRequired().HasMaxLength(100).HasColumnName("alarm_code").HasComment("External or normalized alarm code.");
         builder.Property(x => x.Severity).IsRequired().HasMaxLength(50).HasColumnName("severity").HasComment("Alarm severity level.");
+        builder.Property(x => x.Priority).IsRequired().HasMaxLength(50).HasColumnName("priority").HasComment("Independent alarm priority.");
+        builder.Property(x => x.TagKey).HasMaxLength(150).HasColumnName("tag_key").HasComment("Telemetry tag key whose observed value raised this alarm.");
+        builder.Property(x => x.ObservedValue).HasPrecision(18, 6).HasColumnName("observed_value").HasComment("Observed process value that raised this alarm.");
+        builder.Property(x => x.ThresholdValue).HasPrecision(18, 6).HasColumnName("threshold_value").HasComment("Rule threshold value when this alarm was raised.");
+        builder.Property(x => x.UnitCode).HasMaxLength(50).HasColumnName("unit_code").HasComment("Observed and threshold unit code.");
         builder.Property(x => x.RaisedAtUtc).HasColumnName("raised_at_utc").HasComment("UTC time when the alarm was raised.");
         builder.Property(x => x.ExternalAlarmId).IsRequired().HasMaxLength(150).HasColumnName("external_alarm_id").HasComment("External alarm identifier used for idempotent ingestion.");
         builder.Property(x => x.Status).IsRequired().HasMaxLength(50).HasColumnName("status").HasComment("Alarm lifecycle status.");

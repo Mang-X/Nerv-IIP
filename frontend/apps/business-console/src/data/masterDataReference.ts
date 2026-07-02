@@ -7,7 +7,7 @@
  */
 
 export interface RefOption {
-  /** 提交给后端的码值。 */
+  /** 提交给后端的码值（自由字符串，后端当前不校验）。 */
   value: string
   /** 展示给用户的中文名。 */
   label: string
@@ -23,7 +23,7 @@ export const PRODUCT_CATEGORY_OPTIONS: RefOption[] = [
   { value: 'assembly', label: '组装件' },
 ]
 
-/** 物料类型（CodeSet: material-type，系统枚举，决定单据可用性）。 */
+/** 物料类型（CodeSet: material-type，平台预置，决定单据可用性）。 */
 export const MATERIAL_TYPE_OPTIONS: RefOption[] = [
   { value: 'finished-goods', label: '成品' },
   { value: 'semi-finished', label: '半成品' },
@@ -62,7 +62,7 @@ export const STORAGE_CONDITION_OPTIONS: RefOption[] = [
   { value: 'ambient', label: '常温' },
   { value: 'refrigerated', label: '冷藏' },
   { value: 'frozen', label: '冷冻' },
-  { value: 'dry', label: '干燥/防潮' },
+  { value: 'dry', label: '干燥防潮' },
   { value: 'esd', label: '防静电' },
   { value: 'hazardous', label: '危化品' },
 ]
@@ -86,13 +86,11 @@ export const COMPLIANCE_TAG_OPTIONS: RefOption[] = [
 
 /** 计量单位（CodeSet: uom，§5.2 种子的常用子集）。 */
 export const UOM_OPTIONS: RefOption[] = [
-  { value: 'PCS', label: '个/件' },
-  { value: 'SET', label: '套' },
-  { value: 'BOX', label: '箱' },
-  { value: 'KG', label: '千克' },
-  { value: 'G', label: '克' },
-  { value: 'M', label: '米' },
-  { value: 'L', label: '升' },
+  { value: 'pcs', label: '件' },
+  { value: 'kg', label: '千克' },
+  { value: 'g', label: '克' },
+  { value: 'l', label: '升' },
+  { value: 'min', label: '分钟' },
 ]
 
 /** 业务伙伴角色（CodeSet: partner-type，系统枚举）。 */
@@ -106,4 +104,31 @@ export const PARTNER_TYPE_OPTIONS: RefOption[] = [
 export function refLabel(options: RefOption[], value: string | undefined | null): string {
   if (!value) return '无'
   return options.find((o) => o.value === value)?.label ?? value
+}
+
+function hasChinese(value: string): boolean {
+  return /[一-鿿]/.test(value)
+}
+
+/**
+ * 实时字典 / 实体选项 + 中文兜底覆盖：
+ * - 取启用实时项（active!==false 且 code 非空）；
+ * - 后端 name 为英文（无中文）且本常量含该 code 的中文名时，用常量中文名覆盖——
+ *   清理后端未本地化的种子名，尤其 `system-managed` 改不动的（none / time / volume 等）；
+ *   否则用后端 name（尊重工厂在数据字典里的中文改名）。
+ * - 实时为空则整体回退常量。
+ */
+export function mergeReferenceOptions(
+  resources: ReadonlyArray<{ code?: string | null, displayName?: string | null, active?: boolean }>,
+  fallback: readonly RefOption[],
+): RefOption[] {
+  const live = resources
+    .filter((r) => r.active !== false && (r.code ?? '').trim().length > 0)
+    .map((r) => {
+      const value = (r.code ?? '').trim()
+      const backendName = (r.displayName ?? '').trim() || value
+      const fb = fallback.find((o) => o.value === value)
+      return { value, label: fb && !hasChinese(backendName) ? fb.label : backendName }
+    })
+  return live.length > 0 ? live : [...fallback]
 }

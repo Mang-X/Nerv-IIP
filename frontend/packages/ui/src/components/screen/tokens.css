@@ -1,0 +1,94 @@
+/**
+ * Screen surface tokens — independent from the shared PC/mobile set. A fixed,
+ * near-black deep-blue control-room theme. Restraint is the whole point: glow is
+ * tiny and lives only at edges and live-data points; structure reads from white
+ * hairline highlights and gradient borders, not from colored fills or big glows.
+ * Prefixed `--sb-*` so they never clash with the shared `--*` tokens.
+ */
+:root {
+  /* surfaces — near-black blue; panels barely lift off the base */
+  --sb-bg: #03050b;
+  --sb-bg-accent: #081020;
+  --sb-panel-a: rgba(22, 33, 56, 0.72);
+  --sb-panel-b: rgba(11, 17, 30, 0.66);
+  --sb-line: rgba(255, 255, 255, 0.06);
+  --sb-line-2: rgba(255, 255, 255, 0.1);
+  --sb-divider: rgba(255, 255, 255, 0.055);
+
+  /* accent — ONE blue: the data accent (cyan) matches the action accent below */
+  --sb-cyan: #4aa6ee;
+  --sb-cyan-dim: rgba(74, 166, 238, 0.45);
+  /* unified "active fill" — every selected control (button / segmented /
+     pagination / switch) references this, so the accent lives in one place. */
+  --sb-accent-from: #4aa6ee;
+  --sb-accent-to: #2a72cc;
+  --sb-accent-fill: linear-gradient(180deg, #4aa6ee, #2a72cc);
+  --sb-accent-edge: rgba(90, 165, 240, 0.5);
+  --sb-indigo: #8b9be6;
+  --sb-green: #45d089;
+  --sb-amber: #f2c14e;
+  --sb-red: #ef5a63;
+
+  /* text — WHITE values; secondary text near-white, labels a soft blue-grey so
+     they read at a distance without the dull "muted grey" look. */
+  --sb-text: #eef2f8;
+  --sb-text-2: #d4dde8;
+  --sb-muted: #aeb9c8;
+  --sb-faint: #828c9c;
+
+  /* effects — restrained: a white highlight carries structure, glow is a whisper */
+  --sb-highlight: rgba(255, 255, 255, 0.32); /* top white edge highlight */
+  /* panel edge — a VISIBLE blue-cyan hairline that brightens down the two sides;
+     white is reserved for the top highlight (--sb-highlight), not the edge body. */
+  /* left side brighter than right (light comes from the upper-left) */
+  --sb-edge-gradient: linear-gradient(
+    90deg,
+    rgba(135, 208, 255, 0.82),
+    rgba(135, 208, 255, 0.12) 16%,
+    rgba(135, 208, 255, 0.12) 84%,
+    rgba(135, 208, 255, 0.5)
+  );
+  --sb-value-glow: 0 0 12px rgba(150, 190, 235, 0.18); /* faint white-blue on big numbers */
+  --sb-edge-glow: rgba(95, 170, 230, 0.3); /* tiny corner-only glow */
+  --sb-glow: 0 0 8px rgba(95, 170, 230, 0.28); /* much weaker than a fill */
+  --sb-sheen: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.5);
+  --sb-radius: 8px;
+
+  /* motion — unified with the shared system (decelerate, no bounce). */
+  --sb-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --sb-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Thin custom scrollbar for screen scroll containers — hidden until hover.
+   Add `sb-scroll` to any overflow container in the screen layer. */
+.sb-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sb-scroll:hover,
+.sb-scroll:focus-within {
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+.sb-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.sb-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sb-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s var(--sb-ease);
+}
+.sb-scroll:hover::-webkit-scrollbar-thumb,
+.sb-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: padding-box;
+}
+.sb-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.36);
+  background-clip: padding-box;
+}

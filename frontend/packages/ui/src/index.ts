@@ -5,14 +5,32 @@ export {
   ACCENT_STORAGE_KEY,
   COLOR_MODE_STORAGE_KEY,
   DEFAULT_ACCENT,
+  DEFAULT_THEME,
   initTheme,
+  NEUTRAL_THEME,
+  THEME_PRESETS,
+  THEME_STORAGE_KEY,
   useColorMode,
+  useTheme,
   useThemeAccent,
 } from './composables/useTheme'
-export type { ColorMode } from './composables/useTheme'
+export type { ColorMode, ThemeName, ThemePreset } from './composables/useTheme'
 
 // FE-2 custom block component library (distinct from原版 primitives above).
 export * from './components/blocks'
+
+// FE-2 Pro — copy-rebuilt premium components (restrained Vercel/Linear craft).
+export * from './components/pro'
+
+// Touch — large touch-optimized components for tablet boards / workshop kiosks.
+export * from './components/touch'
+
+// Screen — big-board / control-room layer (independent --sb-* dark tokens).
+export * from './components/screen'
+
+// Layout — page scaffolding primitives (container, page+asides, grid, columns, sections).
+export * from './components/layout'
+
 
 export {
   Breadcrumb,
@@ -126,6 +144,7 @@ export {
   FieldTitle,
 } from './components/ui/field'
 export { Input } from './components/ui/input'
+export { Label } from './components/ui/label'
 export {
   Pagination,
   PaginationContent,
@@ -192,6 +211,7 @@ export {
 } from './components/ui/table'
 export {
   FileUpload,
+  fileUploadMotion,
   uploadWithNativeFileStorageTransport,
   useFileUpload,
   type FileUploadCompletedFile,
@@ -206,3 +226,12 @@ export {
   type FileUploadTransport,
   type FileUploadTransportContext,
 } from './components/ui/file-upload'
+export {
+  filePreviewMotion,
+  formatFilePreviewSize,
+  getFilePreviewKind,
+  getFilePreviewKindMeta,
+  isFilePreviewSupported,
+  type FilePreviewKind,
+  type FilePreviewKindMeta,
+} from './components/ui/file-preview/filePreviewKind'

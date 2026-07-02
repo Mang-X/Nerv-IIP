@@ -243,6 +243,47 @@ public sealed class AppHubIntegrationEventTests
     }
 
     [Fact]
+    public async Task Operation_completed_consumer_skips_released_event_with_same_idempotency_key()
+    {
+        var sender = new RecordingSender();
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"apphub-completed-idem-{Guid.CreateVersion7():N}", databaseRoot);
+        var integrationEvent = CreateCompletedEvent(eventVersion: 1);
+        var releasedEvent = integrationEvent with { EventId = "evt-ops-completed-guard-released" };
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            using var services = CreateServiceProvider(dbContext);
+            var handler = new OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState(
+                sender,
+                services,
+                deadLetterStore,
+                new RecordingLogger<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>());
+            await handler.HandleAsync(releasedEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        Assert.Single(sender.RequestTypes);
+        await using var assertionDbContext = CreateDbContext(options);
+        var processed = Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(integrationEvent.EventId, processed.EventId);
+        Assert.Equal(integrationEvent.IdempotencyKey, processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Operation_failed_consumer_skips_duplicate_event_before_sending_command()
     {
         var sender = new RecordingSender();

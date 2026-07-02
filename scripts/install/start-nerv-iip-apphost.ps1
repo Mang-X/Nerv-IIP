@@ -21,13 +21,27 @@ param(
     [ValidateSet("InMemory", "RabbitMQ")]
     [string] $MessagingProvider = "InMemory",
 
-    [string] $IamJwtSigningKey,
+    [string] $IamJwtSigningKeyId,
+
+    [string] $IamJwtPrivateKeyPem,
+
+    [string] $IamJwtJwksJson,
+
+    [string] $IamSecretsPepper,
 
     [string] $IamSeedAdminPassword,
 
     [string] $InternalServiceBearerToken,
 
     [string] $ConnectorHostSecret,
+
+    [string] $ConnectorHostId,
+
+    [string] $ConnectorHostOrganizationId,
+
+    [string] $ConnectorHostEnvironmentId,
+
+    [string] $ConnectorIngestionTokenSigningKey,
 
     [string] $ExternalClientSecret,
 
@@ -50,8 +64,20 @@ Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
 if ($EnvironmentName -ne "Development") {
-    if ([string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
-        throw "-IamJwtSigningKey is required outside Development."
+    if ([string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
+        throw "-IamJwtSigningKeyId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamJwtPrivateKeyPem)) {
+        throw "-IamJwtPrivateKeyPem is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
+        throw "-IamJwtJwksJson is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
+        throw "-IamSecretsPepper is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($InternalServiceBearerToken)) {
@@ -60,6 +86,22 @@ if ($EnvironmentName -ne "Development") {
 
     if ([string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
         throw "-ConnectorHostSecret is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostId)) {
+        throw "-ConnectorHostId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostOrganizationId)) {
+        throw "-ConnectorHostOrganizationId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorHostEnvironmentId)) {
+        throw "-ConnectorHostEnvironmentId is required outside Development."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+        throw "-ConnectorIngestionTokenSigningKey is required outside Development."
     }
 
     if ([string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
@@ -97,9 +139,24 @@ if ($AutoMigrate) {
     $environment["Persistence__AutoMigrate"] = "true"
 }
 
-if (-not [string]::IsNullOrWhiteSpace($IamJwtSigningKey)) {
-    $environment["Iam__Jwt__SigningKey"] = $IamJwtSigningKey
-    $environment["Parameters__iam-jwt-signing-key"] = $IamJwtSigningKey
+if (-not [string]::IsNullOrWhiteSpace($IamJwtSigningKeyId)) {
+    $environment["Iam__Jwt__SigningKeys__0__Kid"] = $IamJwtSigningKeyId
+    $environment["Parameters__iam-jwt-signing-key-id"] = $IamJwtSigningKeyId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamJwtPrivateKeyPem)) {
+    $environment["Iam__Jwt__SigningKeys__0__PrivateKeyPem"] = $IamJwtPrivateKeyPem
+    $environment["Parameters__iam-jwt-private-key-pem"] = $IamJwtPrivateKeyPem
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamJwtJwksJson)) {
+    $environment["Iam__Jwt__JwksJson"] = $IamJwtJwksJson
+    $environment["Parameters__iam-jwt-jwks-json"] = $IamJwtJwksJson
+}
+
+if (-not [string]::IsNullOrWhiteSpace($IamSecretsPepper)) {
+    $environment["Iam__Secrets__Pepper"] = $IamSecretsPepper
+    $environment["Parameters__iam-secrets-pepper"] = $IamSecretsPepper
 }
 
 if (-not [string]::IsNullOrWhiteSpace($IamSeedAdminPassword)) {
@@ -116,6 +173,26 @@ if (-not [string]::IsNullOrWhiteSpace($ConnectorHostSecret)) {
     $environment["Iam__Seed__ConnectorHostSecret"] = $ConnectorHostSecret
     $environment["ConnectorHostCredential__Secret"] = $ConnectorHostSecret
     $environment["Parameters__iam-seed-connector-host-secret"] = $ConnectorHostSecret
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostId)) {
+    $environment["ConnectorHost__ConnectorHostId"] = $ConnectorHostId
+    $environment["ConnectorHostCredential__ConnectorHostId"] = $ConnectorHostId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostOrganizationId)) {
+    $environment["ConnectorHost__OrganizationId"] = $ConnectorHostOrganizationId
+    $environment["ConnectorHostCredential__OrganizationId"] = $ConnectorHostOrganizationId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorHostEnvironmentId)) {
+    $environment["ConnectorHost__EnvironmentId"] = $ConnectorHostEnvironmentId
+    $environment["ConnectorHostCredential__EnvironmentId"] = $ConnectorHostEnvironmentId
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ConnectorIngestionTokenSigningKey)) {
+    $environment["ConnectorIngestionToken__SigningKey"] = $ConnectorIngestionTokenSigningKey
+    $environment["Parameters__connector-ingestion-token-signing-key"] = $ConnectorIngestionTokenSigningKey
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ExternalClientSecret)) {

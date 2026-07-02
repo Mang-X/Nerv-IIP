@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -8,7 +10,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.MasterData.Web.Application.Auth;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.WorkshopAggregate;
@@ -35,6 +40,7 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(AddTeamMemberEndpoint))]
     [InlineData(typeof(RemoveTeamMemberEndpoint))]
     [InlineData(typeof(AssignPersonnelSkillEndpoint))]
+    [InlineData(typeof(ListPersonnelSkillMatrixEndpoint))]
     [InlineData(typeof(CreateSiteEndpoint))]
     [InlineData(typeof(CreateProductionLineEndpoint))]
     [InlineData(typeof(CreateShiftEndpoint))]
@@ -42,6 +48,12 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(CreateWorkCenterEndpoint))]
     [InlineData(typeof(RegisterDeviceAssetEndpoint))]
     [InlineData(typeof(CreateReferenceDataCodeEndpoint))]
+    [InlineData(typeof(CreateProductCategoryEndpoint))]
+    [InlineData(typeof(UpdateProductCategoryEndpoint))]
+    [InlineData(typeof(ArchiveProductCategoryEndpoint))]
+    [InlineData(typeof(CreateSkillEndpoint))]
+    [InlineData(typeof(UpdateSkillEndpoint))]
+    [InlineData(typeof(ArchiveSkillEndpoint))]
     [InlineData(typeof(UpdateMasterDataResourceEndpoint))]
     [InlineData(typeof(DisableMasterDataResourceEndpoint))]
     [InlineData(typeof(EnableMasterDataResourceEndpoint))]
@@ -86,7 +98,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(25, contracts.Count);
+        Assert.Equal(41, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -94,9 +106,67 @@ public sealed class MasterDataApiContractTests
             Assert.Matches("^[a-z][A-Za-z0-9]*$", contract.OperationId);
             Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
             Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
-            Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PATCH", "DELETE" });
+            Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
             Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
         });
+    }
+
+    [Fact]
+    public void MasterData_catalog_endpoints_expose_product_category_and_skill_routes()
+    {
+        var contracts = MasterDataEndpointContracts.All.ToArray();
+
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/product-categories"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsRead
+            && x.OperationId == "listBusinessMasterDataProductCategories");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsRead
+            && x.OperationId == "getBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/product-categories"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "createBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "updateBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/product-categories/{categoryCode}/archive"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataProductsManage
+            && x.OperationId == "archiveBusinessMasterDataProductCategory");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/skills"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+            && x.OperationId == "listBusinessMasterDataSkills");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+            && x.OperationId == "getBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/skills"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "createBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "updateBusinessMasterDataSkill");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/master-data/skills/{skillCode}/archive"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataResourcesManage
+            && x.OperationId == "archiveBusinessMasterDataSkill");
+    }
+
+    [Fact]
+    public void MasterData_exposes_customer_credit_profile_route()
+    {
+        var contracts = MasterDataEndpointContracts.All.ToArray();
+
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/master-data/partners/{customerCode}/credit"
+            && x.PermissionCode == BusinessPermissionCodes.MasterDataPartnersRead
+            && x.OperationId == "getBusinessMasterDataPartnerCredit");
     }
 
     [Fact]
@@ -171,6 +241,234 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Product_category_catalog_commands_list_detail_update_and_archive_tree_nodes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = new ProductCategoryRepository(dbContext);
+        var create = new CreateProductCategoryCommandHandler(dbContext, repository, new MasterDataCodingService());
+
+        var root = await create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG", "Finished Goods", null, "Sellable output"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products", "CAT-FG", "Pump family"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListProductCategoriesQueryHandler(dbContext).Handle(
+            new ListProductCategoriesQuery("org-001", "env-dev", Enabled: true, Search: "pump", ParentCode: "CAT-FG", Skip: 0, Take: 10),
+            CancellationToken.None);
+        var child = Assert.Single(list.Items);
+
+        Assert.Equal("product-category", root.ResourceType);
+        Assert.Equal("CAT-FG-PUMP", child.CategoryCode);
+        Assert.Equal("CAT-FG", child.ParentCode);
+        Assert.Equal("CAT-FG/CAT-FG-PUMP", child.Path);
+
+        var updated = await new UpdateProductCategoryCommandHandler(dbContext).Handle(
+            new UpdateProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products Updated", null, "Top level family"),
+            CancellationToken.None);
+
+        Assert.Null(updated.ParentCode);
+        Assert.Equal("Pump Products Updated", updated.CategoryName);
+
+        var archived = await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG-PUMP", "retired"),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Product_category_rejects_cycle_when_parent_is_descendant()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.AddRange(
+            ProductCategory.Create("org-001", "env-dev", "CAT-ROOT", "Root", null, null),
+            ProductCategory.Create("org-001", "env-dev", "CAT-CHILD", "Child", "CAT-ROOT", null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() => new UpdateProductCategoryCommandHandler(dbContext).Handle(
+            new UpdateProductCategoryCommand("org-001", "env-dev", "CAT-ROOT", "Root", "CAT-CHILD", null),
+            CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Product_category_create_rejects_missing_parent()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateProductCategoryCommandHandler(dbContext, new ProductCategoryRepository(dbContext), new MasterDataCodingService());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => create.Handle(
+            new CreateProductCategoryCommand("org-001", "env-dev", "CAT-ORPHAN", "Orphan", "CAT-MISSING", null),
+            CancellationToken.None));
+
+        Assert.Contains("Parent product category 'CAT-MISSING' was not found.", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Product_category_archive_uses_default_reason_when_request_reason_is_blank()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.Add(ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var archived = await new ArchiveProductCategoryCommandHandler(dbContext).Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", " "),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Product_category_archive_rejects_active_child_or_sku_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ProductCategories.AddRange(
+            ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, null),
+            ProductCategory.Create("org-001", "env-dev", "CAT-PUMP", "Pump", "CAT-FG", null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ArchiveProductCategoryCommandHandler(dbContext);
+        var childReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
+            CancellationToken.None));
+        Assert.Contains("active child product category", childReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var child = await dbContext.ProductCategories.SingleAsync(x => x.CategoryCode == "CAT-PUMP", CancellationToken.None);
+        child.Disable("retired");
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-PUMP-001",
+            "Pump",
+            "ea",
+            "CAT-FG",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var skuReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ArchiveProductCategoryCommand("org-001", "env-dev", "CAT-FG", "retired"),
+            CancellationToken.None));
+        Assert.Contains("active SKU", skuReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Skill_catalog_commands_list_detail_update_and_archive_certification_rules()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var create = new CreateSkillCommandHandler(new SkillRepository(dbContext), new MasterDataCodingService());
+
+        var created = await create.Handle(
+            new CreateSkillCommand("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, "Welding certificate"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var list = await new ListSkillsQueryHandler(dbContext).Handle(
+            new ListSkillsQuery("org-001", "env-dev", Enabled: true, Search: "weld", GroupName: "Manufacturing", Skip: 0, Take: 10),
+            CancellationToken.None);
+        var item = Assert.Single(list.Items);
+
+        Assert.Equal("skill", created.ResourceType);
+        Assert.Equal("SK-WELD", item.SkillCode);
+        Assert.True(item.RequiresCertification);
+        Assert.Equal(24, item.ValidityMonths);
+
+        var updated = await new UpdateSkillCommandHandler(dbContext).Handle(
+            new UpdateSkillCommand("org-001", "env-dev", "SK-WELD", "Advanced Welding", "Manufacturing", true, 36, "Advanced certificate"),
+            CancellationToken.None);
+
+        Assert.Equal("Advanced Welding", updated.SkillName);
+        Assert.Equal(36, updated.ValidityMonths);
+
+        var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", "retired"),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Skill_archive_uses_default_reason_when_request_reason_is_blank()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var archived = await new ArchiveSkillCommandHandler(dbContext).Handle(
+            new ArchiveSkillCommand("org-001", "env-dev", "SK-WELD", ""),
+            CancellationToken.None);
+
+        Assert.False(archived.Enabled);
+    }
+
+    [Fact]
+    public async Task Business_partner_credit_query_returns_credit_master_data()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-001",
+            "customer",
+            "Credit Customer",
+            ["customer"],
+            null,
+            defaultCurrencyCode: "CNY",
+            creditLimit: 1000m,
+            creditCurrencyCode: "CNY"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetBusinessPartnerCreditQueryHandler(dbContext).Handle(
+            new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
+            CancellationToken.None);
+
+        Assert.Equal("CUST-001", response.CustomerCode);
+        Assert.Equal(1000m, response.CreditLimit);
+        Assert.Equal("CNY", response.CurrencyCode);
+    }
+
+    [Fact]
+    public async Task Business_partner_credit_query_blocks_missing_credit_limit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create("org-001", "env-dev", "CUST-001", "customer", "Credit Customer"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new GetBusinessPartnerCreditQueryHandler(dbContext).Handle(
+            new GetBusinessPartnerCreditQuery("org-001", "env-dev", "CUST-001"),
+            CancellationToken.None));
+
+        Assert.Contains("does not have a credit limit", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task List_resources_supports_reference_data_codes()
     {
         await using var provider = CreateInMemoryProvider();
@@ -212,11 +510,17 @@ public sealed class MasterDataApiContractTests
             "ean13",
             true,
             []));
-        dbContext.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create("org-001", "env-dev", "SUP-001", "supplier", "Supplier A", ["supplier", "customer"], "TAX-001"));
+        dbContext.BusinessPartners.Add(Domain.AggregatesModel.BusinessPartnerAggregate.BusinessPartner.Create("org-001", "env-dev", "SUP-001", "supplier", "Supplier A", ["supplier", "customer"], "TAX-001", creditLimit: 250000m, creditCurrencyCode: "CNY"));
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
         dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ALT", "Quality", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-001", "Line A Day Team", "DEPT-SUB", "SHIFT-DAY"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-002", "Quality Team", "DEPT-ROOT", "SHIFT-NIGHT"));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "material-type", "raw-material", "Raw Material"));
         dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -231,6 +535,8 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("supplier", partner.PartnerType);
         Assert.Equal(["supplier", "customer"], partner.PartnerRoles);
         Assert.Equal("TAX-001", partner.TaxId);
+        Assert.Equal(250000m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
 
         var line = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "production-line"), CancellationToken.None)).Resources);
         Assert.Equal("SITE-001", line.SiteCode);
@@ -249,11 +555,60 @@ public sealed class MasterDataApiContractTests
         var device = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "device-asset"), CancellationToken.None)).Resources);
         Assert.Equal("LINE-001", device.LineCode);
         Assert.Equal("WC-001", device.WorkCenterCode);
+        Assert.False(string.IsNullOrWhiteSpace(device.DeviceAssetId));
         Assert.Equal("active", device.Status);
+
+        var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
+        Assert.Equal("DEPT-SUB", childDepartment.Code);
+        Assert.Equal("DEPT-ROOT", childDepartment.ParentDepartmentCode);
+
+        var team = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "team", DepartmentCode: "DEPT-SUB"), CancellationToken.None)).Resources);
+        Assert.Equal("TEAM-001", team.Code);
+        Assert.Equal("DEPT-SUB", team.DepartmentCode);
+        Assert.Equal("SHIFT-DAY", team.ShiftCode);
+
+        var skill = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "personnel-skill", UserId: "worker-001", SkillCode: "WELD"), CancellationToken.None)).Resources);
+        Assert.Equal("worker-001", skill.UserId);
+        Assert.Equal("WELD", skill.SkillCode);
+        Assert.Equal("senior", skill.SkillLevel);
+        Assert.Equal(new DateOnly(2026, 1, 1), skill.EffectiveFrom);
+        Assert.Equal(new DateOnly(2026, 12, 31), skill.EffectiveTo);
+
+        var filteredSku = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "sku", Category: "chemical", Keyword: "raw"), CancellationToken.None)).Resources);
+        Assert.Equal("RM-001", filteredSku.Code);
+
+        var allDepartments = await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", Take: 1, All: true), CancellationToken.None);
+        Assert.Equal(3, allDepartments.Resources.Count);
+        Assert.Equal(3, allDepartments.Total);
+        Assert.False(allDepartments.Truncated);
+        Assert.Equal(5000, allDepartments.Limit);
 
         var referenceData = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "reference-data", CodeSet: "material-type"), CancellationToken.None)).Resources);
         Assert.Equal("material-type", referenceData.CodeSet);
         Assert.Equal("raw-material", referenceData.Code);
+    }
+
+    [Fact]
+    public async Task List_resources_all_mode_reports_truncation_when_limit_is_reached()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        for (var i = 0; i < 5001; i++)
+        {
+            dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", $"DEPT-{i:0000}", $"Department {i:0000}", null));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "department", All: true),
+            CancellationToken.None);
+
+        Assert.Equal(5001, response.Total);
+        Assert.Equal(5000, response.Resources.Count);
+        Assert.True(response.Truncated);
+        Assert.Equal(5000, response.Limit);
     }
 
     [Fact]
@@ -290,6 +645,157 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Business_partner_detail_exposes_commercial_contact_defaults_and_role_updates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand(
+                "org-001",
+                "env-dev",
+                "BP-407",
+                "supplier",
+                "Partner 407",
+                ["supplier"],
+                "TAX-407",
+                TaxRegionCode: "CN-SH",
+                DefaultCurrencyCode: "CNY",
+                PaymentTermsCode: "NET30",
+                PrimaryAddress: "Shanghai",
+                PrimaryContactName: "Li Wei",
+                PrimaryContactEmail: "li.wei@example.com",
+                PrimaryContactPhone: "+86-21-0000"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+        var updated = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "business-partner",
+                "BP-407",
+                Name: "Partner 407 Updated",
+                PartnerRoles: ["customer", "supplier"],
+                TaxId: "TAX-408",
+                TaxRegionCode: "CN-BJ",
+                DefaultCurrencyCode: "USD",
+                PaymentTermsCode: "NET45",
+                PrimaryAddress: "Beijing",
+                PrimaryContactName: "Wang Min",
+                PrimaryContactEmail: "wang.min@example.com",
+                PrimaryContactPhone: "+86-10-0000"),
+            CancellationToken.None);
+
+        Assert.Equal("customer", updated.PartnerType);
+        Assert.Equal(["customer", "supplier"], updated.PartnerRoles);
+        Assert.Equal("CN-BJ", updated.TaxRegionCode);
+        Assert.Equal("USD", updated.DefaultCurrencyCode);
+        Assert.Equal("NET45", updated.PaymentTermsCode);
+        Assert.Equal("Beijing", updated.PrimaryAddress);
+        Assert.Equal("Wang Min", updated.PrimaryContactName);
+        Assert.Equal("wang.min@example.com", updated.PrimaryContactEmail);
+        Assert.Equal("+86-10-0000", updated.PrimaryContactPhone);
+    }
+
+    [Fact]
+    public async Task Business_partner_update_can_clear_credit_limit()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand(
+                "org-001",
+                "env-dev",
+                "CUST-CREDIT",
+                "customer",
+                "Credit Customer",
+                ["customer"],
+                null,
+                CreditLimit: 1000m,
+                CreditCurrencyCode: "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updated = await new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext)).Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "business-partner",
+                "CUST-CREDIT",
+                ClearCreditLimit: true),
+            CancellationToken.None);
+
+        Assert.Null(updated.CreditLimit);
+        Assert.Null(updated.CreditCurrencyCode);
+    }
+
+    [Fact]
+    public async Task Business_partner_partial_update_partner_type_preserves_secondary_roles()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand(
+                "org-001",
+                "env-dev",
+                "BP-MULTI",
+                "supplier",
+                "Multi-role Partner",
+                ["supplier", "carrier"],
+                "TAX-MULTI"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+        var updated = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "business-partner",
+                "BP-MULTI",
+                PartnerType: "customer"),
+            CancellationToken.None);
+
+        Assert.Equal("customer", updated.PartnerType);
+        Assert.Equal(["customer", "carrier"], updated.PartnerRoles);
+    }
+
+    [Fact]
+    public async Task Business_partner_tax_id_uniqueness_ignores_disabled_partners()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext));
+
+        await createHandler.Handle(
+            new CreateBusinessPartnerCommand("org-001", "env-dev", "BP-OLD", "supplier", "Old Partner", ["supplier"], "TAX-REUSE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var oldPartner = await dbContext.BusinessPartners.SingleAsync(x => x.Code == "BP-OLD", CancellationToken.None);
+        oldPartner.Disable("retired");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await createHandler.Handle(
+            new CreateBusinessPartnerCommand("org-001", "env-dev", "BP-NEW", "customer", "New Partner", ["customer"], "TAX-REUSE"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("BP-NEW", created.Code);
+    }
+
+    [Fact]
     public async Task MasterData_lifecycle_commands_update_disable_enable_and_detail_by_code()
     {
         await using var provider = CreateInMemoryProvider();
@@ -310,6 +816,16 @@ public sealed class MasterDataApiContractTests
             "ean13",
             true,
             []));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "kg",
+            "g",
+            1000m,
+            0m,
+            3,
+            "half-up",
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1)));
         SeedSkuControlledReferenceData(dbContext);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -352,6 +868,389 @@ public sealed class MasterDataApiContractTests
             CancellationToken.None);
         Assert.True(enabled.Active);
         await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_uom_and_work_center_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-EA-001",
+            "Each Finished Good",
+            "ea",
+            "finished-good",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-ASSY", "Assembly", 480));
+        dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.Register("org-001", "env-dev", "DEV-ASSY", "Assembly Device", "LINE-1", "WC-ASSY"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var uomReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "ea", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active SKU", uomReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var workCenterReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-ASSY", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active device asset", workCenterReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_active_uom_conversion_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.AddRange(
+            Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"),
+            Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 0, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "kg",
+            "g",
+            1000m,
+            0m,
+            3,
+            "half-up",
+            new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "unit-of-measure", "kg", false, Reason: "retired"),
+            CancellationToken.None));
+
+        Assert.Contains("UOM conversion", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
+        {
+            BaseAddress = new Uri("https://product-engineering.local")
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None));
+
+        Assert.Contains("ProductEngineering work center usage check", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ProductEngineering_reference_checker_treats_missing_references_as_empty()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"success":true,"message":"ok","code":0,"data":{"hasActiveReference":true}}""",
+                Encoding.UTF8,
+                "application/json")
+        }))
+        {
+            BaseAddress = new Uri("https://product-engineering.local")
+        };
+        var checker = new HttpProductEngineeringReferenceUsageChecker(httpClient, new FixedInternalServiceTokenProvider());
+
+        var usage = await checker.GetWorkCenterUsageAsync(
+            "org-001",
+            "env-dev",
+            "WC-MIX",
+            CancellationToken.None);
+
+        Assert.True(usage.HasActiveReference);
+        Assert.Empty(usage.References);
+    }
+
+    [Fact]
+    public async Task MasterData_disable_rejects_product_engineering_work_center_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.Create("org-001", "env-dev", "WC-MIX", "Mixing", 480));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(
+            dbContext,
+            new FixedDownstreamReferenceChecker(new MasterDataDownstreamReferenceUsage(true, ["routing:ROUTE-MIX:A"])));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-center", "WC-MIX", false, Reason: "retired"),
+            CancellationToken.None));
+
+        Assert.Contains("ProductEngineering", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("routing:ROUTE-MIX:A", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MasterData_lifecycle_commands_update_organization_and_shift_structure_fields()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
+        dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
+        dbContext.Teams.Add(Domain.AggregatesModel.TeamAggregate.Team.Create("org-001", "env-dev", "TEAM-001", "Line A Day Team", "DEPT-SUB", "SHIFT-DAY"));
+        dbContext.Shifts.Add(Domain.AggregatesModel.ShiftAggregate.Shift.Create("org-001", "env-dev", "SHIFT-DAY", "Day", new TimeOnly(8, 0), new TimeOnly(20, 0), 720));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var department = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "department",
+                "DEPT-SUB",
+                Name: "Assembly Ops",
+                ParentDepartmentCode: "DEPT-ALT"),
+            CancellationToken.None);
+        Assert.Equal("Assembly Ops", department.DisplayName);
+        Assert.Equal("DEPT-ALT", department.ParentDepartmentCode);
+
+        var team = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "team",
+                "TEAM-001",
+                DepartmentCode: "DEPT-ROOT",
+                ShiftCode: "SHIFT-NIGHT"),
+            CancellationToken.None);
+        Assert.Equal("DEPT-ROOT", team.DepartmentCode);
+        Assert.Equal("SHIFT-NIGHT", team.ShiftCode);
+
+        var shift = await handler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "shift",
+                "SHIFT-DAY",
+                Name: "Day 8h",
+                StartsAt: new TimeOnly(8, 30),
+                EndsAt: new TimeOnly(17, 30),
+                PaidMinutes: 480),
+            CancellationToken.None);
+        Assert.Equal("Day 8h", shift.DisplayName);
+        Assert.Equal(new TimeOnly(8, 30), shift.StartsAt);
+        Assert.Equal(new TimeOnly(17, 30), shift.EndsAt);
+        Assert.Equal(480, shift.PaidMinutes);
+
+        var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var disabled = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "retired"),
+            CancellationToken.None);
+        Assert.False(disabled.Active);
+        var disabledAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "shift", "SHIFT-DAY", false, Reason: "duplicate click"),
+            CancellationToken.None);
+        Assert.False(disabledAgain.Active);
+    }
+
+    [Fact]
+    public async Task MasterData_lifecycle_commands_manage_work_calendar_details_and_uom_conversion_crud()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 3, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)));
+        var calendar = Domain.AggregatesModel.WorkCalendarAggregate.WorkCalendar.Create("org-001", "env-dev", "CAL-001", "Standard Calendar");
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        dbContext.WorkCalendars.Add(calendar);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateHandler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var calendarDetail = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "work-calendar",
+                "CAL-001",
+                Name: "Factory Calendar",
+                WorkingTimes:
+                [
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Monday),
+                    new WorkCalendarWorkingTimeDetail(DayOfWeek.Tuesday)
+                ],
+                Holidays: [new WorkCalendarHolidayDetail(new DateOnly(2026, 5, 1), "Labor Day")],
+                Exceptions: [new WorkCalendarExceptionDetail(new DateOnly(2026, 5, 2), true, new TimeOnly(9, 0), new TimeOnly(15, 0), "Make-up shift")]),
+            CancellationToken.None);
+
+        Assert.Equal("Factory Calendar", calendarDetail.DisplayName);
+        Assert.Equal(2, calendarDetail.WorkingTimes?.Count);
+        Assert.Single(calendarDetail.Holidays!);
+        Assert.Single(calendarDetail.Exceptions!);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var persistedCalendar = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "work-calendar", "CAL-001"),
+            CancellationToken.None);
+        Assert.Equal(2, persistedCalendar.WorkingTimes?.Count);
+        Assert.Equal(
+            [DayOfWeek.Monday, DayOfWeek.Tuesday],
+            persistedCalendar.WorkingTimes!.Select(x => x.DayOfWeek).OrderBy(x => x).ToArray());
+        Assert.Equal(new DateOnly(2026, 5, 1), Assert.Single(persistedCalendar.Holidays!).Date);
+
+        var conversionDetail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "uom-conversion", "kg->g", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000m, conversionDetail.Factor);
+        Assert.Equal(new DateOnly(2026, 1, 1), conversionDetail.EffectiveFrom);
+
+        var conversionUpdate = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "uom-conversion",
+                "kg->g",
+                Factor: 1000.5m,
+                Offset: 0.1m,
+                Precision: 4,
+                RoundingMode: "bankers",
+                EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000.5m, conversionUpdate.Factor);
+        Assert.Equal(0.1m, conversionUpdate.Offset);
+        Assert.Equal(4, conversionUpdate.Precision);
+        Assert.Equal("bankers", conversionUpdate.RoundingMode);
+
+        var kg = await dbContext.UnitsOfMeasure.SingleAsync(x => x.OrganizationId == "org-001" && x.EnvironmentId == "env-dev" && x.Code == "kg", CancellationToken.None);
+        kg.Disable("legacy unit");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var conversionUpdateWithDisabledUnit = await updateHandler.Handle(
+            new UpdateMasterDataResourceCommand(
+                "org-001",
+                "env-dev",
+                "uom-conversion",
+                "kg->g",
+                Factor: 1000.75m,
+                EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal(1000.75m, conversionUpdateWithDisabledUnit.Factor);
+
+        var enabledHandler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var disabled = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "superseded", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.False(disabled.Active);
+        var disabledAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "uom-conversion", "kg->g", false, Reason: "duplicate click", EffectiveFrom: new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.False(disabledAgain.Active);
+
+        var disabledCalendar = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "retired"),
+            CancellationToken.None);
+        Assert.False(disabledCalendar.Active);
+        var disabledCalendarAgain = await enabledHandler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "work-calendar", "CAL-001", false, Reason: "duplicate click"),
+            CancellationToken.None);
+        Assert.False(disabledCalendarAgain.Active);
+    }
+
+    [Fact]
+    public async Task Personnel_skill_matrix_query_groups_skills_by_worker_and_filters_by_skill()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "WELD", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-001", "QA", "junior", new DateOnly(2026, 2, 1), new DateOnly(2026, 12, 31)));
+        dbContext.PersonnelSkills.Add(Domain.AggregatesModel.PersonnelSkillAggregate.PersonnelSkill.Assign("org-001", "env-dev", "worker-002", "WELD", "junior", new DateOnly(2026, 3, 1), new DateOnly(2026, 12, 31)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListPersonnelSkillMatrixQueryHandler(dbContext);
+
+        var matrix = await handler.Handle(new ListPersonnelSkillMatrixQuery("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal(2, matrix.Rows.Count);
+        Assert.Equal(2, matrix.SkillCodes.Count);
+        Assert.Equal(2, matrix.Rows.Single(x => x.UserId == "worker-001").Skills.Count);
+
+        var weldOnly = await handler.Handle(new ListPersonnelSkillMatrixQuery("org-001", "env-dev", SkillCode: "WELD"), CancellationToken.None);
+        Assert.Equal(["WELD"], weldOnly.SkillCodes);
+        Assert.All(weldOnly.Rows, row => Assert.Single(row.Skills));
+        Assert.Equal(["worker-001", "worker-002"], weldOnly.Rows.Select(x => x.UserId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public async Task Create_uom_conversion_requires_same_dimension_and_allows_reverse_conversion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "weight", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "l", "Liter", "volume", 3, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext);
+
+        var dimensionMismatch = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "kg", "l", 1m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None));
+        Assert.Contains("same dimension", dimensionMismatch.Message, StringComparison.OrdinalIgnoreCase);
+
+        await handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var reverse = await handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "g", "kg", 0.001m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
+            CancellationToken.None);
+        Assert.Equal("g->kg", reverse.Code);
+    }
+
+    [Fact]
+    public async Task Uom_conversion_detail_exposes_effective_to()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext);
+
+        await handler.Handle(
+            new CreateUomConversionCommand("org-001", "env-dev", "box", "ea", 24m, 0m, 0, "half-up", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "uom-conversion", "box->ea"),
+            CancellationToken.None);
+
+        Assert.Equal(new DateOnly(2026, 12, 31), detail.EffectiveTo);
+
+        var list = await new ListMasterDataResourcesQueryHandler(dbContext).Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "uom-conversion"),
+            CancellationToken.None);
+        var item = Assert.Single(list.Resources);
+        Assert.Equal(new DateOnly(2026, 12, 31), item.EffectiveTo);
     }
 
     [Fact]
@@ -411,6 +1310,9 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "g", "Gram", "mass", 3, "half-up"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var created = new[]
         {
@@ -418,9 +1320,9 @@ public sealed class MasterDataApiContractTests
                 new CreateSkuCommand("org-001", "env-dev", "SKU-001", "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, ["rohs"]),
                 CancellationToken.None),
             await new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext)).Handle(
-                new CreateUnitOfMeasureCommand("org-001", "env-dev", "kg", "Kilogram", "mass", 3, "half-up"),
+                new CreateUnitOfMeasureCommand("org-001", "env-dev", "lb", "Pound", "mass", 3, "half-up"),
                 CancellationToken.None),
-            await new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext)).Handle(
+            await new CreateUomConversionCommandHandler(new UomConversionRepository(dbContext), dbContext).Handle(
                 new CreateUomConversionCommand("org-001", "env-dev", "kg", "g", 1000m, 0m, 3, "half-up", new DateOnly(2026, 1, 1)),
                 CancellationToken.None),
             await new CreateBusinessPartnerCommandHandler(new BusinessPartnerRepository(dbContext)).Handle(
@@ -562,6 +1464,224 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Create_sku_command_preserves_channel_uoms_planning_profile_and_lifecycle_flags()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "case", "Case", "quantity", 0, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create("org-001", "env-dev", "box", "ea", 24m, 0m, 0, "half-up", new DateOnly(2026, 1, 1)));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create("org-001", "env-dev", "case", "ea", 12m, 0m, 0, "half-up", new DateOnly(2026, 1, 1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            dbContext);
+
+        await handler.Handle(
+            new CreateSkuCommand(
+                "org-001",
+                "env-dev",
+                "SKU-407",
+                "Issue 407 SKU",
+                "ea",
+                "electronic",
+                "finished-goods",
+                "none",
+                "none",
+                "none",
+                "ambient",
+                "ean13",
+                true,
+                [],
+                InventoryUomCode: "ea",
+                PurchaseUomCode: "box",
+                SalesUomCode: "case",
+                ManufacturingUomCode: "ea",
+                ProcurementType: "make",
+                MrpType: "pd",
+                LotSizingPolicy: "fixed-lot",
+                MinimumLotSize: 10m,
+                MaximumLotSize: 1000m,
+                LotSizeMultiple: 5m,
+                SafetyStockQuantity: 25m,
+                ReorderPointQuantity: 50m,
+                PlannedDeliveryTimeDays: 7,
+                InHouseProductionTimeDays: 2,
+                GoodsReceiptProcessingTimeDays: 1,
+                AbcClass: "A",
+                LifecycleStatus: "blocked",
+                PurchasingEnabled: false,
+                ManufacturingEnabled: true,
+                SalesEnabled: false),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "sku", "SKU-407"),
+            CancellationToken.None);
+
+        Assert.Equal("box", detail.PurchaseUomCode);
+        Assert.Equal("case", detail.SalesUomCode);
+        Assert.Equal("make", detail.ProcurementType);
+        Assert.Equal("pd", detail.MrpType);
+        Assert.Equal("fixed-lot", detail.LotSizingPolicy);
+        Assert.Equal(25m, detail.SafetyStockQuantity);
+        Assert.Equal(50m, detail.ReorderPointQuantity);
+        Assert.Equal("blocked", detail.LifecycleStatus);
+        Assert.False(detail.PurchasingEnabled);
+        Assert.True(detail.ManufacturingEnabled);
+        Assert.False(detail.SalesEnabled);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_rejects_missing_or_expired_channel_uom_conversion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "case", "Case", "quantity", 0, "half-up"));
+        dbContext.UomConversions.Add(Domain.AggregatesModel.UomConversionAggregate.UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "box",
+            "ea",
+            24m,
+            0m,
+            0,
+            "half-up",
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-10),
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new CreateSkuCommandHandler(
+            new SkuRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            dbContext);
+
+        var expired = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-EXPIRED-UOM", "Expired UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], PurchaseUomCode: "box"),
+            CancellationToken.None));
+        Assert.Contains("requires an active direct conversion", expired.Message, StringComparison.Ordinal);
+
+        var missing = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateSkuCommand("org-001", "env-dev", "SKU-MISSING-UOM", "Missing UOM", "ea", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], SalesUomCode: "case"),
+            CancellationToken.None));
+        Assert.Contains("requires an active direct conversion", missing.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Update_sku_command_rejects_missing_channel_uom_conversion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SeedSkuControlledReferenceData(dbContext);
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "ea", "Each", "quantity", 0, "half-up"));
+        dbContext.UnitsOfMeasure.Add(Domain.AggregatesModel.UnitOfMeasureAggregate.UnitOfMeasure.Create("org-001", "env-dev", "box", "Box", "quantity", 0, "half-up"));
+        dbContext.Skus.Add(Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "SKU-UPDATE-UOM",
+            "Update UOM",
+            "ea",
+            "electronic",
+            "finished-goods",
+            "none",
+            "none",
+            "none",
+            "ambient",
+            "ean13",
+            true,
+            []));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new UpdateMasterDataResourceCommandHandler(dbContext, new ReferenceDataCodeRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new UpdateMasterDataResourceCommand("org-001", "env-dev", "sku", "SKU-UPDATE-UOM", PurchaseUomCode: "box"),
+            CancellationToken.None));
+
+        Assert.Contains("requires an active direct conversion", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Assign_personnel_skill_command_validates_skill_and_level_reference_data_when_repository_is_available()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+
+        var missingSkill = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+        Assert.Contains("skill:welding", missingSkill.Message, StringComparison.Ordinal);
+
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", "welding", "焊接"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var missingLevel = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+        Assert.Contains("skill-level:senior", missingLevel.Message, StringComparison.Ordinal);
+
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var created = await handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", "welding", "senior", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None);
+
+        Assert.Equal("personnel-skill", created.ResourceType);
+        Assert.Equal("worker-001:welding", created.Code);
+    }
+
+    [Theory]
+    [InlineData("", "senior", "SkillCode", "skill")]
+    [InlineData("welding", "", "Level", "skill-level")]
+    public async Task Assign_personnel_skill_command_rejects_blank_controlled_reference_fields(
+        string skillCode,
+        string level,
+        string expectedField,
+        string expectedCodeSet)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext));
+        if (!string.IsNullOrWhiteSpace(skillCode))
+        {
+            dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill", skillCode, skillCode));
+        }
+
+        if (!string.IsNullOrWhiteSpace(level))
+        {
+            dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", level, level));
+        }
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand("org-001", "env-dev", "worker-001", skillCode, level, new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31)),
+            CancellationToken.None));
+
+        Assert.Contains($"Personnel skill field '{expectedField}'", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"'{expectedCodeSet}'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Master_data_seed_is_idempotent_and_creates_controlled_reference_data()
     {
         await using var provider = CreateInMemoryProvider();
@@ -592,7 +1712,7 @@ public sealed class MasterDataApiContractTests
     public async Task Create_sku_command_generates_unique_server_codes_for_parallel_requests()
     {
         await using var provider = CreateInMemoryProvider();
-        var numbering = new MasterDataNumberingService();
+        var numbering = new MasterDataCodingService();
 
         var tasks = Enumerable.Range(1, 20)
             .Select(async index =>
@@ -619,7 +1739,7 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = new MasterDataNumberingService();
+        var numbering = new MasterDataCodingService();
         var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
         var command = new CreateSkuCommand("org-001", "env-dev", null, "Finished Good", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-001");
 
@@ -638,7 +1758,7 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateCodingService(scope));
         var command = new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-display-name");
 
         var first = await handler.Handle(command, CancellationToken.None);
@@ -659,8 +1779,8 @@ public sealed class MasterDataApiContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var numbering = CreateNumberingService(scope);
-        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), numbering);
+        var coding = CreateCodingService(scope);
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), coding);
 
         await handler.Handle(
             new CreateSkuCommand("org-001", "env-dev", null, "Original Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
@@ -671,17 +1791,57 @@ public sealed class MasterDataApiContractTests
             new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
             CancellationToken.None));
 
-        Assert.Contains("different sku create payload", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Create_sku_command_db_numbering_generates_unique_codes_for_parallel_requests_after_counter_exists()
+    public async Task Create_unit_of_measure_command_reuses_existing_result_for_same_idempotency_key()
     {
-        await using var provider = CreateInMemoryProvider("master-data-api-contract-db-numbering-parallel");
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext), CreateCodingService(scope));
+        var command = new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Kilogram", "mass", 3, "half-up", "uom-idempotent-001");
+
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var second = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(first.Code, second.Code);
+        Assert.Single(dbContext.UnitsOfMeasure);
+    }
+
+    [Fact]
+    public async Task Create_unit_of_measure_command_rejects_same_idempotency_key_with_different_payload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreateUnitOfMeasureCommandHandler(new UnitOfMeasureRepository(dbContext), CreateCodingService(scope));
+
+        await handler.Handle(
+            new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Kilogram", "mass", 3, "half-up", "uom-idempotent-conflict"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Gram", "mass", 3, "half-up", "uom-idempotent-conflict"),
+            CancellationToken.None));
+
+        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Create_sku_command_db_coding_generates_unique_codes_for_parallel_requests_after_counter_exists()
+    {
+        await using var provider = CreateInMemoryProvider("master-data-api-contract-db-coding-parallel");
         using (var seedScope = provider.CreateScope())
         {
             var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var seedHandler = new CreateSkuCommandHandler(new SkuRepository(seedContext), CreateNumberingService(seedScope));
+            var seedHandler = new CreateSkuCommandHandler(new SkuRepository(seedContext), CreateCodingService(seedScope));
             await seedHandler.Handle(
                 new CreateSkuCommand("org-001", "env-dev", null, "Seed SKU", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-db-seed"),
                 CancellationToken.None);
@@ -693,7 +1853,7 @@ public sealed class MasterDataApiContractTests
             {
                 using var scope = provider.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
+                var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateCodingService(scope));
                 var result = await handler.Handle(
                     new CreateSkuCommand("org-001", "env-dev", null, $"Parallel SKU {index}", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], $"sku-db-parallel-{index}"),
                     CancellationToken.None);
@@ -708,42 +1868,42 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public async Task Create_sku_command_db_numbering_reserves_counter_before_unit_of_work_save()
+    public async Task Create_sku_command_db_coding_reserves_counter_before_unit_of_work_save()
     {
-        const string databaseName = "master-data-api-contract-db-numbering-uow";
+        const string databaseName = "master-data-api-contract-db-coding-uow";
         await using var provider = CreateInMemoryProvider(databaseName);
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateCodingService(scope));
 
         await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Numbering", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-deferred-numbering"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Deferred Coding", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-deferred-coding"),
             CancellationToken.None);
 
         using var observerScope = provider.CreateScope();
         var observerContext = observerScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Single(observerContext.NumberingCounters);
-        Assert.Empty(observerContext.NumberingIdempotencyKeys);
+        Assert.Single(observerContext.CodeCounters);
+        Assert.Empty(observerContext.CodeIdempotencyKeys);
         Assert.Empty(observerContext.Skus);
     }
 
     [Fact]
-    public async Task Create_sku_command_persists_numbering_counter_and_idempotency_key()
+    public async Task Create_sku_command_persists_coding_counter_and_idempotency_key()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateNumberingService(scope));
+        var handler = new CreateSkuCommandHandler(new SkuRepository(dbContext), CreateCodingService(scope));
 
         var result = await handler.Handle(
-            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Numbering", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-persisted-numbering"),
+            new CreateSkuCommand("org-001", "env-dev", null, "Persisted Coding", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-persisted-coding"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Matches("^SKU-[0-9]{8}-[0-9]{6}$", result.Code);
-        Assert.Single(dbContext.NumberingCounters);
-        var idempotency = Assert.Single(dbContext.NumberingIdempotencyKeys);
-        Assert.Equal(result.Code, idempotency.Number);
+        Assert.Single(dbContext.CodeCounters);
+        var idempotency = Assert.Single(dbContext.CodeIdempotencyKeys);
+        Assert.Equal(result.Code, idempotency.Code);
     }
 
     private static ServiceProvider CreateInMemoryProvider(string? databaseName = null)
@@ -759,11 +1919,11 @@ public sealed class MasterDataApiContractTests
         return services.BuildServiceProvider();
     }
 
-    private static MasterDataNumberingService CreateNumberingService(IServiceScope scope)
+    private static MasterDataCodingService CreateCodingService(IServiceScope scope)
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var serviceScopeFactory = scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>();
-        return new MasterDataNumberingService(dbContext, serviceScopeFactory);
+        return new MasterDataCodingService(dbContext, serviceScopeFactory);
     }
 
     private static void SeedSkuControlledReferenceData(ApplicationDbContext dbContext)
@@ -781,6 +1941,31 @@ public sealed class MasterDataApiContractTests
             ReferenceDataCode.Create("org-001", "env-dev", "storage-condition", "ambient", "Ambient"),
             ReferenceDataCode.Create("org-001", "env-dev", "barcode-rule", "ean13", "EAN-13"),
             ReferenceDataCode.Create("org-001", "env-dev", "compliance-tag", "rohs", "RoHS"));
+    }
+
+    private sealed class FixedDownstreamReferenceChecker(MasterDataDownstreamReferenceUsage usage) : IMasterDataDownstreamReferenceChecker
+    {
+        public Task<MasterDataDownstreamReferenceUsage> GetWorkCenterUsageAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(usage);
+        }
+    }
+
+    private sealed class FixedInternalServiceTokenProvider : IInternalServiceTokenProvider
+    {
+        public string BearerToken => "test-internal-token";
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(send(request));
+        }
     }
 
     private static bool HasInternalServicePolicy(IEnumerable<RouteEndpoint> endpoints, string route)

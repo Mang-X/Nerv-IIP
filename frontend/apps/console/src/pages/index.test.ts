@@ -187,7 +187,9 @@ describe('Console index page', () => {
 
     const dangerBadges = wrapper.findAll('[aria-label="状态：不健康"]')
     expect(dangerBadges.length).toBeGreaterThan(0)
-    expect(dangerBadges.some((badge) => badge.classes().includes('text-destructive'))).toBe(true)
+    expect(dangerBadges.some((badge) => badge.classes().includes('text-destructive-strong'))).toBe(
+      true,
+    )
   })
 
   it('distinguishes detail load failure from the empty detail state and retries manually', async () => {

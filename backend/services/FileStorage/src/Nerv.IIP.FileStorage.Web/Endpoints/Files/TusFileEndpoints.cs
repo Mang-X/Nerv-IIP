@@ -217,8 +217,16 @@ public sealed class DownloadGrantContentEndpoint(IFileStorageService files, ILoc
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
+        var organizationId = HttpContext.Request.Headers[FileStorageTransferHeaders.OrganizationId].ToString();
+        var environmentId = HttpContext.Request.Headers[FileStorageTransferHeaders.EnvironmentId].ToString();
         var uploadSessionId = files is ILocalFileContentIndex index
-            ? await index.GetUploadSessionIdForDownloadGrantAsync(Route<string>("downloadGrantId")!, ct)
+                && !string.IsNullOrWhiteSpace(organizationId)
+                && !string.IsNullOrWhiteSpace(environmentId)
+            ? await index.GetUploadSessionIdForDownloadGrantAsync(
+                Route<string>("downloadGrantId")!,
+                organizationId,
+                environmentId,
+                ct)
             : null;
 
         if (uploadSessionId is null

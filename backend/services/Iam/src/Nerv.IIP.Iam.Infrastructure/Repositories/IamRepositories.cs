@@ -3,6 +3,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SecurityAuditAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
@@ -146,7 +147,6 @@ public interface IMembershipRepository : IRepository<Membership, MembershipId>
         OrganizationId organizationId,
         IamEnvironmentId environmentId,
         CancellationToken cancellationToken = default);
-    Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default);
     Task<bool> UserHasPermissionAsync(
         UserId userId,
         OrganizationId organizationId,
@@ -190,23 +190,6 @@ public sealed class MembershipRepository(ApplicationDbContext context)
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId,
             cancellationToken);
-    }
-
-    public async Task<bool> UserHasPermissionAsync(
-        UserId userId,
-        string permissionCode,
-        CancellationToken cancellationToken = default)
-    {
-        return await (
-            from membership in DbContext.Memberships
-            join membershipRole in DbContext.MembershipRoles on membership.Id equals membershipRole.MembershipId
-            join role in DbContext.Roles on membershipRole.RoleId equals role.Id
-            join rolePermission in DbContext.RolePermissions on role.Id equals rolePermission.RoleId
-            where membership.UserId == userId
-                && role.Deleted == NotDeleted
-                && rolePermission.PermissionCode == permissionCode
-            select rolePermission.Id)
-            .AnyAsync(cancellationToken);
     }
 
     public async Task<bool> UserHasPermissionAsync(
@@ -276,8 +259,16 @@ public interface IUserSessionRepository : IRepository<UserSession, UserSessionId
         string refreshTokenHash,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
+    Task<UserSession?> GetByRefreshTokenHashAsync(
+        string refreshTokenHash,
+        CancellationToken cancellationToken = default);
     Task<UserSession?> ConsumeActiveRefreshTokenAsync(
         string refreshTokenHash,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default);
+    Task<int> RevokeFamilyAsync(
+        string tokenFamilyId,
         DateTimeOffset now,
         string revokedReason,
         CancellationToken cancellationToken = default);
@@ -321,6 +312,14 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
                 cancellationToken);
     }
 
+    public async Task<UserSession?> GetByRefreshTokenHashAsync(
+        string refreshTokenHash,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .SingleOrDefaultAsync(x => x.RefreshTokenHash == refreshTokenHash, cancellationToken);
+    }
+
     public async Task<UserSession?> ConsumeActiveRefreshTokenAsync(
         string refreshTokenHash,
         DateTimeOffset now,
@@ -356,6 +355,21 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
         }
 
         return session;
+    }
+
+    public async Task<int> RevokeFamilyAsync(
+        string tokenFamilyId,
+        DateTimeOffset now,
+        string revokedReason,
+        CancellationToken cancellationToken = default)
+    {
+        return await DbContext.UserSessions
+            .Where(x => x.TokenFamilyId == tokenFamilyId && x.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.RevokedAtUtc, now)
+                    .SetProperty(x => x.RevokedReason, revokedReason),
+                cancellationToken);
     }
 
     public async Task<IReadOnlyList<UserSession>> ListAsync(CancellationToken cancellationToken = default)
@@ -395,22 +409,20 @@ public sealed class UserSessionRepository(ApplicationDbContext context)
 
 public interface IConnectorHostCredentialRepository : IRepository<ConnectorHostCredential, ConnectorHostCredentialId>
 {
-    Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    Task<ConnectorHostCredential?> GetByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class ConnectorHostCredentialRepository(ApplicationDbContext context)
     : RepositoryBase<ConnectorHostCredential, ConnectorHostCredentialId, ApplicationDbContext>(context), IConnectorHostCredentialRepository
 {
-    public async Task<ConnectorHostCredential?> GetByConnectorHostAndSecretHashAsync(
+    public async Task<ConnectorHostCredential?> GetByConnectorHostIdAsync(
         string connectorHostId,
-        string secretHash,
         CancellationToken cancellationToken = default)
     {
         return await DbContext.ConnectorHostCredentials
-            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId && x.SecretHash == secretHash, cancellationToken);
+            .SingleOrDefaultAsync(x => x.ConnectorHostId == connectorHostId, cancellationToken);
     }
 }
 
@@ -498,3 +510,82 @@ public interface ISeedManifestRepository : IRepository<SeedManifest, SeedManifes
 
 public sealed class SeedManifestRepository(ApplicationDbContext context)
     : RepositoryBase<SeedManifest, SeedManifestId, ApplicationDbContext>(context), ISeedManifestRepository;
+
+public interface ISecurityAuditRepository : IRepository<SecurityAuditRecord, SecurityAuditRecordId>
+{
+    Task<IReadOnlyList<SecurityAuditRecord>> ListAsync(
+        string? organizationId,
+        string? environmentId,
+        string? action,
+        string? targetType,
+        string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class SecurityAuditRepository(ApplicationDbContext context)
+    : RepositoryBase<SecurityAuditRecord, SecurityAuditRecordId, ApplicationDbContext>(context), ISecurityAuditRepository
+{
+    public async Task<IReadOnlyList<SecurityAuditRecord>> ListAsync(
+        string? organizationId,
+        string? environmentId,
+        string? action,
+        string? targetType,
+        string? targetId,
+        DateTimeOffset? occurredFromUtc,
+        DateTimeOffset? occurredToUtc,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbContext.SecurityAuditRecords.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(organizationId))
+        {
+            query = query.Where(x => x.OrganizationId == organizationId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(environmentId))
+        {
+            query = query.Where(x => x.EnvironmentId == environmentId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            query = query.Where(x => x.Action == action);
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetType))
+        {
+            query = query.Where(x => x.TargetType == targetType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(targetId))
+        {
+            query = query.Where(x => x.TargetId == targetId);
+        }
+
+        if (occurredFromUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc >= occurredFromUtc);
+        }
+
+        if (occurredToUtc is not null)
+        {
+            query = query.Where(x => x.OccurredAtUtc <= occurredToUtc);
+        }
+
+        return await query
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(Math.Clamp(take, 1, 200))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        await DbContext.SaveChangesAsync(cancellationToken);
+    }
+}

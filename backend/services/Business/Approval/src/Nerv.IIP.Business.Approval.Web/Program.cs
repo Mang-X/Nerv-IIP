@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
+using Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
+using Nerv.IIP.Business.Approval.Web.Application.Scheduling;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -55,6 +57,9 @@ try
     }
 
     builder.Services.AddApprovalPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton<IApprovalClock, SystemApprovalClock>();
+    builder.Services.AddHostedService<ApprovalOverdueScheduler>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();

@@ -32,8 +32,15 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
     var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
     var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+    var erpBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    var mesBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    builder.Services.AddHttpClient<IPlanningParameterSnapshotClient, HttpPlanningMasterDataPlanningParameterSnapshotClient>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient<IPlanningProductEngineeringSnapshotClient, HttpPlanningProductEngineeringSnapshotClient>(client =>
     {
         client.BaseAddress = productEngineeringBaseAddress;
@@ -41,6 +48,11 @@ try
     builder.Services.AddHttpClient<IPlanningInventorySnapshotClient, HttpPlanningInventorySnapshotClient>(client =>
     {
         client.BaseAddress = inventoryBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddPlanningScheduledReceiptSourceClients(erpBaseAddress, mesBaseAddress);
+    builder.Services.AddHttpClient<IPlanningSuggestionDownstreamBridge, HttpMesPlanningSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
@@ -67,7 +79,7 @@ try
     }
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<DemandPlanningNumberingService>();
+    builder.Services.AddScoped<DemandPlanningCodingService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     if (string.Equals(builder.Configuration["Planning:InputProvider"], "Fixture", StringComparison.OrdinalIgnoreCase))

@@ -24,7 +24,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nerv.IIP.Business.Erp.Web\Nerv.IIP.Business.Erp.Web.csproj" />
-    <ProjectReference Include="..\..\..\..\..\common\Numbering\Nerv.IIP.Numbering\Nerv.IIP.Numbering.csproj" />
+    <ProjectReference Include="..\..\..\Wms\src\Nerv.IIP.Business.Wms.Domain\Nerv.IIP.Business.Wms.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" Aliases="WmsWeb" />
+    <ProjectReference Include="..\..\..\..\..\common\Contracts\Nerv.IIP.Contracts.Approval\Nerv.IIP.Contracts.Approval.csproj" />
+    <ProjectReference Include="..\..\..\..\..\common\Coding\Nerv.IIP.Coding\Nerv.IIP.Coding.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\Testing\Nerv.IIP.Testing\Nerv.IIP.Testing.csproj" />
   </ItemGroup>
 

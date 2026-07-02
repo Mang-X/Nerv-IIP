@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
 namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
 
 public static class ErpIntegrationEventTypes
@@ -29,7 +31,10 @@ public sealed record ErpIntegrationEvent<TPayload>(
     string EnvironmentId,
     string Actor,
     string IdempotencyKey,
-    TPayload Payload);
+    TPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record PurchaseRequisitionCreatedPayload(
     string PurchaseRequisitionId,
@@ -55,6 +60,23 @@ public sealed record PurchaseReceiptRecordedPayload(
     string SupplierCode,
     string SiteCode,
     string QualityStatus);
+
+public sealed record PurchaseReceiptRecordedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    PurchaseReceiptRecordedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record DeliveryOrderReleasedPayload(string DeliveryOrderId, string DeliveryOrderNo, string SalesOrderNo, string CustomerCode);
 public sealed record AccountPayableCreatedPayload(string AccountPayableId, string PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode);

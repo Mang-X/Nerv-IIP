@@ -9,9 +9,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
+  SidebarProBrand,
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
@@ -52,20 +50,7 @@ defineEmits<{
   <SidebarProvider>
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" as-child>
-              <RouterLink :to="{ path: '/' }">
-                <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground font-extrabold text-sm">
-                  N
-                </div>
-                <div class="grid flex-1 text-left text-sm leading-tight">
-                  <span class="truncate font-medium">{{ title }}</span>
-                </div>
-              </RouterLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <SidebarProBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
       </SidebarHeader>
       <SidebarContent>
         <NavMain :items="navItems" :label="navLabel" />

@@ -1,3 +1,5 @@
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
+
 namespace Nerv.IIP.Iam.Web.Application.Auth;
 
 public sealed record LoginRequest(string LoginName, string Password);
@@ -46,11 +48,13 @@ public interface IIamAuthService
         string? ipAddress,
         CancellationToken cancellationToken);
 
-    Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken);
+    Task RevokeSessionAsync(
+        string sessionId,
+        string reason,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken);
 
     Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken);
-
-    Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken);
 
     Task<bool> UserHasPermissionAsync(
         string userId,

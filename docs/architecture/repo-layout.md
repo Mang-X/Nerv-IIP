@@ -18,7 +18,18 @@ Nerv-IIP/
     architecture/
   frontend/
     apps/
+      console/
+      business-console/
+      business-pda/
+      design-system/
+      docs/
     packages/
+      ui/
+      ui-mobile/
+      app-shell/
+      api-client/
+      auth/
+      business-core/
   backend/
     services/
       Business/
@@ -41,14 +52,14 @@ Nerv-IIP/
 
 ### frontend
 
-- apps：真实前端应用入口。
-- packages：共享 UI、共享类型、API 客户端、壳层能力、layer 包。
+- apps：真实前端应用入口。当前包含主平台 `console`、业务 PC 控制台 `business-console`、一线作业 PDA `business-pda`、`design-system` 文档/预览站和 `docs` 产品文档站。
+- packages：共享 UI、移动 UI、API 客户端、壳层、认证复用和业务前端内核包。当前包含 `ui`、`ui-mobile`、`app-shell`、`api-client`、`auth` 和 `business-core`；`layer-base`、`layer-platform`、`shared-types` 等只作为长期边界预留，未出现真实复用前不得创建空包。
 - frontend 不放后端工程、Connector Host 工程或部署脚本。
-- 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console。
+- 主平台控制台放在 `frontend/apps/console`；真实业务 CRUD 与业务工作流控制台放在 `frontend/apps/business-console`，不得把 MES/WMS/ERP/PDM/CMMS 等业务页面塞进主平台 console；面向最终用户的产品文档正文放在 `frontend/apps/docs`，不放入 Business Console 页面。
 
 ### backend
 
-- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。
+- services：平台领域服务，如 IAM、FileStorage、AppHub、Ops、Notification、AI Integration、Knowledge；业务平台扩展服务在单仓过渡阶段只能放在 `services/Business/{Context}` 下。当前业务服务包括 MasterData、ProductEngineering、Inventory、Quality、Mes、DemandPlanning、BarcodeLabel、Approval、Wms、IndustrialTelemetry、Maintenance、Erp 和 Scheduling。
 - gateway：PlatformGateway、BusinessGateway 与前端聚合接口。PlatformGateway 只承载主平台控制面 facade；BusinessGateway 承载业务前端或业务移动端 facade。
 - common：窄共享库，如 Contracts、Sdk、Caching、Observability、Testing。
 - tests：后端测试项目与测试宿主。
@@ -64,6 +75,7 @@ Nerv-IIP/
 - 示例：backend/services/AppHub/src/Nerv.IIP.AppHub.Web、backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web、backend/services/AppHub/src/Nerv.IIP.AppHub.Domain、backend/services/AppHub/src/Nerv.IIP.AppHub.Infrastructure。
 - 业务平台扩展服务示例：backend/services/Business/ProductEngineering/src/Nerv.IIP.Business.ProductEngineering.Web、backend/services/Business/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Domain、backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web。
 - 主平台服务不得引用 backend/services/Business 下的 Web、Domain、Infrastructure 项目；业务服务只能通过 Platform SDK、公开 Contracts、OpenAPI、IntegrationEvent 和 IAM 授权上下文消费主平台能力。
+- Domain 项目不得引用查询、读模型或算法输出契约项目；公开 API DTO、跨服务 DTO 与算法契约应在 Web/Application 或 Infrastructure 边界映射为领域输入、领域快照或领域 fact。
 
 ### connector-hosts
 
@@ -98,6 +110,7 @@ Nerv-IIP/
 9. 每个平台服务不得各自创建长期维护的 Aspire AppHost；统一平台编排入口归 infra/aspire。
 10. 业务平台扩展不得把 PDM/PLM、MPS/MRP、Scheduling/APS、MES、WMS、ERP、IIoT 或 CMMS 领域规则写入 PlatformGateway、IAM、AppHub、Ops 或主平台 console。
 11. BusinessGateway 可以通过公开 HTTP 契约、OpenAPI DTO、Platform SDK、IAM 授权上下文和 internal service token 调用业务服务，但不得引用 `backend/services/Business` 下的 Web、Domain 或 Infrastructure 项目。
+12. 服务间共享 DTO 必须通过 backend/common/Contracts 或 Sdk 的窄边界复用；调用方不得在本服务内长期复制其他服务的公开请求/响应 DTO。
 
 ## 非目标
 

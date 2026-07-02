@@ -2,11 +2,13 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.BusinessPartnerAggrega
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DepartmentAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.PersonnelSkillAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductCategoryAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ProductionLineAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkillAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamMemberAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
@@ -58,11 +60,43 @@ public sealed class MasterDataAggregateTests
     {
         var workCenter = WorkCenter.Create("org-001", "env-dev", "WC-CNC-01", "CNC Cell 01", 480);
         var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-DAY", "Day Shift Calendar");
-        calendar.AddWorkingTime(DayOfWeek.Monday, TimeOnly.FromTimeSpan(TimeSpan.FromHours(8)), TimeOnly.FromTimeSpan(TimeSpan.FromHours(16)));
+        calendar.AddWorkingDay(DayOfWeek.Monday);
 
         Assert.Equal(480, workCenter.CapacityMinutesPerDay);
         Assert.Single(calendar.WorkingTimes);
         Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.Create("org-001", "env-dev", "WC-BAD", "Bad Cell", 0));
+    }
+
+    [Fact]
+    public void Work_calendar_working_times_are_days_only_and_do_not_duplicate_shift_windows()
+    {
+        var properties = typeof(WorkCalendarWorkingTime)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["DayOfWeek"], properties);
+    }
+
+    [Fact]
+    public void Work_calendar_deduplicates_recurring_working_days()
+    {
+        var calendar = WorkCalendar.Create("org-001", "env-dev", "CAL-DAY", "Day Shift Calendar");
+
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.AddWorkingDay(DayOfWeek.Monday);
+        calendar.Update(
+            "Day Shift Calendar",
+            [
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Monday),
+                new WorkCalendarWorkingTime(DayOfWeek.Tuesday)
+            ],
+            null,
+            null);
+
+        Assert.Equal([DayOfWeek.Monday, DayOfWeek.Tuesday], calendar.WorkingTimes.Select(x => x.DayOfWeek).OrderBy(x => x).ToArray());
     }
 
     [Fact]
@@ -142,6 +176,311 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Sku_can_hold_channel_uoms_planning_defaults_and_lifecycle_gates()
+    {
+        var sku = Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-PLAN-001",
+            "Planned Finished Good",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            inventoryUomCode: "EA",
+            purchaseUomCode: "BOX",
+            salesUomCode: "CASE",
+            manufacturingUomCode: "EA",
+            procurementType: "make",
+            mrpType: "pd",
+            lotSizingPolicy: "fixed-lot",
+            minimumLotSize: 10m,
+            maximumLotSize: 1000m,
+            lotSizeMultiple: 5m,
+            safetyStockQuantity: 25m,
+            reorderPointQuantity: 50m,
+            plannedDeliveryTimeDays: 7,
+            inHouseProductionTimeDays: 2,
+            goodsReceiptProcessingTimeDays: 1,
+            abcClass: "A",
+            lifecycleStatus: "blocked",
+            purchasingEnabled: false,
+            manufacturingEnabled: true,
+            salesEnabled: false);
+
+        Assert.Equal("BOX", sku.PurchaseUomCode);
+        Assert.Equal("CASE", sku.SalesUomCode);
+        Assert.Equal("make", sku.ProcurementType);
+        Assert.Equal("pd", sku.MrpType);
+        Assert.Equal("fixed-lot", sku.LotSizingPolicy);
+        Assert.Equal(25m, sku.SafetyStockQuantity);
+        Assert.Equal(50m, sku.ReorderPointQuantity);
+        Assert.Equal(7, sku.PlannedDeliveryTimeDays);
+        Assert.Equal("A", sku.AbcClass);
+        Assert.Equal("blocked", sku.LifecycleStatus);
+        Assert.False(sku.PurchasingEnabled);
+        Assert.True(sku.ManufacturingEnabled);
+        Assert.False(sku.SalesEnabled);
+    }
+
+    [Fact]
+    public void Sku_rejects_invalid_lifecycle_status()
+    {
+        Assert.Throws<ArgumentException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-LIFE",
+            "Bad Lifecycle",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            lifecycleStatus: "retired"));
+    }
+
+    [Fact]
+    public void Sku_rejects_invalid_abc_classification()
+    {
+        Assert.Throws<ArgumentException>(() => Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-BAD-ABC",
+            "Bad ABC",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            abcClass: "Z"));
+    }
+
+    [Fact]
+    public void Sku_obsolete_status_is_terminal_and_disables_business_usage()
+    {
+        var sku = Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            "FG-OBSOLETE",
+            "Obsolete Finished Good",
+            "EA",
+            "finished-good",
+            "finished-goods",
+            "lot-required",
+            "not-serialized",
+            "SHELF-24M",
+            "ambient",
+            "ean13",
+            true,
+            [],
+            lifecycleStatus: "active",
+            purchasingEnabled: true,
+            manufacturingEnabled: true,
+            salesEnabled: true);
+
+        sku.UpdateIndustrial(
+            sku.Name,
+            sku.BaseUomCode,
+            sku.Category,
+            sku.MaterialType,
+            sku.BatchTrackingPolicy,
+            sku.SerialTrackingPolicy,
+            sku.ShelfLifePolicyCode,
+            sku.StorageConditionCode,
+            sku.DefaultBarcodeRuleCode,
+            sku.QualityRequired,
+            lifecycleStatus: "obsolete",
+            purchasingEnabled: true,
+            manufacturingEnabled: true,
+            salesEnabled: true);
+
+        Assert.Equal("obsolete", sku.LifecycleStatus);
+        Assert.False(sku.PurchasingEnabled);
+        Assert.False(sku.ManufacturingEnabled);
+        Assert.False(sku.SalesEnabled);
+        Assert.Throws<InvalidOperationException>(() => sku.UpdateIndustrial(
+            "Revived Finished Good",
+            sku.BaseUomCode,
+            sku.Category,
+            sku.MaterialType,
+            sku.BatchTrackingPolicy,
+            sku.SerialTrackingPolicy,
+            sku.ShelfLifePolicyCode,
+            sku.StorageConditionCode,
+            sku.DefaultBarcodeRuleCode,
+            sku.QualityRequired,
+            lifecycleStatus: "active"));
+    }
+
+    [Fact]
+    public void Business_partner_update_changes_primary_role_and_commercial_defaults()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-001",
+            "supplier",
+            "Partner",
+            ["supplier"],
+            "TAX-001",
+            taxRegionCode: "CN-SH",
+            defaultCurrencyCode: "CNY",
+            paymentTermsCode: "NET30",
+            primaryAddress: "Shanghai",
+            primaryContactName: "Li Wei",
+            primaryContactEmail: "li.wei@example.com",
+            primaryContactPhone: "+86-21-0000");
+
+        partner.Update(
+            "Partner Updated",
+            ["customer", "supplier"],
+            "TAX-002",
+            taxRegionCode: "CN-BJ",
+            defaultCurrencyCode: "USD",
+            paymentTermsCode: "NET45",
+            primaryAddress: "Beijing",
+            primaryContactName: "Wang Min",
+            primaryContactEmail: "wang.min@example.com",
+            primaryContactPhone: "+86-10-0000");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "supplier"], partner.PartnerRoles);
+        Assert.Equal("CN-BJ", partner.TaxRegionCode);
+        Assert.Equal("USD", partner.DefaultCurrencyCode);
+        Assert.Equal("NET45", partner.PaymentTermsCode);
+        Assert.Equal("Beijing", partner.PrimaryAddress);
+        Assert.Equal("Wang Min", partner.PrimaryContactName);
+        Assert.Equal("wang.min@example.com", partner.PrimaryContactEmail);
+        Assert.Equal("+86-10-0000", partner.PrimaryContactPhone);
+    }
+
+    [Fact]
+    public void Business_partner_captures_customer_credit_limit_and_currency()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-001",
+            "customer",
+            "Credit Customer",
+            ["customer"],
+            null,
+            defaultCurrencyCode: "CNY",
+            creditLimit: 1200m,
+            creditCurrencyCode: "cny");
+
+        Assert.Equal(1200m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
+
+        partner.UpdateCreditLimit(900m, "usd");
+
+        Assert.Equal(900m, partner.CreditLimit);
+        Assert.Equal("USD", partner.CreditCurrencyCode);
+    }
+
+    [Fact]
+    public void Business_partner_rejects_invalid_credit_master_data()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-BAD",
+            "customer",
+            "Bad Credit Customer",
+            ["customer"],
+            null,
+            creditLimit: -1m,
+            creditCurrencyCode: "CNY"));
+
+        var missingCurrency = Assert.Throws<ArgumentException>(() => BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "CUST-BAD",
+            "customer",
+            "Bad Credit Customer",
+            ["customer"],
+            null,
+            creditLimit: 100m,
+            creditCurrencyCode: " "));
+        Assert.Equal("creditCurrencyCode", missingCurrency.ParamName);
+        Assert.Contains("Credit limit requires a currency code", missingCurrency.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Business_partner_legacy_update_preserves_existing_roles_when_replacing_primary_role()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-LEGACY",
+            "supplier",
+            "Partner",
+            ["supplier", "carrier"],
+            null);
+
+        partner.Update("Partner Renamed", "customer");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "carrier"], partner.PartnerRoles);
+    }
+
+    [Fact]
+    public void Business_partner_primary_role_update_with_details_preserves_secondary_roles()
+    {
+        var partner = BusinessPartner.Create(
+            "org-001",
+            "env-dev",
+            "BP-DETAIL",
+            "supplier",
+            "Partner",
+            ["supplier", "carrier"],
+            "TAX-001");
+
+        partner.ChangePrimaryRole(
+            "Partner Renamed",
+            "customer",
+            "TAX-002",
+            taxRegionCode: "CN-BJ",
+            defaultCurrencyCode: "CNY",
+            paymentTermsCode: "NET30",
+            primaryAddress: "Beijing",
+            primaryContactName: "Wang Min",
+            primaryContactEmail: "wang.min@example.com",
+            primaryContactPhone: "+86-10-0000",
+            creditLimit: 1000m,
+            creditCurrencyCode: "CNY");
+
+        Assert.Equal("customer", partner.PartnerType);
+        Assert.Equal(["customer", "carrier"], partner.PartnerRoles);
+        Assert.Equal("TAX-002", partner.TaxId);
+        Assert.Equal("CN-BJ", partner.TaxRegionCode);
+        Assert.Equal("CNY", partner.DefaultCurrencyCode);
+        Assert.Equal("NET30", partner.PaymentTermsCode);
+        Assert.Equal("Beijing", partner.PrimaryAddress);
+        Assert.Equal("Wang Min", partner.PrimaryContactName);
+        Assert.Equal("wang.min@example.com", partner.PrimaryContactEmail);
+        Assert.Equal("+86-10-0000", partner.PrimaryContactPhone);
+        Assert.Equal(1000m, partner.CreditLimit);
+        Assert.Equal("CNY", partner.CreditCurrencyCode);
+    }
+
+    [Fact]
     public void Resource_hierarchy_shift_and_reference_data_are_business_master_facts()
     {
         var site = Site.Create("org-001", "env-dev", "SITE-SH", "Shanghai Site", "Asia/Shanghai");
@@ -174,7 +513,12 @@ public sealed class MasterDataAggregateTests
             "WS-MIX",
             "CAL-24X5",
             "L",
-            true);
+            true,
+            utilizationRate: 0.85m,
+            efficiencyRate: 1.1m,
+            numberOfCapacities: 3,
+            costCenterCode: "CC-MIX",
+            bottleneck: true);
         var asset = DeviceAsset.RegisterCapability(
             "org-001",
             "env-dev",
@@ -196,9 +540,107 @@ public sealed class MasterDataAggregateTests
         Assert.Equal("process-unit", workCenter.ResourceType);
         Assert.Equal("PLANT-01", workCenter.PlantCode);
         Assert.Equal("WS-MIX", workCenter.WorkshopCode);
+        Assert.Equal(0.85m, workCenter.UtilizationRate);
+        Assert.Equal(1.1m, workCenter.EfficiencyRate);
+        Assert.Equal(3, workCenter.NumberOfCapacities);
+        Assert.Equal("CC-MIX", workCenter.CostCenterCode);
+        Assert.True(workCenter.Bottleneck);
+        Assert.Equal(2019.6m, workCenter.EffectiveCapacityMinutesPerDay);
         Assert.Equal("L", asset.CapacityUomCode);
         Assert.Equal(500m, asset.MinimumCapacity);
         Assert.Equal("MIXER-01", asset.ExternalReferences["scada"]);
+    }
+
+    [Fact]
+    public void Work_center_validates_capacity_factors_and_can_clear_cost_center()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-UTIL", "Bad Utilization", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, utilizationRate: 1.1m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-EFF", "Bad Efficiency", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, efficiencyRate: 0m));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-CAP", "Bad Capacity Count", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, numberOfCapacities: 0));
+
+        var workCenter = WorkCenter.CreateResource(
+            "org-001",
+            "env-dev",
+            "WC-CLEAR",
+            "Clear Cost",
+            480,
+            "work-center",
+            "PLANT",
+            "LINE",
+            workshopCode: null,
+            "CAL",
+            "minute",
+            true,
+            costCenterCode: "CC-OLD");
+
+        workCenter.UpdateResource("Clear Cost", 480, "work-center", "PLANT", "LINE", null, "CAL", "minute", true, costCenterCode: "");
+
+        Assert.Null(workCenter.CostCenterCode);
+    }
+
+    [Fact]
+    public void Uom_calendar_and_shift_capture_effective_window_timezone_and_breaks()
+    {
+        var conversion = UomConversion.Create(
+            "org-001",
+            "env-dev",
+            "BOX",
+            "EA",
+            24m,
+            0m,
+            3,
+            "half-up",
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31));
+        var calendar = WorkCalendar.Create(
+            "org-001",
+            "env-dev",
+            "CAL-SH",
+            "Shanghai Calendar",
+            "Asia/Shanghai",
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 12, 31),
+            "CN-2026");
+        var shift = Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-DAY",
+            "Day Shift",
+            new TimeOnly(8, 0),
+            new TimeOnly(17, 0),
+            480,
+            60);
+
+        Assert.Equal(new DateOnly(2026, 12, 31), conversion.EffectiveTo);
+        Assert.Equal("Asia/Shanghai", calendar.Timezone);
+        Assert.Equal("CN-2026", calendar.HolidayCalendarCode);
+        Assert.Equal(new DateOnly(2026, 1, 1), calendar.EffectiveFrom);
+        Assert.Equal(new DateOnly(2026, 12, 31), calendar.EffectiveTo);
+        Assert.Equal(60, shift.BreakMinutes);
+    }
+
+    [Fact]
+    public void Shift_rejects_break_minutes_greater_than_paid_minutes()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-BAD",
+            "Bad Shift",
+            new TimeOnly(8, 0),
+            new TimeOnly(12, 0),
+            120,
+            121));
+    }
+
+    [Fact]
+    public void Disabled_business_partner_rejects_updates()
+    {
+        var partner = BusinessPartner.Create("org-001", "env-dev", "BP-DISABLED", "supplier", "Disabled Partner");
+
+        partner.Disable("retired");
+
+        Assert.Throws<InvalidOperationException>(() => partner.Update("Renamed", "customer"));
     }
 
     [Fact]
@@ -223,5 +665,53 @@ public sealed class MasterDataAggregateTests
         Assert.True(member.Disabled);
         Assert.False(member.IsEffectiveOn(new DateOnly(2026, 7, 1)));
         Assert.Throws<InvalidOperationException>(() => member.Remove("again"));
+    }
+
+    [Fact]
+    public void Product_category_is_a_hierarchical_master_data_catalog()
+    {
+        var root = ProductCategory.Create("org-001", "env-dev", "CAT-FG", "Finished Goods", null, "Sellable output");
+        var child = ProductCategory.Create("org-001", "env-dev", "CAT-FG-PUMP", "Pump Products", root.CategoryCode, "Pump family");
+
+        Assert.Equal("CAT-FG", root.CategoryCode);
+        Assert.Null(root.ParentCode);
+        Assert.Equal("CAT-FG", child.ParentCode);
+
+        child.Update("Pump Products", null, "Promoted to top-level");
+
+        Assert.Null(child.ParentCode);
+        Assert.Equal("Promoted to top-level", child.Description);
+        Assert.Throws<ArgumentException>(() => child.Update("Pump Products", child.CategoryCode, "self parent"));
+    }
+
+    [Fact]
+    public void Skill_catalog_captures_group_and_certification_validity()
+    {
+        var skill = Skill.Create("org-001", "env-dev", "SK-WELD", "Welding", "Manufacturing", true, 24, "Welding certificate");
+
+        Assert.Equal("SK-WELD", skill.SkillCode);
+        Assert.Equal("Manufacturing", skill.GroupName);
+        Assert.True(skill.RequiresCertification);
+        Assert.Equal(24, skill.ValidityMonths);
+
+        skill.Update("Advanced Welding", "Manufacturing", true, 36, "Advanced certificate");
+
+        Assert.Equal("Advanced Welding", skill.SkillName);
+        Assert.Equal(36, skill.ValidityMonths);
+        Assert.Throws<ArgumentException>(() => Skill.Create("org-001", "env-dev", "SK-BAD", "Bad", "Manufacturing", true, null, null));
+        Assert.Throws<ArgumentOutOfRangeException>(() => skill.Update("Advanced Welding", "Manufacturing", true, 0, null));
+    }
+
+    [Fact]
+    public void Skill_catalog_clears_validity_when_certification_is_not_required()
+    {
+        var skill = Skill.Create("org-001", "env-dev", "SK-PACK", "Packing", "Manufacturing", false, 24, null);
+
+        Assert.False(skill.RequiresCertification);
+        Assert.Null(skill.ValidityMonths);
+
+        skill.Update("Packing", "Manufacturing", false, 36, null);
+
+        Assert.Null(skill.ValidityMonths);
     }
 }

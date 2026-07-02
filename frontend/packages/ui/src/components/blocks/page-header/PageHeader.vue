@@ -28,21 +28,25 @@ defineProps<{
 </script>
 
 <template>
-  <header :class="cn('flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2', $props.class)">
+  <header :class="cn('sticky top-14 z-20 -mt-4 -mx-4 flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border/60 bg-background px-4 py-3 md:-mt-6 md:-mx-6 md:px-6', $props.class)">
     <div class="flex min-w-0 items-center gap-2">
       <Breadcrumb>
         <BreadcrumbList>
           <slot name="breadcrumbs">
             <template v-for="crumb in breadcrumbs" :key="crumb.label">
               <BreadcrumbItem>
-                <BreadcrumbLink v-if="crumb.href" :href="crumb.href">{{ crumb.label }}</BreadcrumbLink>
+                <BreadcrumbLink v-if="crumb.href" :href="crumb.href">{{
+                  crumb.label
+                }}</BreadcrumbLink>
                 <span v-else class="text-muted-foreground">{{ crumb.label }}</span>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
             </template>
           </slot>
           <BreadcrumbItem>
-            <BreadcrumbPage class="text-sm font-semibold text-foreground">{{ title }}</BreadcrumbPage>
+            <BreadcrumbPage class="text-sm font-semibold text-foreground">{{
+              title
+            }}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>

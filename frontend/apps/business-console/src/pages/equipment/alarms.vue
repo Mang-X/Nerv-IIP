@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useBusinessEquipmentAlarms } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
-  Button,
-  DataTable,
-  DropdownMenuItem,
+  BadgePro,
+  ButtonPro,
+  DataTablePro,
+  DropdownMenuProItem,
   PageHeader,
   RowActions,
   SectionCard,
@@ -16,7 +16,7 @@ import { EyeIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备报警' } })
+definePage({ meta: { requiresAuth: true, title: '设备报警', requiredPermissions: ['business.iiot.alarms.read'] } })
 
 const router = useRouter()
 const { alarms, alarmsError, alarmsPending, refreshAlarms } = useBusinessEquipmentAlarms()
@@ -26,7 +26,7 @@ const criticalCount = computed(() => alarms.value.filter((a) => ['critical', 'bl
 const warningCount = computed(() => alarms.value.filter((a) => (a.severity ?? '').toLowerCase() === 'warning').length)
 
 type Alarm = (typeof alarms)['value'][number]
-const columns: DataTableColumn<Alarm>[] = [
+const columns: DataTableProColumn<Alarm>[] = [
   { key: 'alarmEventId', header: '报警', cellClass: 'font-medium', accessor: (r) => r.alarmEventId ?? '无编号' },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '无设备' },
   { key: 'alarmCode', header: '报警代码', accessor: (r) => r.alarmCode ?? '无代码' },
@@ -41,9 +41,9 @@ function severityLabel(value?: string | null) {
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
-  if (severity === 'critical' || severity === 'blocked') return 'destructive'
+  if (severity === 'critical' || severity === 'blocked') return 'danger'
   if (severity === 'warning') return 'warning'
-  return 'secondary'
+  return 'neutral'
 }
 function recordDowntime(deviceAssetId?: string | null) {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: deviceAssetId ?? undefined } })
@@ -62,13 +62,13 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="设备报警" :breadcrumbs="[{ label: '设备监控（IoT）' }]" :count="`${alarms.length} 条未解除`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" as-child>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment">设备看板</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="alarmsPending" @click="refreshAlarms">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="alarmsPending" @click="refreshAlarms">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -80,31 +80,33 @@ function formatError(error: unknown) {
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="alarms"
       :row-key="(r) => r.alarmEventId ?? `${r.deviceAssetId}-${r.alarmCode}`"
       :loading="alarmsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前没有未解除设备报警。"
     >
       <template #cell-deviceAssetId="{ row }">
         <RouterLink :to="`/equipment/${row.deviceAssetId}`" class="text-brand underline-offset-4 hover:underline">{{ row.deviceAssetId ?? '无设备' }}</RouterLink>
       </template>
       <template #cell-severity="{ row }">
-        <Badge class="rounded-sm" :variant="severityVariant(row.severity)">{{ severityLabel(row.severity) }}</Badge>
+        <BadgePro class="rounded-sm" :variant="severityVariant(row.severity)">{{ severityLabel(row.severity) }}</BadgePro>
       </template>
       <template #cell-raisedAtUtc="{ row }">{{ formatDateTime(row.raisedAtUtc) }}</template>
       <template #cell-actions="{ row }">
         <RowActions :label="`报警操作 ${row.alarmEventId ?? ''}`">
-          <DropdownMenuItem as-child>
+          <DropdownMenuProItem as-child>
             <RouterLink :to="`/equipment/${row.deviceAssetId}`"><EyeIcon aria-hidden="true" />设备详情</RouterLink>
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="recordDowntime(row.deviceAssetId)">
             <WrenchIcon aria-hidden="true" />
             记录停机
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
   </BusinessLayout>
 </template>

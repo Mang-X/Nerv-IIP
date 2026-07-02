@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 
 public partial record DefectRecordId : IGuidStronglyTypedId;
@@ -5,6 +7,16 @@ public partial record DefectRecordId : IGuidStronglyTypedId;
 public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
 {
     public const string OpenStatus = "Open";
+    public const string ReworkPendingStatus = "ReworkPending";
+    public const string ScrapAcceptedStatus = "ScrapAccepted";
+    public const string ReturnAcceptedStatus = "ReturnAccepted";
+    public const string DispositionAcceptedStatus = "DispositionAccepted";
+    // Keep these wire values in sync with Nerv.IIP.Contracts.Quality.QualityNcrDispositionTypes.
+    private const string ReworkDispositionType = "rework";
+    private const string ScrapDispositionType = "scrap";
+    private const string ReturnToSupplierDispositionType = "return-to-supplier";
+    private const string ConditionalReleaseDispositionType = "conditional-release";
+    private const string SortAndScreenDispositionType = "sort-and-screen";
 
     private DefectRecord()
     {
@@ -40,6 +52,11 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
     public decimal Quantity { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset RecordedAtUtc { get; private set; }
+    public string? NcrId { get; private set; }
+    public string? NcrCode { get; private set; }
+    public string? DispositionType { get; private set; }
+    public string? DispositionReferenceId { get; private set; }
+    public DateTimeOffset? ClosedAtUtc { get; private set; }
 
     public static DefectRecord Create(
         string organizationId,
@@ -51,7 +68,7 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
         decimal quantity,
         DateTimeOffset recordedAtUtc)
     {
-        return new DefectRecord(
+        var defect = new DefectRecord(
             organizationId,
             environmentId,
             defectNo,
@@ -60,5 +77,29 @@ public sealed class DefectRecord : Entity<DefectRecordId>, IAggregateRoot
             defectCode,
             quantity,
             recordedAtUtc);
+        defect.AddDomainEvent(new DefectRaisedDomainEvent(defect));
+        return defect;
+    }
+
+    public void AcceptDisposition(
+        string ncrId,
+        string ncrCode,
+        string dispositionType,
+        string? dispositionReferenceId,
+        DateTimeOffset changedAtUtc)
+    {
+        NcrId = DomainGuard.Required(ncrId, nameof(ncrId));
+        NcrCode = DomainGuard.Required(ncrCode, nameof(ncrCode));
+        DispositionType = DomainGuard.Required(dispositionType, nameof(dispositionType));
+        DispositionReferenceId = string.IsNullOrWhiteSpace(dispositionReferenceId) ? null : dispositionReferenceId.Trim();
+        Status = DispositionType.Trim().ToLowerInvariant() switch
+        {
+            ReworkDispositionType => ReworkPendingStatus,
+            ScrapDispositionType => ScrapAcceptedStatus,
+            ReturnToSupplierDispositionType => ReturnAcceptedStatus,
+            ConditionalReleaseDispositionType or SortAndScreenDispositionType => DispositionAcceptedStatus,
+            _ => DispositionAcceptedStatus,
+        };
+        ClosedAtUtc = Status == ReworkPendingStatus ? null : changedAtUtc;
     }
 }

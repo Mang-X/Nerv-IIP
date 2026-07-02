@@ -4,6 +4,8 @@ internal static class BusinessConsoleTestRequestBodies
 {
     public static bool IsMasterDataCreatePath(string path) => path is
         "/api/business-console/v1/master-data/skus" or
+        "/api/business-console/v1/master-data/product-categories" or
+        "/api/business-console/v1/master-data/skills" or
         "/api/business-console/v1/master-data/business-partners" or
         "/api/business-console/v1/master-data/units-of-measure" or
         "/api/business-console/v1/master-data/uom-conversions" or
@@ -25,6 +27,9 @@ internal static class BusinessConsoleTestRequestBodies
         "/api/business-console/v1/engineering/engineering-boms/release" or
         "/api/business-console/v1/engineering/manufacturing-boms/release" or
         "/api/business-console/v1/engineering/routings/release" or
+        "/api/business-console/v1/engineering/standard-operations" or
+        "/api/business-console/v1/engineering/standard-operations/OP-001" or
+        "/api/business-console/v1/engineering/standard-operations/OP-001/archive" or
         "/api/business-console/v1/engineering/engineering-changes/release" or
         "/api/business-console/v1/engineering/production-versions" or
         "/api/business-console/v1/engineering/production-versions/pv-001" or
@@ -48,6 +53,26 @@ internal static class BusinessConsoleTestRequestBodies
             ["defaultBarcodeRuleCode"] = "default",
             ["qualityRequired"] = true,
             ["complianceTags"] = Array.Empty<string>(),
+        },
+        "/api/business-console/v1/master-data/product-categories" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["categoryCode"] = "CAT-001",
+            ["categoryName"] = "Finished Goods",
+            ["parentCode"] = null,
+            ["description"] = "Finished goods category",
+        },
+        "/api/business-console/v1/master-data/skills" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["skillCode"] = "SK-WELD",
+            ["skillName"] = "Welding",
+            ["groupName"] = "Manufacturing",
+            ["requiresCertification"] = true,
+            ["validityMonths"] = 24,
+            ["description"] = "Welding qualification",
         },
         "/api/business-console/v1/master-data/business-partners" => new()
         {
@@ -250,8 +275,45 @@ internal static class BusinessConsoleTestRequestBodies
             ["revision"] = "A",
             ["skuCode"] = "SKU-001",
             ["effectiveDate"] = "2026-06-01",
-            ["operations"] = new[] { new { sequence = 10, workCenterCode = "WC-001", operationName = "Assemble", standardMinutes = 15 } },
+            ["operations"] = new[] { new { sequence = 10, workCenterCode = "WC-001", operationCode = "assembly", operationName = "装配", standardMinutes = 15 } },
             ["idempotencyKey"] = "routing-001",
+        },
+        "/api/business-console/v1/engineering/standard-operations" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["operationName"] = "Assembly",
+            ["defaultWorkCenterCode"] = "WC-001",
+            ["standardSetupMinutes"] = 5,
+            ["standardRunMinutes"] = 15,
+            ["controlKey"] = "INHOUSE",
+            ["requiresReporting"] = true,
+            ["requiresQualityInspection"] = false,
+            ["isOutsourced"] = false,
+            ["description"] = "Assembly operation",
+        },
+        "/api/business-console/v1/engineering/standard-operations/OP-001" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["operationName"] = "Assembly",
+            ["defaultWorkCenterCode"] = "WC-002",
+            ["standardSetupMinutes"] = 6,
+            ["standardRunMinutes"] = 18,
+            ["controlKey"] = "INHOUSE",
+            ["requiresReporting"] = true,
+            ["requiresQualityInspection"] = true,
+            ["isOutsourced"] = false,
+            ["description"] = "Updated assembly operation",
+        },
+        "/api/business-console/v1/engineering/standard-operations/OP-001/archive" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["operationCode"] = "OP-001",
+            ["reason"] = "Superseded",
         },
         "/api/business-console/v1/engineering/engineering-changes/release" => new()
         {

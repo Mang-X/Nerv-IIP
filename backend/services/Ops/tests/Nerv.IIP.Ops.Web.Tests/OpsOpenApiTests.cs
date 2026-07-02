@@ -33,6 +33,7 @@ public sealed class OpsOpenApiTests
         ("/api/ops/v1/operation-tasks/{operationTaskId}/lease/heartbeat", "post", "heartbeatOperationTaskLease"),
         ("/api/ops/v1/operation-results", "post", "recordOperationResult"),
         ("/api/ops/v1/audit-records", "get", "listAuditRecords"),
+        ("/api/ops/v1/audit-records/integrity", "get", "validateAuditIntegrity"),
         ("/api/ops/v1/audit-intents", "post", "submitAuditIntent"),
         ("/api/ops/v1/operation-templates", "post", "createOperationTemplate"),
         ("/api/ops/v1/operation-templates", "get", "listOperationTemplates"),

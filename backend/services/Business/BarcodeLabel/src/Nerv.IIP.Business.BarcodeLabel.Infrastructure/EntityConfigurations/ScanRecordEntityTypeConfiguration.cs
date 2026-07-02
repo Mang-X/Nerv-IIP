@@ -19,10 +19,47 @@ public sealed class ScanRecordEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").IsRequired().HasMaxLength(128).HasComment("Client supplied idempotency key for scan creation.");
         builder.Property(x => x.Result).HasColumnName("result").IsRequired().HasMaxLength(30).HasComment("Scan result: accepted or rejected.");
         builder.Property(x => x.RejectionReason).HasColumnName("rejection_reason").HasMaxLength(500).HasComment("Reason for rejected scans.");
+        builder.Property(x => x.Gtin).HasColumnName("gtin").HasMaxLength(14).HasComment("GS1 GTIN parsed from an accepted scan value.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("GS1 lot or batch parsed from an accepted scan value.");
+        builder.Property(x => x.SerialNumber).HasColumnName("serial_number").HasMaxLength(150).HasComment("GS1 serial number parsed from an accepted scan value.");
+        builder.Property(x => x.EpcUri).HasColumnName("epc_uri").HasMaxLength(300).HasComment("EPC URI derived from parsed GTIN and serial number.");
+        builder.Property(x => x.Sscc).HasColumnName("sscc").HasMaxLength(18).HasComment("GS1 SSCC-18 logistic unit identifier parsed from AI 00 when present.");
+        builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).HasComment("Quantity parsed from GS1 AI 30 or supplied by the scan workflow.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(100).HasComment("SKU code supplied by scan context for downstream business action routing.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Unit of measure supplied by scan context for downstream business action routing.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Site code supplied by scan context for downstream business action routing.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Inventory or workflow location supplied by scan context.");
+        builder.Property(x => x.QualityStatus).HasColumnName("quality_status").HasMaxLength(100).HasComment("Quality status supplied by scan context for inventory movement routing.");
+        builder.Property(x => x.OwnerType).HasColumnName("owner_type").HasMaxLength(100).HasComment("Inventory owner type supplied by scan context.");
+        builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(150).HasComment("Optional inventory owner id supplied by scan context.");
+        builder.Property(x => x.BusinessAction).HasColumnName("business_action").HasMaxLength(100).HasComment("Downstream business action selected for the accepted scan.");
+        builder.Property(x => x.DownstreamEventId).HasColumnName("downstream_event_id").HasMaxLength(150).HasComment("Deterministic downstream event id for idempotent business action routing.");
         builder.Property(x => x.ScannedAtUtc).HasColumnName("scanned_at_utc").IsRequired().HasComment("UTC time when the scan was recorded.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey }).IsUnique();
+        builder.HasMany(x => x.EpcisEvents)
+            .WithOne()
+            .HasForeignKey(x => x.ScanRecordId)
+            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.IdempotencyKey })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_idempotency");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceCode, x.ScannedAtUtc });
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ScannedValue })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_accepted_scanned_value")
+            .HasFilter("result = 'accepted'");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.EpcUri })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_epc_uri")
+            .HasFilter("epc_uri IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceWorkflow, x.SourceDocumentId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.LotNo, x.SerialNumber })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_gtin_lot_serial")
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NOT NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Gtin, x.SerialNumber })
+            .IsUnique()
+            .HasDatabaseName("UX_scan_records_gtin_serial_no_lot")
+            .HasFilter("gtin IS NOT NULL AND lot_no IS NULL AND serial_number IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.Sscc });
     }
 }

@@ -4,18 +4,19 @@ import {
   AppShellInset,
   Avatar,
   AvatarFallback,
-  Button,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  ButtonPro,
+  DropdownMenuPro,
+  DropdownMenuProContent,
+  DropdownMenuProItem,
+  DropdownMenuProLabel,
+  DropdownMenuProSeparator,
+  DropdownMenuProTrigger,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarProBrand,
   cn,
 } from '@nerv-iip/ui'
 import { ClockIcon, LogOutIcon, SearchIcon, StarIcon } from 'lucide-vue-next'
@@ -71,12 +72,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 <template>
   <AppShellInset>
     <template #sidebar-header>
-      <RouterLink :to="{ path: '/' }" class="flex items-center gap-2 px-1 py-1.5">
-        <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-extrabold text-sidebar-primary-foreground">
-          N
-        </div>
-        <span class="truncate text-sm font-semibold">{{ title }}</span>
-      </RouterLink>
+      <SidebarProBrand :as="RouterLink" :to="{ path: '/' }" :name="title" logo="N" :caret="false" />
     </template>
 
     <template #sidebar>
@@ -105,7 +101,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       />
 
       <div class="ml-2 flex shrink-0 items-center gap-1">
-        <Button
+        <ButtonPro
           type="button"
           variant="outline"
           size="sm"
@@ -116,8 +112,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <SearchIcon class="size-4" aria-hidden="true" />
           <span class="max-w-40 truncate">{{ searchLabel }}</span>
           <kbd class="ml-2 rounded border bg-muted px-1 text-[10px] font-medium">⌘K</kbd>
-        </Button>
-        <Button
+        </ButtonPro>
+        <ButtonPro
           type="button"
           variant="ghost"
           size="icon"
@@ -126,32 +122,32 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           @click="emit('openSearch')"
         >
           <SearchIcon class="size-4" aria-hidden="true" />
-        </Button>
+        </ButtonPro>
 
         <slot name="header-actions" />
 
-        <DropdownMenu v-if="user">
-          <DropdownMenuTrigger as-child>
-            <Button type="button" variant="ghost" size="icon" class="rounded-full" aria-label="用户菜单">
+        <DropdownMenuPro v-if="user">
+          <DropdownMenuProTrigger as-child>
+            <ButtonPro type="button" variant="ghost" size="icon" class="rounded-full" aria-label="用户菜单">
               <Avatar class="size-7">
                 <AvatarFallback class="text-xs">{{ initials }}</AvatarFallback>
               </Avatar>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-56">
-            <DropdownMenuLabel class="font-normal">
+            </ButtonPro>
+          </DropdownMenuProTrigger>
+          <DropdownMenuProContent align="end" class="w-56">
+            <DropdownMenuProLabel class="font-normal">
               <div class="grid gap-0.5">
                 <span class="truncate text-sm font-semibold">{{ user.name }}</span>
                 <span v-if="user.email" class="truncate text-xs text-muted-foreground">{{ user.email }}</span>
               </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem @select="emit('signOut')">
+            </DropdownMenuProLabel>
+            <DropdownMenuProSeparator />
+            <DropdownMenuProItem @select="emit('signOut')">
               <LogOutIcon class="size-4" aria-hidden="true" />
               {{ signOutLabel }}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuProItem>
+          </DropdownMenuProContent>
+        </DropdownMenuPro>
       </div>
     </template>
 

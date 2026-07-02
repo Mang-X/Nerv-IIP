@@ -1,6 +1,6 @@
 # 数据字典规则（Master Data Reference / CodeSet 权威规范）
 
-> 状态：v1（2026-06-08 定稿）。本文件是**数据字典（ReferenceData / CodeSet）的单一事实源**——CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐约定。
+> 状态：v1（2026-06-10 修订）。本文件是**数据字典（ReferenceData / CodeSet）的单一事实源**——CodeSet 目录、标准码值、治理规则、字段校验映射、前后端对齐约定。
 > 取代此前散落在 [`master-data-module-product-design.md`](./master-data-module-product-design.md) §5、ADR [`0013-business-master-data-governance.md`](../adr/0013-business-master-data-governance.md) 中的零散描述（§5 现指向本文件）。
 > 三处实现必须与本文件一致:① 后端种子 `backend/services/Business/MasterData/.../Application/Seed/MasterDataSeedService.cs`(运行真相);② 前端常量 `frontend/apps/business-console/src/data/masterDataReference.ts`(Phase 1 兜底);③ 本文件(设计真相)。
 
@@ -13,6 +13,7 @@
 - **Code**:该 CodeSet 内的码值（提交给后端、存库、被其它主数据引用）。**英文小写中划线**(kebab-case)为约定。
 - **Name**:展示给用户的中文名。
 - 业务对象(SKU 等)的受控字段存的是 **Code**;UI 一律显示 **Name**,不暴露 Code。
+- **独立目录兼容**:`product-category`、`skill` 和 `quality-reason` 仍保留为 legacy CodeSet 校验与历史前端兜底来源；新增结构化维护应优先使用 ProductCategory、Skill 和 QualityReason 独立目录 API。独立目录不物理删除历史 code，且在完全切换前不得破坏 SKU `category`、PersonnelSkill `skillCode` 或历史 Quality defect reason 对 CodeSet 的兼容读取。
 
 ## 2. CodeSet 目录（权威清单）
 
@@ -23,7 +24,7 @@
 | CodeSet | 中文名 | 类别 | 标准码值（code = 中文名） |
 |---|---|---|---|
 | `material-type` | 物料类型 | 系统枚举 | `raw-material`=原材料 / `semi-finished`=半成品 / `finished-goods`=成品 / `packaging`=包装物 / `consumable`=辅料消耗品 / `spare-part`=备品备件 / `tooling`=工装刀具 |
-| `product-category` | 产品分类 | 平台预置+可维护 | `electronic`=电子料 / `mechanical`=机械件 / `plastic`=塑胶件 / `hardware`=五金件 / `chemical`=化学品 / `assembly`=组装件 |
+| `product-category` | 产品分类（legacy 兼容） | 平台预置+可维护 | `electronic`=电子料 / `mechanical`=机械件 / `plastic`=塑胶件 / `hardware`=五金件 / `chemical`=化学品 / `assembly`=组装件 |
 | `batch-tracking-policy` | 批次追踪策略 | 系统枚举 | `none`=不管理 / `optional`=可选记录 / `mandatory`=强制批次 |
 | `serial-tracking-policy` | 序列号追踪策略 | 系统枚举 | `none`=不管理 / `on-receipt`=入库赋序 / `on-production`=生产赋序 / `on-shipment`=出货赋序 |
 | `shelf-life-policy` | 保质期策略 | 系统枚举 | `none`=无保质期 / `fifo`=先进先出 / `fefo`=先到期先出 / `expiry-controlled`=到期管控 |
@@ -36,8 +37,9 @@
 | CodeSet | 中文名 | 类别 | 标准码值 |
 |---|---|---|---|
 | `partner-type` | 业务伙伴角色 | 系统枚举 | `customer`=客户 / `supplier`=供应商 / `carrier`=承运商 |
+| `skill` | 技能/工种（legacy 兼容） | 工厂自定义 | 样例:`welding`=焊接 / `assembly`=装配 / `inspection`=质检 / `cnc-operation`=数控操作 / `forklift`=叉车 |
 | `skill-level` | 技能等级 | 系统枚举 | `junior`=初级 / `intermediate`=中级 / `senior`=高级 / `expert`=专家 |
-| `quality-reason` | 质量原因/不良代码 | 工厂自定义 | 样例:`scratch`=划伤 / `dimension-ng`=尺寸不良 / `missing-part`=缺件 / `solder-defect`=焊接不良 |
+| `quality-reason` | 质量原因/不良代码（legacy 兼容） | 工厂自定义 | 样例:`scratch`=划伤 / `dimension-ng`=尺寸不良 / `missing-part`=缺件 / `solder-defect`=焊接不良 |
 | `compliance-tag` | 合规标签 | 平台预置+可维护 | `rohs`=RoHS / `reach`=REACH / `msd`=湿敏元件 / `ul`=UL认证 |
 
 ### 2.3 设备 / 产线（按需启用）
@@ -49,6 +51,14 @@
 | `work-center-type` | 工作中心粒度 | 系统枚举 | `work-center`=工作中心 / `section`=工段 / `station-group`=工位组 |
 
 > 注:`work-center-type` 用于区分工作中心粒度,**与"车间(Workshop)组织层"是两码事**(车间是独立实体,不在字典里;见产品设计文档 §2.1)。
+
+### 2.4 产品工程 / 工艺
+
+`operation` CodeSet 仅保留为历史数据和未接线页面的过渡兼容项。新的标准工序事实源是 ProductEngineering `StandardOperation` 主数据，包含默认工作中心、准备/加工工时、控制码和执行标志；新路线编制能力应消费 `standard-operations` API，而不是继续把标准工序维护在 ReferenceData 中。
+
+| CodeSet | 中文名 | 类别 | 标准码值 |
+|---|---|---|---|
+| `operation` | 标准工序目录（legacy 兼容） | 工厂自定义 | 样例:`welding`=焊接 / `assembly`=装配 / `inspection`=检验 / `cnc-operation`=CNC加工 / `packaging`=包装 |
 
 ## 3. SKU 受控字段 → CodeSet 校验映射
 
@@ -65,7 +75,9 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 | `defaultBarcodeRuleCode` | `barcode-rule` | |
 | `baseUomCode` 及各 *UomCode | （不走字典）引用 `UnitOfMeasure.Code` | 计量单位是独立实体,非 CodeSet |
 
-人员技能 `level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。
+人员技能 `skillCode` 字段当前继续校验 legacy `skill` CodeSet,`level` 字段校验 `skill-level`;业务伙伴 `partnerType`/`partnerRoles` 校验 `partner-type`。新增 Skill 独立目录提供技能分组、证书要求和有效期月数等结构化属性；在 PersonnelSkill 校验切换到 Skill 目录前，seed 与前端兜底仍需保持 `skill` CodeSet 可读。ProductEngineering 工艺路线发布契约继续保存 `operationCode`、`operationName`、`workCenterCode` 和 `standardMinutes` 作为发布时快照；新建/维护标准工序默认值应通过 ProductEngineering `StandardOperation` 主数据完成。当前 ProductEngineering 与 MasterData 保持跨服务解耦,与 `workCenterCode` 一样不在 ProductEngineering 服务内同步校验跨服务码值存在且启用;如后续要求强一致目录校验,需通过服务 facade 或发布前同步机制另行设计。Business Console 当前仅在 reference-data 目录页暴露 legacy `operation` CodeSet,尚无工艺路线发布向导下拉接线。
+
+UoM 换算是有向换算规则,允许工厂同时维护正向和反向换算(例如 `kg->g` 与 `g->kg`),也允许同量纲换算网络闭合;后端只强制创建时源/目标单位存在且启用、二者属于同一 `uom-dimension`、`factor > 0` 且同一 `(fromUomCode,toUomCode,effectiveFrom)` 不重复。反向规则不会由平台自动倒数推导,以便保留独立精度、舍入和 affine offset 语义。
 
 ## 4. 治理规则
 
@@ -82,13 +94,14 @@ SKU 创建/更新时,以下字段的取值**必须存在于对应 CodeSet 且为
 - **本文件 = 设计真相**;**后端种子 `MasterDataSeedService` = 运行真相**;二者**必须一致**(任一方改动需同步本文件并对齐另一方)。
 - **前端常量 `masterDataReference.ts` = 离线兜底**:物料表单优先实时 `?codeSet=` 拉取,后端字典暂不可用时才用本常量;其码值必须与本文件一致。
 - **Phase 2 联动**:物料表单已实时 `?codeSet=` 拉取(`数据字典`页维护 → 表单即时可选),前端常量降级为离线兜底。
-- 三处的 code 值集合必须等同(Name 可按语言差异,code 必须一致)。
+- 三处的 code 值集合必须等同；前端离线兜底的中文 label 应与本文件和后端种子 name 保持一致，避免实时字典不可用时出现不同展示名。
 
-## 6. 落地状态（2026-06-09）
+## 6. 落地状态（2026-06-10）
 
 - ✅ 前端:`数据字典`页(CodeSet 主从可维护),物料表单优先通过 `?codeSet=` 实时拉取产品分类、物料类型、追踪策略、存储条件、条码规则和合规标签;`masterDataReference.ts` 保留为离线兜底。
-- ✅ 后端种子 `MasterDataSeedService` 已通过 #352 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,并对历史误种码值执行软停用而非物理删除。
-- ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
+- ✅ 后端种子 `MasterDataSeedService` 已通过 #352/#369 对齐本文件:补齐 §2 权威码值,修正 `product-category`/`material-type` 旧错配,对 `batch-tracking-policy:lot`、`serial-tracking-policy:serial`、`shelf-life-policy:180d/365d`、`uom-dimension:mass/quantity` 等历史误种码值执行软停用而非物理删除；seed 会修复既有启用标准码的中文 name 与 UOM 种子的名称/量纲。
+- ✅ SKU 创建/更新会按 §3 校验受控字段必须引用启用 ReferenceData;人员技能登记会校验 legacy 技能 CodeSet 与技能等级必须引用启用 ReferenceData;系统枚举 CodeSet 禁止运行时新增非标准码或改写标准码名称,平台预置/工厂自定义 CodeSet 仍可按治理规则新增码值。
+- ✅ ProductCategory、Skill 和 QualityReason 已提供独立目录 API/BusinessGateway facade，用于产品分类树、技能证书属性和质量原因严重度/默认处置等结构化维护；legacy CodeSet 在切换期保留兼容。
 
 ## 附:相关文件
 - 后端种子:`backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataSeedService.cs`

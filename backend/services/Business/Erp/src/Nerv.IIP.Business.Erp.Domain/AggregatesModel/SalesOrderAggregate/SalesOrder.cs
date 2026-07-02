@@ -6,6 +6,12 @@ namespace Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 public partial record SalesOrderId : IGuidStronglyTypedId;
 public partial record SalesOrderLineId : IGuidStronglyTypedId;
 
+public sealed record CustomerCreditSnapshot(
+    string CustomerCode,
+    decimal CreditLimit,
+    decimal OpenReceivableAmount,
+    decimal ActiveSalesOrderExposure);
+
 public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
 {
     private readonly List<SalesOrderLine> lines = [];
@@ -14,7 +20,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
     {
     }
 
-    private SalesOrder(string salesOrderNo, Quotation quotation)
+    private SalesOrder(string salesOrderNo, Quotation quotation, CustomerCreditSnapshot? creditSnapshot)
     {
         quotation.EnsureCanCreateSalesOrder(DateOnly.FromDateTime(DateTime.UtcNow));
         OrganizationId = quotation.OrganizationId;
@@ -26,6 +32,7 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         CreatedAtUtc = DateTime.UtcNow;
         lines.AddRange(quotation.Lines.Select(line => SalesOrderLine.Create(line.LineNo, line.SkuCode, line.UomCode, line.Quantity, line.UnitPrice, line.RequiredDate)));
         TotalAmount = lines.Sum(x => x.LineAmount);
+        ApplyCreditStatus(creditSnapshot);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -40,14 +47,59 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
 
     public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation)
     {
-        return new SalesOrder(salesOrderNo, quotation);
+        return new SalesOrder(salesOrderNo, quotation, null);
     }
 
-    public void RegisterDelivery(string lineNo, decimal quantity)
+    public static SalesOrder CreateFromQuotation(string salesOrderNo, Quotation quotation, CustomerCreditSnapshot creditSnapshot)
     {
+        return new SalesOrder(salesOrderNo, quotation, creditSnapshot);
+    }
+
+    public SalesOrderLine RegisterDelivery(string lineNo, decimal quantity)
+    {
+        if (!string.Equals(Status, "released", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Only released sales orders can be delivered.");
+        }
+
         var line = lines.SingleOrDefault(x => x.LineNo == lineNo)
             ?? throw new InvalidOperationException($"Sales order line '{lineNo}' was not found.");
         line.RegisterDelivery(quantity);
+        return line;
+    }
+
+    public void ReleaseCreditHold()
+    {
+        if (Status == "released")
+        {
+            return;
+        }
+
+        if (Status != "credit-held")
+        {
+            throw new InvalidOperationException("Only credit-held sales orders can be released.");
+        }
+
+        Status = "released";
+    }
+
+    private void ApplyCreditStatus(CustomerCreditSnapshot? creditSnapshot)
+    {
+        if (creditSnapshot is null)
+        {
+            return;
+        }
+
+        if (!string.Equals(CustomerCode, creditSnapshot.CustomerCode, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Credit snapshot customer does not match the sales order customer.");
+        }
+
+        var exposureAfterOrder = creditSnapshot.OpenReceivableAmount + creditSnapshot.ActiveSalesOrderExposure + TotalAmount;
+        if (exposureAfterOrder > creditSnapshot.CreditLimit)
+        {
+            Status = "credit-held";
+        }
     }
 }
 

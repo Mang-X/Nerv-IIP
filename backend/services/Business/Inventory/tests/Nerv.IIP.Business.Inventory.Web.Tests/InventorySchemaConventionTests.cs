@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAgg
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -42,6 +43,7 @@ public sealed class InventorySchemaConventionTests
             typeof(StockLocation),
             typeof(StockLedger),
             typeof(StockMovement),
+            typeof(StockReservation),
             typeof(StockCountTask),
             typeof(StockCountAdjustment),
         };
@@ -72,24 +74,35 @@ public sealed class InventorySchemaConventionTests
                 "ck_stock_ledgers_location_code_format",
                 "ck_stock_ledgers_sku_code_format",
                 "ck_stock_ledgers_site_code_format",
+                "ck_stock_ledgers_quality_status",
             ],
             [typeof(StockMovement)] =
             [
                 "ck_stock_movements_location_code_format",
                 "ck_stock_movements_sku_code_format",
                 "ck_stock_movements_site_code_format",
+                "ck_stock_movements_quality_status",
+            ],
+            [typeof(StockReservation)] =
+            [
+                "ck_stock_reservations_location_code_format",
+                "ck_stock_reservations_sku_code_format",
+                "ck_stock_reservations_site_code_format",
+                "ck_stock_reservations_quality_status",
             ],
             [typeof(StockCountTask)] =
             [
                 "ck_stock_count_tasks_location_code_format",
                 "ck_stock_count_tasks_sku_code_format",
                 "ck_stock_count_tasks_site_code_format",
+                "ck_stock_count_tasks_quality_status",
             ],
             [typeof(StockCountAdjustment)] =
             [
                 "ck_stock_count_adjustments_location_code_format",
                 "ck_stock_count_adjustments_sku_code_format",
                 "ck_stock_count_adjustments_site_code_format",
+                "ck_stock_count_adjustments_quality_status",
             ],
         };
 
@@ -100,7 +113,14 @@ public sealed class InventorySchemaConventionTests
             foreach (var constraintName in constraintNames)
             {
                 var constraint = Assert.Single(constraints, x => x.Name == constraintName);
-                Assert.Contains("~ '^[A-Za-z0-9_.:-]+$'", constraint.Sql, StringComparison.Ordinal);
+                if (constraintName.EndsWith("_quality_status", StringComparison.Ordinal))
+                {
+                    Assert.Contains("quality_status in ('unrestricted','quality','restricted','blocked')", constraint.Sql, StringComparison.Ordinal);
+                }
+                else
+                {
+                    Assert.Contains("~ '^[A-Za-z0-9_.:-]+$'", constraint.Sql, StringComparison.Ordinal);
+                }
             }
         }
     }

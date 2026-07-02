@@ -3,7 +3,7 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 
-internal static class SchedulePlanContractMapper
+public static class SchedulePlanContractMapper
 {
     public static SchedulePlanContract ToContract(SchedulePlan plan)
     {
@@ -28,8 +28,8 @@ internal static class SchedulePlanContractMapper
             .OrderBy(x => x.ConflictPublicId, StringComparer.Ordinal)
             .Select(x => new ScheduleConflictContract(
                 x.ConflictPublicId,
-                x.ReasonCode,
-                x.Severity,
+                ToContractReasonCode(x.ReasonCode),
+                ToContractSeverity(x.Severity),
                 string.IsNullOrWhiteSpace(x.WorkOrderId) ? null : x.WorkOrderId,
                 string.IsNullOrWhiteSpace(x.OperationId) ? null : x.OperationId,
                 string.IsNullOrWhiteSpace(x.ResourceId) ? null : x.ResourceId,
@@ -59,6 +59,15 @@ internal static class SchedulePlanContractMapper
             AlgorithmVersion: plan.AlgorithmVersion,
             Status: status,
             GeneratedAtUtc: plan.GeneratedAtUtc,
+            Metrics: new SchedulePlanMetricsContract(
+                plan.ScheduledOperationCount,
+                plan.UnscheduledOperationCount,
+                plan.AssignedMinutes,
+                plan.MakespanMinutes,
+                plan.TotalTardinessMinutes,
+                plan.LateOperationCount,
+                plan.OnTimeRate,
+                plan.AverageResourceUtilization),
             Assignments: assignments,
             ResourceLoads: plan.ResourceLoads
                 .OrderBy(x => x.WindowStartUtc)
@@ -78,7 +87,7 @@ internal static class SchedulePlanContractMapper
                 .Select(x => new UnscheduledOperationContract(
                     x.WorkOrderId,
                     x.OperationId,
-                    x.ReasonCode,
+                    ToContractReasonCode(x.ReasonCode),
                     x.Message))
                 .ToArray(),
             ChangeSummary: changeSummary,
@@ -148,6 +157,133 @@ internal static class SchedulePlanContractMapper
         {
             Status = status,
             GanttItems = plan.GanttItems.Select(x => x with { Status = status }).ToArray()
+        };
+    }
+
+    public static GeneratedSchedulePlanSnapshot ToDomainSnapshot(SchedulePlanContract plan)
+    {
+        return new GeneratedSchedulePlanSnapshot(
+            plan.PlanId,
+            plan.ProblemId,
+            plan.ProblemFingerprint,
+            plan.AlgorithmVersion,
+            plan.ContractVersion,
+            plan.GeneratedAtUtc,
+            ToDomainStatus(plan.Status),
+            new GeneratedSchedulePlanMetricsSnapshot(
+                plan.Metrics.ScheduledOperationCount,
+                plan.Metrics.UnscheduledOperationCount,
+                plan.Metrics.AssignedMinutes,
+                plan.Metrics.MakespanMinutes,
+                plan.Metrics.TotalTardinessMinutes,
+                plan.Metrics.LateOperationCount,
+                plan.Metrics.OnTimeRate,
+                plan.Metrics.AverageResourceUtilization),
+            plan.Assignments
+                .Select(x => new GeneratedScheduleAssignmentSnapshot(
+                    x.AssignmentId,
+                    x.OrderId,
+                    x.OperationId,
+                    x.OperationSequence,
+                    x.ResourceId,
+                    x.WorkCenterId,
+                    x.StartUtc,
+                    x.EndUtc,
+                    x.IsLocked,
+                    x.ExplanationCode))
+                .ToArray(),
+            plan.ResourceLoads
+                .Select(x => new GeneratedScheduleResourceLoadSnapshot(
+                    x.ResourceId,
+                    x.WindowStartUtc,
+                    x.WindowEndUtc,
+                    x.AssignedMinutes,
+                    x.AvailableMinutes,
+                    x.Utilization))
+                .ToArray(),
+            plan.Conflicts
+                .Select(x => new GeneratedScheduleConflictSnapshot(
+                    x.ConflictId,
+                    ToDomainReasonCode(x.ReasonCode),
+                    ToDomainSeverity(x.Severity),
+                    x.OrderId,
+                    x.OperationId,
+                    x.ResourceId,
+                    x.Message))
+                .ToArray(),
+            plan.UnscheduledOperations
+                .Select(x => new GeneratedUnscheduledOperationSnapshot(
+                    x.OrderId,
+                    x.OperationId,
+                    ToDomainReasonCode(x.ReasonCode),
+                    x.Message))
+                .ToArray());
+    }
+
+    public static ScheduleConflictReasonCodeContract ToContractReasonCode(ScheduleConflictReasonCode reasonCode)
+    {
+        return reasonCode switch
+        {
+            ScheduleConflictReasonCode.Capacity => ScheduleConflictReasonCodeContract.Capacity,
+            ScheduleConflictReasonCode.Calendar => ScheduleConflictReasonCodeContract.Calendar,
+            ScheduleConflictReasonCode.Equipment => ScheduleConflictReasonCodeContract.Equipment,
+            ScheduleConflictReasonCode.Material => ScheduleConflictReasonCodeContract.Material,
+            ScheduleConflictReasonCode.Quality => ScheduleConflictReasonCodeContract.Quality,
+            ScheduleConflictReasonCode.DueDate => ScheduleConflictReasonCodeContract.DueDate,
+            ScheduleConflictReasonCode.NoEligibleResource => ScheduleConflictReasonCodeContract.NoEligibleResource,
+            ScheduleConflictReasonCode.OutsideHorizon => ScheduleConflictReasonCodeContract.OutsideHorizon,
+            ScheduleConflictReasonCode.PredecessorUnscheduled => ScheduleConflictReasonCodeContract.PredecessorUnscheduled,
+            ScheduleConflictReasonCode.InvalidLockedAssignment => ScheduleConflictReasonCodeContract.InvalidLockedAssignment,
+            _ => throw new ArgumentOutOfRangeException(nameof(reasonCode), reasonCode, "Unsupported schedule conflict reason code.")
+        };
+    }
+
+    public static ScheduleConflictSeverityContract ToContractSeverity(ScheduleConflictSeverity severity)
+    {
+        return severity switch
+        {
+            ScheduleConflictSeverity.Warning => ScheduleConflictSeverityContract.Warning,
+            ScheduleConflictSeverity.Error => ScheduleConflictSeverityContract.Error,
+            _ => throw new ArgumentOutOfRangeException(nameof(severity), severity, "Unsupported schedule conflict severity.")
+        };
+    }
+
+    private static SchedulePlanInputStatus ToDomainStatus(SchedulePlanStatusContract status)
+    {
+        return status switch
+        {
+            SchedulePlanStatusContract.Preview => SchedulePlanInputStatus.Preview,
+            SchedulePlanStatusContract.Generated => SchedulePlanInputStatus.Generated,
+            SchedulePlanStatusContract.Released => SchedulePlanInputStatus.Released,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported schedule plan contract status.")
+        };
+    }
+
+    private static ScheduleConflictReasonCode ToDomainReasonCode(ScheduleConflictReasonCodeContract reasonCode)
+    {
+        return reasonCode switch
+        {
+            ScheduleConflictReasonCodeContract.Capacity => ScheduleConflictReasonCode.Capacity,
+            ScheduleConflictReasonCodeContract.Calendar => ScheduleConflictReasonCode.Calendar,
+            ScheduleConflictReasonCodeContract.Equipment => ScheduleConflictReasonCode.Equipment,
+            ScheduleConflictReasonCodeContract.Material => ScheduleConflictReasonCode.Material,
+            ScheduleConflictReasonCodeContract.Quality => ScheduleConflictReasonCode.Quality,
+            ScheduleConflictReasonCodeContract.DueDate => ScheduleConflictReasonCode.DueDate,
+            ScheduleConflictReasonCodeContract.NoEligibleResource => ScheduleConflictReasonCode.NoEligibleResource,
+            ScheduleConflictReasonCodeContract.OutsideHorizon => ScheduleConflictReasonCode.OutsideHorizon,
+            ScheduleConflictReasonCodeContract.PredecessorUnscheduled => ScheduleConflictReasonCode.PredecessorUnscheduled,
+            ScheduleConflictReasonCodeContract.InvalidLockedAssignment => ScheduleConflictReasonCode.InvalidLockedAssignment,
+            _ => throw new ArgumentOutOfRangeException(nameof(reasonCode), reasonCode, "Unsupported schedule conflict reason code.")
+        };
+    }
+
+    private static ScheduleConflictSeverity ToDomainSeverity(ScheduleConflictSeverityContract severity)
+    {
+        return severity switch
+        {
+            ScheduleConflictSeverityContract.Warning => ScheduleConflictSeverity.Warning,
+            ScheduleConflictSeverityContract.Error => ScheduleConflictSeverity.Error,
+            _ => throw new ArgumentOutOfRangeException(nameof(severity), severity, "Unsupported schedule conflict severity.")
         };
     }
 }

@@ -4,11 +4,11 @@ import {
   PaginationContent,
   PaginationNext,
   PaginationPrevious,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
 } from '@nerv-iip/ui'
 import { computed } from 'vue'
 
@@ -58,16 +58,16 @@ function updatePageSize(value: unknown) {
     <div class="flex flex-wrap items-center gap-3">
       <div class="flex items-center gap-2">
         <span class="shrink-0 text-sm text-muted-foreground">每页</span>
-        <Select :model-value="pageSize" @update:model-value="updatePageSize">
-          <SelectTrigger class="h-8 w-24" aria-label="每页条数">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in pageSizeOptions" :key="option" :value="option">
+        <SelectPro :model-value="pageSize" @update:model-value="updatePageSize">
+          <SelectProTrigger class="h-8 w-24" aria-label="每页条数">
+            <SelectProValue />
+          </SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in pageSizeOptions" :key="option" :value="option">
               {{ option }} 条
-            </SelectItem>
-          </SelectContent>
-        </Select>
+            </SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </div>
       <Pagination
         :items-per-page="pageSizeNumber"

@@ -4,52 +4,49 @@ import type {
   BusinessConsoleNcrDispositionRequest,
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-  Button,
-  DataTable,
-  DataTablePagination,
-  DropdownMenuItem,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  AlertDialogPro,
+  AlertDialogProAction,
+  AlertDialogProCancel,
+  AlertDialogProContent,
+  AlertDialogProDescription,
+  AlertDialogProFooter,
+  AlertDialogProHeader,
+  AlertDialogProTitle,
+  AlertDialogProTrigger,
+  ButtonPro,
+  DataTablePro,
+  DropdownMenuProItem,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
+  SheetPro,
+  SheetProContent,
+  SheetProDescription,
+  SheetProFooter,
+  SheetProHeader,
+  SheetProTitle,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, RefreshCwIcon, SendIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '不合格品处理' } })
+definePage({ meta: { requiresAuth: true, title: '不合格品处理', requiredPermissions: ['business.quality.ncr.read'] } })
 
 const route = useRoute()
 const initialNcrKeyword = firstQuery(route.query.ncrId)
@@ -111,11 +108,9 @@ const statusFilter = computed({
   get: () => filters.status || 'all',
   set: (value: string) => { filters.status = value === 'all' ? undefined : value },
 })
-const openCount = computed(() => ncrs.value.filter((r) => (r.status ?? '').toLowerCase() !== 'closed').length)
-const closedCount = computed(() => ncrs.value.filter((r) => (r.status ?? '').toLowerCase() === 'closed').length)
 
 type NcrRow = BusinessConsoleQualityItem
-const columns: DataTableColumn<NcrRow>[] = [
+const columns: DataTableProColumn<NcrRow>[] = [
   { key: 'code', header: 'NCR', cellClass: 'font-medium', accessor: (r) => r.code ?? r.id ?? '无' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'summary', header: '摘要', accessor: (r) => qualityItemSummary(r) },
@@ -214,30 +209,24 @@ watch(targetNcr, (ncr) => {
   <BusinessLayout>
     <PageHeader title="不合格品处理" :breadcrumbs="[{ label: '质量' }]" :count="`${ncrsTotal} 条 NCR`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="ncrsPending" @click="refreshNcrs">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="ncrsPending" @click="refreshNcrs">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="不合格报告" :value="ncrsTotal" hint="后端筛选总数" />
-      <SectionCard description="本页待处理" :value="openCount" hint="当前页未关闭" />
-      <SectionCard description="本页已关闭" :value="closedCount" hint="当前页已关闭" />
-    </SectionCards>
-
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="NCR 状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="NCR 状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
@@ -246,80 +235,81 @@ watch(targetNcr, (ncr) => {
       未找到 NCR {{ targetNcrId }}。请确认该 NCR 是否已归档或无权访问。
     </p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="ncrsTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       :columns="columns"
       :rows="ncrs"
       :row-key="(r) => r.id ?? r.code ?? '无'"
       :loading="ncrsPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="未返回不合格报告。检验不合格或质量阻塞会在这里生成 NCR。"
     >
       <template #cell-code="{ row }">
-        <div class="flex flex-col gap-0.5">
-          <span class="font-medium">{{ row.code ?? '无' }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.id ?? '无 NCR ID' }}</span>
-        </div>
+        <span class="font-medium">{{ row.code ?? '无' }}</span>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
         <RowActions :label="`NCR 操作 ${row.code ?? ''}`">
-          <DropdownMenuItem @click="openNcr(row)">打开处置</DropdownMenuItem>
+          <DropdownMenuProItem @click="openNcr(row)">打开处置</DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="ncrsTotal" />
 
-    <Sheet v-model:open="detailOpen">
-      <SheetContent class="w-full overflow-y-auto sm:max-w-xl">
-        <SheetHeader>
-          <SheetTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</SheetTitle>
-          <SheetDescription>{{ selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。' }}</SheetDescription>
-        </SheetHeader>
+    <SheetPro v-model:open="detailOpen">
+      <SheetProContent class="w-full overflow-y-auto sm:max-w-xl">
+        <SheetProHeader>
+          <SheetProTitle>{{ selectedNcr?.code ?? '不合格品详情' }}</SheetProTitle>
+          <SheetProDescription>{{ selectedNcr ? qualityItemSummary(selectedNcr) : '查看并提交质量动作。' }}</SheetProDescription>
+        </SheetProHeader>
 
         <div class="grid gap-4 px-1">
           <div class="grid gap-2 rounded-lg border p-3">
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-medium text-foreground">状态</span>
-              <StatusBadge :value="selectedNcr?.status" />
+              <StatusBadgePro :value="selectedNcr?.status" />
             </div>
-            <div class="grid gap-1 text-sm text-muted-foreground">
-              <span>ID: {{ selectedNcr?.id ?? '无' }}</span>
-              <span>编码: {{ selectedNcr?.code ?? '无' }}</span>
-            </div>
+            <p class="text-sm text-muted-foreground">{{ selectedNcr ? qualityItemSummary(selectedNcr) : '无' }}</p>
           </div>
 
           <form class="grid gap-3 rounded-lg border p-3" @submit.prevent="submitNcrDisposition">
             <h2 class="text-base font-semibold text-foreground">提交处置</h2>
             <p v-if="dispositionErrorMessage" class="text-sm text-destructive" role="alert">{{ dispositionErrorMessage }}</p>
             <p v-if="dispositionSuccess" class="text-sm text-success" role="status">{{ dispositionSuccess }}</p>
-            <FieldGroup class="grid gap-3">
-              <Field>
-                <FieldLabel>处置类型</FieldLabel>
-                <Select v-model="dispositionForm.dispositionType">
-                  <SelectTrigger aria-label="处置类型"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="use-as-is">让步接收</SelectItem>
-                    <SelectItem value="rework">返工</SelectItem>
-                    <SelectItem value="scrap">报废</SelectItem>
-                    <SelectItem value="return-to-supplier">退供应商</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-approval-chain">审批链</FieldLabel>
-                <Input id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-disposition-files">附件文件 ID</FieldLabel>
-                <Input id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
-              </Field>
-            </FieldGroup>
+            <FieldProGroup class="grid gap-3">
+              <FieldPro>
+                <FieldProLabel>处置类型</FieldProLabel>
+                <SelectPro v-model="dispositionForm.dispositionType">
+                  <SelectProTrigger aria-label="处置类型"><SelectProValue /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem value="use-as-is">让步接收</SelectProItem>
+                    <SelectProItem value="rework">返工</SelectProItem>
+                    <SelectProItem value="scrap">报废</SelectProItem>
+                    <SelectProItem value="return-to-supplier">退供应商</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-approval-chain">审批链</FieldProLabel>
+                <InputPro id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-disposition-files">附件文件 ID</FieldProLabel>
+                <InputPro id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />
+              </FieldPro>
+            </FieldProGroup>
             <div class="flex justify-end">
-              <Button type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
+              <ButtonPro type="submit" :disabled="submitDispositionPending || !canSubmitDisposition">
                 <Spinner v-if="submitDispositionPending" aria-hidden="true" />
                 <SendIcon v-else aria-hidden="true" />
                 提交处置
-              </Button>
+              </ButtonPro>
             </div>
           </form>
 
@@ -327,45 +317,45 @@ watch(targetNcr, (ncr) => {
             <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
             <p v-if="closeErrorMessage" class="text-sm text-destructive" role="alert">{{ closeErrorMessage }}</p>
             <p v-if="closeSuccess" class="text-sm text-success" role="status">{{ closeSuccess }}</p>
-            <FieldGroup class="grid gap-3">
-              <Field>
-                <FieldLabel for="ncr-rework">返工工单</FieldLabel>
-                <Input id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-scrap">报废库存移动</FieldLabel>
-                <Input id="ncr-scrap" v-model="closeForm.scrapMovementId" />
-              </Field>
-              <Field>
-                <FieldLabel for="ncr-return">退货单据</FieldLabel>
-                <Input id="ncr-return" v-model="closeForm.returnDocumentId" />
-              </Field>
-            </FieldGroup>
+            <FieldProGroup class="grid gap-3">
+              <FieldPro>
+                <FieldProLabel for="ncr-rework">返工工单</FieldProLabel>
+                <InputPro id="ncr-rework" v-model="closeForm.reworkWorkOrderId" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-scrap">报废库存移动</FieldProLabel>
+                <InputPro id="ncr-scrap" v-model="closeForm.scrapMovementId" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="ncr-return">退货单据</FieldProLabel>
+                <InputPro id="ncr-return" v-model="closeForm.returnDocumentId" />
+              </FieldPro>
+            </FieldProGroup>
 
-            <SheetFooter>
-              <AlertDialog>
-                <AlertDialogTrigger as-child>
-                  <Button type="button" variant="destructive" :disabled="closeNcrPending || !canCloseNcr">
+            <SheetProFooter>
+              <AlertDialogPro>
+                <AlertDialogProTrigger as-child>
+                  <ButtonPro type="button" variant="destructive" :disabled="closeNcrPending || !canCloseNcr">
                     <Spinner v-if="closeNcrPending" aria-hidden="true" />
                     <CheckCircle2Icon v-else aria-hidden="true" />
                     关闭不合格品
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>确认关闭该不合格品？</AlertDialogTitle>
-                    <AlertDialogDescription>这里仅提交质量关闭动作，库存、WMS 和 MES 仍按各自服务流程处理。</AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction @click="submitCloseNcr">确认关闭</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </SheetFooter>
+                  </ButtonPro>
+                </AlertDialogProTrigger>
+                <AlertDialogProContent>
+                  <AlertDialogProHeader>
+                    <AlertDialogProTitle>确认关闭该不合格品？</AlertDialogProTitle>
+                    <AlertDialogProDescription>这里仅提交质量关闭动作，库存、WMS 和 MES 仍按各自服务流程处理。</AlertDialogProDescription>
+                  </AlertDialogProHeader>
+                  <AlertDialogProFooter>
+                    <AlertDialogProCancel>取消</AlertDialogProCancel>
+                    <AlertDialogProAction @click="submitCloseNcr">确认关闭</AlertDialogProAction>
+                  </AlertDialogProFooter>
+                </AlertDialogProContent>
+              </AlertDialogPro>
+            </SheetProFooter>
           </form>
         </div>
-      </SheetContent>
-    </Sheet>
+      </SheetProContent>
+    </SheetPro>
   </BusinessLayout>
 </template>

@@ -5,44 +5,44 @@ import type {
   BusinessConsoleMrpRunItem,
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
+import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
 import {
-  Button,
-  DataTable,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DatePickerPro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DialogProTrigger,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
+  StatusBadgePro,
+  TabsPro,
+  TabsProContent,
+  TabsProList,
+  TabsProTrigger,
 } from '@nerv-iip/ui'
-import { PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CornerDownRightIcon, NetworkIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
+import { useRouter } from 'vue-router'
 
 const {
-  acceptSuggestion,
-  acceptSuggestionError,
-  acceptSuggestionPending,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -62,13 +62,66 @@ const {
   runRequest,
   runSelection,
   suggestionFilters,
+  suggestionTypeFilter,
   suggestions,
   suggestionsError,
   suggestionsPending,
 } = useBusinessPlanning()
+const router = useRouter()
+
+// 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
+const { skus } = useBusinessSkus()
+const { resources: sites } = useBusinessMasterDataResources('site')
+const { resources: units } = useBusinessMasterDataResources('unit-of-measure')
+
+const skuNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const sku of skus.value) {
+    if (sku.code) map.set(sku.code, sku.displayName ?? sku.code)
+  }
+  return map
+})
+const siteNameByCode = computed(() => {
+  const map = new Map<string, string>()
+  for (const site of sites.value) {
+    if (site.code) map.set(site.code, site.displayName ?? site.code)
+  }
+  return map
+})
+function skuLabel(code?: string | null) {
+  if (!code) return '—'
+  return skuNameByCode.value.get(code) ?? code
+}
+function siteLabel(code?: string | null) {
+  if (!code) return '—'
+  return siteNameByCode.value.get(code) ?? code
+}
+
+const skuOptions = computed(() =>
+  skus.value
+    .filter((s) => s.code)
+    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
+)
+const siteOptions = computed(() =>
+  sites.value
+    .filter((s) => s.code)
+    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
+)
+const uomOptions = computed(() =>
+  units.value
+    .filter((u) => u.code)
+    .map((u) => ({ value: u.code as string, label: `${u.displayName ?? u.code} · ${u.code}` })),
+)
+
+const canSubmitDemand = computed(() =>
+  !!demandForm.skuCode?.trim()
+  && !!demandForm.siteCode?.trim()
+  && !!demandForm.uomCode?.trim()
+  && (demandForm.quantity ?? 0) > 0,
+)
 
 const errorMessage = computed(() =>
-  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError, acceptSuggestionError]
+  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError]
     .map((ref) => formatError(ref.value)).find(Boolean) ?? '',
 )
 function formatError(error: unknown) {
@@ -88,42 +141,134 @@ const suggestionStatusOptions = [
   { label: '已接受', value: 'accepted' },
 ]
 
-const demandQuantity = computed(() => demands.value.reduce((sum, item) => sum + (item.quantity ?? 0), 0))
-const proposedWorkOrders = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-work-order' && isOpen(i.status)).length)
-const proposedPurchases = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-purchase' && isOpen(i.status)).length)
+// 建议分型（呼应两组：生产→MES / 采购→ERP）。
+const productionSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-work-order'))
+const purchaseSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-purchase'))
+const openSuggestionCount = computed(() => suggestions.value.filter((i) => isOpen(i.status)).length)
 
-const demandColumns: DataTableColumn<BusinessConsoleDemandSourceItem>[] = [
+// KPI #3：换掉无意义的跨 SKU/单位求和，改 3 张语义卡。
+// 卡1：待评审建议条数（生产 N / 采购 N 拆分作脚注）。
+const reviewKpiHint = computed(() => `生产 ${productionSuggestions.value.filter((i) => isOpen(i.status)).length} · 采购 ${purchaseSuggestions.value.filter((i) => isOpen(i.status)).length}`)
+
+// 卡2：需求 SKU 数 / 已被建议覆盖的 SKU 数（去重）。
+const demandSkuCodes = computed(() => new Set(demands.value.map((d) => d.skuCode).filter((c): c is string => !!c)))
+const coveredSkuCodes = computed(() => {
+  const covered = new Set<string>()
+  const demandSet = demandSkuCodes.value
+  for (const s of suggestions.value) {
+    if (s.skuCode && demandSet.has(s.skuCode)) covered.add(s.skuCode)
+  }
+  return covered
+})
+const demandSkuKpi = computed(() => `${coveredSkuCodes.value.size} / ${demandSkuCodes.value.size}`)
+
+// 卡3：最近一次 MRP（状态 + 建议数）。运行按计划范围排序取最后一条。
+const latestRun = computed(() => {
+  const runs = mrpRuns.value
+  if (runs.length === 0) return null
+  return [...runs].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? ''))[runs.length - 1]
+})
+const latestRunKpiValue = computed(() => (latestRun.value ? planningStatus(latestRun.value.status).label : '未运行'))
+const latestRunKpiHint = computed(() => (latestRun.value ? `生成 ${latestRun.value.suggestionCount ?? 0} 条建议` : '尚未运行 MRP'))
+
+// MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
+function coverageRate(run: BusinessConsoleMrpRunItem): string {
+  const demandCount = run.demandCount ?? 0
+  if (demandCount <= 0) return '—'
+  const pct = Math.round(((run.suggestionCount ?? 0) / demandCount) * 100)
+  return `${pct}%`
+}
+
+// 运行的人读锚点：以「计划范围」作追溯标题，避免裸 GUID。
+function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
+  if (!run) return '选择一次运行'
+  return `计划范围 ${formatDate(run.horizonStart)} ~ ${formatDate(run.horizonEnd)}`
+}
+const selectedRun = computed(() => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null)
+
+// 需求紧迫度：按 dueDate 距今天数。逾期 danger / 7 天内 warning / 正常 neutral。
+function dueUrgency(dueDate?: string | null): { label: string, tone: StatusTone } {
+  if (!dueDate) return { label: '未排期', tone: 'neutral' }
+  const due = new Date(dueDate.slice(0, 10))
+  if (Number.isNaN(due.getTime())) return { label: '未排期', tone: 'neutral' }
+  const today = new Date(new Date().toISOString().slice(0, 10))
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000)
+  if (days < 0) return { label: `逾期 ${Math.abs(days)} 天`, tone: 'danger' }
+  if (days === 0) return { label: '今日到期', tone: 'warning' }
+  if (days <= 7) return { label: `${days} 天内`, tone: 'warning' }
+  return { label: `${days} 天后`, tone: 'neutral' }
+}
+
+// 需求覆盖状态：建议里出现该 SKU → 已生成建议；否则未覆盖。
+function demandCoverage(skuCode?: string | null): { label: string, tone: StatusTone } {
+  if (skuCode && coveredSkuCodes.value.has(skuCode)) return { label: '已生成建议', tone: 'success' }
+  return { label: '未覆盖', tone: 'neutral' }
+}
+
+// pegging 分型（成品净需求 / 组件展开）。
+function peggingTypeLabel(value?: string | null): { label: string, tone: StatusTone } {
+  const map: Record<string, { label: string, tone: StatusTone }> = {
+    'finished-good': { label: '成品净需求', tone: 'info' },
+    'finished-good-net-requirement': { label: '成品净需求', tone: 'info' },
+    'component': { label: '组件展开', tone: 'neutral' },
+    'component-net-requirement': { label: '组件展开', tone: 'neutral' },
+  }
+  return map[value ?? ''] ?? { label: '需求展开', tone: 'neutral' }
+}
+// 父项=组件 或 无组件 → 视为顶层（成品行，不缩进）；有不同组件 → 缩进。
+function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
+  return !!row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode
+}
+
+// 计划建议分型筛选后的可见行。
+const visibleSuggestions = computed(() => {
+  const t = suggestionTypeFilter.type
+  // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
+  if (!t || t === 'all') return suggestions.value
+  return suggestions.value.filter((s) => s.suggestionType === t)
+})
+const suggestionTypeFilterOptions = [
+  { label: '全部类型', value: 'all' },
+  { label: '生产建议 (→MES)', value: 'planned-work-order' },
+  { label: '采购建议 (→ERP)', value: 'planned-purchase' },
+]
+
+const demandColumns: DataTableProColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
   { key: 'demandType', header: '类型', width: 'w-24' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'siteCode', header: '工厂' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
-  { key: 'dueDate', header: '日期', width: 'w-28' },
+  { key: 'dueDate', header: '需求日', width: 'w-32' },
+  { key: 'urgency', header: '紧迫度', width: 'w-28' },
+  { key: 'coverage', header: '覆盖', width: 'w-28' },
 ]
-const runColumns: DataTableColumn<BusinessConsoleMrpRunItem>[] = [
-  { key: 'runId', header: '运行批次', cellClass: 'font-medium' },
+const runColumns: DataTableProColumn<BusinessConsoleMrpRunItem>[] = [
+  // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
+  { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
+  { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
-  { key: 'productionEngineeringSnapshotSource', header: '工程快照' },
-  { key: 'inventorySnapshotSource', header: '库存快照' },
-  { key: 'actions', header: '', align: 'end', width: 'w-12' },
+  { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
+  { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
+  { key: 'actions', header: '', align: 'end', width: 'w-24' },
 ]
-const peggingColumns: DataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
+const peggingColumns: DataTableProColumn<BusinessConsoleMrpPeggingItem>[] = [
   { key: 'demandSourceReference', header: '需求来源', cellClass: 'font-medium' },
-  { key: 'parentSkuCode', header: '父项' },
-  { key: 'componentSkuCode', header: '组件' },
+  { key: 'peggingType', header: '展开类型', width: 'w-28' },
+  { key: 'sku', header: '物料层级' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
   { key: 'engineeringRef', header: '工程引用' },
 ]
-const suggestionColumns: DataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
-  { key: 'suggestionId', header: '建议', cellClass: 'font-medium' },
-  { key: 'suggestionType', header: '类型', width: 'w-24' },
+const suggestionColumns: DataTableProColumn<BusinessConsolePlanningSuggestionItem>[] = [
+  // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
+  { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
   { key: 'skuCode', header: 'SKU' },
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
   { key: 'reasonCode', header: '原因' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-20' },
 ]
 
 async function submitDemand() {
@@ -133,15 +278,6 @@ async function submitDemand() {
 async function submitMrpRun() {
   await runMrp()
   mrpOpen.value = false
-}
-async function acceptPlanningSuggestion(suggestionId?: string, suggestionType?: string) {
-  if (!suggestionId) return
-  const isWorkOrder = suggestionType === 'planned-work-order'
-  await acceptSuggestion(suggestionId, {
-    downstreamService: isWorkOrder ? 'MES' : 'ERP',
-    downstreamDocumentType: isWorkOrder ? 'planned-work-order' : 'planned-purchase-order',
-    downstreamDocumentId: `${isWorkOrder ? 'WO-PLAN' : 'PO-PLAN'}-${suggestionId}`,
-  })
 }
 
 function planningStatus(status?: string | null): { label: string, tone: StatusTone } {
@@ -159,7 +295,17 @@ function suggestionTypeLabel(value?: string | null) {
   return ({ 'planned-purchase': '采购建议', 'planned-work-order': '生产建议' } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
 }
 function reasonLabel(value?: string | null) {
-  return ({ inventory_shortage: '库存不足', material_shortage: '物料不足', demand_pegging: '需求驱动', safety_stock: '安全库存' } as Record<string, string>)[value ?? ''] ?? (value || '按计划规则形成')
+  const map: Record<string, string> = {
+    'inventory_shortage': '库存不足',
+    'material_shortage': '物料不足',
+    'demand_pegging': '需求驱动',
+    'safety_stock': '安全库存',
+    'finished-good-net-requirement': '成品净需求',
+    'component-net-requirement': '组件净需求',
+    'safety-stock-replenishment': '安全库存补充',
+  }
+  // 未知码一律降级为通用中文，绝不回显原始英文码。
+  return map[value ?? ''] ?? '按计划规则形成'
 }
 function isOpen(status?: string | null) {
   return status?.toLowerCase() === 'open'
@@ -170,194 +316,321 @@ function formatDate(value?: string | null) {
 function formatQuantity(value?: number | null, uom?: string | null) {
   return `${value ?? 0} ${uom ?? ''}`.trim()
 }
-function formatSource(value?: string | null) {
-  return value && value.length > 0 ? value : '未采集'
+function inputDegradationLabel(sources?: readonly string[] | null) {
+  return sources && sources.length > 0 ? sources.map(inputDegradationSourceLabel).join('、') : '正常'
+}
+function inputDegradationSourceLabel(source: string) {
+  return ({
+    'scheduled-receipts': '在途到货',
+    'master-data-planning-parameters': '主数据规划参数',
+  } as Record<string, string>)[source] ?? source
+}
+
+function parseVersionReference(reference?: string | null) {
+  if (!reference) return {}
+  const separator = reference.lastIndexOf(':')
+  if (separator <= 0 || separator >= reference.length - 1) return {}
+  return {
+    bomCode: reference.slice(0, separator),
+    revision: reference.slice(separator + 1),
+  }
+}
+
+function bomAnalysisQuery(row: BusinessConsoleMrpPeggingItem) {
+  return {
+    kind: 'manufacturing',
+    view: 'tree',
+    skuCode: row.parentSkuCode ?? row.componentSkuCode ?? '',
+    componentCode: row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode ? row.componentSkuCode : undefined,
+    effectiveDate: selectedRun.value?.horizonStart ?? new Date().toISOString().slice(0, 10),
+    lotSize: String(row.quantity ?? 1),
+    ...parseVersionReference(row.manufacturingBomReference),
+  }
+}
+
+function openBomContext(row: BusinessConsoleMrpPeggingItem) {
+  void router.push({
+    path: '/engineering/bom-analysis',
+    query: bomAnalysisQuery(row),
+  })
 }
 </script>
 
 <template>
   <PageHeader title="需求与计划" :breadcrumbs="[{ label: '需求与计划' }]">
     <template #actions>
-      <Button size="sm" type="button" variant="outline" :disabled="demandsPending" @click="refreshPlanning">
+      <ButtonPro size="sm" type="button" variant="outline" :disabled="demandsPending" @click="refreshPlanning">
         <RefreshCwIcon aria-hidden="true" />
         刷新
-      </Button>
+      </ButtonPro>
 
-      <Dialog v-model:open="mrpOpen">
-        <DialogTrigger as-child>
-          <Button size="sm" type="button" variant="outline">
+      <DialogPro v-model:open="mrpOpen">
+        <DialogProTrigger as-child>
+          <ButtonPro size="sm" type="button" variant="outline">
             <PlayIcon aria-hidden="true" />
             运行 MRP
-          </Button>
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>运行 MRP</DialogTitle>
-            <DialogDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogDescription>
-          </DialogHeader>
+          </ButtonPro>
+        </DialogProTrigger>
+        <DialogProContent>
+          <DialogProHeader>
+            <DialogProTitle>运行 MRP</DialogProTitle>
+            <DialogProDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogProDescription>
+          </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel for="mrp-start">开始日期</FieldLabel>
-                <Input id="mrp-start" v-model="runRequest.horizonStart" type="date" />
-              </Field>
-              <Field>
-                <FieldLabel for="mrp-end">结束日期</FieldLabel>
-                <Input id="mrp-end" v-model="runRequest.horizonEnd" type="date" />
-              </Field>
-            </FieldGroup>
-            <DialogFooter>
-              <Button type="button" variant="outline" @click="mrpOpen = false">取消</Button>
-              <Button type="submit" :disabled="runMrpPending">
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro>
+                <FieldProLabel>开始日期</FieldProLabel>
+                <DatePickerPro v-model="runRequest.horizonStart" placeholder="选择开始日期" class="w-full" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel>结束日期</FieldProLabel>
+                <DatePickerPro v-model="runRequest.horizonEnd" placeholder="选择结束日期" class="w-full" />
+              </FieldPro>
+            </FieldProGroup>
+            <DialogProFooter>
+              <ButtonPro type="button" variant="outline" @click="mrpOpen = false">取消</ButtonPro>
+              <ButtonPro type="submit" :disabled="runMrpPending">
                 <Spinner v-if="runMrpPending" aria-hidden="true" />
                 运行
-              </Button>
-            </DialogFooter>
+              </ButtonPro>
+            </DialogProFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </DialogProContent>
+      </DialogPro>
 
-      <Dialog v-model:open="demandOpen">
-        <DialogTrigger as-child>
-          <Button size="sm" type="button">
+      <DialogPro v-model:open="demandOpen">
+        <DialogProTrigger as-child>
+          <ButtonPro size="sm" type="button">
             <PlusIcon aria-hidden="true" />
             新建需求
-          </Button>
-        </DialogTrigger>
-        <DialogContent class="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>新建需求</DialogTitle>
-            <DialogDescription>录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</DialogDescription>
-          </DialogHeader>
+          </ButtonPro>
+        </DialogProTrigger>
+        <DialogProContent class="sm:max-w-2xl">
+          <DialogProHeader>
+            <DialogProTitle>新建需求</DialogProTitle>
+            <DialogProDescription>录入销售订单、预测或安全库存需求，作为 MRP 与计划建议的来源。</DialogProDescription>
+          </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitDemand">
-            <FieldGroup class="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel>需求类型</FieldLabel>
-                <Select v-model="demandForm.demandType">
-                  <SelectTrigger aria-label="需求类型"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel for="demand-source">来源单号</FieldLabel>
-                <Input id="demand-source" v-model="demandForm.sourceReference" placeholder="SO-2026-001" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-sku">SKU</FieldLabel>
-                <Input id="demand-sku" v-model="demandForm.skuCode" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-site">工厂</FieldLabel>
-                <Input id="demand-site" v-model="demandForm.siteCode" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-uom">单位</FieldLabel>
-                <Input id="demand-uom" v-model="demandForm.uomCode" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-qty">数量</FieldLabel>
-                <Input id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
-              </Field>
-              <Field>
-                <FieldLabel for="demand-due">需求日期</FieldLabel>
-                <Input id="demand-due" v-model="demandForm.dueDate" type="date" />
-              </Field>
-            </FieldGroup>
-            <DialogFooter>
-              <Button type="button" variant="outline" @click="demandOpen = false">取消</Button>
-              <Button type="submit" :disabled="createDemandPending">
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro>
+                <FieldProLabel>需求类型</FieldProLabel>
+                <SelectPro v-model="demandForm.demandType">
+                  <SelectProTrigger aria-label="需求类型"><SelectProValue /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-source">来源单号</FieldProLabel>
+                <InputPro id="demand-source" v-model="demandForm.sourceReference" placeholder="SO-2026-001" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-sku">SKU</FieldProLabel>
+                <SelectPro v-model="demandForm.skuCode">
+                  <SelectProTrigger id="demand-sku"><SelectProValue placeholder="选择 SKU" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-site">工厂</FieldProLabel>
+                <SelectPro v-model="demandForm.siteCode">
+                  <SelectProTrigger id="demand-site"><SelectProValue placeholder="选择工厂" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-uom">单位</FieldProLabel>
+                <SelectPro v-model="demandForm.uomCode">
+                  <SelectProTrigger id="demand-uom"><SelectProValue placeholder="选择单位" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="demand-qty">数量</FieldProLabel>
+                <InputPro id="demand-qty" v-model.number="demandForm.quantity" min="0.0001" step="0.0001" type="number" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel>需求日期</FieldProLabel>
+                <DatePickerPro v-model="demandForm.dueDate" placeholder="选择需求日期" class="w-full" />
+              </FieldPro>
+            </FieldProGroup>
+            <DialogProFooter>
+              <ButtonPro type="button" variant="outline" @click="demandOpen = false">取消</ButtonPro>
+              <ButtonPro type="submit" :disabled="createDemandPending || !canSubmitDemand">
                 <Spinner v-if="createDemandPending" aria-hidden="true" />
                 保存需求
-              </Button>
-            </DialogFooter>
+              </ButtonPro>
+            </DialogProFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </DialogProContent>
+      </DialogPro>
     </template>
   </PageHeader>
 
   <SectionCards :columns="3">
-    <SectionCard description="需求总量" :value="demandQuantity" hint="当前计划范围" />
-    <SectionCard description="生产建议" :value="proposedWorkOrders" hint="待评审" />
-    <SectionCard description="采购建议" :value="proposedPurchases" hint="待评审" />
+    <SectionCard description="待评审建议" :value="openSuggestionCount" footnote="条计划建议待接受" :hint="reviewKpiHint" />
+    <SectionCard description="需求覆盖 (SKU)" :value="demandSkuKpi" footnote="已生成建议 / 需求 SKU 数" hint="按 SKU 去重统计" />
+    <SectionCard description="最近一次 MRP" :value="latestRunKpiValue" :footnote="latestRun ? runHorizonLabel(latestRun) : '—'" :hint="latestRunKpiHint" />
   </SectionCards>
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <Tabs default-value="demands">
-    <TabsList>
-      <TabsTrigger value="demands">需求池 ({{ demands.length }})</TabsTrigger>
-      <TabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</TabsTrigger>
-      <TabsTrigger value="suggestions">计划建议 ({{ suggestions.length }})</TabsTrigger>
-    </TabsList>
+  <TabsPro default-value="demands">
+    <TabsProList>
+      <TabsProTrigger value="demands">需求池 ({{ demands.length }})</TabsProTrigger>
+      <TabsProTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</TabsProTrigger>
+      <TabsProTrigger value="suggestions">计划建议 ({{ suggestions.length }})</TabsProTrigger>
+    </TabsProList>
 
-    <TabsContent value="demands">
-      <DataTable :columns="demandColumns" :rows="demands" row-key="demandSourceId" :loading="demandsPending" empty-message="当前范围没有计划需求。">
+    <TabsProContent value="demands">
+      <DataTablePro :columns="demandColumns" :rows="demands" row-key="demandSourceId" :loading="demandsPending" :searchable="false" :column-settings="false" empty-message="当前范围没有计划需求。">
         <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
+        <template #cell-skuCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ skuLabel(row.skuCode) }}</span>
+            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
+          </div>
+        </template>
+        <template #cell-siteCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ siteLabel(row.siteCode) }}</span>
+            <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{ row.siteCode }}</span>
+          </div>
+        </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
-      </DataTable>
-    </TabsContent>
+        <template #cell-urgency="{ row }"><StatusBadgePro :label="dueUrgency(row.dueDate).label" :tone="dueUrgency(row.dueDate).tone" /></template>
+        <template #cell-coverage="{ row }"><StatusBadgePro :label="demandCoverage(row.skuCode).label" :tone="demandCoverage(row.skuCode).tone" /></template>
+      </DataTablePro>
+    </TabsProContent>
 
-    <TabsContent value="runs" class="grid gap-4">
-      <DataTable :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" empty-message="尚未运行 MRP。">
-        <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
-        <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
-        <template #cell-productionEngineeringSnapshotSource="{ row }">{{ formatSource(row.productionEngineeringSnapshotSource) }}</template>
-        <template #cell-inventorySnapshotSource="{ row }">{{ formatSource(row.inventorySnapshotSource) }}</template>
-        <template #cell-actions="{ row }">
-          <Button size="sm" type="button" variant="ghost" @click="runSelection.runId = row.runId ?? ''">查看追溯</Button>
+    <TabsProContent value="runs" class="grid gap-4">
+      <DataTablePro :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" :searchable="false" :column-settings="false" empty-message="尚未运行 MRP。">
+        <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
+        <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-demandCount="{ row }"><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template>
+        <template #cell-inputDegradationSources="{ row }">
+          <StatusBadgePro
+            :label="inputDegradationLabel(row.inputDegradationSources)"
+            :tone="row.hasInputDegradation ? 'warning' : 'success'"
+          />
         </template>
-      </DataTable>
+        <template #cell-suggestionCount="{ row }"><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template>
+        <template #cell-coverage="{ row }"><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template>
+        <template #cell-availabilityCount="{ row }"><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template>
+        <template #cell-actions="{ row }">
+          <ButtonPro
+            size="sm"
+            type="button"
+            :variant="runSelection.runId === row.runId ? 'secondary' : 'ghost'"
+            @click="runSelection.runId = row.runId ?? ''"
+          >
+            查看追溯
+          </ButtonPro>
+        </template>
+      </DataTablePro>
 
       <div class="grid gap-2">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">需求追溯</span>
-          <span class="text-sm text-muted-foreground">{{ runSelection.runId ? `批次 ${runSelection.runId}` : '选择一次运行' }}</span>
+          <span class="text-sm text-muted-foreground">{{ runHorizonLabel(selectedRun) }}</span>
+          <StatusBadgePro
+            v-if="selectedRun"
+            :label="planningStatus(selectedRun.status).label"
+            :tone="planningStatus(selectedRun.status).tone"
+          />
         </div>
-        <DataTable
+        <DataTablePro
           :columns="peggingColumns"
           :rows="pegging"
           :row-key="(r) => `${r.suggestionId}:${r.componentSkuCode}`"
           :loading="peggingPending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="选择一条 MRP 运行查看需求与物料来源。"
         >
-          <template #cell-componentSkuCode="{ row }">{{ row.componentSkuCode ?? '-' }}</template>
+          <template #cell-peggingType="{ row }">
+            <StatusBadgePro :label="peggingTypeLabel(row.peggingType).label" :tone="peggingTypeLabel(row.peggingType).tone" />
+          </template>
+          <template #cell-sku="{ row }">
+            <div :class="isComponentRow(row) ? 'flex items-start gap-1.5 pl-5' : 'flex flex-col gap-0.5'">
+              <CornerDownRightIcon v-if="isComponentRow(row)" class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <div class="flex flex-col gap-0.5">
+                <template v-if="isComponentRow(row)">
+                  <span>{{ skuLabel(row.componentSkuCode) }}</span>
+                  <span class="text-xs text-muted-foreground">
+                    {{ row.componentSkuCode }} · 属 {{ skuLabel(row.parentSkuCode) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="font-medium">{{ skuLabel(row.parentSkuCode) }}</span>
+                  <span v-if="row.parentSkuCode" class="text-xs text-muted-foreground">{{ row.parentSkuCode }}</span>
+                </template>
+              </div>
+            </div>
+          </template>
           <template #cell-quantity="{ row }"><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template>
-          <template #cell-engineeringRef="{ row }">{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '-' }}</template>
-        </DataTable>
+          <template #cell-engineeringRef="{ row }">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span>{{ row.manufacturingBomReference ?? row.productionVersionReference ?? '—' }}</span>
+                <span v-if="row.routingReference" class="text-xs text-muted-foreground">工艺 {{ row.routingReference }}</span>
+              </div>
+              <ButtonPro v-if="row.parentSkuCode || row.componentSkuCode" size="sm" type="button" variant="ghost" @click="openBomContext(row)">
+                <NetworkIcon aria-hidden="true" />
+                查看 BOM
+              </ButtonPro>
+            </div>
+          </template>
+        </DataTablePro>
       </div>
-    </TabsContent>
+    </TabsProContent>
 
-    <TabsContent value="suggestions" class="grid gap-3">
-      <div class="flex justify-end">
-        <Select v-model="suggestionFilters.status">
-          <SelectTrigger class="h-9 w-32" aria-label="建议状态"><SelectValue placeholder="建议状态" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+    <TabsProContent value="suggestions" class="grid gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <SelectPro v-model="suggestionTypeFilter.type">
+          <SelectProTrigger class="h-9 w-44" aria-label="建议分型"><SelectProValue placeholder="全部类型" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in suggestionTypeFilterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <span class="text-sm text-muted-foreground">
+          生产建议 → MES · 采购建议 → ERP
+        </span>
+        <div class="ms-auto flex items-center gap-2">
+          <SelectPro v-model="suggestionFilters.status">
+            <SelectProTrigger class="h-9 w-32" aria-label="建议状态"><SelectProValue placeholder="建议状态" /></SelectProTrigger>
+            <SelectProContent>
+              <SelectProItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+            </SelectProContent>
+          </SelectPro>
+        </div>
       </div>
-      <DataTable :columns="suggestionColumns" :rows="suggestions" row-key="suggestionId" :loading="suggestionsPending" empty-message="当前范围没有计划建议。">
-        <template #cell-suggestionType="{ row }">{{ suggestionTypeLabel(row.suggestionType) }}</template>
+      <DataTablePro :columns="suggestionColumns" :rows="visibleSuggestions" row-key="suggestionId" :loading="suggestionsPending" :searchable="false" :column-settings="false" empty-message="当前范围没有计划建议。">
+        <template #cell-suggestionType="{ row }">
+          <StatusBadgePro
+            :label="suggestionTypeLabel(row.suggestionType)"
+            :tone="row.suggestionType === 'planned-work-order' ? 'info' : 'neutral'"
+          />
+        </template>
+        <template #cell-skuCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ skuLabel(row.skuCode) }}</span>
+            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
+          </div>
+        </template>
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
         <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
-        <template #cell-status="{ row }"><StatusBadge :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
-        <template #cell-actions="{ row }">
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            :disabled="acceptSuggestionPending || planningStatus(row.status).label === '已接受'"
-            @click="acceptPlanningSuggestion(row.suggestionId, row.suggestionType)"
-          >
-            接受
-          </Button>
-        </template>
-      </DataTable>
-    </TabsContent>
-  </Tabs>
+        <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+      </DataTablePro>
+    </TabsProContent>
+  </TabsPro>
 </template>

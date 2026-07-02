@@ -23,6 +23,11 @@ public sealed record ApplicationRegistration(
     IReadOnlyList<CapabilityDescriptor> Capabilities,
     IReadOnlyDictionary<string, string> Metadata);
 
+public sealed record ApplicationRegistrationResult(
+    string RegistrationId,
+    string InstanceKey,
+    string IngestionToken);
+
 public sealed record CapabilityDescriptor(
     string CapabilityCode,
     string CapabilityVersion,

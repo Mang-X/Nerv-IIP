@@ -3,6 +3,7 @@ using FastEndpoints.Swagger;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
@@ -29,6 +30,28 @@ builder.Services
         };
     });
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddMemoryCache();
+var productEngineeringBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
+var inventoryBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
+var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+builder.Services.AddSingleton(new MesMaterialRequirementInventoryOptions
+{
+    DefaultSiteCode = builder.Configuration["Inventory:DefaultSiteCode"] ?? "production",
+    SiteCodes = ResolveSiteCodes(builder.Configuration),
+});
+builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
+{
+    client.BaseAddress = productEngineeringBaseAddress;
+});
+builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
+{
+    client.BaseAddress = inventoryBaseAddress;
+});
+builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
+{
+    client.BaseAddress = masterDataBaseAddress;
+});
+builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
 builder.Services.AddMediatR(configuration => configuration
     .RegisterServicesFromAssembly(typeof(Program).Assembly)
     .AddUnitOfWorkBehaviors());
@@ -42,7 +65,7 @@ builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environme
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.AddSingleton<RuleScheduler>();
-builder.Services.AddScoped<MesNumberingService>();
+builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
@@ -52,8 +75,7 @@ builder.Services.AddSingleton(new MesRescheduleOptions
     AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
     AutoRescheduleOnAssetRestored = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetRestored", true),
 });
-builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForReschedule>();
-builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForReschedule>();
+builder.Services.AddMesIntegrationEventConsumers();
 
 var app = builder.Build();
 app.UseNervIipCorrelation();
@@ -88,6 +110,49 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
+}
+
+static IReadOnlyCollection<string>? ResolveSiteCodes(IConfiguration configuration)
+{
+    var sectionValues = configuration.GetSection("Inventory:SiteCodes")
+        .Get<string[]>()
+        ?.Where(x => !string.IsNullOrWhiteSpace(x))
+        .Select(x => x.Trim())
+        .ToArray();
+    if (sectionValues is { Length: > 0 })
+    {
+        return sectionValues;
+    }
+
+    var delimited = configuration["Inventory:SiteCodes"];
+    if (string.IsNullOrWhiteSpace(delimited))
+    {
+        return null;
+    }
+
+    var values = delimited
+        .Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    return values.Length == 0 ? null : values;
 }
 
 /// <summary>

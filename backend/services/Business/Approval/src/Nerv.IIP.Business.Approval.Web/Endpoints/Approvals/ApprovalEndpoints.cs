@@ -51,7 +51,9 @@ public sealed record ApprovalTemplateStepRequest(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string? CompletionPolicy = null,
+    string? ConditionExpression = null);
 
 public sealed record CreateOrUpdateApprovalTemplateResponse(ApprovalTemplateId TemplateId);
 
@@ -96,6 +98,12 @@ public sealed record ListPendingApprovalTasksRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record CheckOverdueApprovalStepsRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record CheckOverdueApprovalStepsResponse(int MarkedCount);
+
 public sealed record ListApprovalDecisionsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -117,6 +125,42 @@ public sealed record ResolveApprovalStepRequest(
     string? Comment);
 
 public sealed record ResolveApprovalStepResponse(ApprovalDecisionId DecisionId);
+
+public sealed record WithdrawApprovalChainRequest(
+    ApprovalChainId ChainId,
+    string ActorType,
+    string ActorRef,
+    string? Reason);
+
+public sealed record ApprovalActionAcceptedResponse(bool Accepted);
+
+public sealed record ResubmitApprovalChainRequest(
+    ApprovalChainId ChainId,
+    string ActorType,
+    string ActorRef,
+    string? Reason);
+
+public sealed record AddApprovalStepSignerRequest(
+    ApprovalChainId ChainId,
+    int StepNo,
+    string ApproverType,
+    string ApproverRef,
+    string RequestedByActorType,
+    string RequestedByActorRef,
+    string? Reason);
+
+public sealed record AddApprovalStepSignerResponse(ApprovalStepId StepId);
+
+public sealed record TransferApprovalStepRequest(
+    ApprovalChainId ChainId,
+    int StepNo,
+    string FromActorType,
+    string FromActorRef,
+    string ToActorType,
+    string ToActorRef,
+    string RequestedByActorType,
+    string RequestedByActorRef,
+    string? Reason);
 
 public sealed record ListApprovalDelegationsRequest(
     string OrganizationId,
@@ -174,7 +218,9 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
                 x.ParallelGroupKey,
                 x.ApproverType,
                 x.ApproverRef,
-                x.DueInHours)).ToArray()), ct);
+                x.DueInHours,
+                x.CompletionPolicy,
+                x.ConditionExpression)).ToArray()), ct);
         await Send.OkAsync(new CreateOrUpdateApprovalTemplateResponse(templateId).AsResponseData(), cancellation: ct);
     }
 }
@@ -271,6 +317,21 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
     }
 }
 
+public sealed class CheckOverdueApprovalStepsEndpoint(ISender sender)
+    : ApprovalEndpoint<CheckOverdueApprovalStepsRequest, ResponseData<CheckOverdueApprovalStepsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<CheckOverdueApprovalStepsEndpoint>());
+    }
+
+    public override async Task HandleAsync(CheckOverdueApprovalStepsRequest req, CancellationToken ct)
+    {
+        var marked = await sender.Send(new CheckOverdueApprovalStepsCommand(req.OrganizationId, req.EnvironmentId), ct);
+        await Send.OkAsync(new CheckOverdueApprovalStepsResponse(marked).AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class ListApprovalDecisionsEndpoint(ISender sender)
     : ApprovalEndpoint<ListApprovalDecisionsRequest, ResponseData<ApprovalDecisionListResponse>>
 {
@@ -314,6 +375,88 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender)
             req.Decision,
             req.Comment), ct);
         await Send.OkAsync(new ResolveApprovalStepResponse(decisionId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class WithdrawApprovalChainEndpoint(ISender sender)
+    : ApprovalEndpoint<WithdrawApprovalChainRequest, ResponseData<ApprovalActionAcceptedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<WithdrawApprovalChainEndpoint>());
+    }
+
+    public override async Task HandleAsync(WithdrawApprovalChainRequest req, CancellationToken ct)
+    {
+        var chainId = Route<ApprovalChainId>("chainId") ?? req.ChainId;
+        await sender.Send(new WithdrawApprovalChainCommand(chainId, req.ActorType, req.ActorRef, req.Reason), ct);
+        await Send.OkAsync(new ApprovalActionAcceptedResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ResubmitApprovalChainEndpoint(ISender sender)
+    : ApprovalEndpoint<ResubmitApprovalChainRequest, ResponseData<ApprovalActionAcceptedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<ResubmitApprovalChainEndpoint>());
+    }
+
+    public override async Task HandleAsync(ResubmitApprovalChainRequest req, CancellationToken ct)
+    {
+        var chainId = Route<ApprovalChainId>("chainId") ?? req.ChainId;
+        await sender.Send(new ResubmitApprovalChainCommand(chainId, req.ActorType, req.ActorRef, req.Reason), ct);
+        await Send.OkAsync(new ApprovalActionAcceptedResponse(true).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AddApprovalStepSignerEndpoint(ISender sender)
+    : ApprovalEndpoint<AddApprovalStepSignerRequest, ResponseData<AddApprovalStepSignerResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<AddApprovalStepSignerEndpoint>());
+    }
+
+    public override async Task HandleAsync(AddApprovalStepSignerRequest req, CancellationToken ct)
+    {
+        var chainId = Route<ApprovalChainId>("chainId") ?? req.ChainId;
+        var stepNo = Route<int>("stepNo");
+        var stepId = await sender.Send(new AddApprovalStepSignerCommand(
+            chainId,
+            stepNo == 0 ? req.StepNo : stepNo,
+            req.ApproverType,
+            req.ApproverRef,
+            req.RequestedByActorType,
+            req.RequestedByActorRef,
+            req.Reason), ct);
+        await Send.OkAsync(new AddApprovalStepSignerResponse(stepId).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class TransferApprovalStepEndpoint(ISender sender)
+    : ApprovalEndpoint<TransferApprovalStepRequest, ResponseData<ApprovalActionAcceptedResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureApprovalContract(ApprovalEndpointContracts.Get<TransferApprovalStepEndpoint>());
+    }
+
+    public override async Task HandleAsync(TransferApprovalStepRequest req, CancellationToken ct)
+    {
+        var chainId = Route<ApprovalChainId>("chainId") ?? req.ChainId;
+        var stepNo = Route<int>("stepNo");
+        await sender.Send(new TransferApprovalStepCommand(
+            chainId,
+            stepNo == 0 ? req.StepNo : stepNo,
+            req.FromActorType,
+            req.FromActorRef,
+            req.ToActorType,
+            req.ToActorRef,
+            req.RequestedByActorType,
+            req.RequestedByActorRef,
+            req.Reason), ct);
+        await Send.OkAsync(new ApprovalActionAcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -404,8 +547,13 @@ public static class ApprovalEndpointContracts
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "startApprovalChain"),
         new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "getApprovalChain"),
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
+        new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
         new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resolveApprovalStep"),
+        new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "withdrawApprovalChain"),
+        new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "resubmitApprovalChain"),
+        new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "addApprovalStepSigner"),
+        new(typeof(TransferApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "transferApprovalStep"),
         new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
         new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createApprovalDelegation"),
         new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "revokeApprovalDelegation"),

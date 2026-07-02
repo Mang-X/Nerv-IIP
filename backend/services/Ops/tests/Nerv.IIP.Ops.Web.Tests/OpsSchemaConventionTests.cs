@@ -86,6 +86,27 @@ public sealed class OpsSchemaConventionTests
         }
     }
 
+    [Fact]
+    public void Audit_records_have_chain_scope_and_unique_sequence_index()
+    {
+        using var fixture = CreateFixture();
+        var entity = fixture.DbContext.Model.FindEntityType(typeof(AuditRecord));
+        Assert.NotNull(entity);
+
+        Assert.NotNull(entity.FindProperty(nameof(AuditRecord.OrganizationId)));
+        Assert.NotNull(entity.FindProperty(nameof(AuditRecord.EnvironmentId)));
+
+        var uniqueScopeIndex = entity.GetIndexes().SingleOrDefault(index =>
+            index.IsUnique
+            && index.Properties.Select(x => x.Name).SequenceEqual([
+                nameof(AuditRecord.OrganizationId),
+                nameof(AuditRecord.EnvironmentId),
+                nameof(AuditRecord.SequenceNo)
+            ]));
+
+        Assert.NotNull(uniqueScopeIndex);
+    }
+
     private static SchemaFixture CreateFixture()
     {
         var services = new ServiceCollection();

@@ -2,14 +2,7 @@
 import type { HTMLAttributes } from 'vue'
 import { computed } from 'vue'
 import { MinusIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-vue-next'
-import {
-  Card,
-  CardAction,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '../../ui/card'
+import { Card, CardAction, CardDescription, CardFooter, CardHeader, CardTitle } from '../../ui/card'
 import { Badge } from '../../ui/badge'
 import { cn } from '../../../lib/utils'
 
@@ -21,7 +14,7 @@ const props = defineProps<{
   /** The headline metric (rendered tabular-nums). */
   value: string | number
   /** Optional trend pill (e.g. '+12.5%'). */
-  trend?: { value: string, direction?: TrendDirection }
+  trend?: { value: string; direction?: TrendDirection }
   /** Optional emphasized footnote line. */
   footnote?: string
   /** Optional secondary (muted) footnote line. */
@@ -31,13 +24,17 @@ const props = defineProps<{
 
 const direction = computed<TrendDirection>(() => props.trend?.direction ?? 'flat')
 const trendIcon = computed(() =>
-  direction.value === 'up' ? TrendingUpIcon : direction.value === 'down' ? TrendingDownIcon : MinusIcon,
+  direction.value === 'up'
+    ? TrendingUpIcon
+    : direction.value === 'down'
+      ? TrendingDownIcon
+      : MinusIcon,
 )
 const trendClass = computed(() =>
   direction.value === 'up'
-    ? 'border-success/30 bg-success/10 text-success'
+    ? 'border-success/30 bg-success/10 text-success-strong'
     : direction.value === 'down'
-      ? 'border-destructive/30 bg-destructive/10 text-destructive'
+      ? 'border-destructive/30 bg-destructive/10 text-destructive-strong'
       : 'border-border bg-muted text-muted-foreground',
 )
 </script>
@@ -56,7 +53,10 @@ const trendClass = computed(() =>
         </Badge>
       </CardAction>
     </CardHeader>
-    <CardFooter v-if="footnote || hint || $slots.default" class="flex-col items-start gap-1 text-sm">
+    <CardFooter
+      v-if="footnote || hint || $slots.default"
+      class="flex-col items-start gap-1 text-sm"
+    >
       <slot>
         <div v-if="footnote" class="line-clamp-1 font-medium text-foreground">{{ footnote }}</div>
         <div v-if="hint" class="text-muted-foreground">{{ hint }}</div>

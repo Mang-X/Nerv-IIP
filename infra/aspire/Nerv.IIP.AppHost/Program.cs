@@ -5,13 +5,17 @@ const string LocalDevelopmentEnvironment = "Development";
 
 builder.AddDockerComposeEnvironment("compose");
 
-var iamJwtSigningKey = builder.AddParameter("iam-jwt-signing-key", secret: true);
+var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
+var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret: true);
+var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
+var iamSecretsPepper = builder.AddParameter("iam-secrets-pepper", secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
 var redisPassword = builder.AddParameter("redis-password", secret: true);
 var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secret: true);
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
+var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
 var useRedisMessaging = string.Equals(messagingProvider, "Redis", StringComparison.OrdinalIgnoreCase);
@@ -19,6 +23,9 @@ var useOtelCollector = builder.Configuration.GetValue("Observability:UseCollecto
 var useVictoriaLogs = builder.Configuration.GetValue("Observability:VictoriaLogs:Enabled", true);
 var aspireDashboardOtlpHttpEndpoint = builder.Configuration["Observability:AspireDashboardOtlpHttpEndpoint"] ?? "http://host.docker.internal:18890";
 var victoriaLogsRetentionPeriod = builder.Configuration["Observability:VictoriaLogs:RetentionPeriod"] ?? "30d";
+var connectorHostId = builder.Configuration["ConnectorHost:ConnectorHostId"] ?? "connector-host-001";
+var connectorHostOrganizationId = builder.Configuration["ConnectorHost:OrganizationId"] ?? "org-001";
+var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:EnvironmentId"] ?? "env-dev";
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
@@ -83,12 +90,17 @@ var apphub = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("ConnectorHostCredential__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHostCredential__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHostCredential__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHostCredential__Secret", iamSeedConnectorHostSecret)
+    .WithEnvironment("ConnectorIngestionToken__SigningKey", connectorIngestionTokenSigningKey)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(appHubDatabase, "AppHubDb")
     .WithReference(redis)
     .WaitFor(appHubDatabase)
     .WaitFor(redis);
+
 if (rabbitmq is not null)
 {
     apphub = apphub
@@ -103,7 +115,9 @@ var iam = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProjec
     .WithEnvironment("Iam__Seed__Enabled", "true")
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
+    .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
+    .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(iamDatabase, "IamDb")
     .WithReference(redis)
@@ -145,6 +159,7 @@ var notification = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithEnvironment("Approval__OverdueEscalation__RecipientRefs__0", "role:business-approval-manager")
     .WithReference(notificationDatabase, "NotificationDb")
     .WaitFor(notificationDatabase);
 notification = WithRedisMessagingTransport(notification);
@@ -226,9 +241,21 @@ var businessMes = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
+    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Inventory__DefaultSiteCode", "production")
+    .WithEnvironment("Inventory__SiteCodes__0", "warehouse")
+    .WithEnvironment("Inventory__SiteCodes__1", "production")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
-    .WaitFor(businessMesDatabase);
+    .WithReference(businessMasterData)
+    .WithReference(businessProductEngineering)
+    .WithReference(businessInventory)
+    .WaitFor(businessMesDatabase)
+    .WaitFor(businessMasterData)
+    .WaitFor(businessProductEngineering)
+    .WaitFor(businessInventory);
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -242,13 +269,16 @@ var businessDemandPlanning = WithNervIipTelemetry(WithLocalDevelopmentEnvironmen
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
     .WaitFor(businessDemandPlanningDatabase)
+    .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory);
 businessDemandPlanning = WithRedisMessagingTransport(businessDemandPlanning);
@@ -280,6 +310,10 @@ var businessApproval = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(buil
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Approval__OverdueCheck__Enabled", "true")
+    .WithEnvironment("Approval__OverdueCheck__Scopes__0__OrganizationId", "org-001")
+    .WithEnvironment("Approval__OverdueCheck__Scopes__0__EnvironmentId", "env-dev")
+    .WithEnvironment("Approval__OverdueCheck__Interval", "00:05:00")
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessApprovalDatabase, "PostgreSQL")
     .WaitFor(businessApprovalDatabase);
@@ -347,10 +381,13 @@ var businessErp = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessErpDatabase, "PostgreSQL")
+    .WithReference(businessMasterData)
     .WithReference(iam)
     .WaitFor(businessErpDatabase)
+    .WaitFor(businessMasterData)
     .WaitFor(iam);
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)
@@ -360,13 +397,29 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+businessDemandPlanning = businessDemandPlanning
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp)
+    .WaitFor(businessErp);
+
+businessQuality = businessQuality
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp)
+    .WaitFor(businessErp);
+
 var businessScheduling = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Scheduling_Web>("business-scheduling")))
     .WithHttpEndpoint(port: 5120, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", "true")
     .WithEnvironment("Messaging__Provider", messagingProvider)
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+    .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
+    .WithReference(businessMes)
+    .WithReference(businessIndustrialTelemetry)
+    .WithReference(businessMaintenance)
     .WaitFor(businessSchedulingDatabase);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
@@ -380,7 +433,7 @@ var gateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddPr
     .WithHttpEndpoint(port: 5100, name: "http")
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
@@ -439,7 +492,7 @@ else
 var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: 5119, name: "http")
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
-    .WithEnvironment("Iam__Jwt__SigningKey", iamJwtSigningKey)
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
     .WithEnvironment("Iam__Jwt__Audience", "nerv-iip-api")
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
@@ -450,6 +503,13 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("DemandPlanning__BaseUrl", businessDemandPlanning.GetEndpoint("http"))
     .WithEnvironment("Scheduling__BaseUrl", businessScheduling.GetEndpoint("http"))
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithEnvironment("Wms__BaseUrl", businessWms.GetEndpoint("http"))
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    .WithEnvironment("BarcodeLabel__BaseUrl", businessBarcodeLabel.GetEndpoint("http"))
+    .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
+    .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
+    .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(iam)
     .WithReference(businessMasterData)
@@ -459,6 +519,13 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WithReference(businessProductEngineering)
     .WithReference(businessDemandPlanning)
     .WithReference(businessScheduling)
+    .WithReference(businessErp)
+    .WithReference(businessWms)
+    .WithReference(businessApproval)
+    .WithReference(businessBarcodeLabel)
+    .WithReference(notification)
+    .WithReference(businessIndustrialTelemetry)
+    .WithReference(businessMaintenance)
     .WithReference(redis)
     .WaitFor(iam)
     .WaitFor(businessMasterData)
@@ -468,10 +535,20 @@ var businessGateway = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(build
     .WaitFor(businessProductEngineering)
     .WaitFor(businessDemandPlanning)
     .WaitFor(businessScheduling)
+    .WaitFor(businessErp)
+    .WaitFor(businessWms)
+    .WaitFor(businessApproval)
+    .WaitFor(businessBarcodeLabel)
+    .WaitFor(notification)
+    .WaitFor(businessIndustrialTelemetry)
+    .WaitFor(businessMaintenance)
     .WaitFor(redis);
 
 var connectorHost = WithNervIipTelemetry(WithLocalDevelopmentEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")
+    .WithEnvironment("ConnectorHost__ConnectorHostId", connectorHostId)
+    .WithEnvironment("ConnectorHost__OrganizationId", connectorHostOrganizationId)
+    .WithEnvironment("ConnectorHost__EnvironmentId", connectorHostEnvironmentId)
     .WithEnvironment("ConnectorHost__ConnectorSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Platform__AppHubBaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Platform__OpsBaseUrl", ops.GetEndpoint("http"))

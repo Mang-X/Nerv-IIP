@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "typed-router.d.ts",
+    "docs/.vitepress/**/*.ts",
+    "docs/.vitepress/**/*.mts",
+    "docs/.vitepress/**/*.vue"
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "../..",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@/*": ["src/*"],
+      "@nerv-iip/ui": ["../../packages/ui/src/index.ts"],
+      "@nerv-iip/ui-mobile": ["../../packages/ui-mobile/src/index.ts"]
+    }
+  },
+  "vueCompilerOptions": {
+    "plugins": ["vue-router/volar/sfc-route-blocks", "vue-router/volar/sfc-typed-router"]
+  }
+}

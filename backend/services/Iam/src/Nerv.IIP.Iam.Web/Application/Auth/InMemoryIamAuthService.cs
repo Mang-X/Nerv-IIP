@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Infrastructure;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Nerv.IIP.Iam.Web.Application.Auth;
@@ -11,7 +13,8 @@ public sealed class InMemoryIamAuthService(
     IamTokenService tokenService,
     IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
-    IMfaChallengeStore mfaChallenges) : IIamAuthService
+    IMfaChallengeStore mfaChallenges,
+    IHostEnvironment environment) : IIamAuthService
 {
     public Task<AuthResponse> LoginAsync(
         string loginName,
@@ -36,8 +39,14 @@ public sealed class InMemoryIamAuthService(
         return Task.FromResult(ToResponse(store.Refresh(refreshToken)));
     }
 
-    public Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
+    public Task RevokeSessionAsync(
+        string sessionId,
+        string reason,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken)
     {
+        _ = reason;
+        _ = auditContext;
         store.Logout(sessionId);
         return Task.CompletedTask;
     }
@@ -81,12 +90,6 @@ public sealed class InMemoryIamAuthService(
             externalClient.EnvironmentId,
             externalClient.PermissionVersion,
             externalClient.Scope));
-    }
-
-    public Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-    {
-        var allowed = store.UserHasPermission(userId, "org-001", "env-dev", permissionCode);
-        return Task.FromResult(allowed);
     }
 
     public Task<bool> UserHasPermissionAsync(
@@ -161,6 +164,7 @@ public sealed class InMemoryIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var provider = GetEnabledProvider(request.Provider);
         EnsureCallbackSecret(request.CallbackSecret, provider);
         EnsureAllowedEmailDomain(request.Email, provider);
@@ -200,6 +204,7 @@ public sealed class InMemoryIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var context = mfaChallenges.Consume(
             challengeId,
             code,
@@ -266,6 +271,14 @@ public sealed class InMemoryIamAuthService(
         }
 
         return options;
+    }
+
+    private void EnsureEnterpriseIdentityStubAllowed()
+    {
+        if (!environment.IsDevelopment())
+        {
+            throw new UnauthorizedAccessException("Unauthorized.");
+        }
     }
 
     private static void EnsureCallbackSecret(string callbackSecret, OidcProviderOptions provider)

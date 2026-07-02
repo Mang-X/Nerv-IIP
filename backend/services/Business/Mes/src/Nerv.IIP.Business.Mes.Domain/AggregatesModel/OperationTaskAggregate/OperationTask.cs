@@ -60,6 +60,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long DurationTicks { get; private set; }
     public DateTimeOffset? ExistingStartUtc { get; private set; }
     public DateTimeOffset? ExistingEndUtc { get; private set; }
+    public DateTimeOffset? PausedAtUtc { get; private set; }
+    public long PausedDurationTicks { get; private set; }
+    public long LaborTimeTicks { get; private set; }
+    public long MachineTimeTicks { get; private set; }
     public string? AssignedUserId { get; private set; }
     public string? DeviceAssetId { get; private set; }
     public string? ShiftId { get; private set; }
@@ -69,6 +73,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string OperationTaskId => OperationTaskIdValue;
 
     public TimeSpan Duration => TimeSpan.FromTicks(DurationTicks);
+
+    public TimeSpan PausedDuration => TimeSpan.FromTicks(PausedDurationTicks);
+
+    public TimeSpan LaborTime => TimeSpan.FromTicks(LaborTimeTicks);
+
+    public TimeSpan MachineTime => TimeSpan.FromTicks(MachineTimeTicks);
 
     public IReadOnlyCollection<string> AlternativeWorkCenterIdList =>
         string.IsNullOrWhiteSpace(AlternativeWorkCenterIds)
@@ -142,7 +152,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = null;
     }
 
-    public void Pause()
+    public void Pause(DateTimeOffset pausedAtUtc)
     {
         if (Status != OperationTaskLifecycleStatus.InProgress)
         {
@@ -150,6 +160,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         }
 
         Status = OperationTaskLifecycleStatus.Paused;
+        PausedAtUtc = pausedAtUtc;
     }
 
     public void Resume(DateTimeOffset resumedAtUtc)
@@ -159,6 +170,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationException("Only paused operation task can be resumed.");
         }
 
+        AccumulatePause(resumedAtUtc);
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc ??= resumedAtUtc;
         ExistingEndUtc = null;
@@ -174,6 +186,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = OperationTaskLifecycleStatus.Completed;
         ExistingStartUtc ??= completedAtUtc;
         ExistingEndUtc = completedAtUtc;
+        var elapsedTicks = Math.Max(0L, (completedAtUtc - ExistingStartUtc.Value).Ticks - PausedDurationTicks);
+        LaborTimeTicks = elapsedTicks;
+        MachineTimeTicks = elapsedTicks;
     }
 
     public void Assign(
@@ -193,6 +208,35 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AssignedAtUtc = assignedAtUtc;
     }
 
+    public void ApplyScheduleAssignment(
+        string workCenterId,
+        string? deviceAssetId,
+        DateTimeOffset plannedStartUtc,
+        DateTimeOffset plannedEndUtc,
+        DateTimeOffset assignedAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            throw new InvalidOperationException("Closed operation task cannot be scheduled.");
+        }
+
+        if (Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused)
+        {
+            throw new KnownException($"Operation task in {Status} cannot be rescheduled by released schedule assignment.");
+        }
+
+        if (plannedEndUtc <= plannedStartUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(plannedEndUtc), "Planned end must be after planned start.");
+        }
+
+        WorkCenterId = DomainGuard.Required(workCenterId, nameof(workCenterId));
+        EarliestStartUtc = plannedStartUtc;
+        DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
+        DeviceAssetId = NormalizeOptional(deviceAssetId);
+        AssignedAtUtc = assignedAtUtc;
+    }
+
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)
     {
         return string.Join('|', values.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase));
@@ -201,5 +245,20 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private void AccumulatePause(DateTimeOffset resumedAtUtc)
+    {
+        if (PausedAtUtc is null)
+        {
+            return;
+        }
+
+        if (resumedAtUtc > PausedAtUtc.Value)
+        {
+            PausedDurationTicks += (resumedAtUtc - PausedAtUtc.Value).Ticks;
+        }
+
+        PausedAtUtc = null;
     }
 }

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import DatePicker from './DatePicker.vue'
 
 describe('DatePicker', () => {
-  it('closes the popover after applying or clearing a date', async () => {
+  it('selects a day from the calendar and emits a YYYY-MM-DD string', async () => {
     const wrapper = mount(DatePicker, {
       attachTo: document.body,
       props: {
@@ -15,33 +15,45 @@ describe('DatePicker', () => {
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
-    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Date"]')
-    expect(input).not.toBeNull()
+    const calendar = document.body.querySelector('[data-slot="calendar"]')
+    expect(calendar).not.toBeNull()
 
-    input!.value = '2026-05-02'
-    input!.dispatchEvent(new Event('input', { bubbles: true }))
+    const triggers = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[data-slot="calendar-cell-trigger"]'),
+    )
+    const target = triggers.find(el => el.textContent?.trim() === '2')
+    expect(target).toBeDefined()
+
+    target!.click()
     await flushPromises()
 
-    const applyButton = Array.from(document.body.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('Apply'))
-    expect(applyButton).toBeDefined()
-
-    applyButton!.click()
-    await flushPromises()
-
-    expect(wrapper.emitted('apply')?.[0]).toEqual(['2026-05-02'])
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['2026-05-02'])
+    expect(wrapper.emitted('apply')?.at(-1)).toEqual(['2026-05-02'])
     expect(document.body.querySelector('[data-slot="popover-content"]')).toBeNull()
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
+  })
+
+  it('clears the selected date and emits null', async () => {
+    const wrapper = mount(DatePicker, {
+      attachTo: document.body,
+      props: {
+        modelValue: '2026-05-01',
+      },
+    })
 
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
     const clearButton = Array.from(document.body.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('Clear'))
+      .find(button => button.textContent?.includes('清除'))
     expect(clearButton).toBeDefined()
 
     clearButton!.click()
     await flushPromises()
 
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
     expect(wrapper.emitted('clear')).toHaveLength(1)
     expect(document.body.querySelector('[data-slot="popover-content"]')).toBeNull()
 

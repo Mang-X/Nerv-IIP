@@ -20,18 +20,47 @@ const GOLD_STANDARD_PAGES = [
   'mes/quality.vue',
   'quality/inspections.vue',
   'quality/ncrs.vue',
+  'quality/reason-codes.vue',
+  'engineering/production-versions.vue',
+  'engineering/standard-operations.vue',
+  'engineering/ebom.vue',
+  'engineering/mbom.vue',
+  'engineering/routings.vue',
+  'engineering/items.vue',
+  'engineering/documents.vue',
+  'engineering/eco.vue',
   'master-data/skus.vue',
   'master-data/partners.vue',
-  'master-data/facilities.vue',
+  'master-data/product-categories.vue',
+  'master-data/skill-catalog.vue',
+  'master-data/code-rules.vue',
+  // facilities.vue 是「工厂结构」树-详情示范页（左树 + 右详情），不再是黄金标准列表，
+  // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。树页自身约束见 facilities.test.ts。
   'master-data/devices.vue',
-  'master-data/organization.vue',
+  'master-data/units.vue',
+  // organization.vue 改为「组织与班组」树-详情页（左部门树 + 右详情/班组），不再是黄金标准列表，
+  // 不含主 DataTable/DataTablePagination 必备块，故从此清单移除。树页约束见 organization.test.ts。
+  'master-data/scheduling.vue',
+  // skills.vue 升为「人员技能」矩阵页（工人 × 技能），不再是黄金标准列表，
+  // 不含 DataTable/DataTablePagination 必备块，故从此清单移除。矩阵约束见 skills.test.ts。
   'master-data/reference-data.vue',
   'wms/inbound.vue',
   'wms/outbound.vue',
   'wms/wcs.vue',
+  'wms/counts.vue',
+  'maintenance/work-orders.vue',
+  'maintenance/plans.vue',
+  'erp/index.vue',
+  'erp/sales.vue',
+  'erp/finance.vue',
 ]
 
-const REQUIRED_BLOCKS = ['PageHeader', 'DataTable', 'DataTablePagination', 'SectionCard']
+// SectionCards is NOT required: KPI cards are decided per page (business-meaningful,
+// decision-driving metrics only — never mechanical pagination/tree metadata). Many
+// maintenance pages legitimately have none. See master-data-templates.md §0/§2 and
+// business-console AGENTS.md §1.5-B.
+// 分页已集成进 DataTablePro（manual 服务端模式 → 卡内页脚），不再要求独立的 DataTablePagination 块。
+const REQUIRED_BLOCKS = ['PageHeader', 'DataTablePro']
 const LEGACY_BLOCKS = [
   'BusinessPageHeader',
   'BusinessContextBar',

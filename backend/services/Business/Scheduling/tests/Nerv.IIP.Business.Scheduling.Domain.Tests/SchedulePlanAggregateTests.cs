@@ -1,6 +1,5 @@
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
-using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Domain.Tests;
 
@@ -69,7 +68,7 @@ public sealed class SchedulePlanAggregateTests
             Assignments = [CreateAssignment("assign-002", "op-002")],
             ResourceLoads =
             [
-                new ScheduleResourceLoadContract(
+                new GeneratedScheduleResourceLoadSnapshot(
                     ResourceId: "res-002",
                     WindowStartUtc: new DateTimeOffset(2026, 6, 2, 8, 0, 0, TimeSpan.Zero),
                     WindowEndUtc: new DateTimeOffset(2026, 6, 2, 16, 0, 0, TimeSpan.Zero),
@@ -79,10 +78,10 @@ public sealed class SchedulePlanAggregateTests
             ],
             Conflicts =
             [
-                new ScheduleConflictContract(
+                new GeneratedScheduleConflictSnapshot(
                     ConflictId: "conflict-002",
-                    ReasonCode: ScheduleConflictReasonCodeContract.Material,
-                    Severity: ScheduleConflictSeverityContract.Error,
+                    ReasonCode: ScheduleConflictReasonCode.Material,
+                    Severity: ScheduleConflictSeverity.Error,
                     OrderId: "wo-003",
                     OperationId: "op-030",
                     ResourceId: "res-002",
@@ -90,10 +89,10 @@ public sealed class SchedulePlanAggregateTests
             ],
             UnscheduledOperations =
             [
-                new UnscheduledOperationContract(
+                new GeneratedUnscheduledOperationSnapshot(
                     OrderId: "wo-003",
                     OperationId: "op-030",
-                    ReasonCode: ScheduleConflictReasonCodeContract.Material,
+                    ReasonCode: ScheduleConflictReasonCode.Material,
                     Message: "material unavailable")
             ]
         };
@@ -105,7 +104,7 @@ public sealed class SchedulePlanAggregateTests
         Assert.DoesNotContain(plan.ResourceLoads, x => x.ResourceId == "res-001");
         Assert.Contains(plan.ResourceLoads, x => x.ResourceId == "res-002" && x.AssignedMinutes == 120);
         Assert.DoesNotContain(plan.Conflicts, x => x.ConflictPublicId == "conflict-001");
-        Assert.Contains(plan.Conflicts, x => x.ConflictPublicId == "conflict-002" && x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+        Assert.Contains(plan.Conflicts, x => x.ConflictPublicId == "conflict-002" && x.ReasonCode == ScheduleConflictReasonCode.Material);
         Assert.DoesNotContain(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-002");
         Assert.Contains(plan.UnscheduledOperations, x => x.WorkOrderId == "wo-003" && x.OperationId == "op-030");
         Assert.Contains(plan.GetDomainEvents(), x => x is SchedulePlanGeneratedDomainEvent);
@@ -118,7 +117,7 @@ public sealed class SchedulePlanAggregateTests
         var plan = CreatePlan();
         var replacement = CreateContract("plan-001", "fingerprint-002") with
         {
-            Status = SchedulePlanStatusContract.Released,
+            Status = SchedulePlanInputStatus.Released,
         };
 
         Assert.Throws<InvalidOperationException>(() => plan.ReplaceGeneratedPlan(replacement));
@@ -136,26 +135,35 @@ public sealed class SchedulePlanAggregateTests
 
     private static SchedulePlan CreatePlan()
     {
-        return SchedulePlan.FromGeneratedContract(
+        return SchedulePlan.FromGeneratedPlan(
             organizationId: "org-001",
             environmentId: "env-dev",
-            contract: CreateContract("plan-001", "fingerprint-001"));
+            plan: CreateContract("plan-001", "fingerprint-001"));
     }
 
-    private static SchedulePlanContract CreateContract(string planId, string fingerprint)
+    private static GeneratedSchedulePlanSnapshot CreateContract(string planId, string fingerprint)
     {
-        return new SchedulePlanContract(
+        return new GeneratedSchedulePlanSnapshot(
             ContractVersion: 1,
             PlanId: planId,
             ProblemId: "problem-001",
             ProblemFingerprint: fingerprint,
             AlgorithmVersion: "aps-lite-v1",
-            Status: SchedulePlanStatusContract.Generated,
+            Status: SchedulePlanInputStatus.Generated,
             GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            Metrics: new GeneratedSchedulePlanMetricsSnapshot(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: 1,
+                AssignedMinutes: 60,
+                MakespanMinutes: 60,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: 0.125m),
             Assignments: [CreateAssignment("assign-001", "op-001")],
             ResourceLoads:
             [
-                new ScheduleResourceLoadContract(
+                new GeneratedScheduleResourceLoadSnapshot(
                     ResourceId: "res-001",
                     WindowStartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
                     WindowEndUtc: new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.Zero),
@@ -165,10 +173,10 @@ public sealed class SchedulePlanAggregateTests
             ],
             Conflicts:
             [
-                new ScheduleConflictContract(
+                new GeneratedScheduleConflictSnapshot(
                     ConflictId: "conflict-001",
-                    ReasonCode: ScheduleConflictReasonCodeContract.DueDate,
-                    Severity: ScheduleConflictSeverityContract.Warning,
+                    ReasonCode: ScheduleConflictReasonCode.DueDate,
+                    Severity: ScheduleConflictSeverity.Warning,
                     OrderId: "wo-001",
                     OperationId: "op-001",
                     ResourceId: "res-001",
@@ -176,19 +184,17 @@ public sealed class SchedulePlanAggregateTests
             ],
             UnscheduledOperations:
             [
-                new UnscheduledOperationContract(
+                new GeneratedUnscheduledOperationSnapshot(
                     OrderId: "wo-002",
                     OperationId: "op-020",
-                    ReasonCode: ScheduleConflictReasonCodeContract.NoEligibleResource,
+                    ReasonCode: ScheduleConflictReasonCode.NoEligibleResource,
                     Message: "no resource")
-            ],
-            ChangeSummary: [],
-            GanttItems: []);
+            ]);
     }
 
-    private static ScheduleAssignmentContract CreateAssignment(string assignmentId, string operationId)
+    private static GeneratedScheduleAssignmentSnapshot CreateAssignment(string assignmentId, string operationId)
     {
-        return new ScheduleAssignmentContract(
+        return new GeneratedScheduleAssignmentSnapshot(
             AssignmentId: assignmentId,
             OrderId: "wo-001",
             OperationId: operationId,

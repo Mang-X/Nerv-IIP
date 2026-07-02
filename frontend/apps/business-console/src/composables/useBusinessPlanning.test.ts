@@ -3,7 +3,6 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
-  acceptBusinessConsolePlanningSuggestionMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
@@ -21,9 +20,6 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
-  acceptBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({ success: true, data: { accepted: true, vars } })),
-  })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
   })),
@@ -94,7 +90,15 @@ describe('business planning composable', () => {
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
       success: true,
-      data: { items: [{ runId: 'run-1', suggestionCount: 2, inventorySnapshotSource: 'inventory-http:2' }] },
+      data: {
+        items: [{
+          runId: 'run-1',
+          suggestionCount: 2,
+          inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
+          hasInputDegradation: true,
+          inputDegradationSources: ['scheduled-receipts'],
+        }],
+      },
     })
     coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
       success: true,
@@ -123,7 +127,9 @@ describe('business planning composable', () => {
     expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(false)
     expect(runSelection.runId).toBe('')
     expect(demands.value).toHaveLength(1)
-    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2')
+    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2;scheduled-receipts:error')
+    expect(mrpRuns.value[0]?.hasInputDegradation).toBe(true)
+    expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
   })
@@ -138,8 +144,8 @@ describe('business planning composable', () => {
     expect(demandForm.quantity).toBe(0)
   })
 
-  it('submits demand, MRP run, and suggestion acceptance payloads through generated mutations', async () => {
-    const { acceptSuggestion, createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
+  it('submits demand and MRP run payloads through generated mutations', async () => {
+    const { createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
 
     demandForm.sourceReference = 'SO-2026-001'
     demandForm.skuCode = 'FG-SHOCK'
@@ -149,12 +155,6 @@ describe('business planning composable', () => {
     runRequest.horizonStart = '2026-06-01'
     runRequest.horizonEnd = '2026-06-30'
     await runMrp()
-
-    await acceptSuggestion('suggestion-1', {
-      downstreamService: 'MES',
-      downstreamDocumentType: 'planned-work-order',
-      downstreamDocumentId: 'WO-PLAN-1',
-    })
 
     expect(createOrUpdateBusinessConsolePlanningDemandMutationOptions).toHaveBeenCalled()
     expect(
@@ -175,22 +175,6 @@ describe('business planning composable', () => {
           horizonEnd: '2026-06-30',
         }),
       })
-    expect(acceptBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
-        .mutation,
-    ).toHaveBeenCalledWith({
-      path: { suggestionId: 'suggestion-1' },
-      query: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-      },
-      body: {
-        downstreamService: 'MES',
-        downstreamDocumentType: 'planned-work-order',
-        downstreamDocumentId: 'WO-PLAN-1',
-      },
-    })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 })

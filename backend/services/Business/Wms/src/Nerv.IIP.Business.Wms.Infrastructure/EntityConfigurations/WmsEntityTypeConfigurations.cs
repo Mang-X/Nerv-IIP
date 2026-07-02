@@ -77,8 +77,10 @@ public sealed class OutboundOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Outbound execution status.");
         builder.Property(x => x.PackReviewNo).HasColumnName("pack_review_no").HasMaxLength(100).HasComment("Pack review reference.");
         builder.Property(x => x.PackReviewPassed).HasColumnName("pack_review_passed").HasComment("Pack review pass flag.");
+        builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("Outbound cancellation reason for audit.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
+        builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC cancellation time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("OutboundOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OutboundOrderNo }).IsUnique();
@@ -95,6 +97,10 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property<OutboundOrderId>("OutboundOrderId").HasColumnName("outbound_order_id").IsRequired().HasComment("Owning outbound order id.");
         InboundOrderLineEntityTypeConfiguration.AddLineColumns(builder, "requested_quantity", "Outbound requested quantity.");
         builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick location for outbound stock.");
+        builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
+        builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
+        builder.Property(x => x.BackorderQuantity).HasColumnName("backorder_quantity").IsRequired().HasPrecision(18, 6).HasComment("Short-picked outbound quantity left as backorder.");
+        builder.Property(x => x.FulfillmentRecorded).HasColumnName("fulfillment_recorded").IsRequired().HasComment("Whether pack review recorded issued and backorder quantities for this outbound line.");
     }
 }
 
@@ -140,6 +146,7 @@ public sealed class CountExecutionEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").IsRequired().HasPrecision(18, 6).HasComment("Expected count quantity provided by upstream boundary.");
         builder.Property(x => x.CountedQuantity).HasColumnName("counted_quantity").HasPrecision(18, 6).HasComment("Actual counted quantity.");
         builder.Property(x => x.VarianceQuantity).HasColumnName("variance_quantity").HasPrecision(18, 6).HasComment("Counted quantity minus expected quantity.");
+        builder.Property(x => x.InventoryCountTaskId).HasColumnName("inventory_count_task_id").HasMaxLength(150).HasComment("Public Inventory count task id used to freeze and confirm the counted ledger.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Count execution status.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
@@ -167,8 +174,7 @@ public sealed class WcsTaskEntityTypeConfiguration : IEntityTypeConfiguration<Wc
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.FailedAtUtc).HasColumnName("failed_at_utc").HasComment("UTC failure time.");
         builder.HasIndex(x => new { x.WarehouseTaskId, x.AdapterType }).IsUnique();
-        builder.HasIndex(x => x.ExternalTaskId).IsUnique();
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId });
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ExternalTaskId }).IsUnique();
     }
 }
 
@@ -193,6 +199,7 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Quality status dimension.");
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Owner type dimension.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional owner id.");
+        builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Optional Inventory reservation id used to allocate outbound stock.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");
         builder.Property(x => x.InventoryMovementId).HasColumnName("inventory_movement_id").HasMaxLength(150).HasComment("Public Inventory movement id returned after posting.");

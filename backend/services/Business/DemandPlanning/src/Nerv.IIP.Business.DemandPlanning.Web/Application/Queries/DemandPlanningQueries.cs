@@ -50,27 +50,32 @@ public sealed record MrpRunResponse(
     int AvailabilityCount,
     int SuggestionCount,
     string ProductionEngineeringSnapshotSource,
-    string InventorySnapshotSource);
+    string InventorySnapshotSource,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
 {
     public async Task<IReadOnlyCollection<MrpRunResponse>> Handle(ListMrpRunsQuery request, CancellationToken cancellationToken)
     {
-        return await dbContext.MrpRuns.AsNoTracking()
+        var runs = await dbContext.MrpRuns.AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Select(x => new MrpRunResponse(
-                x.Id,
-                x.HorizonStart,
-                x.HorizonEnd,
-                x.Status,
-                x.DemandCount,
-                x.AvailabilityCount,
-                x.SuggestionCount,
-                x.ProductionEngineeringSnapshotSource,
-                x.InventorySnapshotSource))
             .ToListAsync(cancellationToken);
+
+        return runs.Select(x => new MrpRunResponse(
+            x.Id,
+            x.HorizonStart,
+            x.HorizonEnd,
+            x.Status,
+            x.DemandCount,
+            x.AvailabilityCount,
+            x.SuggestionCount,
+            x.ProductionEngineeringSnapshotSource,
+            x.InventorySnapshotSource,
+            x.HasInputDegradation,
+            x.InputDegradationSources)).ToList();
     }
 }
 
@@ -85,6 +90,7 @@ public sealed record PlanningSuggestionResponse(
     string SiteCode,
     decimal Quantity,
     DateOnly RequiredDate,
+    DateOnly ReleaseDate,
     PlanningSuggestionStatus Status,
     string ReasonCode,
     string? AcceptedDownstreamDocumentId);
@@ -112,6 +118,7 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.SiteCode,
                 x.Quantity,
                 x.RequiredDate,
+                x.ReleaseDate,
                 x.Status,
                 x.ReasonCode,
                 x.AcceptedDownstreamDocumentId))

@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 
 namespace Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 
@@ -13,6 +14,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         "transfer",
         "adjustment",
         "count-adjustment",
+        "status-transfer-out",
+        "status-transfer-in",
     ];
 
     private StockMovement()
@@ -36,7 +39,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         string qualityStatus,
         string ownerType,
         string? ownerId,
-        decimal quantity)
+        decimal quantity,
+        decimal? unitCost)
     {
         OrganizationId = InventoryText.Required(organizationId);
         EnvironmentId = InventoryText.Required(environmentId);
@@ -51,10 +55,12 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         LocationCode = InventoryText.Required(locationCode);
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
-        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
-        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        QualityStatus = StockQualityStatus.Normalize(qualityStatus);
+        OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         Quantity = NonZero(quantity, nameof(quantity));
+        UnitCost = unitCost is null ? null : NonNegative(unitCost.Value, nameof(unitCost));
+        MovementAmount = UnitCost * Quantity;
         PostedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockMovementPostedDomainEvent(this));
     }
@@ -76,6 +82,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
     public decimal Quantity { get; private set; }
+    public decimal? UnitCost { get; private set; }
+    public decimal? MovementAmount { get; private set; }
     public DateTime PostedAtUtc { get; private set; }
 
     public static StockMovement Post(
@@ -95,7 +103,8 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
         string qualityStatus,
         string ownerType,
         string? ownerId,
-        decimal quantity)
+        decimal quantity,
+        decimal? unitCost = null)
     {
         return new StockMovement(
             organizationId,
@@ -114,7 +123,19 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             qualityStatus,
             ownerType,
             ownerId,
-            quantity);
+            quantity,
+            unitCost);
+    }
+
+    public void ApplyValuation(decimal unitCost)
+    {
+        var valuationUnitCost = NonNegative(unitCost, nameof(unitCost));
+        if (UnitCost is not null || Quantity < 0)
+        {
+            UnitCost = valuationUnitCost;
+        }
+
+        MovementAmount = valuationUnitCost * Quantity;
     }
 
     public bool HasSamePayload(StockMovement other)
@@ -135,11 +156,17 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && QualityStatus == other.QualityStatus
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
-            && Quantity == other.Quantity;
+            && Quantity == other.Quantity
+            && UnitCost == other.UnitCost;
     }
 
     private static decimal NonZero(decimal value, string parameterName)
     {
         return value == 0 ? throw new ArgumentOutOfRangeException(parameterName, "Quantity cannot be zero.") : value;
+    }
+
+    private static decimal NonNegative(decimal value, string parameterName)
+    {
+        return value < 0 ? throw new ArgumentOutOfRangeException(parameterName, "Unit cost cannot be negative.") : value;
     }
 }

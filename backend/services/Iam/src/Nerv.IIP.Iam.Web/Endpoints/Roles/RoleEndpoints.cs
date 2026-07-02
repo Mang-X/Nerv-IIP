@@ -2,8 +2,10 @@ using FastEndpoints;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.Iam.Web.Application;
+using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Commands.Roles;
 using Nerv.IIP.Iam.Web.Application.Permissions;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Nerv.IIP.Iam.Web.Endpoints;
 using Nerv.IIP.Iam.Web.Application.Roles;
 using NetCorePal.Extensions.Dto;
@@ -64,6 +66,7 @@ public sealed class CreateRoleEndpoint(
 [AllowAnonymous]
 public sealed class PatchRolePermissionsEndpoint(
     IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
     IMediator mediator) : EndpointWithoutRequest<ResponseData<RoleResponse>>
 {
     public override async Task HandleAsync(CancellationToken ct)
@@ -75,8 +78,12 @@ public sealed class PatchRolePermissionsEndpoint(
 
         var req = await HttpContext.Request.ReadFromJsonAsync<PatchRolePermissionsRequest>(ct)
             ?? throw new BadHttpRequestException("Request body is required.");
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
         var response = await mediator.Send(
-            new PatchRolePermissionsCommand(Route<string>("roleId")!, req.PermissionCodes),
+            new PatchRolePermissionsCommand(
+                Route<string>("roleId")!,
+                req.PermissionCodes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
             ct);
         await Send.OkAsync(response.AsResponseData(), ct);
     }

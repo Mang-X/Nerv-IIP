@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
+using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
@@ -39,9 +40,10 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(6, contracts.Length);
+        Assert.Equal(7, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/problems/assemble" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "assembleSchedulingProblem");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listSchedulingPlans");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}/gantt" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlanGantt");
@@ -52,6 +54,7 @@ public sealed class SchedulingEndpointContractTests
     [Theory]
     [InlineData(typeof(PreviewSchedulePlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanEndpoint))]
+    [InlineData(typeof(AssembleSchedulingProblemEndpoint))]
     [InlineData(typeof(ListSchedulePlansEndpoint))]
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
@@ -91,7 +94,11 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var handler = new PreviewSchedulePlanCommandHandler(new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var handler = new PreviewSchedulePlanCommandHandler(
+            new FiniteCapacityScheduler(),
+            new FixedTimeProvider(FixedNow),
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new NoopSchedulingMaterialReadinessProvider());
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
 
         var first = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
@@ -104,12 +111,78 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Preview_merges_runtime_equipment_availability_before_scheduling()
+    {
+        var problem = CreateSingleOperationProblem();
+        var availabilityProvider = new StubSchedulingEquipmentAvailabilityProvider(
+            new EquipmentRuntimeAvailabilityResponse(
+                1,
+                problem.OrganizationId,
+                problem.EnvironmentId,
+                problem.HorizonStartUtc,
+                problem.HorizonEndUtc,
+                [
+                    new EquipmentRuntimeAvailabilityWindowContract(
+                        "DEV-SNAPSHOT-01",
+                        "WC-SNAPSHOT",
+                        EquipmentRuntimeAvailabilityStatus.Unavailable,
+                        "equipment.activeAlarm",
+                        EquipmentRuntimeSeverity.Critical,
+                        problem.HorizonStartUtc,
+                        problem.HorizonEndUtc,
+                        EquipmentRuntimeSourceType.Alarm,
+                        "alarm-001",
+                        "equipment.activeAlarm",
+                        [])
+                ]));
+        var handler = new PreviewSchedulePlanCommandHandler(
+            new FiniteCapacityScheduler(),
+            new FixedTimeProvider(FixedNow),
+            availabilityProvider,
+            new NoopSchedulingMaterialReadinessProvider());
+
+        var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
+
+        Assert.True(availabilityProvider.WasCalled);
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Equipment);
+    }
+
+    [Fact]
+    public async Task Preview_merges_mes_material_readiness_before_scheduling()
+    {
+        var problem = CreateSingleOperationProblem();
+        var materialReadinessProvider = new StubSchedulingMaterialReadinessProvider(
+            [
+                new SchedulingMaterialReadinessContract(
+                    ScopeType: "order",
+                    ScopeId: "WO-SNAPSHOT-001",
+                    MaterialReadyUtc: null,
+                    IsReady: false,
+                    ReasonCodes: ["MAT-A shortage 2"])
+            ]);
+        var handler = new PreviewSchedulePlanCommandHandler(
+            new FiniteCapacityScheduler(),
+            new FixedTimeProvider(FixedNow),
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            materialReadinessProvider);
+
+        var plan = await handler.Handle(new PreviewSchedulePlanCommand(problem), CancellationToken.None);
+
+        Assert.True(materialReadinessProvider.WasCalled);
+        Assert.Contains(plan.UnscheduledOperations, x =>
+            x.OperationId == "WO-SNAPSHOT-001-OP10"
+            && x.ReasonCode == ScheduleConflictReasonCodeContract.Material);
+    }
+
+    [Fact]
     public async Task Create_persists_generated_plan_and_detail_returns_all_persisted_plan_facts()
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
 
         var problem = CreateProblemWithUnscheduledOperation();
@@ -192,7 +265,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var command = new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem());
 
         var first = await createHandler.Handle(command, CancellationToken.None);
@@ -212,11 +285,11 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var initialHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var initialHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var command = new CreateSchedulePlanCommand(ShockAbsorberSchedulingFixture.CreateProblem());
         var existing = await initialHandler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var retryHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new ThrowingTimeProvider());
+        var retryHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new ThrowingTimeProvider(), new ThrowingSchedulingEquipmentAvailabilityProvider(), new ThrowingSchedulingMaterialReadinessProvider());
 
         var retried = await retryHandler.Handle(command, CancellationToken.None);
 
@@ -232,7 +305,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var firstProblem = ShockAbsorberSchedulingFixture.CreateProblem();
         var secondTenantProblem = firstProblem with
         {
@@ -257,7 +330,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var firstProblem = ShockAbsorberSchedulingFixture.CreateProblem();
         var changedProblem = firstProblem with
         {
@@ -351,7 +424,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
 
         var problem = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -368,12 +441,32 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task Release_rejects_plans_with_error_conflicts_or_unscheduled_operations()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
+        var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
+
+        var problem = CreateProblemWithUnscheduledOperation();
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, problem.OrganizationId, problem.EnvironmentId), CancellationToken.None));
+
+        Assert.Contains("cannot be released", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SchedulePlanLifecycleStatus.Generated, (await dbContext.SchedulePlans.SingleAsync(x => x.PlanId == created.PlanId)).Status);
+    }
+
+    [Fact]
     public async Task Release_updates_header_without_tracking_plan_child_collections()
     {
         await using var provider = CreateInMemoryProvider();
         using var seedScope = provider.CreateScope();
         var seedContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var plan = CreatePersistedPlan("plan-release-001", "problem-release-001", FixedNow);
+        var plan = CreatePersistedPlan("plan-release-001", "problem-release-001", FixedNow, includeUnscheduledOperation: false);
         seedContext.SchedulePlans.Add(plan);
         await seedContext.SaveChangesAsync(CancellationToken.None);
 
@@ -398,7 +491,7 @@ public sealed class SchedulingEndpointContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow));
+        var createHandler = new CreateSchedulePlanCommandHandler(dbContext, new FiniteCapacityScheduler(), new FixedTimeProvider(FixedNow), new NoopSchedulingEquipmentAvailabilityProvider(), new NoopSchedulingMaterialReadinessProvider());
         var detailHandler = new GetSchedulePlanDetailQueryHandler(dbContext);
         var ganttHandler = new GetSchedulePlanGanttQueryHandler(dbContext);
         var releaseHandler = new ReleaseSchedulePlanCommandHandler(dbContext, new FixedTimeProvider(FixedNow.AddHours(2)));
@@ -559,9 +652,21 @@ public sealed class SchedulingEndpointContractTests
     private static SchedulePlan CreatePersistedPlan(
         string planId,
         string problemId,
-        DateTimeOffset generatedAtUtc)
+        DateTimeOffset generatedAtUtc,
+        bool includeUnscheduledOperation = true)
     {
-        return SchedulePlan.FromGeneratedContract("org-001", "prod", new SchedulePlanContract(
+        IReadOnlyCollection<UnscheduledOperationContract> unscheduledOperations = includeUnscheduledOperation
+            ?
+            [
+                new UnscheduledOperationContract(
+                    OrderId: $"wo-unscheduled-{planId}",
+                    OperationId: $"op-unscheduled-{planId}",
+                    ReasonCode: ScheduleConflictReasonCodeContract.NoEligibleResource,
+                    Message: "No eligible resource.")
+            ]
+            : Array.Empty<UnscheduledOperationContract>();
+
+        return SchedulePlan.FromGeneratedPlan("org-001", "prod", SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
             ContractVersion: 1,
             PlanId: planId,
             ProblemId: problemId,
@@ -569,6 +674,15 @@ public sealed class SchedulingEndpointContractTests
             AlgorithmVersion: "aps-lite-v1",
             Status: SchedulePlanStatusContract.Generated,
             GeneratedAtUtc: generatedAtUtc,
+            Metrics: new SchedulePlanMetricsContract(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: unscheduledOperations.Count,
+                AssignedMinutes: 30,
+                MakespanMinutes: 30,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: 0.0625m),
             Assignments:
             [
                 new ScheduleAssignmentContract(
@@ -604,16 +718,9 @@ public sealed class SchedulingEndpointContractTests
                     ResourceId: "DEV-OIL-01",
                     Message: "Assignment finishes after due date.")
             ],
-            UnscheduledOperations:
-            [
-                new UnscheduledOperationContract(
-                    OrderId: $"wo-unscheduled-{planId}",
-                    OperationId: $"op-unscheduled-{planId}",
-                    ReasonCode: ScheduleConflictReasonCodeContract.NoEligibleResource,
-                    Message: "No eligible resource.")
-            ],
+            UnscheduledOperations: unscheduledOperations,
             ChangeSummary: [],
-            GanttItems: []));
+            GanttItems: [])));
     }
 
     private static HttpRequestMessage JsonRequest<T>(HttpMethod method, string requestUri, T body)
@@ -628,6 +735,118 @@ public sealed class SchedulingEndpointContractTests
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.False(document.RootElement.GetProperty("success").GetBoolean());
         Assert.Contains("Schedule plan was not found", document.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
+
+    private static SchedulingProblemContract CreateSingleOperationProblem()
+    {
+        var shiftStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var shiftEnd = new DateTimeOffset(2026, 6, 1, 16, 0, 0, TimeSpan.Zero);
+
+        return new SchedulingProblemContract(
+            ContractVersion: 1,
+            ProblemId: "problem-equipment-provider-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "prod",
+            HorizonStartUtc: shiftStart,
+            HorizonEndUtc: shiftEnd,
+            Orders:
+            [
+                new SchedulingOrderContract(
+                    OrderId: "WO-SNAPSHOT-001",
+                    SkuCode: "FG-SNAPSHOT",
+                    Quantity: 1,
+                    DueUtc: shiftEnd,
+                    Priority: 1,
+                    IsRush: false,
+                    Operations:
+                    [
+                        new SchedulingOperationContract(
+                            OperationId: "WO-SNAPSHOT-001-OP10",
+                            OperationSequence: 10,
+                            PredecessorOperationIds: [],
+                            DurationMinutes: 60,
+                            RequiredCapabilityCode: "CAP-SNAPSHOT",
+                            EligibleResourceIds: ["DEV-SNAPSHOT-01"],
+                            PrimaryResourceId: "DEV-SNAPSHOT-01",
+                            EarliestStartUtc: shiftStart,
+                            DueUtc: shiftEnd,
+                            Priority: 1,
+                            IsRush: false,
+                            SplitPolicy: ScheduleSplitPolicyContract.NonSplittable,
+                            MaterialReadyUtc: null,
+                            QualityBlockReason: null,
+                            SourceReference: "TEST:SNAPSHOT")
+                    ])
+            ],
+            Resources:
+            [
+                new SchedulingResourceContract(
+                    ResourceId: "DEV-SNAPSHOT-01",
+                    WorkCenterId: "WC-SNAPSHOT",
+                    CapabilityCodes: ["CAP-SNAPSHOT"],
+                    CapacityUnits: 1,
+                    CalendarId: "CAL-SNAPSHOT",
+                    SortKey: "001")
+            ],
+            Calendars:
+            [
+                new SchedulingCalendarContract(
+                    CalendarId: "CAL-SNAPSHOT",
+                    ShiftWindows: [new SchedulingTimeWindowContract(shiftStart, shiftEnd, "day-shift")])
+            ],
+            UnavailabilityWindows: [],
+            MaterialReadiness: [],
+            QualityBlocks: [],
+            LockedAssignments: []);
+    }
+
+    private sealed class StubSchedulingEquipmentAvailabilityProvider(EquipmentRuntimeAvailabilityResponse availability)
+        : ISchedulingEquipmentAvailabilityProvider
+    {
+        public bool WasCalled { get; private set; }
+
+        public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            WasCalled = true;
+            return Task.FromResult(availability);
+        }
+    }
+
+    private sealed class StubSchedulingMaterialReadinessProvider(
+        IReadOnlyCollection<SchedulingMaterialReadinessContract> materialReadiness)
+        : ISchedulingMaterialReadinessProvider
+    {
+        public bool WasCalled { get; private set; }
+
+        public Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            WasCalled = true;
+            return Task.FromResult(materialReadiness);
+        }
+    }
+
+    private sealed class ThrowingSchedulingEquipmentAvailabilityProvider : ISchedulingEquipmentAvailabilityProvider
+    {
+        public Task<EquipmentRuntimeAvailabilityResponse> QueryAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Availability provider should not be called on idempotent retries.");
+        }
+    }
+
+    private sealed class ThrowingSchedulingMaterialReadinessProvider : ISchedulingMaterialReadinessProvider
+    {
+        public Task<IReadOnlyCollection<SchedulingMaterialReadinessContract>> QueryAsync(
+            SchedulingProblemContract problem,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Material readiness provider should not be called on idempotent retries.");
+        }
     }
 
     private sealed class SchedulingLiveHttpTestFactory : WebApplicationFactory<Program>

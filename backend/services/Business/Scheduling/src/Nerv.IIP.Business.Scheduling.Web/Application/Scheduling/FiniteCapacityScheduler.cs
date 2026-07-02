@@ -46,6 +46,12 @@ internal static class SchedulingProblemNormalizer
                                 .ToArray(),
                             EligibleResourceIds = y.EligibleResourceIds
                                 .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredSkillCodes = (y.RequiredSkillCodes ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
+                                .ToArray(),
+                            RequiredToolingIds = (y.RequiredToolingIds ?? [])
+                                .OrderBy(id => id, StringComparer.Ordinal)
                                 .ToArray()
                         })
                         .ToArray()
@@ -181,6 +187,13 @@ internal static class SchedulingProblemNormalizer
                         $"DurationMinutes must be greater than zero for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
                         nameof(problem));
                 }
+
+                if (operation.SetupMinutes < 0)
+                {
+                    throw new ArgumentException(
+                        $"SetupMinutes cannot be negative for orderId '{order.OrderId}', operationId '{operation.OperationId}'.",
+                        nameof(problem));
+                }
             }
         }
 
@@ -251,11 +264,13 @@ file sealed class SchedulerState
     private readonly DateTimeOffset generatedAtUtc;
     private readonly Dictionary<string, SchedulingResourceContract> resources;
     private readonly Dictionary<string, SchedulingCalendarContract> calendars;
+    private readonly Dictionary<OperationKey, SchedulingOperationContract> operationByKey;
     private readonly List<ScheduleAssignmentContract> assignments = [];
     private readonly List<ScheduleConflictContract> conflicts = [];
     private readonly List<UnscheduledOperationContract> unscheduledOperations = [];
     private readonly List<ScheduleChangeContract> changeSummary = [];
     private readonly HashSet<OperationKey> failedOperationKeys = [];
+    private IReadOnlyCollection<ResourceOccupancy>? resourceOccupancyCache;
     private int conflictNumber;
 
     private SchedulerState(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
@@ -265,6 +280,11 @@ file sealed class SchedulerState
         this.generatedAtUtc = generatedAtUtc;
         resources = problem.Resources.ToDictionary(x => x.ResourceId, StringComparer.Ordinal);
         calendars = problem.Calendars.ToDictionary(x => x.CalendarId, StringComparer.Ordinal);
+        operationByKey = problem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (
+                Key: new OperationKey(order.OrderId, operation.OperationId),
+                Operation: operation)))
+            .ToDictionary(x => x.Key, x => x.Operation);
     }
 
     public static SchedulerState From(SchedulingProblemContract problem, string planId, DateTimeOffset generatedAtUtc)
@@ -297,7 +317,7 @@ file sealed class SchedulerState
                 EndUtc: locked.EndUtc,
                 IsLocked: true,
                 ExplanationCode: locked.LockReasonCode);
-            assignments.Add(assignment);
+            AddAssignment(assignment);
             changeSummary.Add(new ScheduleChangeContract(
                 locked.OrderId,
                 locked.OperationId,
@@ -407,7 +427,7 @@ file sealed class SchedulerState
                 continue;
             }
 
-            assignments.Add(result);
+            AddAssignment(result);
             scheduledOperationKeys.Add(OperationKey.From(result));
             changeSummary.Add(new ScheduleChangeContract(
                 result.OrderId,
@@ -451,6 +471,9 @@ file sealed class SchedulerState
             .GroupBy(x => new OperationKey(x.OrderId ?? string.Empty, x.OperationId!))
             .ToDictionary(x => x.Key, x => x.First().ReasonCode);
 
+        var resourceOccupancies = BuildResourceOccupancies(orderedAssignments);
+        var resourceLoads = BuildResourceLoads(resourceOccupancies);
+
         return new SchedulePlanContract(
             ContractVersion: problem.ContractVersion,
             PlanId: planId,
@@ -459,8 +482,9 @@ file sealed class SchedulerState
             AlgorithmVersion: FiniteCapacityScheduler.AlgorithmVersion,
             Status: SchedulePlanStatusContract.Preview,
             GeneratedAtUtc: generatedAtUtc,
+            Metrics: BuildMetrics(orderedAssignments, resourceOccupancies, resourceLoads),
             Assignments: orderedAssignments,
-            ResourceLoads: BuildResourceLoads(orderedAssignments),
+            ResourceLoads: resourceLoads,
             Conflicts: conflicts,
             UnscheduledOperations: unscheduledOperations,
             ChangeSummary: changeSummary,
@@ -480,6 +504,53 @@ file sealed class SchedulerState
                     HasConflict: conflictByOperation.ContainsKey(operationKey),
                     ConflictReasonCode: conflictByOperation.GetValueOrDefault(operationKey));
             }).ToList());
+    }
+
+    private SchedulePlanMetricsContract BuildMetrics(
+        IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments,
+        IReadOnlyCollection<ResourceOccupancy> resourceOccupancies,
+        IReadOnlyCollection<ScheduleResourceLoadContract> resourceLoads)
+    {
+        var dueByOperation = problem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (
+                Key: new OperationKey(order.OrderId, operation.OperationId),
+                operation.DueUtc)))
+            .ToDictionary(x => x.Key, x => x.DueUtc);
+        var tardinessMinutes = 0;
+        var lateOperationCount = 0;
+        foreach (var assignment in orderedAssignments)
+        {
+            var key = OperationKey.From(assignment);
+            if (!dueByOperation.TryGetValue(key, out var dueUtc) || assignment.EndUtc <= dueUtc)
+            {
+                continue;
+            }
+
+            lateOperationCount++;
+            tardinessMinutes += (int)Math.Ceiling((assignment.EndUtc - dueUtc).TotalMinutes);
+        }
+
+        var assignedMinutes = resourceOccupancies.Sum(x => (int)(x.EndUtc - x.StartUtc).TotalMinutes);
+        var makespanMinutes = resourceOccupancies.Count == 0
+            ? 0
+            : (int)(resourceOccupancies.Max(x => x.EndUtc) - resourceOccupancies.Min(x => x.StartUtc)).TotalMinutes;
+        var totalAvailableMinutes = resourceLoads.Sum(x => x.AvailableMinutes);
+        var onTimeRate = orderedAssignments.Count == 0
+            ? 1m
+            : Math.Round((decimal)(orderedAssignments.Count - lateOperationCount) / orderedAssignments.Count, 4);
+        var averageResourceUtilization = totalAvailableMinutes == 0
+            ? 0m
+            : Math.Round((decimal)resourceLoads.Sum(x => x.AssignedMinutes) / totalAvailableMinutes, 4);
+
+        return new SchedulePlanMetricsContract(
+            ScheduledOperationCount: orderedAssignments.Count,
+            UnscheduledOperationCount: unscheduledOperations.Count,
+            AssignedMinutes: assignedMinutes,
+            MakespanMinutes: makespanMinutes,
+            TotalTardinessMinutes: tardinessMinutes,
+            LateOperationCount: lateOperationCount,
+            OnTimeRate: onTimeRate,
+            AverageResourceUtilization: averageResourceUtilization);
     }
 
     private ScheduleAssignmentContract? TrySchedule(OperationWorkItem item)
@@ -573,9 +644,10 @@ file sealed class SchedulerState
     private IEnumerable<SchedulingResourceContract> EligibleResources(OperationWorkItem item)
     {
         var eligibleIds = item.Operation.EligibleResourceIds.ToHashSet(StringComparer.Ordinal);
+        var requiredCodes = RequiredCapabilityCodes(item.Operation).ToArray();
         return resources.Values
             .Where(resource => eligibleIds.Contains(resource.ResourceId))
-            .Where(resource => resource.CapabilityCodes.Contains(item.Operation.RequiredCapabilityCode, StringComparer.Ordinal))
+            .Where(resource => requiredCodes.All(code => resource.CapabilityCodes.Contains(code, StringComparer.Ordinal)))
             .OrderBy(resource => resource.ResourceId == item.Operation.PrimaryResourceId ? 0 : 1)
             .ThenBy(resource => resource.SortKey, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceId, StringComparer.Ordinal);
@@ -640,6 +712,7 @@ file sealed class SchedulerState
         }
 
         var duration = TimeSpan.FromMinutes(durationMinutes);
+        var setup = TimeSpan.FromMinutes(Math.Max(0, item.Operation.SetupMinutes));
         foreach (var shift in calendar.ShiftWindows
                      .OrderBy(x => x.StartUtc)
                      .ThenBy(x => x.EndUtc)
@@ -650,18 +723,99 @@ file sealed class SchedulerState
 
             while (candidate + duration <= latestEnd)
             {
+                var setupAdjustedCandidate = ApplySetupGap(resource, candidate, setup);
+                if (setupAdjustedCandidate > candidate)
+                {
+                    candidate = setupAdjustedCandidate;
+                    continue;
+                }
+
                 var end = candidate + duration;
-                var blockingEnd = BlockingEnd(resource, resourceQualityBlocks, candidate, end);
+                var occupiedStart = CandidateOccupiedStart(resource, candidate, setup);
+                if (occupiedStart < shift.StartUtc)
+                {
+                    // Keep setup occupancy inside the selected shift; load reconstruction uses the same invariant.
+                    candidate = shift.StartUtc + setup;
+                    continue;
+                }
+
+                var blockingEnd = BlockingEnd(resource, resourceQualityBlocks, occupiedStart, end);
                 if (blockingEnd is null)
                 {
                     return (candidate, end);
                 }
 
-                candidate = blockingEnd.Value;
+                candidate = NextCandidateAfterBlock(resource, candidate, setup, blockingEnd.Value);
             }
         }
 
         return null;
+    }
+
+    private DateTimeOffset ApplySetupGap(
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate,
+        TimeSpan setup)
+    {
+        if (setup <= TimeSpan.Zero)
+        {
+            return candidate;
+        }
+
+        var previousEnd = assignments
+            .Where(x => x.ResourceId == resource.ResourceId)
+            .Where(x => x.EndUtc <= candidate)
+            .Select(x => (DateTimeOffset?)x.EndUtc)
+            .Max();
+        if (!previousEnd.HasValue)
+        {
+            return candidate;
+        }
+
+        var setupComplete = previousEnd.Value + setup;
+        return candidate < setupComplete ? setupComplete : candidate;
+    }
+
+    private DateTimeOffset CandidateOccupiedStart(
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate,
+        TimeSpan setup)
+    {
+        if (setup <= TimeSpan.Zero)
+        {
+            return candidate;
+        }
+
+        var hasPreviousAssignment = assignments
+            .Any(x => x.ResourceId == resource.ResourceId && x.EndUtc <= candidate);
+        return hasPreviousAssignment ? candidate - setup : candidate;
+    }
+
+    private DateTimeOffset NextCandidateAfterBlock(
+        SchedulingResourceContract resource,
+        DateTimeOffset candidate,
+        TimeSpan setup,
+        DateTimeOffset blockingEnd)
+    {
+        var hasPreviousAssignment = setup > TimeSpan.Zero
+            && assignments.Any(x => x.ResourceId == resource.ResourceId && x.EndUtc <= candidate);
+        return hasPreviousAssignment ? blockingEnd + setup : blockingEnd;
+    }
+
+    private static IEnumerable<string> RequiredCapabilityCodes(SchedulingOperationContract operation)
+    {
+        yield return operation.RequiredCapabilityCode;
+
+        // APS lite models required skills and tooling as resource capability codes; no separate namespace exists yet.
+        foreach (var skillCode in operation.RequiredSkillCodes ?? [])
+        {
+            yield return skillCode;
+        }
+
+        foreach (var toolingId in operation.RequiredToolingIds ?? [])
+        {
+            yield return toolingId;
+        }
     }
 
     private DateTimeOffset? BlockingEnd(
@@ -764,16 +918,16 @@ file sealed class SchedulerState
         DateTimeOffset endUtc,
         int capacity)
     {
-        var overlappingAssignments = assignments
+        var overlappingOccupancies = GetResourceOccupancies(assignments)
             .Where(x => x.ResourceId == resource.ResourceId)
             .Where(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc))
             .ToList();
-        if (overlappingAssignments.Count < capacity)
+        if (overlappingOccupancies.Count < capacity)
         {
             return null;
         }
 
-        var boundaries = overlappingAssignments
+        var boundaries = overlappingOccupancies
             .SelectMany(x => new[]
             {
                 Max(startUtc, x.StartUtc),
@@ -794,7 +948,7 @@ file sealed class SchedulerState
                 continue;
             }
 
-            var concurrentAssignments = overlappingAssignments.Count(x =>
+            var concurrentAssignments = overlappingOccupancies.Count(x =>
                 x.StartUtc < segmentEnd && x.EndUtc > segmentStart);
             if (concurrentAssignments >= capacity)
             {
@@ -1026,7 +1180,57 @@ file sealed class SchedulerState
             .Any(x => Overlaps(startUtc, endUtc, x.StartUtc, x.EndUtc));
     }
 
-    private IReadOnlyCollection<ScheduleResourceLoadContract> BuildResourceLoads(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
+    private void AddAssignment(ScheduleAssignmentContract assignment)
+    {
+        assignments.Add(assignment);
+        resourceOccupancyCache = null;
+    }
+
+    private IReadOnlyCollection<ResourceOccupancy> GetResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
+    {
+        if (ReferenceEquals(orderedAssignments, assignments))
+        {
+            return resourceOccupancyCache ??= BuildResourceOccupancies(orderedAssignments);
+        }
+
+        return BuildResourceOccupancies(orderedAssignments);
+    }
+
+    private IReadOnlyCollection<ResourceOccupancy> BuildResourceOccupancies(IReadOnlyCollection<ScheduleAssignmentContract> orderedAssignments)
+    {
+        var resourceOccupancies = new List<ResourceOccupancy>();
+        var earliestOccupancyEndByResource = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+
+        foreach (var assignment in orderedAssignments
+                     .OrderBy(x => x.StartUtc)
+                     .ThenBy(x => x.ResourceId, StringComparer.Ordinal)
+                     .ThenBy(x => x.OperationId, StringComparer.Ordinal))
+        {
+            var startUtc = assignment.StartUtc;
+            if (operationByKey.TryGetValue(OperationKey.From(assignment), out var operation)
+                && operation.SetupMinutes > 0
+                && earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out var earliestEnd)
+                && earliestEnd <= assignment.StartUtc)
+            {
+                // Placement guarantees this setup occupancy stays inside the selected shift.
+                startUtc = assignment.StartUtc - TimeSpan.FromMinutes(operation.SetupMinutes);
+            }
+
+            resourceOccupancies.Add(new ResourceOccupancy(
+                assignment.ResourceId,
+                startUtc,
+                assignment.EndUtc));
+            if (!earliestOccupancyEndByResource.TryGetValue(assignment.ResourceId, out earliestEnd)
+                || assignment.EndUtc < earliestEnd)
+            {
+                earliestOccupancyEndByResource[assignment.ResourceId] = assignment.EndUtc;
+            }
+        }
+
+        return resourceOccupancies;
+    }
+
+    private IReadOnlyCollection<ScheduleResourceLoadContract> BuildResourceLoads(IReadOnlyCollection<ResourceOccupancy> resourceOccupancies)
     {
         return resources.Values
             .OrderBy(x => x.SortKey, StringComparer.Ordinal)
@@ -1040,7 +1244,7 @@ file sealed class SchedulerState
 
                 return calendar.ShiftWindows.Select(shift =>
                 {
-                    var assignedMinutes = orderedAssignments
+                    var assignedMinutes = resourceOccupancies
                         .Where(x => x.ResourceId == resource.ResourceId)
                         .Sum(x => OverlapMinutes(x.StartUtc, x.EndUtc, shift.StartUtc, shift.EndUtc));
                     var unavailableMinutes = MergedUnavailableMinutes(resource, shift.StartUtc, shift.EndUtc);
@@ -1234,6 +1438,11 @@ file sealed class SchedulerState
 
     private sealed record ResourceSlotValue(
         SchedulingResourceContract Resource,
+        DateTimeOffset StartUtc,
+        DateTimeOffset EndUtc);
+
+    private sealed record ResourceOccupancy(
+        string ResourceId,
         DateTimeOffset StartUtc,
         DateTimeOffset EndUtc);
 }

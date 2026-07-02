@@ -85,40 +85,48 @@ SKU 持有 6 个 UoM code（基本/库存/采购/销售/制造），创建时默
 
 ## 3. 目标信息架构（IA）
 
-### 3.1 当前 → 目标
+> **修订 v2（2026-06-10）：废弃"用平铺 Tab 切层级/塞杂物抽屉"。** 经成熟系统对标（SAP / Oracle EBS / D365 / 主流 MES）+ PM/业务/UX 三视角重审,确立**让页型匹配关系本质**:层级关系上**树**、归属关系**列表-详情挂父**、多对多用**矩阵**、二级受控值用**主从**、单主体多角色用**主体+角色叠加**。原 §3 的「工厂与产线/组织与日历用页内 Tab 切多实体」**违反 AGENTS §1.5-A.2,作废**。配套 UX 模板:`frontend/DESIGN/patterns/pages/master-data-templates.md`。
 
-| 当前（4 页，混乱） | 目标（6 页，职责清晰） |
-|---|---|
-| 物料与产品 `/skus`（建+读） | **物料与产品** `/skus` |
-| 客户与供应商 `/partners`（只读、猜角色） | **业务伙伴** `/partners`（角色筛选 + 角色列 + 新建带角色） |
-| 工厂资源 `/resources`（8 类压一张只读表） | **工厂与产线** `/facilities`（Tabs：工厂｜产线｜工作中心） + **设备台账** `/devices` |
-| 字典 `/reference-data`（只读扁平） | **数据字典** `/reference-data`（CodeSet 主从，可新增） |
-| —（班次/日历/班组/技能埋在 resources） | **组织与日历** `/organization`（Tabs：部门｜班组｜班次｜工作日历｜人员技能） |
-
-### 3.2 导航树
+### 3.1 修订后导航树（9 页 / 3 分组，侧栏带分组标签）
 
 ```
 基础数据 (master-data)
-├── 物料与产品    /master-data/skus           [Sku]
-├── 业务伙伴      /master-data/partners       [BusinessPartner]   角色筛选 + 角色列
-├── 工厂与产线    /master-data/facilities     [Site/Line/WorkCenter]  Tabs: 工厂｜产线｜工作中心
-├── 设备台账      /master-data/devices        [DeviceAsset]
-├── 数据字典      /master-data/reference-data [ReferenceDataCode] CodeSet 主从
-└── 组织与日历    /master-data/organization   [Dept/Team/Shift/Calendar/Skill]  Tabs
+【主对象】
+├── 物料与产品    /master-data/skus           [Sku]            列表-重详情(分组表单)
+├── 业务伙伴      /master-data/partners       [BusinessPartner] 单主体+多角色(对标 S/4 BP)
+├── 工厂结构      /master-data/facilities     [Site/Workshop/Line/WorkCenter] 左树+右详情+就地建子级
+└── 设备台账      /master-data/devices        [DeviceAsset]    平表(检索维度多,工厂结构树第5层下钻出口)
+【组织与排班】
+├── 组织与班组    /master-data/organization   [Department 树 + Team 列表-详情(成员主从)]
+├── 排班与日历    /master-data/scheduling     [Shift 设置表 + WorkCalendar 月历]
+└── 人员技能      /master-data/skills         [PersonnelSkill 矩阵(工人×技能)]
+【受控数据】
+├── 计量单位      /master-data/units          [UnitOfMeasure + UomConversion 主从]
+└── 数据字典      /master-data/reference-data [ReferenceDataCode CodeSet 主从]（最佳示范页，不动）
 ```
 
-> **取舍**：工厂/产线/工作中心是同一层级链，放同一页用页内 Tabs（同一心智里维护工厂结构）；设备数量级大、检索维度多、归属常变，单独成页；班次/日历/班组/技能与产能层级无关，迁到「组织与日历」。**页内 Tabs 不进菜单树**（符合导航约束）。
+> **取舍**：① 工厂结构是 4 层父子链 → 左树右详情,选中父级就地建子级（归属自动带入，消除手填 siteCode/lineCode 的心智断裂）；设备量大、归属常变 → 仍独立成页，树里给下钻出口。② 原「组织与日历」5-Tab 杂物抽屉拆 3 页——部门(树)+班组、班次+日历(设置表/月历)、技能(矩阵)**三种载体不同,合页逼用户切三种心智**,宁可 3 个纯粹轻页。③ Tab 只用于"同对象多视图/真平级"，**永不进菜单树**。
 
-### 3.3 各页职责（操作：查/增/改/停用）
+### 3.2 各页载体 / 改动量 / 关键交互
 
-| 页面 | 实体 | Phase 1 可做 | 受阻于后端 |
+| 页面 | 载体 | 改动量 | 关键交互 |
 |---|---|---|---|
-| 物料与产品 | Sku | 查、**新建**（重做表单，§6.2）、只读详情抽屉 | 编辑/停用/详情字段 |
-| 业务伙伴 | BusinessPartner | 查（角色筛选）、**新建（显式选角色）** | 列表回角色、编辑/停用 |
-| 工厂与产线 | Site/Line/WorkCenter | 各 Tab 查 + **新建**（产线选所属工厂、工作中心选工厂+产线） | 层级归属可视化、编辑/停用 |
-| 设备台账 | DeviceAsset | 查、**新建**（选所属产线/工作中心） | 按产线过滤、编辑/停用 |
-| 数据字典 | ReferenceDataCode | 保留 CodeSet 主从浏览、按治理新增码值 | 按 CodeSet 查询、编辑、种子 |
-| 组织与日历 | Dept/Team/Shift/Calendar/Skill | 各 Tab 查 + **新建** | 编辑/停用 |
+| 物料与产品 | 列表-重详情 | 微调(加分类/类型列+筛选) | 分组折叠表单、基本单位实时取 UoM 实体 |
+| 业务伙伴 | 列表 + 角色叠加 | 基本保留(删过时"按编码推断"文案) | 角色筛选/列、多选角色新建 |
+| **工厂结构** | **左树+右详情** | **大改(Tab→树)** | 选中父级「+新建子级」预填归属、面包屑、树搜索、设备下钻出口 |
+| 设备台账 | 平表 | 保留(加来自树的 `?lineCode=` 预过滤) | 按产线/工作中心/状态筛选 |
+| **组织与班组** | 部门树 + 班组列表-详情 | **中改** | 部门树(按 parentCode 拼)、班组挂部门、成员主从 |
+| **排班与日历** | 班次设置表 + 日历月历 | **新页(从组织拆)** | 月历可视化(标工作日/节假日)；**依赖后端日历明细** |
+| **人员技能** | 矩阵 | **新页(从组织拆)** | 工人×技能格子(等级/有效期)；**依赖后端聚合数据** |
+| 计量单位 | 设置表 + 换算主从 | 保留(补 UomConversion) | 单位列表 + 1A=NB 换算配对 |
+| 数据字典 | CodeSet 主从 | **不动(示范页)** | 左 CodeSet 右码值、治理分级 |
+
+### 3.3 落地可行性 + 重构顺序
+
+**字段已具备、前端可拼、不等后端**:工厂结构树（siteCode/workshopCode/plantCode/lineCode 全回传 #345）、部门树（parentDepartmentCode）。
+**曾经的真数据缺口 → 已由 #373/#375 后端交付、前端补完整形态**（不再假做）:① 日历月历 ← 后端回 `workingTimes/holidays/exceptions`(detail) + update 写回 → 排班与日历页真实月历；② 技能矩阵 ← `listPersonnelSkillMatrix`(skillCodes+rows) → 人员技能页真实矩阵；③ 改挂上级 ← update 全字段(parentDepartmentCode/departmentCode/shiftCode/siteCode/workshopCode/lineCode 等) → 部门/班组/工厂结构改归属；④ 列表过滤 + 回归属字段 ← `parentCode/category/keyword` + 列表回 `parentDepartmentCode/departmentCode` → 部门多层树 + 班组按部门归集；⑤ UoM 换算 ← `createUomConversion` + `uom-conversion` resourceType 可列/读 → 计量单位换算主从。
+
+**重构顺序(已完成)**:① 工厂结构树(树型示范页)→ ② 数据字典(主从示范)→ ③ 组织与班组(部门多层树+班组归集+改挂)→ ④ 排班与日历(班次时段+真实月历)/ 人员技能(矩阵)/ 计量单位(换算)。全部以 typed 数据驱动,无假分页/假数据。
 
 ---
 
@@ -199,7 +207,7 @@ DataTablePagination（服务端 total）
 
 *基础信息*：物料编号（只读「保存后由系统分配」）｜物料名称\*（Input）｜产品分类\*（**Select·字典 `product-category`**，旁置「去数据字典维护 →」链接）｜物料类型\*（Select 枚举：成品/半成品/原材料/包材/服务）
 
-*单位与计量*：基本单位\*（Select·字典 `uom`/前端常量兜底）｜多单位换算（**进阶折叠**，Phase 2）
+*单位与计量*：基本单位\*（Select·**实时取 `unit-of-measure` 实体**/前端常量兜底，去「计量单位」页维护）｜多单位换算（**进阶折叠**，Phase 2）
 
 *追踪与合规*：批次追踪\*（Select：不追踪/按需/必须）｜序列号追踪\*（Select 同上）｜投产前需质检（Checkbox）｜质量/合规标签（Input 逗号分隔，Phase 2 升级 chips）
 
@@ -224,6 +232,12 @@ DataTablePagination（服务端 total）
 - 左 CodeSet 列表（Phase 1 前端约定常量，§5.1）+ 右选中 CodeSet 的码值表（主从）。
 - 新建字典条目 Dialog：所属字典（Select，预填当前 CodeSet）｜编码\*｜显示名称\*｜启用（默认开）｜备注（进阶）。
 - 与物料表单闭环：Phase 1 共用同一前端常量；Phase 2 物料下拉改 `listReferenceDataByCodeSet` 实时拉取。
+
+### 6.5b 计量单位页（独立维护）
+- 单表单页（参照设备台账）：列表列 编码／名称／量纲（`dimensionType` 映射中文）／状态／更新时间（`formatDateTime`）／操作；`PageHeader + SectionCards + Toolbar + DataTable + DataTablePagination`。
+- 列表走通用 `resources?resourceType=unit-of-measure`（复用 `useBusinessUoms`，UoM 是独立实体而非 CodeSet）；新建走专属 `createBusinessConsoleUnitOfMeasure`；改名/停用/启用/详情走通用 `useMasterDataResourceActions('unit-of-measure')`。
+- 新建/编辑 Dialog（双模式）：编码\*（编辑态只读）｜名称\*｜量纲\*（Select：取字典 `uom-dimension` 或常量 计数/长度/面积/体积/重量/时间）｜小数精度（数字，可空）｜取整方式\*（Select 常量：四舍五入/五舍六入/向上取整/向下取整）。必填红框 + 顶部汇总，成功/失败走 `notify`。
+- 与物料表单闭环：SKU「基本单位」实时取自本实体（常量兜底），单位在此页维护后物料下拉即可选到中文名。
 
 ### 6.6 通用模式
 - **RowActions**：至少「查看详情」可用；「编辑/停用」Phase 2 禁用 + tooltip；停用用 `AlertDialog` 二次确认。
@@ -277,7 +291,7 @@ DataTablePagination（服务端 total）
 - **[#350]** 缺面向 business-console 的「IAM 用户(工人)列表/检索」facade——解锁班组成员维护、人员技能登记的工人选择器(#348 的 B 部分未随实体端点交付)。
 
 ### 7.4.2 落地状态（2026-06-08，#344–348 已合并后）
-已完成(门禁全绿):物料去 demo + 字段字典化 / 工厂资源拆 6 页 / 表单不再"打开即标红" / 各表行操作(查看·改名·停用·启用,#344) / 业务伙伴真实角色+多角色新建(#345/#347) / **车间(Workshop)实体落地 + 产线·工作中心归属车间(#348)** / 数据字典 CodeSet 主从受控值中心(#346)。
+已完成(门禁全绿):物料去 demo + 字段字典化 / 工厂资源拆 6 页 / 表单不再"打开即标红" / 各表行操作(查看·改名·停用·启用,#344) / 业务伙伴真实角色+多角色新建(#345/#347) / **车间(Workshop)实体落地 + 产线·工作中心归属车间(#348)** / 数据字典 CodeSet 主从受控值中心(#346) / **计量单位升级为独立维护页 `units.vue`(实体/字典驱动,建/改/停用)+ SKU 基本单位实时取 `unit-of-measure` 实体(常量兜底)**。
 仅剩:**班组成员维护、人员技能登记**——卡在 **#350**(无 IAM 用户选择器,不愿暴露裸 userId);物料表单下拉**实时**拉字典(待字典种子在目标环境验证后由常量切换)。
 
 ### 7.4.1 术语与层级修订（2026-06-08）

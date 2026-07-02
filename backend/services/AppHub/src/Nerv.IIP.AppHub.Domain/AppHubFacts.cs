@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 
 namespace Nerv.IIP.AppHub.Domain;
@@ -12,14 +11,19 @@ public sealed record InstanceLivenessFact(string InstanceKey, DateTimeOffset Las
 public sealed record InstanceStateHistoryFact(string InstanceKey, DateTimeOffset ObservedAtUtc, string ReportedStatus, string HealthStatus, string Summary);
 public sealed record RegistrationResult(string RegistrationId, string InstanceKey);
 public sealed record InstanceStatusChanged(string InstanceKey, string PreviousStatus, string CurrentStatus, DateTimeOffset ChangedAtUtc);
+public sealed record InstanceListCriteria(string OrganizationId, string EnvironmentId, int PageIndex, int PageSize, string? SortBy, string? SortOrder, string? FilterSearch);
+public sealed record InstanceListResult(int EffectivePageIndex, int EffectivePageSize, int TotalCount, IReadOnlyList<InstanceListItemFact> Items);
+public sealed record InstanceListItemFact(string ApplicationKey, string ApplicationName, string Version, string NodeKey, string NodeName, string InstanceKey, string InstanceName, string ReportedStatus, string HealthStatus, DateTimeOffset? LastHeartbeatAtUtc, DateTimeOffset? LastStateAtUtc);
+public sealed record InstanceDetailFact(string ApplicationKey, string ApplicationName, string Version, string NodeKey, string NodeName, string InstanceKey, string InstanceName, string ReportedStatus, string HealthStatus, DateTimeOffset? LastHeartbeatAtUtc, DateTimeOffset? LastStateAtUtc, IReadOnlyList<CapabilitySummaryFact> Capabilities, IReadOnlyDictionary<string, string> Metadata);
+public sealed record CapabilitySummaryFact(string CapabilityCode, string CapabilityVersion, string Category, IReadOnlyList<string> SupportedOperations);
 
 public interface IAppHubStateStore
 {
     RegistrationResult Register(ApplicationRegistration registration);
     void RecordHeartbeat(ApplicationHeartbeat heartbeat);
     void RecordStateSnapshot(InstanceStateSnapshot snapshot);
-    InstanceListResponse QueryInstances(InstanceListQuery query);
-    InstanceDetailResponse GetInstanceDetail(string organizationId, string environmentId, string instanceKey);
+    InstanceListResult QueryInstances(InstanceListCriteria query);
+    InstanceDetailFact GetInstanceDetail(string organizationId, string environmentId, string instanceKey);
 }
 
 public sealed class InMemoryAppHubStateStore : IAppHubStateStore
@@ -90,7 +94,7 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
         }
     }
 
-    public InstanceListResponse QueryInstances(InstanceListQuery query)
+    public InstanceListResult QueryInstances(InstanceListCriteria query)
     {
         lock (_gate)
         {
@@ -107,15 +111,17 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
                 .ApplyInstanceListSort(query)
                 .ToList();
 
+            var effectivePageIndex = Math.Max(query.PageIndex, 1);
+            var effectivePageSize = Math.Max(query.PageSize, 1);
             var items = filtered
-                .Skip((Math.Max(query.PageIndex, 1) - 1) * Math.Max(query.PageSize, 1))
-                .Take(Math.Max(query.PageSize, 1))
+                .Skip((effectivePageIndex - 1) * effectivePageSize)
+                .Take(effectivePageSize)
                 .ToList();
-            return new InstanceListResponse(query.PageIndex, query.PageSize, filtered.Count, items);
+            return new InstanceListResult(effectivePageIndex, effectivePageSize, filtered.Count, items);
         }
     }
 
-    public InstanceDetailResponse GetInstanceDetail(string organizationId, string environmentId, string instanceKey)
+    public InstanceDetailFact GetInstanceDetail(string organizationId, string environmentId, string instanceKey)
     {
         lock (_gate)
         {
@@ -125,20 +131,20 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
             var live = Liveness.LastOrDefault(x => x.InstanceKey == instance.InstanceKey);
             var state = StateHistory.LastOrDefault(x => x.InstanceKey == instance.InstanceKey);
             var capabilities = CapabilityManifests.LastOrDefault(x => x.InstanceKey == instance.InstanceKey)?.Capabilities
-                .Select(x => new CapabilitySummary(x.CapabilityCode, x.CapabilityVersion, x.Category, x.SupportedOperations))
+                .Select(x => new CapabilitySummaryFact(x.CapabilityCode, x.CapabilityVersion, x.Category, x.SupportedOperations))
                 .ToList() ?? [];
 
-            return new InstanceDetailResponse(app.ApplicationKey, app.ApplicationName, instance.Version, node.NodeKey, node.NodeName, instance.InstanceKey, instance.InstanceName, instance.ReportedStatus, instance.HealthStatus, live?.LastHeartbeatAtUtc, state?.ObservedAtUtc, capabilities, instance.Metadata);
+            return new InstanceDetailFact(app.ApplicationKey, app.ApplicationName, instance.Version, node.NodeKey, node.NodeName, instance.InstanceKey, instance.InstanceName, instance.ReportedStatus, instance.HealthStatus, live?.LastHeartbeatAtUtc, state?.ObservedAtUtc, capabilities, instance.Metadata);
         }
     }
 
-    private InstanceListItem ToListItem(ApplicationInstanceFact instance)
+    private InstanceListItemFact ToListItem(ApplicationInstanceFact instance)
     {
         var app = Applications.Single(x => x.OrganizationId == instance.OrganizationId && x.EnvironmentId == instance.EnvironmentId && x.ApplicationKey == instance.ApplicationKey);
         var node = Nodes.Single(x => x.OrganizationId == instance.OrganizationId && x.EnvironmentId == instance.EnvironmentId && x.NodeKey == instance.NodeKey);
         var live = Liveness.LastOrDefault(x => x.InstanceKey == instance.InstanceKey);
         var state = StateHistory.LastOrDefault(x => x.InstanceKey == instance.InstanceKey);
-        return new InstanceListItem(app.ApplicationKey, app.ApplicationName, instance.Version, node.NodeKey, node.NodeName, instance.InstanceKey, instance.InstanceName, instance.ReportedStatus, instance.HealthStatus, live?.LastHeartbeatAtUtc, state?.ObservedAtUtc);
+        return new InstanceListItemFact(app.ApplicationKey, app.ApplicationName, instance.Version, node.NodeKey, node.NodeName, instance.InstanceKey, instance.InstanceName, instance.ReportedStatus, instance.HealthStatus, live?.LastHeartbeatAtUtc, state?.ObservedAtUtc);
     }
 
     private ApplicationInstanceFact EnsureInstance(string organizationId, string environmentId, string instanceKey)
@@ -162,7 +168,7 @@ public sealed class InMemoryAppHubStateStore : IAppHubStateStore
 
 public static class InstanceListSorting
 {
-    public static IEnumerable<InstanceListItem> ApplyInstanceListSort(this IEnumerable<InstanceListItem> items, InstanceListQuery query)
+    public static IEnumerable<InstanceListItemFact> ApplyInstanceListSort(this IEnumerable<InstanceListItemFact> items, InstanceListCriteria query)
     {
         var descending = string.Equals(query.SortOrder, "desc", StringComparison.OrdinalIgnoreCase);
         return (query.SortBy?.ToLowerInvariant(), descending) switch

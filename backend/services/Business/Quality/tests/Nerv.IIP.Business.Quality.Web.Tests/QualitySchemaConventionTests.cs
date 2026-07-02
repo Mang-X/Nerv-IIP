@@ -1,10 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Testing.EntityFramework;
 
@@ -23,6 +26,7 @@ public sealed class QualitySchemaConventionTests
             typeof(InspectionPlanCharacteristic),
             typeof(InspectionRecord),
             typeof(InspectionResultLine),
+            typeof(QualityReason),
         };
 
         var failures = new List<string>();
@@ -45,6 +49,44 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<InspectionRecord>(
             fixture.DbContext,
             [nameof(InspectionRecord.OrganizationId), nameof(InspectionRecord.EnvironmentId), nameof(InspectionRecord.Result)]);
+        AssertEntityHasIndex<QualityReason>(
+            fixture.DbContext,
+            [nameof(QualityReason.OrganizationId), nameof(QualityReason.EnvironmentId), nameof(QualityReason.GroupName), nameof(QualityReason.Enabled)]);
+    }
+
+    [Fact]
+    public void Mes_defect_source_unique_index_is_scoped_to_auto_created_mes_ncrs()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260616013940_AddQualityBusinessGap415",
+            "20260619051226_AddQualityDefectConsumerReliability");
+
+        Assert.Contains("CREATE UNIQUE INDEX ux_ncr_mes_defect_source", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "WHERE source_type = 'in-process' AND sku_code = 'MES-SKU-UNRESOLVED';",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inspection_source_sku_unique_index_precheck_points_to_duplicate_remediation_runbook()
+    {
+        using var fixture = CreateFixture();
+
+        var script = fixture.DbContext.GetService<IMigrator>().GenerateScript(
+            "20260626170759_AddQualityNcrInventoryDispositionRouting",
+            "20260629074947_AddQualityLongtailReviewFixes");
+
+        Assert.Contains(
+            "Cannot add unique inspection source/SKU index because duplicate Quality inspection records already exist",
+            script,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "docs/architecture/business-quality-inspection-duplicate-remediation.md",
+            script,
+            StringComparison.Ordinal);
     }
 
     private static SchemaFixture CreateFixture()

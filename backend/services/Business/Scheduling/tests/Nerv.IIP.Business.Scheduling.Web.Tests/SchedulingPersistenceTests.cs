@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Infrastructure.Repositories;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -48,7 +49,7 @@ public sealed class SchedulingPersistenceTests
             var plan = await repository.GetByPlanIdWithDetailsAsync("plan-001", "org-001", "env-dev", cancellationToken);
             Assert.NotNull(plan);
 
-            plan.ReplaceGeneratedPlan(CreateReplacementContract());
+            plan.ReplaceGeneratedPlan(SchedulePlanContractMapper.ToDomainSnapshot(CreateReplacementContract()));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -91,14 +92,14 @@ public sealed class SchedulingPersistenceTests
 
     private static SchedulePlan CreatePlan()
     {
-        return SchedulePlan.FromGeneratedContract("org-001", "env-dev", CreateContract(
+        return SchedulePlan.FromGeneratedPlan("org-001", "env-dev", SchedulePlanContractMapper.ToDomainSnapshot(CreateContract(
             assignmentId: "assign-old",
             operationId: "op-old",
             resourceId: "res-old",
             conflictId: "conflict-old",
             unscheduledWorkOrderId: "wo-unscheduled-old",
             unscheduledOperationId: "op-unscheduled-old",
-            assignedMinutes: 60));
+            assignedMinutes: 60)));
     }
 
     private static SchedulePlanContract CreateReplacementContract()
@@ -130,6 +131,15 @@ public sealed class SchedulingPersistenceTests
             AlgorithmVersion: "aps-lite-v1",
             Status: SchedulePlanStatusContract.Generated,
             GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+            Metrics: new SchedulePlanMetricsContract(
+                ScheduledOperationCount: 1,
+                UnscheduledOperationCount: 1,
+                AssignedMinutes: assignedMinutes,
+                MakespanMinutes: 60,
+                TotalTardinessMinutes: 0,
+                LateOperationCount: 0,
+                OnTimeRate: 1m,
+                AverageResourceUtilization: Math.Round(assignedMinutes / 480m, 4)),
             Assignments:
             [
                 new ScheduleAssignmentContract(

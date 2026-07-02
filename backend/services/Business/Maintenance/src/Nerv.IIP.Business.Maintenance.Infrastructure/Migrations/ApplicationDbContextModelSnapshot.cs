@@ -44,12 +44,26 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<string>("LossCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("loss_category")
+                        .HasComment("TPM six-big-loss or equivalent OEE loss classification.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
+
+                    b.Property<string>("ReasonCategory")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reason_category")
+                        .HasComment("Reason category for maintenance RCA and reporting.");
 
                     b.Property<string>("ReasonCode")
                         .IsRequired()
@@ -160,6 +174,28 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("interval")
                         .HasComment("Explicit maintenance interval expression, for example ISO-8601 P7D.");
 
+                    b.Property<DateOnly?>("LastGeneratedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("last_generated_on")
+                        .HasComment("Last business date for which the plan generated a maintenance work order.");
+
+                    b.Property<decimal>("LastGeneratedRuntimeHours")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("last_generated_runtime_hours")
+                        .HasComment("Last cumulative runtime-hour reading used to generate a PM work order.");
+
+                    b.Property<DateOnly>("NextDueOn")
+                        .HasColumnType("date")
+                        .HasColumnName("next_due_on")
+                        .HasComment("Next business date on which the preventive maintenance plan is due.");
+
+                    b.Property<decimal?>("NextDueRuntimeHours")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("next_due_runtime_hours")
+                        .HasComment("Next cumulative runtime-hour threshold for usage-triggered PM generation.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -180,6 +216,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("plan_code")
                         .HasComment("Maintenance plan code.");
+
+                    b.Property<decimal?>("RuntimeHourInterval")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("runtime_hour_interval")
+                        .HasComment("Optional runtime-hour interval for usage-triggered preventive maintenance.");
 
                     b.Property<DateOnly>("StartsOn")
                         .HasColumnType("date")
@@ -216,6 +258,16 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Maintenance work order id.");
 
+                    b.Property<bool>("AlarmCleared")
+                        .HasColumnType("boolean")
+                        .HasColumnName("alarm_cleared")
+                        .HasComment("Whether the source IndustrialTelemetry alarm has been cleared while awaiting maintenance confirmation.");
+
+                    b.Property<DateTimeOffset?>("AlarmClearedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("alarm_cleared_at_utc")
+                        .HasComment("UTC time when the source alarm was cleared.");
+
                     b.Property<bool>("AssetUnavailable")
                         .HasColumnType("boolean")
                         .HasColumnName("asset_unavailable")
@@ -250,6 +302,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("device_asset_id")
                         .HasComment("MasterData device asset public id or code reference.");
 
+                    b.Property<string>("DiagnosticDescription")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("diagnostic_description")
+                        .HasComment("Diagnostic description captured when the work order was opened from an upstream fact.");
+
                     b.Property<int?>("DowntimeMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("downtime_minutes")
@@ -267,6 +325,18 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
+
+                    b.Property<string>("FailureCauseCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_cause_code")
+                        .HasComment("Structured failure cause code captured from alarm or inspection context.");
+
+                    b.Property<string>("FailureModeCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("failure_mode_code")
+                        .HasComment("Structured failure mode code captured from alarm or inspection context.");
 
                     b.Property<DateTimeOffset>("OpenedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -294,11 +364,34 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("priority")
                         .HasComment("Maintenance priority.");
 
+                    b.Property<DateTimeOffset?>("RepairStartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("repair_started_at_utc")
+                        .HasComment("UTC time when effective repair work started.");
+
                     b.Property<string>("SourceAlarmId")
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("source_alarm_id")
                         .HasComment("IndustrialTelemetry alarm id that opened this work order, when applicable.");
+
+                    b.Property<string>("SourcePlanCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_plan_code")
+                        .HasComment("Maintenance plan code that generated this work order, when applicable.");
+
+                    b.Property<string>("SourceReferenceId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("source_reference_id")
+                        .HasComment("Source fact reference id for source-type idempotency and traceability.");
+
+                    b.Property<string>("SourceType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("source_type")
+                        .HasComment("Work order source type such as alarm, plan or inspection.");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -311,6 +404,10 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceAlarmId")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "SourceType", "SourceReferenceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_maintenance_work_orders_source_reference");
 
                     b.ToTable("maintenance_work_orders", "maintenance", t =>
                         {
@@ -471,17 +568,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("character varying(256)")
                         .HasComment("BusinessMaintenance integration event consumer name.");
 
-                    b.Property<string>("DedupeKey")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasComment("BusinessMaintenance dedupe key associated with the processed event.");
-
                     b.Property<string>("EventId")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasComment("Source integration event identifier unique within a consumer.");
+                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
 
                     b.Property<string>("EventType")
                         .IsRequired()
@@ -492,6 +583,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                     b.Property<int>("EventVersion")
                         .HasColumnType("integer")
                         .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("Deterministic BusinessMaintenance idempotency key unique within a consumer.");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -505,9 +602,9 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ConsumerName", "EventId")
+                    b.HasIndex("ConsumerName", "IdempotencyKey")
                         .IsUnique()
-                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
+                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
 
                     b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
                         .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");
@@ -515,6 +612,141 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "maintenance", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessMaintenance for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code counter surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CurrentValue")
+                        .HasColumnType("bigint")
+                        .HasColumnName("current_value")
+                        .HasComment("Last allocated sequence value within the counter scope.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the code counter.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the code counter.");
+
+                    b.Property<string>("ResetKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reset_key")
+                        .HasComment("Sequence reset bucket derived from the active code rule.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by this counter.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Optional site or plant scope; empty string means global within organization and environment.");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token incremented whenever the counter advances.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "SiteCode", "ResetKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_counters_scope");
+
+                    b.ToTable("code_counters", "maintenance", t =>
+                        {
+                            t.HasComment("Service-local code counters scoped by organization, environment, rule key, optional site and reset bucket.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeIdempotencyKey", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code idempotency record surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("code")
+                        .HasComment("Allocated business code returned for this idempotency key.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC timestamp when the idempotency key was first recorded.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the idempotency key.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Client supplied stable idempotency key for ordinary create requests.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the idempotency key.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by the idempotency key.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_idempotency_keys_scope");
+
+                    b.ToTable("code_idempotency_keys", "maintenance", t =>
+                        {
+                            t.HasComment("Service-local idempotency records that bind create request keys to allocated codes.");
                         });
                 });
 

@@ -74,12 +74,25 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("external_alarm_id")
                         .HasComment("External alarm identifier used for idempotent ingestion.");
 
+                    b.Property<decimal?>("ObservedValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("observed_value")
+                        .HasComment("Observed process value that raised this alarm.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("priority")
+                        .HasComment("Independent alarm priority.");
 
                     b.Property<DateTimeOffset>("RaisedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -104,6 +117,24 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("status")
                         .HasComment("Alarm lifecycle status.");
+
+                    b.Property<string>("TagKey")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("tag_key")
+                        .HasComment("Telemetry tag key whose observed value raised this alarm.");
+
+                    b.Property<decimal?>("ThresholdValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("threshold_value")
+                        .HasComment("Rule threshold value when this alarm was raised.");
+
+                    b.Property<string>("UnitCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("unit_code")
+                        .HasComment("Observed and threshold unit code.");
 
                     b.HasKey("Id");
 
@@ -144,6 +175,12 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("created_at_utc")
                         .HasComment("UTC time when the alarm rule was created.");
 
+                    b.Property<decimal>("DeadbandValue")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("deadband_value")
+                        .HasComment("Deadband value applied before clearing a threshold alarm.");
+
                     b.Property<string>("DeviceAssetId")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -163,12 +200,34 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("is_enabled")
                         .HasComment("Whether the alarm rule is enabled for evaluation.");
 
+                    b.Property<int>("MinDurationSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_duration_seconds")
+                        .HasComment("Minimum breach duration seconds required before raising the alarm.");
+
+                    b.Property<int>("OffDelaySeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("off_delay_seconds")
+                        .HasComment("Continuous return-to-normal seconds required before clearing the alarm.");
+
+                    b.Property<int>("OnDelaySeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("on_delay_seconds")
+                        .HasComment("Continuous breach seconds required before raising the alarm.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("organization_id")
                         .HasComment("Owning organization identifier.");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("priority")
+                        .HasComment("Independent alarm priority, separate from severity.");
 
                     b.Property<string>("RuleCode")
                         .IsRequired()
@@ -313,6 +372,11 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
                         .HasColumnName("average_value")
                         .HasComment("Average numeric value in the bucket.");
 
+                    b.Property<long>("BucketEndUnixTimeMilliseconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("bucket_end_unix_time_milliseconds")
+                        .HasComment("Exclusive UTC bucket end represented as Unix time milliseconds for provider-neutral ordering and late-bucket checks.");
+
                     b.Property<DateTimeOffset>("BucketEndUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("bucket_end_utc")
@@ -393,7 +457,10 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketEndUnixTimeMilliseconds");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "DeviceAssetId", "TagKey", "BucketStartUtc")
+                        .HasDatabaseName("IX_telemetry_summaries_organization_id_environment_id_device_~1");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceSystem", "SourceConnector", "DeviceAssetId", "TagKey", "SourceSequence")
                         .IsUnique();

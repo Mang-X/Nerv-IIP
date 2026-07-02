@@ -42,6 +42,7 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
         TagKey = IndustrialTelemetryText.RequiredLower(tagKey, nameof(tagKey));
         BucketStartUtc = bucketStartUtc;
         BucketEndUtc = bucketEndUtc;
+        BucketEndUnixTimeMilliseconds = bucketEndUtc.ToUnixTimeMilliseconds();
         SampleCount = sampleCount;
         MinValue = minValue;
         MaxValue = maxValue;
@@ -59,6 +60,7 @@ public sealed class TelemetrySummary : Entity<TelemetrySummaryId>, IAggregateRoo
     public string TagKey { get; private set; } = string.Empty;
     public DateTimeOffset BucketStartUtc { get; private set; }
     public DateTimeOffset BucketEndUtc { get; private set; }
+    public long BucketEndUnixTimeMilliseconds { get; private set; }
     public int SampleCount { get; private set; }
     public decimal MinValue { get; private set; }
     public decimal MaxValue { get; private set; }

@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -49,8 +50,8 @@ const uiStubs = {
   SectionCards: { template: '<div><slot /></div>' },
   SectionCard: { props: ['description', 'value', 'hint'], template: '<div>{{ description }} {{ value }}</div>' },
   Toolbar: { props: ['showSearch'], template: '<div><slot name="filters" /></div>' },
-  // DataTable stub renders rows + the cell-actions slot, exposing a design-system table marker.
-  DataTable: {
+  // DataTablePro stub renders rows + the cell-actions slot, exposing a design-system table marker.
+  DataTablePro: {
     props: ['rows', 'columns', 'rowKey'],
     template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>`,
   },
@@ -58,25 +59,25 @@ const uiStubs = {
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
   DropdownMenuItem: { template: '<button v-bind="$attrs"><slot /></button>' },
   DropdownMenuSeparator: true,
-  // Dialog stubs render slot content unconditionally so dialog forms are testable.
-  Dialog: { props: ['open'], template: '<div><slot /></div>' },
-  DialogContent: { template: '<div><slot /></div>' },
-  DialogHeader: { template: '<div><slot /></div>' },
-  DialogTitle: { template: '<h2><slot /></h2>' },
-  DialogDescription: { template: '<p><slot /></p>' },
-  Button: { template: '<button v-bind="$attrs"><slot /></button>' },
+  // DialogPro (reka DialogRoot) stubs render slot content unconditionally so dialog forms are testable.
+  DialogRoot: { props: ['open'], template: '<div><slot /></div>' },
+  DialogProContent: { template: '<div><slot /></div>' },
+  DialogProHeader: { template: '<div><slot /></div>' },
+  DialogProTitle: { template: '<h2><slot /></h2>' },
+  DialogProDescription: { template: '<p><slot /></p>' },
+  ButtonPro: { template: '<button v-bind="$attrs"><slot /></button>' },
   Field: { template: '<div><slot /></div>' },
   FieldGroup: { template: '<div><slot /></div>' },
   FieldLabel: { template: '<label><slot /></label>' },
-  Input: {
+  InputPro: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
     template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Select: { template: '<div><slot /></div>' },
-  SelectContent: { template: '<div><slot /></div>' },
-  SelectItem: { props: ['value'], template: '<div><slot /></div>' },
-  SelectTrigger: { template: '<button><slot /></button>' },
+  SelectPro: { template: '<div><slot /></div>' },
+  SelectProContent: { template: '<div><slot /></div>' },
+  SelectProItem: { props: ['value'], template: '<div><slot /></div>' },
+  SelectProTrigger: { template: '<button><slot /></button>' },
   SelectValue: true,
   Spinner: true,
 }
@@ -84,6 +85,7 @@ const uiStubs = {
 function mountInventoryPage(component: unknown) {
   return mount(component, {
     global: {
+      plugins: [createPinia()],
       stubs: {
         ...uiStubs,
         RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
@@ -119,6 +121,8 @@ describe('inventory workflow pages', () => {
 
     const wrapper = mountInventoryPage(CountsPage)
 
+    await wrapper.find('#count-task-sku').setValue('SKU-001')
+    await wrapper.find('#count-task-site').setValue('S1')
     await wrapper.find('#count-task-location').setValue('A-01')
     await wrapper.findAll('form')[0]!.trigger('submit')
     await wrapper.findAll('button').find((button) => button.text().includes('确认差异'))!.trigger('click')

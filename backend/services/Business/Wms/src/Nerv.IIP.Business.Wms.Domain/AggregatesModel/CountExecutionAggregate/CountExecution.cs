@@ -48,6 +48,7 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
     public decimal ExpectedQuantity { get; private set; }
     public decimal? CountedQuantity { get; private set; }
     public decimal? VarianceQuantity { get; private set; }
+    public string? InventoryCountTaskId { get; private set; }
     public CountExecutionStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
@@ -63,6 +64,17 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         decimal expectedQuantity)
     {
         return new CountExecution(organizationId, environmentId, countNo, skuCode, uomCode, siteCode, locationCode, expectedQuantity);
+    }
+
+    public void MarkInventoryCountTaskCreated(string inventoryCountTaskId)
+    {
+        var normalizedCountTaskId = WmsText.Required(inventoryCountTaskId, nameof(inventoryCountTaskId));
+        if (InventoryCountTaskId is not null && InventoryCountTaskId != normalizedCountTaskId)
+        {
+            throw new InvalidOperationException("Count execution already has a different Inventory count task id.");
+        }
+
+        InventoryCountTaskId = normalizedCountTaskId;
     }
 
     public void Complete(decimal countedQuantity)

@@ -54,12 +54,17 @@ public static class BusinessGatewayPermissions
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
     public const string QualityNcrRead = "business.quality.ncr.read";
     public const string QualityNcrManage = "business.quality.ncr.manage";
+    public const string EngineeringDocumentsRead = "business.engineering.documents.read";
     public const string EngineeringDocumentsManage = "business.engineering.documents.manage";
+    public const string EngineeringItemsRead = "business.engineering.items.read";
     public const string EngineeringItemsManage = "business.engineering.items.manage";
     public const string EngineeringBomsRead = "business.engineering.boms.read";
     public const string EngineeringBomsManage = "business.engineering.boms.manage";
     public const string EngineeringRoutingsRead = "business.engineering.routings.read";
     public const string EngineeringRoutingsManage = "business.engineering.routings.manage";
+    public const string EngineeringStandardOperationsRead = "business.engineering.standard-operations.read";
+    public const string EngineeringStandardOperationsManage = "business.engineering.standard-operations.manage";
+    public const string EngineeringChangesRead = "business.engineering.changes.read";
     public const string EngineeringChangesManage = "business.engineering.changes.manage";
     public const string EngineeringProductionVersionsRead = "business.engineering.production-versions.read";
     public const string EngineeringProductionVersionsManage = "business.engineering.production-versions.manage";
@@ -72,7 +77,9 @@ public static class BusinessGatewayPermissions
     public const string SchedulingPlansManage = "business.scheduling.plans.manage";
     public const string SchedulingPlansRelease = "business.scheduling.plans.release";
     public const string IiotTelemetryRead = "business.iiot.telemetry.read";
+    public const string IiotTelemetryWrite = "business.iiot.telemetry.write";
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
+    public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
     public const string MaintenanceWorkOrdersRead = "business.maintenance.work-orders.read";
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";

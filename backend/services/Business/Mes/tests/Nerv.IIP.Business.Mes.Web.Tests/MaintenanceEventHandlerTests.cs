@@ -85,6 +85,51 @@ public sealed class MaintenanceEventHandlerTests
     }
 
     [Fact]
+    public async Task AssetUnavailableHandler_SkipsReleasedEventWithSameIdempotencyKey()
+    {
+        var store = new InMemoryMesPlanningStore();
+        var now = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
+        store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-unavailable-idem-{Guid.CreateVersion7():N}", databaseRoot);
+        var integrationEvent = CreateUnavailableEvent(now);
+        var releasedEvent = integrationEvent with { EventId = "evt-001-released" };
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
+                store,
+                new RuleScheduler(),
+                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            await handler.HandleAsync(releasedEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        Assert.Single(store.Unavailabilities);
+        Assert.Single(store.ScheduleResults);
+        await using var assertionDbContext = CreateDbContext(options);
+        var processed = Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(integrationEvent.EventId, processed.EventId);
+        Assert.Equal(integrationEvent.IdempotencyKey, processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task AssetRestoredHandler_ClosesUnavailableWindowAndAutoReschedules()
     {
         var store = new InMemoryMesPlanningStore();

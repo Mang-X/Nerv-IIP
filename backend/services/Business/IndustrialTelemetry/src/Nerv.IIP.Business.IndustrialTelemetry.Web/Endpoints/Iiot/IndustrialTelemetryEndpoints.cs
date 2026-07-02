@@ -49,7 +49,12 @@ public sealed record CreateOrUpdateAlarmRuleRequest(
     string ComparisonOperator,
     decimal ThresholdValue,
     string UnitCode,
-    bool IsEnabled);
+    bool IsEnabled,
+    decimal DeadbandValue = 0m,
+    int OnDelaySeconds = 0,
+    int OffDelaySeconds = 0,
+    int MinDurationSeconds = 0,
+    string? Priority = null);
 public sealed record CreateOrUpdateAlarmRuleResponse(AlarmRuleId AlarmRuleId);
 public sealed record ListAlarmRulesRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = 100);
 public sealed record RecordTelemetrySampleRequest(
@@ -79,7 +84,12 @@ public sealed record PostAlarmEventRequest(
     string ExternalAlarmId,
     DateTimeOffset? ClearedAtUtc,
     string? ClearedBy,
-    string? ClearReason);
+    string? ClearReason,
+    string? Priority = null,
+    string? TagKey = null,
+    decimal? ObservedValue = null,
+    decimal? ThresholdValue = null,
+    string? UnitCode = null);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
@@ -127,7 +137,12 @@ public sealed class CreateOrUpdateAlarmRuleEndpoint(ISender sender) : Industrial
             req.ComparisonOperator,
             req.ThresholdValue,
             req.UnitCode,
-            req.IsEnabled), ct);
+            req.IsEnabled,
+            req.DeadbandValue,
+            req.OnDelaySeconds,
+            req.OffDelaySeconds,
+            req.MinDurationSeconds,
+            req.Priority), ct);
         await Send.OkAsync(new CreateOrUpdateAlarmRuleResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -161,7 +176,7 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
     public override async Task HandleAsync(PostAlarmEventRequest req, CancellationToken ct)
     {
         var id = req.ClearedAtUtc is null
-            ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId), ct)
+            ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId, req.Priority, req.TagKey, req.ObservedValue, req.ThresholdValue, req.UnitCode), ct)
             : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
         await Send.OkAsync(new PostAlarmEventResponse(id).AsResponseData(), cancellation: ct);
     }

@@ -14,6 +14,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
+using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
@@ -35,6 +36,16 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName)
         .UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    builder.Services.AddHttpClient<IProductEngineeringMasterDataReferenceValidator, HttpProductEngineeringMasterDataReferenceValidator>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
+    }).UseHttpClientMetrics();
+    var approvalBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+    builder.Services.AddHttpClient<IEngineeringApprovalVerifier, HttpEngineeringApprovalVerifier>(client =>
+    {
+        client.BaseAddress = approvalBaseAddress;
+    }).UseHttpClientMetrics();
 
     builder.Services
         .AddAuthentication(options =>
@@ -77,7 +88,7 @@ try
     }
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<ProductEngineeringNumberingService>();
+    builder.Services.AddScoped<ProductEngineeringCodingService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
@@ -148,6 +159,11 @@ try
                 return productionVersionContract.OperationId;
             }
 
+            if (StandardOperationEndpointContracts.TryGet(ctx.EndpointType, out var standardOperationContract))
+            {
+                return standardOperationContract.OperationId;
+            }
+
             return ProductEngineeringEndpointContracts.TryGet(ctx.EndpointType, out var productEngineeringContract)
                 ? productEngineeringContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
@@ -177,6 +193,26 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(
+    IConfiguration configuration,
+    IWebHostEnvironment environment,
+    string configurationKey,
+    string developmentFallback)
+{
+    var configuredBaseUrl = configuration[configurationKey];
+    if (!string.IsNullOrWhiteSpace(configuredBaseUrl))
+    {
+        return new Uri(configuredBaseUrl, UriKind.Absolute);
+    }
+
+    if (environment.IsDevelopment() || environment.IsEnvironment("Testing"))
+    {
+        return new Uri(developmentFallback, UriKind.Absolute);
+    }
+
+    throw new InvalidOperationException($"{configurationKey} is required outside Development.");
 }
 
 #pragma warning disable S1118

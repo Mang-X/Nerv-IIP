@@ -35,8 +35,16 @@ public sealed class RoutingEntityTypeConfiguration : IEntityTypeConfiguration<Ro
         builder.Property("routing_id").HasColumnName("routing_id").HasComment("Owning routing id.");
         builder.Property(x => x.Sequence).HasColumnName("sequence").IsRequired().HasComment("Positive operation sequence number.");
         builder.Property(x => x.WorkCenterCode).HasColumnName("work_center_code").IsRequired().HasMaxLength(100).HasComment("MasterData work center code reference.");
-        builder.Property(x => x.OperationName).HasColumnName("operation_name").IsRequired().HasMaxLength(200).HasComment("Operation display name.");
+        builder.Property(x => x.OperationCode).HasColumnName("operation_code").IsRequired().HasMaxLength(100).HasComment("Standard operation code snapshot captured when the routing version was released.");
+        builder.Property(x => x.OperationName).HasColumnName("operation_name").IsRequired().HasMaxLength(200).HasComment("Operation display name submitted with routing release.");
         builder.Property(x => x.StandardMinutes).HasColumnName("standard_minutes").IsRequired().HasComment("Standard operation duration in minutes.");
+        builder.Property(x => x.SetupMinutes).HasColumnName("setup_minutes").IsRequired().HasComment("Setup duration snapshot in minutes.");
+        builder.Property(x => x.RunMinutes).HasColumnName("run_minutes").IsRequired().HasComment("Run duration snapshot in minutes.");
+        builder.Property(x => x.TeardownMinutes).HasColumnName("teardown_minutes").IsRequired().HasComment("Teardown duration snapshot in minutes.");
+        builder.Property(x => x.ControlKey).HasColumnName("control_key").IsRequired().HasMaxLength(100).HasComment("Standard operation control key snapshot.");
+        builder.Property(x => x.RequiresReporting).HasColumnName("requires_reporting").IsRequired().HasComment("Whether MES reporting is expected for this routing operation.");
+        builder.Property(x => x.RequiresQualityInspection).HasColumnName("requires_quality_inspection").IsRequired().HasComment("Whether quality inspection is expected for this routing operation.");
+        builder.Property(x => x.IsOutsourced).HasColumnName("is_outsourced").IsRequired().HasComment("Whether this routing operation is outsourced.");
         builder.HasIndex("routing_id", nameof(RoutingOperation.Sequence)).IsUnique();
     }
 }

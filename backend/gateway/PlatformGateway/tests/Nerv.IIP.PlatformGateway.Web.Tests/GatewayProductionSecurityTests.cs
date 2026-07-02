@@ -12,7 +12,7 @@ public sealed class GatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
                 ConfigureServiceBaseUrls(builder);
             });
 
@@ -28,7 +28,7 @@ public sealed class GatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
                 ConfigureServiceBaseUrls(builder);
@@ -54,7 +54,7 @@ public sealed class GatewayProductionSecurityTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Production");
-                builder.UseSetting("Iam:Jwt:SigningKey", "production-test-signing-key-that-is-long-enough");
+                builder.UseSetting("Iam:Jwt:JwksJson", GatewayTestTokens.PublicJwksJson());
                 builder.UseSetting("Security:Cors:AllowedOrigins:0", "https://console.example.test");
                 builder.UseSetting("InternalService:BearerToken", "production-internal-token-that-is-long-enough");
                 builder.UseSetting("Iam:BaseUrl", "http://iam.local");

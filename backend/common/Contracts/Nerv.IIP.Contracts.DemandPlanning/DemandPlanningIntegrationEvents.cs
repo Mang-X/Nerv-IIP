@@ -1,0 +1,127 @@
+using Nerv.IIP.Contracts.IntegrationEvents;
+
+namespace Nerv.IIP.Contracts.DemandPlanning;
+
+public static class DemandPlanningIntegrationEventTypes
+{
+    public const string MrpRunCompleted = "demandPlanning.MrpRunCompleted";
+    public const string PlannedPurchaseSuggested = "demandPlanning.PlannedPurchaseSuggested";
+    public const string PlannedWorkOrderSuggested = "demandPlanning.PlannedWorkOrderSuggested";
+    public const string PlanningSuggestionAccepted = "demandPlanning.PlanningSuggestionAccepted";
+}
+
+public static class DemandPlanningIntegrationEventVersions
+{
+    public const int V1 = 1;
+}
+
+public static class DemandPlanningIntegrationEventSources
+{
+    public const string BusinessDemandPlanning = "business-demand-planning";
+}
+
+public static class DemandPlanningSuggestionTypes
+{
+    public const string PlannedPurchase = "planned-purchase";
+    public const string PlannedWorkOrder = "planned-work-order";
+}
+
+public static class DemandPlanningDownstreamReferences
+{
+    public const string BusinessErp = "BusinessErp";
+    public const string PurchaseRequisition = "PurchaseRequisition";
+    public const string BusinessMes = "BusinessMes";
+    public const string WorkOrder = "WorkOrder";
+}
+
+public static class DemandPlanningSourceReferences
+{
+    public const string DemandPlanning = "DemandPlanning";
+    public const string PlanningSuggestion = "PlanningSuggestion";
+}
+
+public static class PlanningSuggestionAcceptedIntegrationEventTopic
+{
+    public const string TopicName = "Nerv.IIP.Contracts.DemandPlanning.PlanningSuggestionAcceptedIntegrationEvent";
+}
+
+public sealed record DemandPlanningIntegrationEvent<TPayload>(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    TPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record PlanningSuggestionAcceptedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    PlanningSuggestionAcceptedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record MrpRunCompletedPayload(
+    string MrpRunId,
+    DateOnly HorizonStart,
+    DateOnly HorizonEnd,
+    int DemandCount,
+    int AvailabilityCount,
+    int SuggestionCount,
+    string ProductionEngineeringSnapshotSource,
+    string InventorySnapshotSource);
+
+public sealed record PlanningSuggestionPayload(
+    string SuggestionId,
+    string MrpRunId,
+    string SuggestionType,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    DateOnly ReleaseDate,
+    IReadOnlyCollection<PlanningSuggestionPeggingPayload> Pegging);
+
+public sealed record PlanningSuggestionPeggingPayload(
+    string DemandSourceReference,
+    string ParentSkuCode,
+    string? ComponentSkuCode,
+    decimal Quantity,
+    string? ProductionVersionReference,
+    string? ManufacturingBomReference,
+    string? RoutingReference);
+
+public sealed record PlanningSuggestionAcceptedPayload(
+    string SuggestionId,
+    string MrpRunId,
+    string SuggestionType,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    DateOnly ReleaseDate,
+    string? DemandSourceReference,
+    string? ProductionVersionReference,
+    string DownstreamService,
+    string DownstreamDocumentType,
+    string? DownstreamDocumentId);

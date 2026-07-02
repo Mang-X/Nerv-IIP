@@ -9,39 +9,40 @@ import {
   PresentationIcon,
 } from 'lucide-vue-next'
 
-export function getFileKind(fileName: string, contentType: string) {
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? ''
-  const type = contentType.toLowerCase()
+import { getFileFamily } from '../../../lib/file'
 
-  if (['doc', 'docx'].includes(extension) || type.includes('wordprocessingml')) {
+export function getFileKind(fileName: string, contentType: string) {
+  const family = getFileFamily(fileName, contentType)
+
+  if (family === 'word') {
     return { label: 'Word', icon: FileTextIcon }
   }
 
-  if (['xls', 'xlsx', 'csv'].includes(extension) || type.includes('spreadsheetml') || type === 'text/csv') {
+  if (family === 'spreadsheet') {
     return { label: 'Excel', icon: FileSpreadsheetIcon }
   }
 
-  if (['ppt', 'pptx'].includes(extension) || type.includes('presentationml')) {
+  if (family === 'presentation') {
     return { label: 'PowerPoint', icon: PresentationIcon }
   }
 
-  if (extension === 'pdf' || type === 'application/pdf') {
+  if (family === 'pdf') {
     return { label: 'PDF', icon: FileTextIcon }
   }
 
-  if (type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(extension)) {
+  if (family === 'image') {
     return { label: 'Image', icon: FileImageIcon }
   }
 
-  if (type.startsWith('audio/') || ['mp3', 'wav', 'flac', 'aac', 'm4a'].includes(extension)) {
+  if (family === 'audio') {
     return { label: 'Audio', icon: FileAudioIcon }
   }
 
-  if (type.startsWith('video/') || ['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(extension)) {
+  if (family === 'video') {
     return { label: 'Video', icon: FileVideoIcon }
   }
 
-  if (['zip', '7z', 'rar', 'tar', 'gz'].includes(extension)) {
+  if (family === 'archive') {
     return { label: 'Archive', icon: ArchiveIcon }
   }
 

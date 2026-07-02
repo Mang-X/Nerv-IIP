@@ -4,9 +4,13 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 
 public interface IProductionVersionRepository : IRepository<ProductionVersion, ProductionVersionId>
 {
-    Task<ProductionVersion?> GetByIdAsync(string productionVersionId, CancellationToken cancellationToken = default);
+    Task<ProductionVersion?> GetByIdAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken = default);
 
-    Task<bool> HasOverlappingDefaultAsync(
+    Task<bool> HasOverlappingActiveAsync(
         string organizationId,
         string environmentId,
         string skuCode,
@@ -19,7 +23,11 @@ public interface IProductionVersionRepository : IRepository<ProductionVersion, P
 public sealed class ProductionVersionRepository(ApplicationDbContext context)
     : RepositoryBase<ProductionVersion, ProductionVersionId, ApplicationDbContext>(context), IProductionVersionRepository
 {
-    public async Task<ProductionVersion?> GetByIdAsync(string productionVersionId, CancellationToken cancellationToken = default)
+    public async Task<ProductionVersion?> GetByIdAsync(
+        string organizationId,
+        string environmentId,
+        string productionVersionId,
+        CancellationToken cancellationToken = default)
     {
         if (!Guid.TryParse(productionVersionId, out var id))
         {
@@ -27,10 +35,13 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
         }
 
         var typedId = new ProductionVersionId(id);
-        return await DbContext.ProductionVersions.SingleOrDefaultAsync(x => x.Id == typedId, cancellationToken);
+        return await DbContext.ProductionVersions.SingleOrDefaultAsync(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.Id == typedId, cancellationToken);
     }
 
-    public async Task<bool> HasOverlappingDefaultAsync(
+    public async Task<bool> HasOverlappingActiveAsync(
         string organizationId,
         string environmentId,
         string skuCode,
@@ -44,7 +55,6 @@ public sealed class ProductionVersionRepository(ApplicationDbContext context)
             x.OrganizationId == organizationId &&
             x.EnvironmentId == environmentId &&
             x.SkuCode == skuCode &&
-            x.IsDefault &&
             x.Status != ProductionVersionStatus.Archived &&
             x.ValidFrom <= requestedEnd &&
             validFrom <= (x.ValidTo ?? DateOnly.MaxValue));

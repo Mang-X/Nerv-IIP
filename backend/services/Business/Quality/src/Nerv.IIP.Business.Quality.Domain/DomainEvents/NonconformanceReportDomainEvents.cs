@@ -8,10 +8,14 @@ public sealed record InspectionPlanActivatedDomainEvent(InspectionPlan Inspectio
 
 public sealed record InspectionPassedDomainEvent(InspectionRecord InspectionRecord) : IDomainEvent;
 
+public sealed record InspectionConditionalReleasedDomainEvent(InspectionRecord InspectionRecord) : IDomainEvent;
+
 public sealed record InspectionRejectedDomainEvent(InspectionRecord InspectionRecord) : IDomainEvent;
 
 public sealed record NonconformanceReportOpenedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
 public sealed record NonconformanceReportDispositionDecidedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
+
+public sealed record NonconformanceReportInventoryDispositionRequestedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;
 
 public sealed record NonconformanceReportClosedDomainEvent(NonconformanceReport NonconformanceReport) : IDomainEvent;

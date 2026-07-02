@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.Ops.Web.Application;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Ops.Web.Application.Queries;
@@ -23,7 +24,8 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
         if (context is null)
         {
             return serviceProvider.GetRequiredService<IOpsStateStore>()
-                .ListAuditRecords(request.OrganizationId, request.EnvironmentId, request.OperationTaskId);
+                .ListAuditRecords(request.OrganizationId, request.EnvironmentId, request.OperationTaskId)
+                .ToContract();
         }
 
         var query = context.OperationTasks
@@ -43,6 +45,8 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
             .Select(x => new AuditRecordSummary(
                 x.Id.Id,
                 x.OperationTaskId.Id,
+                x.SequenceNo,
+                x.PreviousIntegrityHash,
                 x.Action,
                 x.Actor,
                 x.OccurredAtUtc,

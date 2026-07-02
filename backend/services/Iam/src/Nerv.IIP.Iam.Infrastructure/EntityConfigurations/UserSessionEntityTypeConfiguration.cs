@@ -22,6 +22,8 @@ public sealed class UserSessionEntityTypeConfiguration : IEntityTypeConfiguratio
             .HasMaxLength(64)
             .HasComment("Authenticated user identifier.");
         builder.Property(x => x.RefreshTokenHash).IsRequired().HasMaxLength(512).HasComment("Refresh token hash used to rotate sessions.");
+        builder.Property(x => x.TokenFamilyId).IsRequired().HasMaxLength(64).HasComment("Refresh token family identifier used to detect replay and revoke the full lineage.");
+        builder.Property(x => x.PreviousSessionId).HasMaxLength(64).HasComment("Previous session identifier in the refresh token rotation lineage.");
         builder.Property(x => x.IssuedAtUtc).HasComment("Session issue time in UTC.");
         builder.Property(x => x.ExpiresAtUtc).HasComment("Session expiration time in UTC.");
         builder.Property(x => x.RevokedAtUtc).HasComment("Session revocation time in UTC.");
@@ -35,6 +37,8 @@ public sealed class UserSessionEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.MfaVerifiedAtUtc).HasComment("UTC time when MFA was verified for the session.");
 
         builder.HasIndex(x => x.RefreshTokenHash).IsUnique();
+        builder.HasIndex(x => x.TokenFamilyId);
+        builder.HasIndex(x => x.PreviousSessionId);
         builder.HasIndex(x => new { x.UserId, x.RevokedAtUtc });
         builder.HasIndex(x => new { x.ExternalProvider, x.ExternalSubject });
     }

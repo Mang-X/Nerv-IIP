@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
@@ -24,9 +25,44 @@ public sealed record ExternalClientAccessTokenPrincipal(
 
 public sealed class IamTokenService(IConfiguration configuration, IWebHostEnvironment environment)
 {
-    private const string DevelopmentSigningKey = "nerv-iip-iam-development-signing-key-local-only-0001";
+    private const string DevelopmentKeyId = "dev-rsa-2026-01";
+    private const string DevelopmentPrivateKeyPem = """
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC0RhTT3ru98EhB
+W2yY7zsawlQL/09cQPaGmUj1UyespZb/lQ7fw6WjJw05xUoUNR6RuWmvphnXRKl2
+uSjIz2cQ0uiLxZgvn/9VQKj3oNt3mijuRqcCLmbQXO+dj1rQDHf1MVOxTIFnYbxq
+VYw6TDX4FgkW2bz7PqP+ROXP3fF7eCuJVwbJdOU1aLT2mC8ALwuPU43jZ+i9eIuP
+KCe8IDlkl6+IwVl7jeR+3GMXT5+7QjoHLqP4PKIg8Z0cAhpJafdxKXQiXa4FGaRb
+5oKz0ZQsdOzRndeleSWlAJzl1yf9SwU8ZjmAhb5Nuqp8F5tkJkFE52BKdWtI2cix
+1ZGCmVH1AgMBAAECggEAF6w0Q/Y1tSV+d4an5hVUL5lhLAokw7qMJPSwDfcTeKpt
+/7X1NBEfCSOxquprZefr0bsFU9l9/zS3BC4gWu5RXHY1r1UNPQPHpcxN4+atqzEF
+OvTwLWsmeSobFRekFznr7rjBgsDHJWpCMbx2I5mqZJ+QJf4FwQBizJsDip5cfZf7
+uO9QKdJ27V8wLPlmuci/Eg/FrsAzxrPub4JrMk+C6sXLD241FE9XzfILyS/qhzOf
+R6dJYo4iVCl6Q79RKsmY6Cv8nsBhQFzMhKe11oC54E75ormNueJFQdjQ1VMkLwq1
+0E7/akERIjyfth7U95uOwjDf/pOAUfWwu+Z+RG2q6QKBgQDOm/qvlKnorSNodXNE
+j+bp2/0OlELbYf/3lRSfm3re5UIWXFlzu3LFJLgPEpgFRD7kKabTEjJ3G8gBWPVu
+0I/LnIQ2DUsTi2TLY43KLHQ7gOX4KkOEwIEpRRlImJx/XDTgWT53PHvMMIF9VPOo
+cxB5J0qIWxderHld508WOsOnQwKBgQDfXm1Deuq7zvIFhid7oG130qpzN2kJlRG9
+V2Vfpnwlxx8qt6RjFmsUApJ1W4bjA3jwgpuYrpsvxVT3Z57gmLfLCrLIj5lqUryd
+bvg1OHWq+mvbMxFApYyBwVoDJgYUyGKRUD31RhtWBjTk9xz0tqWgM/46iClPvEPH
+u2Cjh7uCZwKBgQCEe7B79jAdayhRSz7mr/+55b6XIqrcUjL4ZzgaQHDBjPCbtgwG
+EiS+FZWQ1LN2bRSG6c53eiuyBLZzZr+6lzIdtfdxUYTau3+ei+/XvDmsDjNotnEl
+JuurswtLadCwOkgNtCxB+R7JCDGAVIEJev8NMQyx8vdBVgddF323G2dqUQKBgDaW
+TP2AvHzJRjwzXNLJkfcGdMFTeUfuNjefdBa8CPryfpth5bqRb/mj50bm5z/zSUr9
+oCjgAuzZvLn5iMo6iDAGnUqGTWe+cHnI9L+M3LS8Hj+ja0PxMTVEm0rJsBLEJdJ9
+WabnSybqvWJ3QYxMVo2gJzEGtZHW4HmfQS61rQ1hAoGAUKQnhO0i7rOaWEFpdDTS
+kGY2MAgEEpWYfkEZGf2ybuDun3x5eQjO8QdQO68AmeifwKHBkGDhdmo2OTSHht4N
+FqLC4SCdXVlfmzcW7zeCPEQptoGzHl2lGg5MMEH/4Dp92Q5jPiliv8kyVppuR9UC
+yKndmINUKXFRt+mFo0HU2Ec=
+-----END PRIVATE KEY-----
+""";
     private const string DefaultIssuer = "nerv-iip-iam";
     private const string DefaultAudience = "nerv-iip-api";
+    private const string SecretHashPrefix = "hmac-sha256:v1:";
+    private const string DevelopmentSecretPepper = "nerv-iip-development-secret-pepper";
+    private readonly Lazy<JwtKeyMaterial> keyMaterial = new(
+        () => BuildKeyMaterial(configuration, environment),
+        LazyThreadSafetyMode.ExecutionAndPublication);
 
     public string CreateAccessToken(User user, UserSession session, DateTimeOffset? issuedAtUtc = null)
     {
@@ -92,7 +128,7 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             claims: claims,
             notBefore: now.UtcDateTime,
             expires: now.AddMinutes(GetAccessTokenMinutes()).UtcDateTime,
-            signingCredentials: new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256));
+            signingCredentials: GetSigningCredentials());
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
@@ -127,7 +163,7 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             claims: claims,
             notBefore: now.UtcDateTime,
             expires: now.AddMinutes(GetAccessTokenMinutes()).UtcDateTime,
-            signingCredentials: new SigningCredentials(GetSigningKey(), SecurityAlgorithms.HmacSha256));
+            signingCredentials: GetSigningCredentials());
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
@@ -161,7 +197,7 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         {
             var principal = handler.ValidateToken(token, CreateValidationParameters(), out var securityToken);
             if (securityToken is not JwtSecurityToken jwt
-                || !string.Equals(jwt.Header.Alg, SecurityAlgorithms.HmacSha256, StringComparison.Ordinal))
+                || !string.Equals(jwt.Header.Alg, SecurityAlgorithms.RsaSha256, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -224,7 +260,7 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         {
             var principal = handler.ValidateToken(token, CreateValidationParameters(), out var securityToken);
             if (securityToken is not JwtSecurityToken jwt
-                || !string.Equals(jwt.Header.Alg, SecurityAlgorithms.HmacSha256, StringComparison.Ordinal))
+                || !string.Equals(jwt.Header.Alg, SecurityAlgorithms.RsaSha256, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -264,7 +300,32 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
 
     public string HashSecret(string value)
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(GetSecretPepper()));
+        return $"{SecretHashPrefix}{Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(value))).ToLowerInvariant()}";
+    }
+
+    public bool VerifySecret(string value, string storedHash)
+    {
+        if (!IsCurrentSecretHash(storedHash))
+        {
+            return false;
+        }
+
+        return FixedTimeEquals(HashSecret(value), storedHash);
+    }
+
+    public bool IsCurrentSecretHash(string storedHash)
+    {
+        return storedHash.StartsWith(SecretHashPrefix, StringComparison.Ordinal)
+            && storedHash.Length == SecretHashPrefix.Length + 64;
+    }
+
+    public string GetJwksJson()
+    {
+        var keys = GetValidationKeys()
+            .Select(ToJwk)
+            .ToArray();
+        return JsonSerializer.Serialize(new { keys });
     }
 
     private TokenValidationParameters CreateValidationParameters()
@@ -276,29 +337,80 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             ValidateAudience = true,
             ValidAudience = GetAudience(),
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = GetSigningKey(),
-            ValidateLifetime = true
+            ValidateLifetime = true,
+            RequireSignedTokens = true,
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            IssuerSigningKeyResolver = (_, _, kid, _) => GetValidationKeys()
+                .Where(key => string.Equals(key.KeyId, kid, StringComparison.Ordinal))
         };
     }
 
-    private SymmetricSecurityKey GetSigningKey()
+    private SigningCredentials GetSigningCredentials() => keyMaterial.Value.SigningCredentials;
+
+    private IReadOnlyList<RsaSecurityKey> GetValidationKeys() => keyMaterial.Value.ValidationKeys;
+
+    private static JwtKeyMaterial BuildKeyMaterial(IConfiguration configuration, IWebHostEnvironment environment)
     {
-        var signingKey = configuration["Iam:Jwt:SigningKey"];
-        if (string.IsNullOrWhiteSpace(signingKey))
+        var configured = GetConfiguredSigningKeys(configuration);
+        var selected = configured.FirstOrDefault(key => key.Active) ?? configured.FirstOrDefault();
+        if (selected is null)
         {
             if (!environment.IsDevelopment())
             {
-                throw new InvalidOperationException("Iam:Jwt:SigningKey is required outside Development.");
+                throw new InvalidOperationException("Iam:Jwt:SigningKeys:0:PrivateKeyPem is required outside Development.");
             }
 
-            signingKey = DevelopmentSigningKey;
-        }
-        else if (!environment.IsDevelopment() && Encoding.UTF8.GetByteCount(signingKey) < 32)
-        {
-            throw new InvalidOperationException("Iam:Jwt:SigningKey must be at least 32 bytes outside Development.");
+            selected = new JwtPrivateKey(DevelopmentKeyId, DevelopmentPrivateKeyPem, true);
         }
 
-        return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
+        var signingRsa = RSA.Create();
+        signingRsa.ImportFromPem(selected.PrivateKeyPem);
+        var signingCredentials = new SigningCredentials(
+            new RsaSecurityKey(signingRsa) { KeyId = selected.Kid },
+            SecurityAlgorithms.RsaSha256);
+
+        var keys = new List<RsaSecurityKey>();
+        foreach (var signingKey in configured)
+        {
+            var rsa = RSA.Create();
+            rsa.ImportFromPem(signingKey.PrivateKeyPem);
+            keys.Add(new RsaSecurityKey(rsa) { KeyId = signingKey.Kid });
+        }
+
+        foreach (var publicKey in configuration.GetSection("Iam:Jwt:ValidationKeys").GetChildren())
+        {
+            var kid = publicKey["Kid"];
+            var publicKeyPem = publicKey["PublicKeyPem"];
+            if (string.IsNullOrWhiteSpace(kid) || string.IsNullOrWhiteSpace(publicKeyPem))
+            {
+                continue;
+            }
+
+            var rsa = RSA.Create();
+            rsa.ImportFromPem(publicKeyPem);
+            keys.Add(new RsaSecurityKey(rsa) { KeyId = kid });
+        }
+
+        if (keys.Count == 0 && environment.IsDevelopment())
+        {
+            var rsa = RSA.Create();
+            rsa.ImportFromPem(DevelopmentPrivateKeyPem);
+            keys.Add(new RsaSecurityKey(rsa) { KeyId = DevelopmentKeyId });
+        }
+
+        return new JwtKeyMaterial(signingCredentials, keys);
+    }
+
+    private static IReadOnlyList<JwtPrivateKey> GetConfiguredSigningKeys(IConfiguration configuration)
+    {
+        return configuration.GetSection("Iam:Jwt:SigningKeys")
+            .GetChildren()
+            .Select(section => new JwtPrivateKey(
+                section["Kid"] ?? string.Empty,
+                section["PrivateKeyPem"] ?? string.Empty,
+                section.GetValue("Active", false)))
+            .Where(key => !string.IsNullOrWhiteSpace(key.Kid) && !string.IsNullOrWhiteSpace(key.PrivateKeyPem))
+            .ToArray();
     }
 
     private string GetIssuer()
@@ -324,6 +436,29 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
         return minutes;
     }
 
+    private string GetSecretPepper()
+    {
+        var pepper = configuration["Iam:Secrets:Pepper"];
+        if (!string.IsNullOrWhiteSpace(pepper))
+        {
+            return pepper;
+        }
+
+        if (environment.IsDevelopment())
+        {
+            return DevelopmentSecretPepper;
+        }
+
+        throw new InvalidOperationException("Iam:Secrets:Pepper is required outside Development.");
+    }
+
+    private static bool FixedTimeEquals(string left, string right)
+    {
+        var leftHash = SHA256.HashData(Encoding.UTF8.GetBytes(left));
+        var rightHash = SHA256.HashData(Encoding.UTF8.GetBytes(right));
+        return CryptographicOperations.FixedTimeEquals(leftHash, rightHash);
+    }
+
     private static void AddIfPresent(List<Claim> claims, string type, string? value)
     {
         if (!string.IsNullOrWhiteSpace(value))
@@ -331,4 +466,22 @@ public sealed class IamTokenService(IConfiguration configuration, IWebHostEnviro
             claims.Add(new Claim(type, value));
         }
     }
+
+    private static object ToJwk(RsaSecurityKey key)
+    {
+        var parameters = key.Rsa!.ExportParameters(false);
+        return new
+        {
+            kty = "RSA",
+            use = "sig",
+            kid = key.KeyId,
+            alg = SecurityAlgorithms.RsaSha256,
+            n = Base64UrlEncoder.Encode(parameters.Modulus),
+            e = Base64UrlEncoder.Encode(parameters.Exponent)
+        };
+    }
+
+    private sealed record JwtPrivateKey(string Kid, string PrivateKeyPem, bool Active);
+
+    private sealed record JwtKeyMaterial(SigningCredentials SigningCredentials, IReadOnlyList<RsaSecurityKey> ValidationKeys);
 }

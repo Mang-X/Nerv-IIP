@@ -32,6 +32,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         string siteCode,
         decimal quantity,
         DateOnly requiredDate,
+        DateOnly releaseDate,
         string reasonCode)
     {
         OrganizationId = DemandPlanningText.Required(organizationId, nameof(organizationId));
@@ -43,6 +44,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         SiteCode = DemandPlanningText.Required(siteCode, nameof(siteCode));
         Quantity = DemandPlanningText.Positive(quantity, nameof(quantity));
         RequiredDate = requiredDate;
+        ReleaseDate = releaseDate;
         ReasonCode = DemandPlanningText.Required(reasonCode, nameof(reasonCode));
         Status = PlanningSuggestionStatus.Open;
         CreatedAtUtc = DateTimeOffset.UtcNow;
@@ -60,6 +62,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public string SiteCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public DateOnly RequiredDate { get; private set; }
+    public DateOnly ReleaseDate { get; private set; }
     public string ReasonCode { get; private set; } = string.Empty;
     public PlanningSuggestionStatus Status { get; private set; }
     public string? AcceptedDownstreamService { get; private set; }
@@ -79,9 +82,10 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         string siteCode,
         decimal quantity,
         DateOnly requiredDate,
+        DateOnly releaseDate,
         string reasonCode)
     {
-        return new PlanningSuggestion(organizationId, environmentId, mrpRunId, suggestionType, skuCode, uomCode, siteCode, quantity, requiredDate, reasonCode);
+        return new PlanningSuggestion(organizationId, environmentId, mrpRunId, suggestionType, skuCode, uomCode, siteCode, quantity, requiredDate, releaseDate, reasonCode);
     }
 
     public void AddPeggingLink(
@@ -105,7 +109,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             routingReference));
     }
 
-    public void Accept(string downstreamService, string downstreamDocumentType, string downstreamDocumentId)
+    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
     {
         if (Status == PlanningSuggestionStatus.Accepted)
         {
@@ -126,7 +130,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
 
         AcceptedDownstreamService = DemandPlanningText.Required(downstreamService);
         AcceptedDownstreamDocumentType = DemandPlanningText.Required(downstreamDocumentType);
-        AcceptedDownstreamDocumentId = DemandPlanningText.Required(downstreamDocumentId);
+        AcceptedDownstreamDocumentId = DemandPlanningText.Optional(downstreamDocumentId);
         AcceptedAtUtc = DateTimeOffset.UtcNow;
         Status = PlanningSuggestionStatus.Accepted;
         this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this));

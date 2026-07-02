@@ -66,6 +66,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("expected_quantity")
                         .HasComment("Expected count quantity provided by upstream boundary.");
 
+                    b.Property<string>("InventoryCountTaskId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inventory_count_task_id")
+                        .HasComment("Public Inventory count task id used to freeze and confirm the counted ledger.");
+
                     b.Property<string>("LocationCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -331,6 +337,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("inventory_movement_id")
                         .HasComment("Public Inventory movement id returned after posting.");
 
+                    b.Property<string>("InventoryReservationId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inventory_reservation_id")
+                        .HasComment("Optional Inventory reservation id used to allocate outbound stock.");
+
                     b.Property<string>("LocationCode")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -454,6 +466,17 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Outbound order aggregate id.");
 
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("cancellation_reason")
+                        .HasComment("Outbound cancellation reason for audit.");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at_utc")
+                        .HasComment("UTC cancellation time.");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
@@ -541,6 +564,29 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id")
                         .HasComment("Outbound order line id.");
+
+                    b.Property<decimal>("BackorderQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("backorder_quantity")
+                        .HasComment("Short-picked outbound quantity left as backorder.");
+
+                    b.Property<bool>("FulfillmentRecorded")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fulfillment_recorded")
+                        .HasComment("Whether pack review recorded issued and backorder quantities for this outbound line.");
+
+                    b.Property<string>("InventoryReservationId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("inventory_reservation_id")
+                        .HasComment("Public Inventory reservation id allocated for this outbound line.");
+
+                    b.Property<decimal>("IssuedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("issued_quantity")
+                        .HasComment("Actual outbound quantity issued after picking and pack review.");
 
                     b.Property<string>("LineNo")
                         .IsRequired()
@@ -839,17 +885,74 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalTaskId")
-                        .IsUnique();
-
                     b.HasIndex("WarehouseTaskId", "AdapterType")
                         .IsUnique();
 
-                    b.HasIndex("OrganizationId", "EnvironmentId", "ExternalTaskId");
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ExternalTaskId")
+                        .IsUnique();
 
                     b.ToTable("wcs_tasks", "wms", t =>
                         {
                             t.HasComment("WCS adapter task mapping, lifecycle and diagnostics.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasComment("Processed integration event identifier.");
+
+                    b.Property<string>("ConsumerName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("BusinessWMS integration event consumer name.");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Source integration event identifier retained for traceability; idempotency uses IdempotencyKey.");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasComment("Integration event type.");
+
+                    b.Property<int>("EventVersion")
+                        .HasColumnType("integer")
+                        .HasComment("Integration event contract version.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasComment("Deterministic BusinessWMS idempotency key unique within a consumer.");
+
+                    b.Property<DateTimeOffset>("ProcessedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasComment("UTC time when BusinessWMS processed the event.");
+
+                    b.Property<string>("SourceService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasComment("Service that produced the integration event.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_idempotency_key");
+
+                    b.HasIndex("SourceService", "EventType", "ProcessedAtUtc")
+                        .HasDatabaseName("ix_processed_integration_events_source_type_processed_at");
+
+                    b.ToTable("processed_integration_events", "wms", t =>
+                        {
+                            t.HasComment("Integration events already processed by BusinessWMS for idempotent consumption.");
                         });
                 });
 

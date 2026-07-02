@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import {
   describeEquipmentReason,
   equipmentStatusTone,
@@ -8,9 +8,9 @@ import {
 } from '@/composables/useBusinessEquipment'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Badge,
-  Button,
-  DataTable,
+  BadgePro,
+  ButtonPro,
+  DataTablePro,
   PageHeader,
   SectionCard,
   SectionCards,
@@ -19,7 +19,7 @@ import { ArrowLeftIcon, RefreshCwIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '设备详情' } })
+definePage({ meta: { requiresAuth: true, title: '设备详情', requiredPermissions: ['business.iiot.telemetry.read'] } })
 
 const route = useRoute()
 const router = useRouter()
@@ -46,7 +46,7 @@ watch(
 )
 
 type Window = (typeof availabilityWindows)['value'][number]
-const columns: DataTableColumn<Window>[] = [
+const columns: DataTableProColumn<Window>[] = [
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
   { key: 'reason', header: '原因', accessor: (r) => describeEquipmentReason(r.reasonCode ?? '').label },
   { key: 'workCenterId', header: '工作中心', accessor: (r) => r.workCenterId ?? '未绑定' },
@@ -58,8 +58,8 @@ const columns: DataTableColumn<Window>[] = [
 
 function badgeVariant(tone: EquipmentTone) {
   if (tone === 'success') return 'success'
-  if (tone === 'danger') return 'destructive'
-  return 'secondary'
+  if (tone === 'danger') return 'danger'
+  return 'neutral'
 }
 function statusLabel(status?: string | null) {
   const labels: Record<string, string> = { down: '停机', faulted: '故障', idle: '空闲', offline: '离线', ready: '就绪', running: '运行中', stopped: '停止' }
@@ -71,9 +71,9 @@ function severityLabel(value?: string | null) {
 }
 function severityVariant(value?: string | null) {
   const severity = value?.toLowerCase()
-  if (severity === 'critical' || severity === 'blocked') return 'destructive'
+  if (severity === 'critical' || severity === 'blocked') return 'danger'
   if (severity === 'warning') return 'warning'
-  return 'secondary'
+  return 'neutral'
 }
 function availabilityLabel(value?: string | null) {
   const labels: Record<string, string> = { available: '可用', unavailable: '不可用', unknown: '未知' }
@@ -81,8 +81,8 @@ function availabilityLabel(value?: string | null) {
 }
 function availabilityVariant(value?: string | null) {
   if (value === 'available') return 'success'
-  if (value === 'unavailable') return 'destructive'
-  return 'secondary'
+  if (value === 'unavailable') return 'danger'
+  return 'neutral'
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
@@ -99,24 +99,29 @@ function formatError(error: unknown) {
 
 <template>
   <BusinessLayout>
-    <PageHeader :title="`设备详情：${filters.deviceAssetId}`" :breadcrumbs="[{ label: '设备监控（IoT）' }]">
+    <PageHeader :title="filters.deviceAssetId ? `设备详情：${filters.deviceAssetId}` : '设备详情'" :breadcrumbs="[{ label: '设备监控（IoT）' }]">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" as-child>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
-        </Button>
-        <Button size="sm" type="button" variant="outline" @click="recordDowntime">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" @click="recordDowntime">
           <WrenchIcon aria-hidden="true" />
           记录停机
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="devicePending" @click="refreshDevice">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="devicePending" @click="refreshDevice">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
+    <div v-if="!filters.deviceAssetId" class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+      未指定设备。请从设备运行看板选择具体设备查看详情。
+    </div>
+
+    <template v-else>
     <SectionCards :columns="4">
       <SectionCard description="当前状态" :value="statusLabel(currentState?.currentState)" hint="设备运行事实" />
       <SectionCard description="数据状态" :value="currentState?.isSourceFresh ? '正常' : '过期'" :hint="formatDateTime(currentState?.stateOccurredAtUtc)" />
@@ -133,10 +138,10 @@ function formatError(error: unknown) {
               <p class="truncate text-lg font-semibold text-foreground">{{ currentState?.deviceAssetId ?? filters.deviceAssetId }}</p>
               <p class="mt-1 text-sm text-muted-foreground">状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}</p>
             </div>
-            <Badge class="rounded-sm" :variant="badgeVariant(equipmentStatusTone(currentState?.currentState))">{{ statusLabel(currentState?.currentState) }}</Badge>
+            <BadgePro class="rounded-sm" :variant="badgeVariant(equipmentStatusTone(currentState?.currentState))">{{ statusLabel(currentState?.currentState) }}</BadgePro>
           </div>
           <div class="mt-3">
-            <Badge class="rounded-sm" :variant="currentState?.isSourceFresh ? 'success' : 'warning'">{{ currentState?.isSourceFresh ? '采集正常' : '采集过期' }}</Badge>
+            <BadgePro class="rounded-sm" :variant="currentState?.isSourceFresh ? 'success' : 'warning'">{{ currentState?.isSourceFresh ? '采集正常' : '采集过期' }}</BadgePro>
           </div>
         </div>
 
@@ -148,7 +153,7 @@ function formatError(error: unknown) {
             <div v-for="alarm in activeAlarms" :key="alarm.alarmEventId ?? alarm.alarmCode" class="grid gap-2 rounded-lg border p-3">
               <div class="flex items-center justify-between gap-2">
                 <p class="truncate text-sm font-semibold text-foreground">{{ alarm.alarmCode ?? '无代码' }}</p>
-                <Badge class="rounded-sm" :variant="severityVariant(alarm.severity)">{{ severityLabel(alarm.severity) }}</Badge>
+                <BadgePro class="rounded-sm" :variant="severityVariant(alarm.severity)">{{ severityLabel(alarm.severity) }}</BadgePro>
               </div>
               <p class="text-xs text-muted-foreground">{{ formatDateTime(alarm.raisedAtUtc) }}</p>
             </div>
@@ -161,15 +166,17 @@ function formatError(error: unknown) {
 
       <div class="grid gap-2">
         <span class="text-sm font-semibold text-foreground">可用性窗口（排程与维修占用）</span>
-        <DataTable
+        <DataTablePro
           :columns="columns"
           :rows="availabilityWindows"
           :row-key="(r) => `${r.deviceAssetId}-${r.reasonCode}-${r.startUtc}`"
           :loading="devicePending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="当前设备没有可用性窗口。"
         >
           <template #cell-availabilityStatus="{ row }">
-            <Badge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{ availabilityLabel(row.availabilityStatus) }}</Badge>
+            <BadgePro class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{ availabilityLabel(row.availabilityStatus) }}</BadgePro>
           </template>
           <template #cell-reason="{ row }">
             <div class="grid gap-1">
@@ -179,8 +186,9 @@ function formatError(error: unknown) {
           </template>
           <template #cell-startUtc="{ row }">{{ formatDateTime(row.startUtc) }}</template>
           <template #cell-endUtc="{ row }">{{ formatDateTime(row.endUtc) }}</template>
-        </DataTable>
+        </DataTablePro>
       </div>
     </div>
+    </template>
   </BusinessLayout>
 </template>

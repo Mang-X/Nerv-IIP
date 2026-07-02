@@ -115,7 +115,10 @@ public sealed class DeliveryOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.DeliveryOrderNo).HasColumnName("delivery_order_no").IsRequired().HasMaxLength(100).HasComment("Delivery order request number.");
         builder.Property(x => x.SalesOrderNo).HasColumnName("sales_order_no").IsRequired().HasMaxLength(100).HasComment("Source sales order number.");
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(50).HasComment("ERP delivery order lifecycle status projected from WMS execution facts.");
         builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").IsRequired().HasComment("UTC release time.");
+        builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when WMS cancellation was projected to ERP.");
+        builder.Property(x => x.CancellationReason).HasColumnName("cancellation_reason").HasMaxLength(1000).HasComment("WMS cancellation reason projected to ERP delivery order.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("DeliveryOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeliveryOrderNo }).IsUnique();
@@ -131,6 +134,10 @@ public sealed class DeliveryOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Delivery order line id.");
         builder.Property<DeliveryOrderId>("DeliveryOrderId").HasColumnName("delivery_order_id").IsRequired().HasComment("Owning delivery order id.");
         builder.Property(x => x.SalesOrderLineNo).HasColumnName("sales_order_line_no").IsRequired().HasMaxLength(100).HasComment("Referenced sales order line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code copied from sales order line for WMS outbound execution.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData UOM code copied from sales order line for WMS outbound execution.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Outbound source location code.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional outbound lot number.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Requested delivery quantity.");
     }
 }
@@ -148,7 +155,13 @@ public sealed class AccountPayableEntityTypeConfiguration : IEntityTypeConfigura
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.PaidAmount).HasColumnName("paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Paid amount.");
+        builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
+        builder.Property(x => x.LocalPaidAmount).HasColumnName("local_paid_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency paid amount at document exchange rate.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
+        builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Supplier invoice date.");
+        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired().HasComment("Payment due date.");
+        builder.Property(x => x.PaymentTermCode).HasColumnName("payment_term_code").IsRequired().HasMaxLength(50).HasComment("Payment term code snapshot.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Ignore(x => x.OpenAmount);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.PayableNo }).IsUnique();
@@ -168,7 +181,13 @@ public sealed class AccountReceivableEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.CustomerCode).HasColumnName("customer_code").IsRequired().HasMaxLength(100).HasComment("MasterData customer code.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Document amount.");
         builder.Property(x => x.CollectedAmount).HasColumnName("collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Collected amount.");
+        builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency amount at document exchange rate.");
+        builder.Property(x => x.LocalCollectedAmount).HasColumnName("local_collected_amount").IsRequired().HasPrecision(18, 6).HasComment("Local currency collected amount at document exchange rate.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Document exchange rate to local currency.");
+        builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Customer invoice date.");
+        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired().HasComment("Collection due date.");
+        builder.Property(x => x.PaymentTermCode).HasColumnName("payment_term_code").IsRequired().HasMaxLength(50).HasComment("Payment term code snapshot.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Ignore(x => x.OpenAmount);
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReceivableNo }).IsUnique();
@@ -188,6 +207,8 @@ public sealed class CostCandidateEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SourceDocumentNo).HasColumnName("source_document_no").IsRequired().HasMaxLength(100).HasComment("Public source document number.");
         builder.Property(x => x.Amount).HasColumnName("amount").IsRequired().HasPrecision(18, 6).HasComment("Candidate amount.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Candidate exchange rate to local currency.");
+        builder.Property(x => x.LocalAmount).HasColumnName("local_amount").IsRequired().HasPrecision(18, 6).HasComment("Candidate amount in local currency.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CandidateNo }).IsUnique();
     }
@@ -221,6 +242,10 @@ public sealed class JournalVoucherLineEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.AccountCode).HasColumnName("account_code").IsRequired().HasMaxLength(100).HasComment("Accounting subject code.");
         builder.Property(x => x.DebitAmount).HasColumnName("debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount.");
         builder.Property(x => x.CreditAmount).HasColumnName("credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Voucher line currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Voucher line exchange rate to local currency.");
+        builder.Property(x => x.LocalDebitAmount).HasColumnName("local_debit_amount").IsRequired().HasPrecision(18, 6).HasComment("Debit amount in local currency.");
+        builder.Property(x => x.LocalCreditAmount).HasColumnName("local_credit_amount").IsRequired().HasPrecision(18, 6).HasComment("Credit amount in local currency.");
         builder.Property(x => x.Memo).HasColumnName("memo").IsRequired().HasMaxLength(300).HasComment("Voucher line memo.");
     }
 }

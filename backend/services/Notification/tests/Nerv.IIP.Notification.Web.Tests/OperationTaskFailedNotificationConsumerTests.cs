@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
@@ -46,7 +48,7 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(message.Id, task.MessageId);
         Assert.Equal("notification.operation-task-failed", processed.ConsumerName);
         Assert.Equal("event-001", processed.EventId);
-        Assert.Equal("operation-task-failed:task-001", processed.DedupeKey);
+        Assert.Equal("operation-task-failed:task-001", processed.IdempotencyKey);
     }
 
     [Fact]
@@ -121,6 +123,271 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_approval_step_overdue_creates_review_task_for_step_approver()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("business-approval", intent.SourceService);
+        Assert.Equal("businessApproval.StepOverdue", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-engineering", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_overdue_includes_configured_escalation_recipients()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Approval:OverdueEscalation:RecipientRefs:0"] = "role:business-approval-manager",
+        });
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "role:business-approval-manager");
+        Assert.Contains(intent.Tasks, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Tasks, x => x.RecipientRef == "role:business-approval-manager");
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_overdue_deduplicates_escalation_recipient_matching_approver()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Approval:OverdueEscalation:RecipientRefs:0"] = "user:u-engineering",
+            ["Approval:OverdueEscalation:RecipientRefs:1"] = "role:business-approval-manager",
+        });
+
+        await HandleApprovalStepOverdueAsync(factory, CreateApprovalStepOverdueEvent("event-approval-overdue", "approval-step-overdue:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .SingleAsync();
+
+        Assert.Equal(2, intent.Messages.Count);
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "role:business-approval-manager");
+    }
+
+    [Fact]
+    public async Task Handle_approval_step_resolved_creates_result_message_for_actor()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalStepResolvedAsync(factory, CreateApprovalStepResolvedEvent("event-approval-resolved", "approval-step-resolved:chain-001:1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("businessApproval.StepResolved", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-engineering", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Empty(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_action_recorded_creates_task_for_new_assignee()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent("event-approval-action", "approval-action:chain-001:transfer"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("businessApproval.ActionRecorded", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityInfo, intent.Severity);
+        Assert.Equal("approval-chain", intent.ResourceType);
+        Assert.Equal("chain-001", intent.ResourceId);
+        Assert.Equal("user:u-backup", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_approval_action_recorded_withdraw_creates_message_for_affected_approvers()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleApprovalActionRecordedAsync(factory, CreateApprovalActionRecordedEvent(
+            "event-approval-withdraw",
+            "approval-action:chain-001:withdraw",
+            action: "withdraw",
+            recipients: ["user:u-engineering", "user:u-quality"]));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal(NotificationIntentTypes.Message, intent.IntentType);
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-engineering");
+        Assert.Contains(intent.Messages, x => x.RecipientRef == "user:u-quality");
+        Assert.Empty(intent.Tasks);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_creates_planner_notification_task()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Scheduling:ConflictNotification:RecipientRefs:0"] = "role:scheduler",
+        });
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict",
+            "scheduling-conflict:plan-001:conflict-001"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        var processed = await dbContext.ProcessedIntegrationEvents.SingleAsync();
+
+        Assert.Equal("business-scheduling", intent.SourceService);
+        Assert.Equal(SchedulingIntegrationEventTypes.ScheduleConflictDetected, intent.SourceEventType);
+        Assert.Equal("event-schedule-conflict", intent.SourceEventId);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("schedule-plan", intent.ResourceType);
+        Assert.Equal("plan-001", intent.ResourceId);
+        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+        Assert.Equal(ScheduleConflictDetectedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
+        Assert.Equal("event-schedule-conflict", processed.EventId);
+        Assert.Equal("scheduling-conflict:plan-001:conflict-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_uses_default_recipient_when_configuration_missing()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-default-recipient",
+            "scheduling-conflict:plan-001:conflict-default"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.Equal("role:production-planner", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("role:production-planner", Assert.Single(intent.Tasks).RecipientRef);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_error_severity_creates_critical_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-error",
+            "scheduling-conflict:plan-001:conflict-error",
+            conflictSeverity: "error"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
+    }
+
+    [Fact]
+    public async Task Handle_same_schedule_conflict_event_twice_does_not_create_duplicate_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-duplicate",
+            "scheduling-conflict:plan-001:conflict-duplicate");
+
+        await HandleScheduleConflictDetectedAsync(factory, integrationEvent);
+        await HandleScheduleConflictDetectedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Equal(1, await dbContext.NotificationIntents.CountAsync());
+        Assert.Equal(1, await dbContext.NotificationMessages.CountAsync());
+        Assert.Equal(1, await dbContext.NotificationTasks.CountAsync());
+        Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_rejects_missing_severity_without_marking_processed()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+        var integrationEvent = CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-missing-severity",
+            "scheduling-conflict:plan-001:conflict-missing-severity",
+            conflictSeverity: null!);
+
+        await Assert.ThrowsAsync<KnownException>(() => HandleScheduleConflictDetectedAsync(factory, integrationEvent));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+        Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Handle_schedule_conflict_detected_omits_work_order_summary_when_work_order_missing()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleScheduleConflictDetectedAsync(factory, CreateScheduleConflictDetectedEvent(
+            "event-schedule-conflict-no-work-order",
+            "scheduling-conflict:plan-001:conflict-no-work-order",
+            workOrderId: " "));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal("Schedule plan plan-001 has conflict conflict-001 (dueDate).", intent.Summary);
+    }
+
+    [Fact]
     public async Task Handle_same_event_twice_does_not_create_duplicate_notification()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -166,7 +433,9 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(1, await dbContext.NotificationIntents.CountAsync());
         Assert.Equal(1, await dbContext.NotificationMessages.CountAsync());
         Assert.Equal(1, await dbContext.NotificationTasks.CountAsync());
-        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+        var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal("event-retry-first", processed.EventId);
+        Assert.Equal("operation-task-failed:retry", processed.IdempotencyKey);
     }
 
     [Fact]
@@ -262,6 +531,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         using var scope = factory.Services.CreateScope();
         IIntegrationEventHandler<OperationApprovalRejectedIntegrationEvent> handler =
             ActivatorUtilities.CreateInstance<OperationApprovalRejectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalStepOverdueAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalStepOverdueIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalStepOverdueIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalStepOverdueIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalStepResolvedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalStepResolvedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalStepResolvedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalStepResolvedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleApprovalActionRecordedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ApprovalActionRecordedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ApprovalActionRecordedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ApprovalActionRecordedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleScheduleConflictDetectedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        ScheduleConflictDetectedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<ScheduleConflictDetectedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<ScheduleConflictDetectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
@@ -394,17 +703,154 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 DecidedAtUtc: DateTimeOffset.Parse("2026-05-21T08:01:00Z")));
     }
 
-    private sealed class NotificationConsumerWebApplicationFactory : WebApplicationFactory<Program>
+    private static ApprovalStepOverdueIntegrationEvent CreateApprovalStepOverdueEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new ApprovalStepOverdueIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.StepOverdue,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:00:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "step-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-approval",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalStepOverduePayload(
+                ChainId: "chain-001",
+                StepId: "step-001",
+                StepNo: 1,
+                StepName: "Engineering review",
+                ApproverType: "user",
+                ApproverRef: "u-engineering",
+                DueAtUtc: DateTimeOffset.Parse("2026-06-21T07:00:00Z"),
+                MarkedAtUtc: DateTimeOffset.Parse("2026-06-21T08:00:00Z"),
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalStepResolvedIntegrationEvent CreateApprovalStepResolvedEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new ApprovalStepResolvedIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.StepResolved,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:05:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "decision-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "user:u-engineering",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalStepResolvedPayload(
+                ChainId: "chain-001",
+                StepNo: 1,
+                ActorType: "user",
+                ActorRef: "u-engineering",
+                OnBehalfOfActorType: null,
+                OnBehalfOfActorRef: null,
+                Decision: "approve",
+                Comment: "ok",
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalActionRecordedIntegrationEvent CreateApprovalActionRecordedEvent(
+        string eventId,
+        string idempotencyKey,
+        string action = "transfer",
+        IReadOnlyCollection<string>? recipients = null)
+    {
+        return new ApprovalActionRecordedIntegrationEvent(
+            EventId: eventId,
+            EventType: ApprovalIntegrationEventTypes.ActionRecorded,
+            EventVersion: ApprovalIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T08:10:00Z"),
+            SourceService: ApprovalIntegrationEventSources.BusinessApproval,
+            CorrelationId: "chain-001",
+            CausationId: $"decision-{eventId}",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "user:u-manager",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ApprovalActionRecordedPayload(
+                ChainId: "chain-001",
+                StepId: "step-001",
+                StepNo: 1,
+                Action: action,
+                ActorType: "user",
+                ActorRef: "u-manager",
+                Reason: "shift change",
+                SuggestedRecipientRefs: recipients ?? ["user:u-backup"],
+                DocumentReference: NewApprovalDocumentReference()));
+    }
+
+    private static ApprovalDocumentReferencePayload NewApprovalDocumentReference()
+    {
+        return new ApprovalDocumentReferencePayload(
+            SourceService: "eco",
+            DocumentType: "engineering-change-order",
+            DocumentId: "ECO-1001",
+            DocumentLineId: null);
+    }
+
+    private static ScheduleConflictDetectedIntegrationEvent CreateScheduleConflictDetectedEvent(
+        string eventId,
+        string idempotencyKey,
+        string? conflictSeverity = "warning",
+        string? workOrderId = "wo-001")
+    {
+        return new ScheduleConflictDetectedIntegrationEvent(
+            EventId: eventId,
+            EventType: SchedulingIntegrationEventTypes.ScheduleConflictDetected,
+            EventVersion: SchedulingIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T09:00:00Z"),
+            SourceService: SchedulingIntegrationEventSources.BusinessScheduling,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "plan-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-scheduling",
+            IdempotencyKey: idempotencyKey,
+            Payload: new ScheduleConflictDetectedPayload(
+                PlanId: "plan-001",
+                ProblemId: "problem-001",
+                ContractVersion: 1,
+                AlgorithmVersion: "aps-lite-v1",
+                ProblemFingerprint: "fingerprint-001",
+                PlanStatus: "generated",
+                ConflictId: "conflict-001",
+                ConflictReasonCode: "dueDate",
+                ConflictSeverity: conflictSeverity!,
+                WorkOrderId: workOrderId!,
+                OperationId: "op-001",
+                ResourceId: "res-001"));
+    }
+
+    private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                var mergedSettings = new Dictionary<string, string?>
                 {
                     ["Persistence:Provider"] = "InMemory",
                     ["Persistence:InMemoryDatabaseName"] = Guid.NewGuid().ToString("N"),
-                });
+                };
+                if (settings is not null)
+                {
+                    foreach (var (key, value) in settings)
+                    {
+                        mergedSettings[key] = value;
+                    }
+                }
+
+                configuration.AddInMemoryCollection(mergedSettings);
             });
         }
     }

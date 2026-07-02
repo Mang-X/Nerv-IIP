@@ -20,6 +20,11 @@ public sealed class DefectRecordEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.Quantity).HasColumnName("quantity").HasPrecision(18, 6).IsRequired().HasComment("Defect quantity captured by MES.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasComment("MES defect lifecycle status.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").IsRequired().HasComment("UTC time when the defect was recorded.");
+        builder.Property(x => x.NcrId).HasColumnName("ncr_id").HasMaxLength(100).HasComment("Quality NCR public id linked to this MES defect when disposition is known.");
+        builder.Property(x => x.NcrCode).HasColumnName("ncr_code").HasMaxLength(100).HasComment("Quality NCR business code linked to this MES defect when disposition is known.");
+        builder.Property(x => x.DispositionType).HasColumnName("disposition_type").HasMaxLength(100).HasComment("Quality disposition type accepted for this MES defect.");
+        builder.Property(x => x.DispositionReferenceId).HasColumnName("disposition_reference_id").HasMaxLength(100).HasComment("Downstream disposition reference such as rework work order, scrap movement or return document.");
+        builder.Property(x => x.ClosedAtUtc).HasColumnName("closed_at_utc").HasComment("UTC time when the MES defect was closed by non-rework disposition.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

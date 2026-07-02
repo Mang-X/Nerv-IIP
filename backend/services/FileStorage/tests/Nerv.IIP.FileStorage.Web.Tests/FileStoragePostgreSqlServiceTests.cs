@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
@@ -92,7 +94,7 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal(4096, storedFile.SizeBytes);
         Assert.Equal("sha256:test", storedFile.Checksum);
         Assert.Equal(session.ObjectKey, storedFile.ObjectKey);
-        Assert.Equal("pending", storedFile.ScanStatus);
+        Assert.Equal("clean", storedFile.ScanStatus);
         Assert.Equal("available", storedFile.Status);
         AssertObjectKeyIsNotExposed(result.Value);
     }
@@ -335,9 +337,144 @@ public sealed class FileStoragePostgreSqlServiceTests
             now.AddMinutes(-10)));
         await dbContext.SaveChangesAsync();
 
-        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync("dgr_expired", CancellationToken.None);
+        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+            "dgr_expired",
+            "org-001",
+            "prod",
+            CancellationToken.None);
 
         Assert.Null(uploadSessionId);
+    }
+
+    [Fact]
+    public async Task GetUploadSessionIdForDownloadGrant_TenantMismatch_DoesNotRedeemGrant()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
+        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", scanStatus: "clean", grantId: "dgr_123");
+        await dbContext.SaveChangesAsync();
+
+        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+            "dgr_123",
+            "org-other",
+            "prod",
+            CancellationToken.None);
+
+        Assert.Null(uploadSessionId);
+        Assert.Equal(1, await dbContext.DownloadGrants.CountAsync());
+    }
+
+    [Fact]
+    public async Task GetUploadSessionIdForDownloadGrant_CleanFile_ConsumesGrantOnce()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
+        AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", scanStatus: "clean", grantId: "dgr_123");
+        await dbContext.SaveChangesAsync();
+
+        var first = await service.GetUploadSessionIdForDownloadGrantAsync(
+            "dgr_123",
+            "org-001",
+            "prod",
+            CancellationToken.None);
+        var second = await service.GetUploadSessionIdForDownloadGrantAsync(
+            "dgr_123",
+            "org-001",
+            "prod",
+            CancellationToken.None);
+
+        Assert.Equal("ups_123", first);
+        Assert.Null(second);
+        Assert.Equal(0, await dbContext.DownloadGrants.CountAsync());
+    }
+
+    [Fact]
+    public async Task GetUploadSessionIdForDownloadGrant_NonCleanScanStatus_DoesNotRedeemGrant()
+    {
+        await using var dbContext = CreateDbContext();
+        var service = new PostgreSqlFileStorageService(dbContext);
+        AddCompletedTusFileWithGrant(dbContext, "file_pending", "ups_pending", scanStatus: "pending", grantId: "dgr_pending");
+        await dbContext.SaveChangesAsync();
+
+        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+            "dgr_pending",
+            "org-001",
+            "prod",
+            CancellationToken.None);
+
+        Assert.Null(uploadSessionId);
+        Assert.Equal(1, await dbContext.DownloadGrants.CountAsync());
+    }
+
+    [Fact]
+    public async Task GarbageCollector_RemovesExpiredSessionsExpiredGrantsAndOrphanTusBytes()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            var now = DateTimeOffset.UtcNow;
+            AddUploadSession(dbContext, "ups_expired", "file_expired", now.AddMinutes(-30), now.AddMinutes(-10), completed: false);
+            AddUploadSession(dbContext, "ups_active", "file_active", now.AddMinutes(-1), now.AddMinutes(10), completed: false);
+            AddUploadSession(dbContext, "ups_completed", "file_completed", now.AddMinutes(-30), now.AddMinutes(-10), completed: true);
+            dbContext.StoredFiles.Add(StoredFileRecord.Create(
+                "file_completed",
+                "org-001",
+                "prod",
+                "AppHub",
+                "ApplicationPackage",
+                "app-42",
+                "application-package",
+                "completed.zip",
+                "application/zip",
+                5,
+                null,
+                "org-001/file_completed",
+                "clean",
+                "available",
+                now.AddMinutes(-30),
+                now.AddMinutes(-20)));
+            dbContext.DownloadGrants.AddRange(
+                DownloadGrantRecord.Create("dgr_expired", "file_completed", "org-001", "prod", "server-proxy", now.AddMinutes(-20), now.AddMinutes(-1)),
+                DownloadGrantRecord.Create("dgr_active", "file_completed", "org-001", "prod", "server-proxy", now.AddMinutes(-1), now.AddMinutes(10)));
+            await dbContext.SaveChangesAsync();
+
+            var store = CreateTusStore(rootPath);
+            await WriteTusBytesAsync(store, "ups_expired");
+            await WriteTusBytesAsync(store, "ups_active");
+            await WriteTusBytesAsync(store, "ups_completed");
+            await WriteTusBytesAsync(store, "ups_orphan");
+            foreach (var path in Directory.EnumerateFiles(rootPath))
+            {
+                File.SetLastWriteTimeUtc(path, now.AddMinutes(-10).UtcDateTime);
+            }
+
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(store),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FileStorage:GarbageCollection:OrphanTusFileGraceSeconds"] = "60"
+                    })
+                    .Build());
+
+            var result = await collector.CollectAsync(CancellationToken.None);
+
+            Assert.Equal(1, result.ExpiredUploadSessionsRemoved);
+            Assert.Equal(1, result.ExpiredDownloadGrantsRemoved);
+            Assert.Equal(2, result.LocalTusFilesRemoved);
+            Assert.False(store.Exists("ups_expired"));
+            Assert.False(store.Exists("ups_orphan"));
+            Assert.True(store.Exists("ups_active"));
+            Assert.True(store.Exists("ups_completed"));
+            Assert.Equal(["ups_active", "ups_completed"], await dbContext.UploadSessions.OrderBy(x => x.UploadSessionId).Select(x => x.UploadSessionId).ToArrayAsync());
+            Assert.Equal(["dgr_active"], await dbContext.DownloadGrants.Select(x => x.DownloadGrantId).ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
     }
 
     [Fact]
@@ -358,7 +495,7 @@ public sealed class FileStoragePostgreSqlServiceTests
             4096,
             "sha256:test",
             "org-001/file_123",
-            "pending",
+            "clean",
             "available",
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow));
@@ -379,6 +516,116 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal("prod", grant.EnvironmentId);
         Assert.Equal("server-proxy", grant.Provider);
         AssertObjectKeyIsNotExposed(result.Value);
+    }
+
+    private static void AddCompletedTusFileWithGrant(
+        ApplicationDbContext dbContext,
+        string fileId,
+        string uploadSessionId,
+        string scanStatus,
+        string grantId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        AddUploadSession(dbContext, uploadSessionId, fileId, now.AddMinutes(-5), now.AddMinutes(5), completed: true);
+        dbContext.StoredFiles.Add(StoredFileRecord.Create(
+            fileId,
+            "org-001",
+            "prod",
+            "AppHub",
+            "ApplicationPackage",
+            "app-42",
+            "application-package",
+            "demo.zip",
+            "application/zip",
+            4096,
+            "sha256:test",
+            $"org-001/{fileId}",
+            scanStatus,
+            "available",
+            now.AddMinutes(-5),
+            now));
+        dbContext.DownloadGrants.Add(DownloadGrantRecord.Create(
+            grantId,
+            fileId,
+            "org-001",
+            "prod",
+            "server-proxy",
+            now,
+            now.AddMinutes(10)));
+    }
+
+    private static void AddUploadSession(
+        ApplicationDbContext dbContext,
+        string uploadSessionId,
+        string fileId,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset expiresAtUtc,
+        bool completed)
+    {
+        var session = UploadSessionRecord.Create(
+            uploadSessionId,
+            fileId,
+            "org-001",
+            "prod",
+            "AppHub",
+            "ApplicationPackage",
+            "app-42",
+            "application-package",
+            "demo.zip",
+            "application/zip",
+            5,
+            null,
+            $"org-001/{fileId}",
+            "tus",
+            createdAtUtc,
+            expiresAtUtc);
+        if (completed)
+        {
+            session.MarkCompleted(createdAtUtc.AddMinutes(1));
+        }
+
+        dbContext.UploadSessions.Add(session);
+    }
+
+    private static LocalTusFileStore CreateTusStore(string rootPath)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Tus:RootPath"] = rootPath
+            })
+            .Build();
+        return new LocalTusFileStore(configuration);
+    }
+
+    private static async Task WriteTusBytesAsync(LocalTusFileStore store, string uploadSessionId)
+    {
+        await using var stream = new MemoryStream("hello"u8.ToArray());
+        await store.AppendAsync(uploadSessionId, 0, stream, CancellationToken.None);
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nerv-filestorage-gc-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void DeleteTempDirectory(string path)
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+
+    private sealed class TestTusStoreAccessor(LocalTusFileStore localStore) : ILocalTusFileStoreAccessor
+    {
+        public bool TryGet(out LocalTusFileStore store)
+        {
+            store = localStore;
+            return true;
+        }
     }
 
     private static ApplicationDbContext CreateDbContext()

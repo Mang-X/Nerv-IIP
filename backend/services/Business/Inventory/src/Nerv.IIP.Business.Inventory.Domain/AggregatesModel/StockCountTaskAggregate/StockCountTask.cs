@@ -40,8 +40,8 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         LocationCode = InventoryText.Required(locationCode);
         LotNo = InventoryText.Optional(lotNo);
         SerialNo = InventoryText.Optional(serialNo);
-        QualityStatus = InventoryText.Required(qualityStatus).ToLowerInvariant();
-        OwnerType = InventoryText.Required(ownerType).ToLowerInvariant();
+        QualityStatus = StockQualityStatus.Normalize(qualityStatus);
+        OwnerType = StockOwnerType.Normalize(ownerType);
         OwnerId = InventoryText.Optional(ownerId);
         ExpectedLedgerVersion = expectedLedgerVersion;
         Status = "open";
@@ -119,6 +119,13 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         }
 
         EnsureSameDimension(ledger);
+        if (ledger.LedgerVersion != ExpectedLedgerVersion)
+        {
+            Status = "recount-required";
+            UpdatedAtUtc = DateTime.UtcNow;
+            throw new StockCountRecountRequiredException("Stock count task requires recount because ledger version changed after the count snapshot.");
+        }
+
         var variance = countedQuantity - ledger.OnHandQuantity;
         var adjustment = StockMovement.Post(
             ledger.OrganizationId,
@@ -146,6 +153,26 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         UpdatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new StockCountVarianceConfirmedDomainEvent(this, adjustment));
         return adjustment;
+    }
+
+    public void Cancel(StockLedger ledger, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (Status == "confirmed")
+        {
+            throw new InvalidOperationException("Confirmed stock count task cannot be cancelled.");
+        }
+
+        if (Status == "cancelled")
+        {
+            return;
+        }
+
+        _ = InventoryText.Required(reason);
+        EnsureSameDimension(ledger);
+        ledger.ReleaseCountFreeze();
+        Status = "cancelled";
+        UpdatedAtUtc = DateTime.UtcNow;
     }
 
     private void EnsureSameDimension(StockLedger ledger)

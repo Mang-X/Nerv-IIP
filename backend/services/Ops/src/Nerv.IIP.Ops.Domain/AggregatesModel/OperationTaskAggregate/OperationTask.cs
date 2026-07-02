@@ -1,8 +1,6 @@
 using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
-using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.DomainEvents;
@@ -82,7 +80,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public static OperationTask Create(
         OperationTaskId id,
-        CreateOperationTaskRequest request,
+        CreateOperationTaskInput request,
         OperationTemplateSnapshot template,
         DateTimeOffset now)
     {
@@ -120,7 +118,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         return task;
     }
 
-    public OperationTaskDispatchItem Claim(
+    public OperationTaskDispatchFact Claim(
         OperationAttemptId attemptId,
         AuditRecordId auditRecordId,
         string leaseId,
@@ -161,7 +159,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         this.AddDomainEvent(new OperationTaskDispatchedDomainEvent(this, attempt));
         AddAuditRecordedDomainEvent(auditRecord);
 
-        return new OperationTaskDispatchItem(
+        return new OperationTaskDispatchFact(
             Id.Id,
             attempt.Id.Id,
             OrganizationId,
@@ -193,17 +191,17 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AddAuditRecordedDomainEvent(auditRecord);
     }
 
-    public OperationTaskResponse AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact AbandonLease(string leaseId, string connectorHostId, string abandonReason, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
         attempt.Abandon(now, abandonReason);
         Status = attempt.AttemptNo >= attempt.MaxAttempts ? "failed" : "queued";
         var auditRecord = AddAudit(auditRecordId, "operation.abandoned", connectorHostId, now, CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse HeartbeatLease(string leaseId, string connectorHostId, DateTimeOffset now, TimeSpan leaseDuration, AuditRecordId auditRecordId)
+    public OperationTaskDetailFact HeartbeatLease(string leaseId, string connectorHostId, DateTimeOffset now, TimeSpan leaseDuration, AuditRecordId auditRecordId)
     {
         var attempt = GetMatchingActiveLease(leaseId, connectorHostId);
         if (attempt.LeasedUntilUtc <= now)
@@ -214,10 +212,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         attempt.Heartbeat(now.Add(leaseDuration));
         var auditRecord = AddAudit(auditRecordId, "operation.heartbeat", connectorHostId, now, CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse RecordResult(OperationResult result, AuditRecordId auditRecordId)
+    public OperationTaskDetailFact RecordResult(OperationResultInput result, AuditRecordId auditRecordId)
     {
         var attempt = _attempts.SingleOrDefault(x => x.Id.Id == result.AttemptId && x.OperationTaskId == Id)
             ?? throw new InvalidOperationResultException("Operation result does not match an existing attempt.");
@@ -240,10 +238,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             ? new OperationTaskCompletedDomainEvent(this, attempt, result)
             : new OperationTaskFailedDomainEvent(this, attempt, result));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse Approve(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact Approve(DecideOperationApprovalInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         ValidateApprovalDecision(request);
         if (!RequiresApproval)
@@ -265,10 +263,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var auditRecord = AddAudit(auditRecordId, "operation.approved", request.Actor, now, request.CorrelationId);
         this.AddDomainEvent(new OperationTaskApprovedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public OperationTaskResponse Reject(DecideOperationApprovalRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public OperationTaskDetailFact Reject(DecideOperationApprovalInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         ValidateApprovalDecision(request);
         if (!RequiresApproval)
@@ -290,10 +288,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var auditRecord = AddAudit(auditRecordId, "operation.rejected", request.Actor, now, request.CorrelationId);
         this.AddDomainEvent(new OperationTaskRejectedDomainEvent(this, request.Actor, request.DecisionReason, request.CorrelationId, now));
         AddAuditRecordedDomainEvent(auditRecord);
-        return ToResponse();
+        return ToDetailFact();
     }
 
-    public AuditIntentResponse SubmitAuditIntent(SubmitAuditIntentRequest request, AuditRecordId auditRecordId, DateTimeOffset now)
+    public AuditIntentResult SubmitAuditIntent(SubmitAuditIntentInput request, AuditRecordId auditRecordId, DateTimeOffset now)
     {
         AuditIntentValidator.Validate(request);
         if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
@@ -304,7 +302,17 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         var auditRecord = AddAudit(auditRecordId, request.Action, request.Actor, now, request.CorrelationId);
         AddAuditRecordedDomainEvent(auditRecord);
-        return AuditRecordMapper.ToIntentResponse(auditRecord.ToFact());
+        var fact = auditRecord.ToFact();
+        return new AuditIntentResult(
+            fact.AuditRecordId,
+            fact.OperationTaskId,
+            fact.SequenceNo,
+            fact.PreviousIntegrityHash,
+            fact.Action,
+            fact.Actor,
+            fact.OccurredAtUtc,
+            fact.CorrelationId,
+            fact.IntegrityHash);
     }
 
     public OperationTaskFact ToFact()
@@ -327,12 +335,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             ToApprovalFact());
     }
 
-    public OperationTaskResponse ToResponse()
+    public OperationTaskDetailFact ToDetailFact()
     {
-        return OperationTaskMapper.ToResponse(
+        return new OperationTaskDetailFact(
             ToFact(),
-            _attempts.Select(x => x.ToFact()),
-            _auditRecords.Select(x => x.ToFact()));
+            _attempts.Select(x => x.ToFact()).ToList(),
+            _auditRecords.Select(x => x.ToFact()).ToList());
     }
 
     public static string GetIdempotencyScope(string organizationId, string environmentId, string idempotencyKey)
@@ -361,8 +369,19 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         foreach (var (audit, auditRecordId) in pendingAudits.Zip(auditRecordIds))
         {
-            audit.AssignId(auditRecordId);
+            var previous = GetPreviousAudit(audit);
+            audit.AssignChain(
+                auditRecordId,
+                previous?.SequenceNo + 1 ?? 1,
+                previous?.IntegrityHash ?? string.Empty);
         }
+    }
+
+    public void AssignAuditChainStamp(AuditRecordId auditRecordId, long sequenceNo, string previousIntegrityHash)
+    {
+        var audit = _auditRecords.SingleOrDefault(x => x.Id == auditRecordId)
+            ?? throw new InvalidOperationTaskRequestException($"Audit record was not found: {auditRecordId.Id}");
+        audit.AssignChain(auditRecordId, sequenceNo, previousIntegrityHash);
     }
 
     private OperationApprovalFact? ToApprovalFact()
@@ -392,7 +411,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AddAuditRecordedDomainEvent(auditRecord);
     }
 
-    private void ValidateApprovalDecision(DecideOperationApprovalRequest request)
+    private void ValidateApprovalDecision(DecideOperationApprovalInput request)
     {
         if (!string.Equals(OrganizationId, request.OrganizationId, StringComparison.Ordinal)
             || !string.Equals(EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))
@@ -405,10 +424,28 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             throw new InvalidOperationTaskRequestException("Approval decision actor is required.");
         }
 
+        if (IsSameActor(RequestedBy, request.Actor))
+        {
+            throw new InvalidOperationTaskRequestException("Operation requester cannot approve or reject the same operation task.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.CorrelationId))
         {
             throw new InvalidOperationTaskRequestException("Approval decision correlation id is required.");
         }
+    }
+
+    private static bool IsSameActor(string left, string right)
+    {
+        static string Normalize(string value)
+        {
+            var trimmed = value.Trim();
+            return trimmed.StartsWith("user:", StringComparison.OrdinalIgnoreCase)
+                ? trimmed["user:".Length..]
+                : trimmed;
+        }
+
+        return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
     }
 
     private bool CanBeClaimed()
@@ -419,7 +456,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     private IReadOnlyDictionary<string, string> Parameters =>
         JsonSerializer.Deserialize<Dictionary<string, string>>(ParametersJson, JsonOptions) ?? [];
 
-    private void ValidateResultOwnership(OperationAttempt attempt, OperationResult result)
+    private void ValidateResultOwnership(OperationAttempt attempt, OperationResultInput result)
     {
         if (!string.Equals(attempt.ConnectorHostId, result.Context.ConnectorHostId, StringComparison.Ordinal)
             || !string.Equals(OrganizationId, result.Context.OrganizationId, StringComparison.Ordinal)
@@ -455,7 +492,19 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     private AuditRecord AddAudit(AuditRecordId auditRecordId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
     {
-        var auditRecord = new AuditRecord(auditRecordId, Id, action, actor, occurredAtUtc, correlationId);
+        // EF write paths restamp this aggregate-local chain against the persisted organization/environment chain before saving.
+        var previous = _auditRecords.OrderBy(x => x.SequenceNo).LastOrDefault();
+        var auditRecord = new AuditRecord(
+            auditRecordId,
+            Id,
+            OrganizationId,
+            EnvironmentId,
+            previous?.SequenceNo + 1 ?? 1,
+            previous?.IntegrityHash ?? string.Empty,
+            action,
+            actor,
+            occurredAtUtc,
+            correlationId);
         _auditRecords.Add(auditRecord);
         return auditRecord;
     }
@@ -463,6 +512,15 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     private void AddAuditRecordedDomainEvent(AuditRecord auditRecord)
     {
         this.AddDomainEvent(new AuditRecordedDomainEvent(this, auditRecord));
+    }
+
+    private AuditRecord? GetPreviousAudit(AuditRecord audit)
+    {
+        return _auditRecords
+            .Where(x => !ReferenceEquals(x, audit))
+            .Where(x => x.SequenceNo < audit.SequenceNo || audit.SequenceNo == 0)
+            .OrderBy(x => x.SequenceNo)
+            .LastOrDefault();
     }
 }
 
@@ -513,7 +571,7 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
     public int? MaxAttempts { get; private set; }
     public string? AbandonReason { get; private set; }
 
-    internal void Record(string status, DateTimeOffset finishedAtUtc, FailureReason? failure)
+    internal void Record(string status, DateTimeOffset finishedAtUtc, OperationFailureFact? failure)
     {
         Status = status;
         FinishedAtUtc = finishedAtUtc;
@@ -550,7 +608,7 @@ public sealed class OperationAttempt : Entity<OperationAttemptId>
             Status,
             StartedAtUtc,
             FinishedAtUtc,
-            FailureJson is null ? null : JsonSerializer.Deserialize<FailureReason>(FailureJson, JsonOptions),
+            FailureJson is null ? null : JsonSerializer.Deserialize<OperationFailureFact>(FailureJson, JsonOptions),
             LeaseId ?? string.Empty,
             LeasedAtUtc ?? StartedAtUtc,
             LeasedUntilUtc ?? StartedAtUtc,
@@ -568,18 +626,36 @@ public sealed class AuditRecord : Entity<AuditRecordId>
         OperationTaskId = new OperationTaskId(string.Empty);
     }
 
-    internal AuditRecord(AuditRecordId id, OperationTaskId operationTaskId, string action, string actor, DateTimeOffset occurredAtUtc, string correlationId)
+    internal AuditRecord(
+        AuditRecordId id,
+        OperationTaskId operationTaskId,
+        string organizationId,
+        string environmentId,
+        long sequenceNo,
+        string previousIntegrityHash,
+        string action,
+        string actor,
+        DateTimeOffset occurredAtUtc,
+        string correlationId)
     {
         Id = id;
         OperationTaskId = operationTaskId;
+        OrganizationId = organizationId;
+        EnvironmentId = environmentId;
+        SequenceNo = sequenceNo;
+        PreviousIntegrityHash = previousIntegrityHash;
         Action = action;
         Actor = actor;
         OccurredAtUtc = occurredAtUtc;
         CorrelationId = correlationId;
-        IntegrityHash = ComputeIntegrityHash(id.Id, operationTaskId.Id, action, actor, occurredAtUtc, correlationId);
+        IntegrityHash = ComputeIntegrityHash(id.Id, operationTaskId.Id, sequenceNo, previousIntegrityHash, action, actor, occurredAtUtc, correlationId);
     }
 
     public OperationTaskId OperationTaskId { get; private set; }
+    public string OrganizationId { get; private set; } = string.Empty;
+    public string EnvironmentId { get; private set; } = string.Empty;
+    public long SequenceNo { get; private set; }
+    public string PreviousIntegrityHash { get; private set; } = string.Empty;
     public string Action { get; private set; } = string.Empty;
     public string Actor { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; private set; }
@@ -588,22 +664,57 @@ public sealed class AuditRecord : Entity<AuditRecordId>
 
     internal void AssignId(AuditRecordId id)
     {
+        AssignChain(id, SequenceNo, PreviousIntegrityHash);
+    }
+
+    internal void AssignChain(AuditRecordId id, long sequenceNo, string previousIntegrityHash)
+    {
+        if (sequenceNo < 1)
+        {
+            throw new InvalidOperationTaskRequestException("Audit record sequence number must be positive.");
+        }
+
         Id = id;
-        IntegrityHash = ComputeIntegrityHash(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId);
+        SequenceNo = sequenceNo;
+        PreviousIntegrityHash = previousIntegrityHash;
+        IntegrityHash = ComputeIntegrityHash(Id.Id, OperationTaskId.Id, SequenceNo, PreviousIntegrityHash, Action, Actor, OccurredAtUtc, CorrelationId);
     }
 
     internal AuditRecordFact ToFact()
     {
-        return new AuditRecordFact(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId, IntegrityHash);
+        return new AuditRecordFact(Id.Id, OperationTaskId.Id, SequenceNo, PreviousIntegrityHash, Action, Actor, OccurredAtUtc, CorrelationId, IntegrityHash);
     }
 
     public bool HasValidIntegrityHash() =>
         string.Equals(
             IntegrityHash,
-            ComputeIntegrityHash(Id.Id, OperationTaskId.Id, Action, Actor, OccurredAtUtc, CorrelationId),
+            ComputeIntegrityHash(Id.Id, OperationTaskId.Id, SequenceNo, PreviousIntegrityHash, Action, Actor, OccurredAtUtc, CorrelationId),
             StringComparison.Ordinal);
 
     public static string ComputeIntegrityHash(
+        string auditRecordId,
+        string operationTaskId,
+        long sequenceNo,
+        string previousIntegrityHash,
+        string action,
+        string actor,
+        DateTimeOffset occurredAtUtc,
+        string correlationId)
+    {
+        var material = string.Join(
+            "\u001f",
+            auditRecordId,
+            operationTaskId,
+            sequenceNo.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            previousIntegrityHash,
+            action,
+            actor,
+            occurredAtUtc.ToUniversalTime().ToString("O"),
+            correlationId);
+        return $"sha256:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material))).ToLowerInvariant()}";
+    }
+
+    public static string ComputeLegacyIntegrityHash(
         string auditRecordId,
         string operationTaskId,
         string action,

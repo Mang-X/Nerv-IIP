@@ -35,6 +35,8 @@ public static class QualityPersistenceServiceCollectionExtensions
         services.AddScoped<INonconformanceReportRepository, NonconformanceReportRepository>();
         services.AddScoped<IInspectionPlanRepository, InspectionPlanRepository>();
         services.AddScoped<IInspectionRecordRepository, InspectionRecordRepository>();
+        services.AddScoped<IQualityReasonRepository, QualityReasonRepository>();
+        services.AddScoped<ICorrectiveActionRepository, CorrectiveActionRepository>();
         return services;
     }
 }

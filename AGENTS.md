@@ -28,13 +28,13 @@ Nerv-IIP/
 │   │   ├── Ops/
 │   │   ├── FileStorage/
 │   │   ├── Notification/
-│   │   └── Business/MasterData/
-│   ├── gateway/PlatformGateway/   # BFF for Console
+│   │   └── Business/              # Business platform services: MasterData, ProductEngineering, Inventory, Quality, MES, etc.
+│   ├── gateway/                   # PlatformGateway for Console; BusinessGateway for Business Console/PDA facades
 │   ├── common/                    # Narrow shared libs: Contracts, Sdk, Caching, Observability, Testing, ServiceAuth
 │   └── tests/                     # Cross-service integration test hosts
 ├── frontend/
-│   ├── apps/console/              # Vue 3 Console app
-│   └── packages/                  # ui, app-shell, api-client
+│   ├── apps/                      # console, business-console, business-pda, design-system
+│   └── packages/                  # ui, ui-mobile, app-shell, api-client, auth, business-core
 ├── connector-hosts/               # Separate .sln — NEVER merge into backend
 ├── infra/                         # Aspire AppHost, Docker Compose, OTel
 ├── scripts/                       # Governed automation + lib/ScriptAutomation.ps1
@@ -96,6 +96,11 @@ scripts/verify-*.ps1                  # Verification scripts
 | Scripts | script-automation-governance | `scripts/check-script-governance.ps1` |
 | Connector Host | connector boundary docs | `dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln`; no backend service impl references |
 | Infra / Aspire | deployment-baseline | `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj` |
+
+PDA changes also run `pnpm -C frontend --filter @nerv-iip/business-pda typecheck`,
+`pnpm -C frontend --filter @nerv-iip/business-pda test`, and
+`pnpm -C frontend --filter @nerv-iip/business-pda build`; run `cap:sync` when
+native Capacitor artifacts are affected.
 
 ## Known Baseline Caveats
 

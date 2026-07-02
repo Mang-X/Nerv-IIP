@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
@@ -21,7 +23,9 @@ public sealed record PostStockMovementCommand(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity) : ICommand<PostStockMovementResult>;
+    decimal Quantity,
+    decimal? UnitCost = null,
+    StockReservationId? ReservationId = null) : ICommand<PostStockMovementResult>;
 
 public sealed record PostStockMovementResult(StockMovementId MovementId, decimal OnHandQuantity, decimal AvailableQuantity);
 
@@ -46,32 +50,24 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).NotEqual(0);
+        RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0).When(x => x.UnitCost is not null);
     }
 }
 
 public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
+    private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "inbound",
+        "outbound",
+        "transfer",
+        "adjustment",
+    };
+
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
-        var movement = StockMovement.Post(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.MovementType,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SourceDocumentLineId,
-            request.IdempotencyKey,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.LotNo,
-            request.SerialNo,
-            request.QualityStatus,
-            request.OwnerType,
-            request.OwnerId,
-            request.Quantity);
+        var movement = CreateMovementOrReject(request);
         var existingMovement = await dbContext.StockMovements.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
                 && x.EnvironmentId == movement.EnvironmentId
@@ -83,7 +79,9 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         {
             if (!existingMovement.HasSamePayload(movement))
             {
-                throw new KnownException("Stock movement idempotency key conflicts with an existing movement payload.");
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.IdempotencyConflict,
+                    "Stock movement idempotency key conflicts with an existing movement payload.");
             }
 
             var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
@@ -94,7 +92,39 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         }
 
         var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
-        var applied = ledger.ApplyMovement(movement);
+        if (request.ReservationId is not null)
+        {
+            if (request.Quantity > 0)
+            {
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.ReservationAllocationRejected,
+                    "Only outbound movements can allocate an existing stock reservation.");
+            }
+
+            var reservation = await dbContext.StockReservations.SingleOrDefaultAsync(x => x.Id == request.ReservationId, cancellationToken)
+                ?? throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.ReservationNotFound,
+                    $"Stock reservation '{request.ReservationId}' was not found.");
+            try
+            {
+                ledger.AllocateReservation(reservation, Math.Abs(request.Quantity));
+            }
+            catch (InventoryDomainException exception)
+            {
+                throw InventoryPostingRejectedException.FromDomain(exception);
+            }
+        }
+
+        StockMovement applied;
+        try
+        {
+            applied = ledger.ApplyMovement(movement);
+        }
+        catch (InventoryDomainException exception)
+        {
+            throw InventoryPostingRejectedException.FromDomain(exception);
+        }
+
         if (ReferenceEquals(applied, movement))
         {
             dbContext.StockMovements.Add(movement);
@@ -142,5 +172,80 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
             movement.OwnerId);
         dbContext.StockLedgers.Add(ledger);
         return ledger;
+    }
+
+    private static StockMovement CreateMovementOrReject(PostStockMovementCommand request)
+    {
+        var movementType = NormalizeExternalMovementTypeOrReject(request.MovementType);
+        var ownerType = NormalizeOwnerTypeOrReject(request.OwnerType);
+        try
+        {
+            return StockMovement.Post(
+                request.OrganizationId,
+                request.EnvironmentId,
+                movementType,
+                request.SourceService,
+                request.SourceDocumentId,
+                request.SourceDocumentLineId,
+                request.IdempotencyKey,
+                request.SkuCode,
+                request.UomCode,
+                request.SiteCode,
+                request.LocationCode,
+                request.LotNo,
+                request.SerialNo,
+                request.QualityStatus,
+                ownerType,
+                request.OwnerId,
+                request.Quantity,
+                request.UnitCost);
+        }
+        catch (ArgumentException exception) when (IsUnsupportedMovementOrQuality(exception))
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                exception.Message,
+                exception);
+        }
+    }
+
+    private static string NormalizeExternalMovementTypeOrReject(string movementType)
+    {
+        var normalized = NormalizeRequired(movementType, nameof(movementType));
+        return ExternalMovementTypes.Contains(normalized)
+            ? normalized
+            : throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                $"Movement type '{movementType}' cannot be posted through the external stock movement command.");
+    }
+
+    private static string NormalizeOwnerTypeOrReject(string ownerType)
+    {
+        try
+        {
+            return StockOwnerType.Normalize(ownerType);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                exception.Message,
+                exception);
+        }
+    }
+
+    private static string NormalizeRequired(string value, string parameterName)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                $"{parameterName} cannot be blank.")
+            : value.Trim().ToLowerInvariant();
+    }
+
+    private static bool IsUnsupportedMovementOrQuality(ArgumentException exception)
+    {
+        // Keep these names aligned with StockMovement.Post movementType and StockQualityStatus.Normalize qualityStatus.
+        return exception.ParamName is "movementType" or "qualityStatus";
     }
 }

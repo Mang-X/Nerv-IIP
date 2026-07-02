@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import OperationTasksPage from './operation-tasks.vue'
@@ -13,6 +13,11 @@ const routeState = vi.hoisted(() => ({
 
 const routerState = vi.hoisted(() => ({
   push: vi.fn(),
+}))
+
+const mesSpies = vi.hoisted(() => ({
+  createReceiptRequest: vi.fn(async () => undefined),
+  refreshReceiptRequests: vi.fn(async () => undefined),
 }))
 
 vi.mock('vue-router', () => ({
@@ -36,7 +41,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     nextStep: '请按质量或设备处理要求跟进。',
   }),
   useMesFinishedGoodsReceipts: () => ({
-    createReceiptRequest: vi.fn(),
+    createReceiptRequest: mesSpies.createReceiptRequest,
     createReceiptRequestError: ref(undefined),
     createReceiptRequestPending: ref(false),
     filters: {
@@ -49,7 +54,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     receiptRequestsError: ref(undefined),
     receiptRequestsPending: ref(false),
     receiptRequestsTotal: ref(0),
-    refreshReceiptRequests: vi.fn(),
+    refreshReceiptRequests: mesSpies.refreshReceiptRequests,
   }),
   useMesOperationTasks: () => ({
     filters: {
@@ -61,7 +66,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
       {
         operationTaskId: 'OP-001-10',
         workOrderId: 'WO-001',
-        status: 'Ready',
+        status: 'ready',
         operationSequence: 10,
         workCenterId: 'WC-01',
       },
@@ -95,6 +100,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
     productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
   }),
+  useMesWorkOrderDetail: () => ({
+    detail: ref(null),
+    detailError: ref(null),
+    detailPending: ref(false),
+    filters: reactive({ workOrderId: '' }),
+  }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
     createRushWorkOrderError: ref(undefined),
@@ -113,12 +124,12 @@ vi.mock('@/composables/useBusinessMes', () => ({
         workOrderId: 'WO-001',
         skuId: 'FG-001',
         quantity: 10,
-        status: 'Ready',
+        status: 'ready',
         operationTasks: [
           {
             operationTaskId: 'OP-001-10',
             operationSequence: 10,
-            status: 'Ready',
+            status: 'ready',
             workCenterId: 'WC-01',
           },
         ],
@@ -182,7 +193,7 @@ const uiStubs = {
     props: ['search', 'searchPlaceholder'],
     template: '<div><slot name="filters" /><slot name="actions" /></div>',
   },
-  DataTable: {
+  DataTablePro: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
       <slot name="cell-workOrderId" :row="row" />
@@ -192,37 +203,37 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  Dialog: {
+  DialogRoot: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
-  DialogContent: {
+  DialogProContent: {
     template: '<div><slot /></div>',
   },
-  DialogHeader: {
+  DialogProHeader: {
     template: '<div><slot /></div>',
   },
-  DialogTitle: {
+  DialogProTitle: {
     template: '<h2><slot /></h2>',
   },
-  DialogDescription: {
+  DialogProDescription: {
     template: '<p><slot /></p>',
   },
-  DialogFooter: {
+  DialogProFooter: {
     template: '<div><slot /></div>',
   },
   RowActions: {
     props: ['label'],
     template: '<div><slot /></div>',
   },
-  StatusBadge: {
+  StatusBadgePro: {
     props: ['value'],
     template: '<span>{{ value }}</span>',
   },
-  Button: {
+  ButtonPro: {
     template: '<button v-bind="$attrs"><slot /></button>',
   },
-  Checkbox: {
+  CheckboxPro: {
     template: '<input type="checkbox" />',
   },
   DropdownMenuItem: {
@@ -241,20 +252,22 @@ const uiStubs = {
   FieldLabel: {
     template: '<label><slot /></label>',
   },
-  Input: {
-    template: '<input v-bind="$attrs" />',
+  InputPro: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Select: {
+  SelectPro: {
     template: '<div><slot /></div>',
   },
-  SelectContent: {
+  SelectProContent: {
     template: '<div><slot /></div>',
   },
-  SelectItem: {
+  SelectProItem: {
     props: ['value'],
     template: '<div><slot /></div>',
   },
-  SelectTrigger: {
+  SelectProTrigger: {
     template: '<button><slot /></button>',
   },
   SelectValue: {
@@ -308,6 +321,8 @@ describe('MES workflow copy', () => {
   beforeEach(() => {
     routeState.query = {}
     routerState.push.mockReset()
+    mesSpies.createReceiptRequest.mockClear()
+    mesSpies.refreshReceiptRequests.mockClear()
   })
 
   it('keeps work-order reporting business-facing and row-context driven', () => {
@@ -327,7 +342,7 @@ describe('MES workflow copy', () => {
   it('keeps operation tasks focused on supported row actions', () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    expect(wrapper.text()).toContain('打开报工表单')
+    expect(wrapper.text()).toContain('报工')
     expect(wrapper.text()).not.toContain('带入工单报工')
     expect(wrapper.text()).not.toContain('进入执行')
     expectNoForbiddenVisibleTerms(wrapper.text())
@@ -336,7 +351,7 @@ describe('MES workflow copy', () => {
   it('carries operation-task context into the work-order reporting sheet route', async () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
-    await wrapper.findAll('button').find((button) => button.text().includes('打开报工表单'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('报工'))!.trigger('click')
 
     expect(routerState.push).toHaveBeenCalledWith({
       path: '/mes/work-orders',
@@ -365,5 +380,27 @@ describe('MES workflow copy', () => {
     expect(wrapper.find('#receipt-work-order').attributes('readonly')).toBeDefined()
     expect(wrapper.find('#receipt-sku').attributes('readonly')).toBeDefined()
     expectNoForbiddenVisibleTerms(wrapper.text())
+  })
+
+  it('submits finished-goods receipt context with unit cost', async () => {
+    routeState.query = {
+      quantity: '10',
+      skuId: 'FG-001',
+      workOrderId: 'WO-001',
+    }
+    const wrapper = mountMesPage(ReceiptsPage)
+
+    await wrapper.find('#receipt-unit-cost').setValue('12.34')
+    await wrapper.find('form').trigger('submit')
+
+    expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(expect.objectContaining({
+      environmentId: 'dev',
+      organizationId: 'org',
+      quantity: 10,
+      skuId: 'FG-001',
+      unitCost: 12.34,
+      uomCode: 'EA',
+      workOrderId: 'WO-001',
+    }))
   })
 })

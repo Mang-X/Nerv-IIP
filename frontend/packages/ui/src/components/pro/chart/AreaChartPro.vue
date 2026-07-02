@@ -1,0 +1,94 @@
+<script setup lang="ts">
+import type { HTMLAttributes } from 'vue'
+import { computed } from 'vue'
+import { VisArea, VisAxis, VisCrosshair, VisLine, VisTooltip, VisXYContainer } from '@unovis/vue'
+import { cn } from '../../../lib/utils'
+
+/**
+ * Pro — real area chart built on unovis (the engine shadcn-vue's chart is based
+ * on). Brand-driven: stroke/fill read `--brand`, so the chart re-tints with the
+ * runtime accent. Axes, grid, crosshair and tooltip are mapped to design tokens.
+ */
+interface ChartPoint {
+  label: string
+  value: number
+}
+
+const props = withDefaults(
+  defineProps<{
+    data: ChartPoint[]
+    height?: number
+    valueSuffix?: string
+    /** Sparkline mode: no axes, tight margins — for in-card trends. */
+    minimal?: boolean
+    class?: HTMLAttributes['class']
+  }>(),
+  { height: 240, valueSuffix: '', minimal: false },
+)
+
+const x = (_d: ChartPoint, i: number) => i
+const y = (d: ChartPoint) => d.value
+const xTickFormat = (i: number) => props.data[i]?.label ?? ''
+const tooltipTemplate = (d: ChartPoint) =>
+  `<div class="ds-vis-tt"><span>${d.label}</span><b>${d.value}${props.valueSuffix}</b></div>`
+const chartMargin = computed(() =>
+  props.minimal
+    ? { top: 4, right: 2, bottom: 2, left: 2 }
+    : { top: 10, right: 12, bottom: 4, left: 8 },
+)
+</script>
+
+<template>
+  <div :class="cn('ds-chart w-full', props.class)">
+    <VisXYContainer :data="data" :height="height" :margin="chartMargin">
+      <VisArea :x="x" :y="y" color="var(--brand)" :opacity="0.13" />
+      <VisLine :x="x" :y="y" color="var(--brand)" :line-width="2" />
+      <VisAxis
+        v-if="!minimal"
+        type="x"
+        :tick-format="xTickFormat"
+        :num-ticks="data.length"
+        :grid-line="false"
+        :tick-line="false"
+        :domain-line="false"
+      />
+      <VisAxis v-if="!minimal" type="y" :num-ticks="4" :tick-line="false" :domain-line="false" />
+      <template v-if="!minimal">
+        <VisCrosshair color="var(--brand)" :template="tooltipTemplate" />
+        <VisTooltip />
+      </template>
+    </VisXYContainer>
+  </div>
+</template>
+
+<style scoped>
+.ds-chart {
+  --vis-axis-grid-color: var(--border);
+  --vis-axis-tick-label-color: var(--muted-foreground);
+  --vis-axis-tick-label-font-size: 11px;
+  --vis-axis-font-family: var(--font-sans);
+  --vis-crosshair-line-stroke-color: color-mix(in oklch, var(--brand) 50%, transparent);
+  --vis-crosshair-circle-stroke-color: var(--card);
+  --vis-tooltip-background-color: color-mix(in oklch, var(--popover) 86%, transparent);
+  --vis-tooltip-text-color: var(--popover-foreground);
+  --vis-tooltip-border-color: color-mix(in oklch, var(--border) 80%, transparent);
+  --vis-tooltip-padding: 0;
+  --vis-tooltip-border-radius: 8px;
+}
+.ds-chart :deep([class*='-tooltip']) {
+  backdrop-filter: blur(8px) saturate(1.4);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4);
+  box-shadow: 0 8px 28px -12px color-mix(in oklch, black 50%, transparent);
+}
+.ds-chart :deep(.ds-vis-tt) {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.ds-chart :deep(.ds-vis-tt b) {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+</style>

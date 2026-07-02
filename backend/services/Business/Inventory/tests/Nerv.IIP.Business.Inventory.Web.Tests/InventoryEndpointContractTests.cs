@@ -9,11 +9,14 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -29,7 +32,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(5, contracts.Length);
+        Assert.Equal(9, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/locations"
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage
@@ -55,6 +58,26 @@ public sealed class InventoryEndpointContractTests
             && x.PermissionCode == InventoryPermissionCodes.CountsManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "confirmInventoryCountAdjustment");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/count-tasks/{countTaskId}/cancel"
+            && x.PermissionCode == InventoryPermissionCodes.CountsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "cancelInventoryCountTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/reservations"
+            && x.PermissionCode == InventoryPermissionCodes.ReservationsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "reserveInventoryStock");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/reservations/{reservationId}/release"
+            && x.PermissionCode == InventoryPermissionCodes.ReservationsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "releaseInventoryReservation");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/status-transfers"
+            && x.PermissionCode == InventoryPermissionCodes.MovementsCreate
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "postInventoryStatusTransfer");
     }
 
     [Theory]
@@ -63,6 +86,10 @@ public sealed class InventoryEndpointContractTests
     [InlineData(typeof(GetStockAvailabilityEndpoint))]
     [InlineData(typeof(CreateStockCountTaskEndpoint))]
     [InlineData(typeof(ConfirmStockCountAdjustmentEndpoint))]
+    [InlineData(typeof(CancelStockCountTaskEndpoint))]
+    [InlineData(typeof(ReserveStockEndpoint))]
+    [InlineData(typeof(ReleaseStockReservationEndpoint))]
+    [InlineData(typeof(PostStockStatusTransferEndpoint))]
     public void Inventory_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -116,10 +143,626 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(18m, response.OnHandQuantity);
         Assert.Equal(0m, response.ReservedQuantity);
         Assert.Equal(18m, response.AvailableQuantity);
+        Assert.Equal(0m, response.InventoryValue);
         Assert.Equal("LOT-001", response.LotNo);
         Assert.Single(response.Items);
         Assert.Equal("LOC-A-01", response.Items.Single().LocationCode);
         Assert.Equal(18m, response.Items.Single().AvailableQuantity);
+    }
+
+    [Fact]
+    public async Task Availability_query_normalizes_owner_type_aliases_before_filtering()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            18m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetStockAvailabilityQueryHandler(dbContext).Handle(new GetStockAvailabilityQuery(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "vendor",
+            "owner-001"), CancellationToken.None);
+
+        Assert.Equal("supplier", response.OwnerType);
+        Assert.Equal(18m, response.OnHandQuantity);
+        Assert.Single(response.Items);
+        Assert.Equal("supplier", response.Items.Single().OwnerType);
+    }
+
+    [Fact]
+    public async Task Reserve_stock_command_reduces_available_quantity_and_is_idempotent()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var command = new ReserveStockCommand(
+            "org-001",
+            "env-dev",
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            4m);
+        var first = await new ReserveStockCommandHandler(dbContext).Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var duplicate = await new ReserveStockCommandHandler(dbContext).Handle(command, CancellationToken.None);
+
+        Assert.Equal(first.ReservationId, duplicate.ReservationId);
+        Assert.Equal(6m, duplicate.AvailableQuantity);
+        Assert.Equal(4m, dbContext.StockLedgers.Single().ReservedQuantity);
+        Assert.Single(dbContext.StockReservations);
+    }
+
+    [Fact]
+    public async Task Reserve_stock_command_normalizes_owner_type_aliases_before_ledger_lookup()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-reserve-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ReserveStockCommandHandler(dbContext).Handle(
+            new ReserveStockCommand(
+                "org-001",
+                "env-dev",
+                "mes",
+                "WO-ALIAS-001",
+                "LINE-001",
+                "idem-reserve-alias-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "vendor",
+                "owner-001",
+                4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(4m, result.ReservedQuantity);
+        Assert.Equal(6m, result.AvailableQuantity);
+        Assert.Equal("supplier", dbContext.StockReservations.Single().OwnerType);
+        Assert.Equal(4m, ledger.ReservedQuantity);
+    }
+
+    [Fact]
+    public async Task Status_transfer_moves_quality_stock_to_unrestricted()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var qualityLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001");
+        qualityLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001",
+            5m,
+            2m));
+        dbContext.StockLedgers.Add(qualityLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "quality",
+                "unrestricted",
+                "quality",
+                "QI-001",
+                null,
+                "idem-status-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "company",
+                "owner-001",
+                3m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(2m, result.SourceOnHandQuantity);
+        Assert.Equal(3m, result.TargetOnHandQuantity);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType.StartsWith("status-transfer")));
+        Assert.Contains(dbContext.StockLedgers, x => x.QualityStatus == "unrestricted" && x.OnHandQuantity == 3m);
+    }
+
+    [Fact]
+    public async Task Full_quantity_status_transfer_preserves_moving_average_cost_and_total_value()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var qualityLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001");
+        qualityLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "idem-quality-full-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "quality",
+            "company",
+            "owner-001",
+            5m,
+            12.34m));
+        dbContext.StockLedgers.Add(qualityLedger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "quality",
+                "unrestricted",
+                "quality",
+                "QI-001",
+                null,
+                "idem-status-full-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "company",
+                "owner-001",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "quality");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var inbound = dbContext.StockMovements.Single(x => x.MovementType == "status-transfer-in");
+        Assert.Equal(0m, result.SourceOnHandQuantity);
+        Assert.Equal(5m, result.TargetOnHandQuantity);
+        Assert.Equal(0m, source.InventoryValue);
+        Assert.Equal(12.34m, target.MovingAverageUnitCost);
+        Assert.Equal(61.70m, target.InventoryValue);
+        Assert.Equal(12.34m, inbound.UnitCost);
+        Assert.Equal(61.70m, inbound.MovementAmount);
+    }
+
+    [Fact]
+    public async Task Status_transfer_rejects_quantity_that_exceeds_available_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new PostStockStatusTransferCommandHandler(dbContext).Handle(
+                new PostStockStatusTransferCommand(
+                    "org-001",
+                    "env-dev",
+                    "qualified",
+                    "blocked",
+                    "inventory",
+                    "BLK-001",
+                    null,
+                    "idem-status-reserved-001",
+                    "SKU-FG-1000",
+                    "kg",
+                    "SITE-01",
+                    "LOC-A-01",
+                    "LOT-001",
+                    null,
+                    "company",
+                    "owner-001",
+                    3m),
+                CancellationToken.None));
+
+        Assert.Contains("available", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
+    }
+
+    [Fact]
+    public async Task Status_transfer_can_move_only_unreserved_source_quantity_without_negative_available_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "qualified",
+                "blocked",
+                "inventory",
+                "BLK-001",
+                null,
+                "idem-status-available-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "company",
+                "owner-001",
+                2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked");
+        Assert.Equal(8m, result.SourceOnHandQuantity);
+        Assert.Equal(2m, result.TargetOnHandQuantity);
+        Assert.Equal(8m, source.OnHandQuantity);
+        Assert.Equal(8m, source.ReservedQuantity);
+        Assert.Equal(0m, source.AvailableQuantity);
+        Assert.Equal(2m, target.OnHandQuantity);
+        Assert.Equal(0m, target.ReservedQuantity);
+        Assert.Equal(2m, target.AvailableQuantity);
+    }
+
+    [Fact]
+    public async Task Status_transfer_normalizes_owner_type_aliases_before_ledger_lookup_and_target_creation()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new PostStockStatusTransferCommandHandler(dbContext).Handle(
+            new PostStockStatusTransferCommand(
+                "org-001",
+                "env-dev",
+                "qualified",
+                "blocked",
+                "inventory",
+                "BLK-ALIAS-001",
+                null,
+                "idem-status-owner-alias-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "internal",
+                "owner-001",
+                2m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = dbContext.StockLedgers.Single(x => x.QualityStatus == "unrestricted");
+        var target = dbContext.StockLedgers.Single(x => x.QualityStatus == "blocked");
+        Assert.Equal(8m, result.SourceOnHandQuantity);
+        Assert.Equal(2m, result.TargetOnHandQuantity);
+        Assert.Equal("company", source.OwnerType);
+        Assert.Equal("company", target.OwnerType);
+        Assert.All(dbContext.StockMovements, movement => Assert.Equal("company", movement.OwnerType));
+    }
+
+    [Fact]
+    public async Task Status_transfer_returns_known_exception_when_source_ledger_is_frozen_for_count()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        ledger.FreezeForCount("COUNT-001");
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new PostStockStatusTransferCommandHandler(dbContext).Handle(
+                new PostStockStatusTransferCommand(
+                    "org-001",
+                    "env-dev",
+                    "qualified",
+                    "blocked",
+                    "inventory",
+                    "BLK-001",
+                    null,
+                    "idem-status-frozen-001",
+                    "SKU-FG-1000",
+                    "kg",
+                    "SITE-01",
+                    "LOC-A-01",
+                    "LOT-001",
+                    null,
+                    "company",
+                    "owner-001",
+                    1m),
+                CancellationToken.None));
+
+        Assert.Contains("frozen", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Count_task_creation_freezes_ledger_and_stale_confirmation_requires_recount()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var taskResult = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(dbContext.StockLedgers.Single().IsFrozenForCount);
+
+        dbContext.StockLedgers.Single().ReleaseCountFreeze();
+        dbContext.StockLedgers.Single().ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-drift-001", 1m));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+                new ConfirmStockCountAdjustmentCommand(taskResult.CountTaskId, 9m, "idem-count-001"),
+                CancellationToken.None));
+
+        Assert.Contains("recount", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_count_task_command_normalizes_owner_type_aliases_before_ledger_lookup()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001");
+        ledger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "DOC-001",
+            "LINE-001",
+            "idem-supplier-count-in-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "supplier",
+            "owner-001",
+            10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-ALIAS-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "vendor",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var task = Assert.Single(dbContext.StockCountTasks);
+        Assert.Equal(ledger.LedgerVersion, result.ExpectedLedgerVersion);
+        Assert.Equal("supplier", task.OwnerType);
+        Assert.True(ledger.IsFrozenForCount);
+    }
+
+    [Fact]
+    public async Task Cancel_count_task_command_releases_ledger_freeze()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        dbContext.StockLedgers.Add(ledger);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var taskResult = await new CreateStockCountTaskCommandHandler(dbContext).Handle(
+            new CreateStockCountTaskCommand(
+                "org-001",
+                "env-dev",
+                "COUNT-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new CancelStockCountTaskCommandHandler(dbContext).Handle(
+            new CancelStockCountTaskCommand(taskResult.CountTaskId, "operator-cancelled"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal("cancelled", result.Status);
+        Assert.False(dbContext.StockLedgers.Single().IsFrozenForCount);
+        dbContext.StockLedgers.Single().ApplyMovement(DomainMovementFactory.InboundWithIdempotency("idem-after-cancel-001", 1m));
+        Assert.Equal(11m, dbContext.StockLedgers.Single().OnHandQuantity);
     }
 
     [Fact]
@@ -358,10 +1001,40 @@ public sealed class InventoryEndpointContractTests
 
         using var secondScope = provider.CreateScope();
         var secondDbContext = secondScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
             new PostStockMovementCommandHandler(secondDbContext).Handle(NewPostMovementCommand("idem-in-001", 6m), CancellationToken.None));
 
+        Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, exception.FailureCode);
         Assert.Contains("idempotency", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Post_movement_command_maps_reserved_stock_guard_without_message_substring()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            new PostStockMovementCommandHandler(dbContext).Handle(
+                NewPostMovementCommand("idem-out-reserved-001", -3m) with
+                {
+                    MovementType = "outbound",
+                    SourceDocumentId = "OUT-RESERVED-001",
+                },
+                CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.ReservationAllocationRejected, exception.FailureCode);
+        Assert.DoesNotContain("reserved", exception.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
     }
 
     [Fact]
@@ -393,6 +1066,67 @@ public sealed class InventoryEndpointContractTests
     }
 
     [Fact]
+    public async Task Concurrent_reservation_and_unreserved_outbound_does_not_create_overallocated_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ledger = DomainLedgerFactory.NewLedger();
+            ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+            dbContext.StockLedgers.Add(ledger);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using var reservationScope = provider.CreateAsyncScope();
+        await using var movementScope = provider.CreateAsyncScope();
+        var reservationDbContext = reservationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var movementDbContext = movementScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var reservationLedger = await reservationDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+        var movementLedger = await movementDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+
+        var reservation = StockReservation.Reserve(
+            reservationLedger,
+            "mes",
+            "WO-001",
+            "LINE-001",
+            "idem-reserve-001",
+            8m);
+        reservationLedger.Reserve(reservation);
+        reservationDbContext.StockReservations.Add(reservation);
+        movementLedger.ApplyMovement(StockMovement.Post(
+            "org-001",
+            "env-dev",
+            "outbound",
+            "wms",
+            "OUT-001",
+            "LINE-001",
+            "idem-out-concurrent-001",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-001",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            -3m));
+
+        await reservationDbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => movementDbContext.SaveChangesAsync(CancellationToken.None));
+        Assert.Contains("concurrent", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var verifyScope = provider.CreateAsyncScope();
+        var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var finalLedger = await verifyDbContext.StockLedgers.SingleAsync(CancellationToken.None);
+        Assert.Equal(10m, finalLedger.OnHandQuantity);
+        Assert.Equal(8m, finalLedger.ReservedQuantity);
+        Assert.Equal(2m, finalLedger.AvailableQuantity);
+    }
+
+    [Fact]
     public async Task Confirm_count_adjustment_command_is_idempotent_for_same_counted_quantity()
     {
         await using var provider = CreateInMemoryProvider();
@@ -417,6 +1151,33 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(-2.5m, second.VarianceQuantity);
         Assert.Single(secondDbContext.StockCountAdjustments);
         Assert.Single(secondDbContext.StockMovements.Where(x => x.MovementType == "count-adjustment"));
+    }
+
+    [Fact]
+    public async Task Confirm_count_adjustment_command_rejects_negative_variance_that_would_pierce_reserved_stock()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ledger = DomainLedgerFactory.NewLedger();
+        ledger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var reservation = StockReservation.Reserve(ledger, "mes", "WO-001", "LINE-001", "idem-reserve-001", 8m);
+        ledger.Reserve(reservation);
+        dbContext.StockLedgers.Add(ledger);
+        dbContext.StockReservations.Add(reservation);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        dbContext.StockCountTasks.Add(task);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            new ConfirmStockCountAdjustmentCommandHandler(dbContext).Handle(
+                new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "idem-count-reserved-001"),
+                CancellationToken.None));
+
+        Assert.DoesNotContain("reserved", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
+        Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
+        Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "count-adjustment"));
     }
 
     [Fact]

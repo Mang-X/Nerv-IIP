@@ -26,7 +26,16 @@ public sealed record ProductionReportFact(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     decimal ReworkQuantity,
-    DateTimeOffset ReportedAtUtc);
+    DateTimeOffset ReportedAtUtc,
+    string? WorkOrderNo = null,
+    string? OperationTaskNo = null,
+    string? ScrapReasonCode = null,
+    string? DefectRecordNo = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListProductionReportsQuery, ListProductionReportsResponse>
@@ -81,8 +90,38 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 x.OperationTaskId,
                 x.GoodQuantity,
                 x.ScrapQuantity,
-                0m,
-                x.ReportedAtUtc))
+                x.ReworkQuantity,
+                x.ReportedAtUtc,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.ScrapReasonCode,
+                x.DefectRecordNo,
+                x.ProducedLotNo,
+                x.SerialNo,
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailureCode)
+                    .FirstOrDefault(),
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailureMessage)
+                    .FirstOrDefault(),
+                dbContext.ProductionReportMaterialConsumptions
+                    .Where(consumption => consumption.OrganizationId == x.OrganizationId
+                        && consumption.EnvironmentId == x.EnvironmentId
+                        && consumption.ReportNo == x.ReportNo
+                        && consumption.InventoryPostingFailureCode != null)
+                    .OrderByDescending(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .Select(consumption => consumption.InventoryPostingFailedAtUtc)
+                    .FirstOrDefault()))
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
     }
@@ -97,7 +136,8 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
+    string? DeviceAssetId = null,
+    string? Status = null) : IQuery<ListFinishedGoodsReceiptRequestsResponse>;
 
 public sealed record ListFinishedGoodsReceiptRequestsResponse(
     IReadOnlyCollection<FinishedGoodsReceiptRequestFact> Items,
@@ -109,8 +149,18 @@ public sealed record FinishedGoodsReceiptRequestFact(
     string WorkOrderId,
     string SkuId,
     decimal Quantity,
+    decimal? UnitCost,
     string ReceiptStatus,
-    DateTimeOffset RequestedAtUtc);
+    DateTimeOffset RequestedAtUtc,
+    string? WorkOrderNo = null,
+    string? SkuCode = null,
+    string? ProducedLotNo = null,
+    string? SerialNo = null,
+    string? PostedInventoryMovementId = null,
+    DateTimeOffset? PostedAtUtc = null,
+    string? InventoryPostingFailureCode = null,
+    string? InventoryPostingFailureMessage = null,
+    DateTimeOffset? InventoryPostingFailedAtUtc = null);
 
 public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListFinishedGoodsReceiptRequestsQuery, ListFinishedGoodsReceiptRequestsResponse>
@@ -134,6 +184,12 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword));
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLower();
+            query = query.Where(x => x.Status.ToLower() == status);
         }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId) ||
@@ -163,8 +219,18 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
                 x.WorkOrderId,
                 x.SkuId,
                 x.Quantity,
-                "Requested",
-                x.RequestedAtUtc))
+                x.UnitCost,
+                x.Status,
+                x.RequestedAtUtc,
+                x.WorkOrderId,
+                x.SkuId,
+                x.ProducedLotNo,
+                x.SerialNo,
+                x.PostedInventoryMovementId,
+                x.PostedAtUtc,
+                x.InventoryPostingFailureCode,
+                x.InventoryPostingFailureMessage,
+                x.InventoryPostingFailedAtUtc))
             .ToArrayAsync(cancellationToken);
         return new ListFinishedGoodsReceiptRequestsResponse(items, total);
     }
@@ -178,7 +244,8 @@ public sealed record ListCapacityImpactsQuery(
     int Take = 100,
     string? WorkCenterId = null,
     string? Keyword = null,
-    string? ShiftId = null) : IQuery<ListCapacityImpactsResponse>;
+    string? ShiftId = null,
+    string? Status = null) : IQuery<ListCapacityImpactsResponse>;
 
 public sealed record ListCapacityImpactsResponse(
     IReadOnlyCollection<CapacityImpactFact> Items,
@@ -191,7 +258,11 @@ public sealed record CapacityImpactFact(
     string Status,
     DateTimeOffset EffectiveFromUtc,
     DateTimeOffset? EffectiveToUtc,
-    string ReasonCode);
+    string ReasonCode,
+    string? WorkCenterCode = null,
+    string? WorkCenterName = null,
+    string? DeviceAssetCode = null,
+    string? DeviceAssetName = null);
 
 public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListCapacityImpactsQuery, ListCapacityImpactsResponse>
@@ -223,6 +294,17 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.Reason.ToLower().Contains(keyword));
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = status switch
+            {
+                "open" => query.Where(x => x.ToUtc == null),
+                "recovered" => query.Where(x => x.ToUtc != null),
+                _ => query.Where(_ => false),
+            };
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ShiftId))
         {
             var shiftId = request.ShiftId.Trim();
@@ -246,7 +328,11 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
                 x.ToUtc == null ? "Open" : "Recovered",
                 x.FromUtc,
                 x.ToUtc,
-                x.Reason))
+                x.Reason,
+                x.WorkCenterId,
+                null,
+                x.DeviceAssetId,
+                null))
             .ToArrayAsync(cancellationToken);
         return new ListCapacityImpactsResponse(items, total);
     }

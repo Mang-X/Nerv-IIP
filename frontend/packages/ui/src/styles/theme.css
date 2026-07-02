@@ -1,10 +1,10 @@
 /*
- * Self-hosted UI fonts — bundled by Vite, zero runtime CDN / googleapis request.
- * Latin/digits → Inter (variable). Chinese → MiSans (Xiaomi, free commercial),
- * unicode-range subsetted so only the glyphs a page uses are fetched.
+ * UI fonts. Latin/digits → Inter (self-hosted, bundled by Vite, zero CDN request).
+ * Chinese → each platform's own system font (PingFang SC on macOS/iOS, Microsoft
+ * YaHei on Windows) — the big-vendor approach: native, highly legible, no font
+ * payload, no licensing. The Latin Inter still shapes numbers/codes (WO-/WC-).
  */
 @import '@fontsource-variable/inter';
-@import './misans.css';
 
 /*
  * Nerv-IIP Design System v2 — shared token source of truth (@nerv-iip/ui).
@@ -47,31 +47,60 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
 
-  /* Dynamic brand accent — blue by default, overridable at runtime (emphasis only) */
-  --brand: oklch(0.55 0.18 255);
+  /* Dynamic brand accent — refined indigo-blue, overridable at runtime (emphasis only) */
+  --brand: oklch(0.54 0.16 256);
   --brand-foreground: oklch(0.985 0 0);
 
-  /* Status semantics */
-  --destructive: oklch(0.577 0.245 27.325);
+  /* Status semantics — desaturated for a professional, non-garish read:
+     scarlet (not fire-engine red), jade (not primary green), deep amber. */
+  --destructive: oklch(0.55 0.2 25);
   --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.62 0.17 149);
+  --success: oklch(0.6 0.12 160);
   --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.75 0.15 75);
+  --warning: oklch(0.72 0.13 68);
   --warning-foreground: oklch(0.205 0 0);
+
+  /* "Strong" text-role tints — darker than the fill so colored text on a 10%
+     tint clears WCAG AA (4.5:1). Use for small tonal text / icons; the fill
+     tokens above stay for solid surfaces & charts. */
+  --brand-strong: oklch(0.48 0.17 256);
+  --success-strong: oklch(0.45 0.13 160);
+  --warning-strong: oklch(0.45 0.1 70);
+  --destructive-strong: oklch(0.5 0.2 25);
 
   /* Lines & focus */
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
 
-  /* Charts — chart-1 tracks the dynamic brand, rest are categorical */
+  /* Charts — chart-1 tracks the dynamic brand, rest a harmonized categorical
+     ramp (teal · amber · coral · violet) at restrained chroma. */
   --chart-1: var(--brand);
-  --chart-2: oklch(0.62 0.13 160);
-  --chart-3: oklch(0.72 0.16 80);
-  --chart-4: oklch(0.64 0.18 35);
-  --chart-5: oklch(0.55 0.12 300);
+  --chart-2: oklch(0.64 0.11 200);
+  --chart-3: oklch(0.7 0.12 72);
+  --chart-4: oklch(0.62 0.15 14);
+  --chart-5: oklch(0.56 0.12 292);
 
   --radius: 0.5rem;
+
+  /* Motion — exponential ease-out curves + a calibrated duration scale.
+     Shared so components/pages reference one vocabulary instead of ad-hoc
+     cubic-beziers. No bounce/elastic; premium motion decelerates. */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-fast-invoke: cubic-bezier(0, 0, 0, 1);
+  --ease-point-to-point: cubic-bezier(0.55, 0.55, 0, 1);
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 320ms;
+  --duration-fast-invoke: 187ms;
+  --duration-fade: 83ms;
+
+  /* Brand-tinted glow for emphasis surfaces (focus halo, active hero card). */
+  --shadow-glow-brand:
+    0 0 0 1px color-mix(in oklch, var(--brand) 28%, transparent),
+    0 8px 28px -10px color-mix(in oklch, var(--brand) 45%, transparent);
 
   /* Sidebar */
   --sidebar: oklch(0.985 0 0);
@@ -109,25 +138,31 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
 
-  --brand: oklch(0.62 0.17 255);
+  --brand: oklch(0.64 0.15 256);
   --brand-foreground: oklch(0.985 0 0);
 
-  --destructive: oklch(0.704 0.191 22.216);
+  --destructive: oklch(0.66 0.18 25);
   --destructive-foreground: oklch(0.985 0 0);
-  --success: oklch(0.7 0.16 150);
+  --success: oklch(0.7 0.12 160);
   --success-foreground: oklch(0.205 0 0);
-  --warning: oklch(0.8 0.15 80);
+  --warning: oklch(0.79 0.12 70);
   --warning-foreground: oklch(0.205 0 0);
+
+  /* Strong text-role tints go lighter in dark mode (text on a dark 10% tint). */
+  --brand-strong: oklch(0.74 0.15 256);
+  --success-strong: oklch(0.8 0.13 160);
+  --warning-strong: oklch(0.84 0.12 70);
+  --destructive-strong: oklch(0.74 0.16 25);
 
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
 
   --chart-1: var(--brand);
-  --chart-2: oklch(0.7 0.13 160);
-  --chart-3: oklch(0.77 0.16 80);
-  --chart-4: oklch(0.7 0.18 35);
-  --chart-5: oklch(0.65 0.12 300);
+  --chart-2: oklch(0.72 0.11 200);
+  --chart-3: oklch(0.78 0.12 72);
+  --chart-4: oklch(0.68 0.15 14);
+  --chart-5: oklch(0.64 0.12 292);
 
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
@@ -145,7 +180,10 @@
 }
 
 @theme inline {
-  --font-sans: 'Inter Variable', 'MiSans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑',
+    'Helvetica Neue', Arial, sans-serif;
   --font-heading: var(--font-sans);
 
   --color-background: var(--background);
@@ -170,6 +208,10 @@
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-brand-strong: var(--brand-strong);
+  --color-success-strong: var(--success-strong);
+  --color-warning-strong: var(--warning-strong);
+  --color-destructive-strong: var(--destructive-strong);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -198,6 +240,11 @@
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
+
+  /* Expose motion curves as Tailwind `ease-*` + `duration-*` utilities. */
+  --ease-out-quart: var(--ease-out-quart);
+  --ease-out-expo: var(--ease-out-expo);
+  --ease-in-out-quart: var(--ease-in-out-quart);
 }
 
 @layer base {
@@ -211,5 +258,187 @@
     margin: 0;
     @apply bg-background text-foreground;
     @apply font-sans;
+    /* Crisp text rendering — kills the soft/blurry look on Win + macOS. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-synthesis-weight: none;
   }
+}
+
+/* ── Floating overlay glass ──
+   Translucent fill + backdrop blur on portalled surfaces so they read as
+   layered glass over any content. Kept restrained (high opacity → text stays
+   crisp). These rules are intentionally UNLAYERED so they win over the utility
+   `bg-*` classes without `!important`, and apply to原版 overlays without editing
+   their component files. `@supports` so non-blur browsers keep the opaque fill. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  [data-slot='popover-content'],
+  [data-slot='dropdown-menu-content'],
+  [data-slot='dropdown-menu-sub-content'],
+  [data-slot='dropdown-menu-pro-content'],
+  [data-slot='dropdown-menu-pro-sub-content'],
+  [data-slot='select-content'],
+  [data-slot='select-pro-content'],
+  [data-slot='command-dialog'] {
+    background-color: color-mix(in oklch, var(--popover) 76%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+  [data-slot='dialog-content'],
+  [data-slot='dialog-pro-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='alert-dialog-pro-content'],
+  [data-slot='sheet-content'],
+  [data-slot='sheet-pro-content'] {
+    background-color: color-mix(in oklch, var(--card) 82%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+  /* Mobile overlay surfaces (bottom sheet, centred dialog) — sit over a frosted
+     scrim, so a touch more blur/translucency reads as proper glass. */
+  [data-slot='mobile-sheet-content'],
+  [data-slot='mobile-dialog-content'] {
+    background-color: color-mix(in oklch, var(--card) 80%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    backdrop-filter: blur(20px) saturate(1.7);
+  }
+  /* Inverted tooltip glass (dark-on-light / light-on-dark). */
+  [data-slot='tooltip-content'],
+  [data-slot='tooltip-pro-content'] {
+    background-color: color-mix(in oklch, var(--foreground) 84%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(1.4);
+    backdrop-filter: blur(10px) saturate(1.4);
+  }
+}
+
+/* Shared overlay motion. Portalled content cannot rely on scoped SFC styles, so
+   Select and Dropdown share one global, tokenized animation vocabulary here. */
+.ds-overlay-content {
+  --ds-overlay-open-duration: var(--duration-fast-invoke, 187ms);
+  --ds-overlay-close-duration: var(--duration-fade, 83ms);
+  --ds-overlay-transform-ease: var(--ease-fast-invoke, cubic-bezier(0, 0, 0, 1));
+  --ds-overlay-opacity-ease: linear;
+  --ds-overlay-open-scale: 0.97;
+  --ds-overlay-close-scale: 0.99;
+  --ds-overlay-offset-x: 0;
+  --ds-overlay-offset-y: -2px;
+  transform-origin: var(--ds-overlay-transform-origin);
+  will-change: transform, opacity;
+}
+
+.ds-select-content {
+  --ds-overlay-transform-origin: var(--reka-select-content-transform-origin);
+}
+
+.ds-dropdown-menu-content {
+  --ds-overlay-transform-origin: var(--reka-dropdown-menu-content-transform-origin);
+}
+
+.ds-overlay-content[data-side='top'] {
+  --ds-overlay-offset-y: 2px;
+}
+
+.ds-overlay-content[data-side='left'] {
+  --ds-overlay-offset-x: 2px;
+  --ds-overlay-offset-y: 0;
+}
+
+.ds-overlay-content[data-side='right'] {
+  --ds-overlay-offset-x: -2px;
+  --ds-overlay-offset-y: 0;
+}
+
+.ds-overlay-content[data-state='open'] {
+  animation:
+    ds-overlay-content-open-transform var(--ds-overlay-open-duration) var(--ds-overlay-transform-ease) both,
+    ds-overlay-content-open-opacity var(--duration-fade, 83ms) var(--ds-overlay-opacity-ease) both;
+}
+
+.ds-overlay-content[data-state='closed'] {
+  animation:
+    ds-overlay-content-close-transform var(--ds-overlay-close-duration) var(--ds-overlay-transform-ease) both,
+    ds-overlay-content-close-opacity var(--ds-overlay-close-duration) var(--ds-overlay-opacity-ease) both;
+}
+
+.ds-overlay-content[data-align-trigger='true'] {
+  animation: none;
+  will-change: auto;
+}
+
+@keyframes ds-overlay-content-open-transform {
+  from {
+    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-open-scale));
+  }
+  to {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes ds-overlay-content-open-opacity {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ds-overlay-content-close-transform {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(var(--ds-overlay-offset-x), var(--ds-overlay-offset-y)) scale(var(--ds-overlay-close-scale));
+  }
+}
+
+@keyframes ds-overlay-content-close-opacity {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-overlay-content {
+    animation: none !important;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Sidebar — unified PREMIUM selected state (Linear / Vercel form), applied
+ * system-wide so every app-shell / page sidebar reads premium instead of
+ * shadcn's gray default: hover is a clean neutral wash, the selected row is a
+ * neutral *elevated* fill (no hue — a tinted fill reads muddy at any accent),
+ * foreground text, and the glyph carries identity in the brand accent.
+ *
+ * UNLAYERED on purpose and qualified to (0,3,0) so it out-ranks the
+ * same-specificity `data-active:bg-sidebar-accent` utilities on
+ * SidebarMenuButton regardless of import order. This polish was previously
+ * trapped in the Sidebar doc page's `.ds-sb` block; promoting it here makes the
+ * real product chrome match the docs. (The doc's `.ds-sb`-scoped copy keeps an
+ * even higher specificity, so those demos render exactly as authored.)
+ * ------------------------------------------------------------------------- */
+[data-slot='sidebar-menu'] {
+  gap: 0.1875rem;
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 6%, transparent);
+  color: var(--sidebar-foreground);
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'],
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true']:hover,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true']:hover {
+  background-color: color-mix(in oklch, var(--sidebar-foreground) 12%, transparent);
+  color: var(--sidebar-foreground);
+  font-weight: 500;
+}
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-button'][data-active='true'] svg,
+[data-slot='sidebar-menu'] [data-slot='sidebar-menu-sub-button'][data-active='true'] svg {
+  color: var(--brand-strong);
 }

@@ -1,48 +1,43 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesProductionPlanRow, BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort, StatusTone } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort, StatusTone } from '@nerv-iip/ui'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReason, useMesProductionPlans } from '@/composables/useBusinessMes'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
-  Button,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DropdownMenuItem,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  RowActions,
-  SectionCard,
-  SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
-import { FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { ArrowRightIcon, FactoryIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '生产计划' } })
+definePage({ meta: { requiresAuth: true, title: '生产计划', requiredPermissions: ['business.mes.plans.read'] } })
 
 const {
   convertPlanToWorkOrder,
-  convertPlanToWorkOrderError,
   convertPlanToWorkOrderPending,
   filters,
   productionPlans,
@@ -62,7 +57,6 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [keyword, sourceFilt
 
 const convertOpen = shallowRef(false)
 const selectedPlan = shallowRef<BusinessConsoleMesProductionPlanRow>()
-const convertSuccess = shallowRef('')
 const convertForm = reactive({
   workCenterId: '',
   dueUtc: '',
@@ -94,8 +88,6 @@ watch(readinessFilter, (value) => {
   filters.readinessStatus = value === 'all' ? undefined : value
 }, { immediate: true })
 const visiblePlans = computed(() => productionPlans.value)
-const readyCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus === 'Ready').length)
-const blockedCount = computed(() => visiblePlans.value.filter((x) => x.readinessStatus !== 'Ready').length)
 
 const sortedPlans = computed(() => {
   if (!sort.value) return visiblePlans.value
@@ -116,21 +108,27 @@ const selectedPlanBlocked = computed(
 )
 const canConvert = computed(() => Boolean(selectedPlan.value?.productionPlanId) && !selectedPlanBlocked.value)
 const errorMessage = computed(() => formatError(productionPlansError.value))
-const convertErrorMessage = computed(() => formatError(convertPlanToWorkOrderError.value))
+const hasActiveFilters = computed(
+  () => Boolean(keyword.value.trim()) || sourceFilter.value !== 'all' || readinessFilter.value !== 'all',
+)
+const emptyMessage = computed(() =>
+  hasActiveFilters.value
+    ? '没有符合当前筛选的计划。可点上方「重置」清空筛选。'
+    : '还没有可执行的生产计划。需求与计划（MRP/MPS）下达后，计划会自动出现在这里。',
+)
 
-const columns: DataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
+const columns: DataTableProColumn<BusinessConsoleMesProductionPlanRow>[] = [
   { key: 'productionPlanId', header: '计划号', cellClass: 'font-medium' },
   { key: 'sourceSystem', header: '来源计划' },
-  { key: 'skuId', header: 'SKU' },
+  { key: 'skuId', header: '物料' },
   { key: 'plannedQuantity', header: '数量', align: 'end', width: 'w-24', accessor: (r) => r.plannedQuantity ?? 0 },
   { key: 'plannedStartUtc', header: '计划开始', width: 'w-44', accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0) },
   { key: 'readinessStatus', header: '就绪状态', width: 'w-28' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
+  { key: 'actions', header: '转工单', align: 'end', width: 'w-40' },
 ]
 
 function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
   selectedPlan.value = plan
-  convertSuccess.value = ''
   convertForm.workCenterId = ''
   convertForm.dueUtc = toLocalDateTimeInput(plan.plannedEndUtc ?? plan.plannedStartUtc)
   convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${plan.productionPlanId ?? 'plan'}`)
@@ -139,16 +137,22 @@ function openConvert(plan: BusinessConsoleMesProductionPlanRow) {
 async function submitConvertPlan() {
   const planId = selectedPlan.value?.productionPlanId
   if (!planId || !canConvert.value) return
-  await convertPlanToWorkOrder(planId, {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    workCenterId: optionalText(convertForm.workCenterId),
-    dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
-    idempotencyKey: convertForm.idempotencyKey,
-  })
-  convertSuccess.value = `计划 ${planId} 已提交转工单。`
-  convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
-  convertOpen.value = false
+  try {
+    await convertPlanToWorkOrder(planId, {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      workCenterId: optionalText(convertForm.workCenterId),
+      dueUtc: convertForm.dueUtc ? toIsoFromLocalInput(convertForm.dueUtc) : undefined,
+      idempotencyKey: convertForm.idempotencyKey,
+    })
+    notifySuccess('已下达工单：该计划已转为工单，进入工单与派工。')
+    convertForm.idempotencyKey = newPlanIdempotencyKey(`convert-${planId}`)
+    convertOpen.value = false
+    refreshProductionPlans()
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 function resetFilters() {
   keyword.value = ''
@@ -161,6 +165,19 @@ function planReadiness(status?: string | null): { label: string, tone: StatusTon
   if (status === 'Warning') return { label: '有预警', tone: 'warning' }
   if (status === 'Blocked') return { label: '受阻', tone: 'danger' }
   return { label: status || '未知', tone: 'neutral' }
+}
+// 行是否就绪可转：受阻或带阻塞原因的计划先处理后才能转。
+function planConvertible(plan: BusinessConsoleMesProductionPlanRow) {
+  return Boolean(plan.productionPlanId)
+    && plan.readinessStatus !== 'Blocked'
+    && (plan.blockingReasons?.length ?? 0) === 0
+}
+// 受阻行的一句话原因（取首条），用于禁用入口的说明。
+function planBlockHint(plan: BusinessConsoleMesProductionPlanRow) {
+  const first = plan.blockingReasons?.[0]
+  if (first) return describeMesReadinessReason(first).label
+  if (plan.readinessStatus === 'Warning') return '有预警，建议处理后再转'
+  return '尚未就绪，需处理后再转'
 }
 function sortValue(plan: BusinessConsoleMesProductionPlanRow, key: string) {
   if (key === 'plannedQuantity') return plan.plannedQuantity ?? 0
@@ -221,49 +238,51 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="生产计划" :breadcrumbs="[{ label: '制造执行' }]" :count="`${productionPlansTotal} 个计划`">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="productionPlansPending" @click="refreshProductionPlans">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="productionPlansPending" @click="refreshProductionPlans">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="本页可转工单" :value="readyCount" hint="人员/设备/物料就绪" />
-      <SectionCard description="本页受阻或预警" :value="blockedCount" hint="需处理后再释放" />
-      <SectionCard description="计划总数" :value="productionPlansTotal" hint="后端分页总数" />
-    </SectionCards>
-
-    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、SKU">
+    <Toolbar v-model:search="keyword" search-placeholder="搜索计划号、来源、物料">
       <template #filters>
-        <Select v-model="sourceFilter">
-          <SelectTrigger class="h-9 w-36" aria-label="来源"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in sourceOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="readinessFilter">
-          <SelectTrigger class="h-9 w-36" aria-label="就绪状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="o in readinessOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="sourceFilter">
+          <SelectProTrigger class="h-9 w-36" aria-label="来源"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in sourceOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="readinessFilter">
+          <SelectProTrigger class="h-9 w-36" aria-label="就绪状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="o in readinessOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
       <template #actions>
-        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="productionPlansTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedPlans"
       row-key="productionPlanId"
       :client-sort="false"
       :loading="productionPlansPending"
-      empty-message="当前没有生产计划。来源计划由需求与计划（MRP/MPS）下达后出现在这里。"
+      :searchable="false"
+      :column-settings="false"
+      :empty-message="emptyMessage"
     >
       <template #cell-sourceSystem="{ row }">
         <div class="flex flex-col gap-0.5">
@@ -271,61 +290,83 @@ function formatError(error: unknown) {
           <span v-if="row.sourceDocumentId" class="text-xs text-muted-foreground">{{ row.sourceDocumentId }}</span>
         </div>
       </template>
-      <template #cell-plannedQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span></template>
+      <template #cell-skuId="{ row }">
+        <span v-if="row.skuId">{{ row.skuId }}</span>
+        <span v-else class="text-muted-foreground">—</span>
+      </template>
+      <template #cell-plannedQuantity="{ row }">
+        <span class="tabular-nums">{{ formatQuantity(row.plannedQuantity) }}</span>
+        <span v-if="row.uomCode" class="ml-1 text-xs text-muted-foreground">{{ row.uomCode }}</span>
+      </template>
       <template #cell-plannedStartUtc="{ row }">{{ formatDateTime(row.plannedStartUtc) }}</template>
       <template #cell-readinessStatus="{ row }">
-        <StatusBadge :label="planReadiness(row.readinessStatus).label" :tone="planReadiness(row.readinessStatus).tone" />
+        <StatusBadgePro :label="planReadiness(row.readinessStatus).label" :tone="planReadiness(row.readinessStatus).tone" />
       </template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`生产计划操作 ${row.productionPlanId ?? ''}`">
-          <DropdownMenuItem :disabled="!row.productionPlanId" @click="openConvert(row)">
+        <div class="flex justify-end">
+          <ButtonPro
+            v-if="planConvertible(row)"
+            size="sm"
+            type="button"
+            @click="openConvert(row)"
+          >
             <FactoryIcon aria-hidden="true" />
             转工单
-          </DropdownMenuItem>
-        </RowActions>
+          </ButtonPro>
+          <ButtonPro
+            v-else
+            size="sm"
+            type="button"
+            variant="outline"
+            disabled
+            :title="planBlockHint(row)"
+            :aria-label="`暂不可转：${planBlockHint(row)}`"
+          >
+            {{ planBlockHint(row) }}
+          </ButtonPro>
+        </div>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="productionPlansTotal" />
 
-    <Dialog v-model:open="convertOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>计划转工单</DialogTitle>
-          <DialogDescription>
-            来自来源计划 {{ selectedPlan?.productionPlanId ?? '' }}（{{ formatPlanSource(selectedPlan?.sourceSystem) }}）。释放后进入工单与派工。
-          </DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="convertOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>下达工单</DialogProTitle>
+          <DialogProDescription>
+            把计划 {{ selectedPlan?.productionPlanId ?? '' }}（来源：{{ formatPlanSource(selectedPlan?.sourceSystem) }}）下达为工单。下达后进入「工单与派工」安排生产。工作中心与交期可留空，按工艺路线默认。
+          </DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitConvertPlan">
-          <p v-if="convertErrorMessage" class="text-sm text-destructive" role="alert">{{ convertErrorMessage }}</p>
           <div v-if="selectedBlockingReasons.length" class="grid gap-1 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
             <span class="font-medium text-warning">转工单前需处理：</span>
             <span v-for="(reason, i) in selectedBlockingReasons" :key="i" class="text-muted-foreground">· {{ reason.label }}（{{ reason.nextStep }}）</span>
           </div>
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="convert-wc">工作中心</FieldLabel>
-              <Select v-model="convertForm.workCenterId">
-                <SelectTrigger id="convert-wc"><SelectValue placeholder="按工艺路线默认" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="convert-due">交期</FieldLabel>
-              <Input id="convert-due" v-model="convertForm.dueUtc" type="datetime-local" />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="convertOpen = false">取消</Button>
-            <Button type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="convert-wc">工作中心</FieldProLabel>
+              <SelectPro v-model="convertForm.workCenterId">
+                <SelectProTrigger id="convert-wc"><SelectProValue placeholder="按工艺路线默认" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="o in workCenterOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="convert-due">交期</FieldProLabel>
+              <InputPro id="convert-due" v-model="convertForm.dueUtc" type="datetime-local" />
+            </FieldPro>
+          </FieldProGroup>
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="convertOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="convertPlanToWorkOrderPending || !canConvert">
               <Spinner v-if="convertPlanToWorkOrderPending" aria-hidden="true" />
-              转工单
-            </Button>
-          </DialogFooter>
+              <ArrowRightIcon v-else aria-hidden="true" />
+              确认下达工单
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

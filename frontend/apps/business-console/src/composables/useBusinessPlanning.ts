@@ -1,12 +1,10 @@
 import {
-  acceptBusinessConsolePlanningSuggestionMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
   listBusinessConsolePlanningMrpRunsQueryOptions,
   listBusinessConsolePlanningSuggestionsQueryOptions,
   runBusinessConsolePlanningMrpMutationOptions,
-  type BusinessConsoleAcceptPlanningSuggestionRequest,
   type BusinessConsoleDemandSourceItem,
   type BusinessConsoleDemandSourceListEnvelope,
   type BusinessConsoleMrpPeggingItem,
@@ -32,6 +30,11 @@ export interface PlanningSuggestionFilters extends PlanningContextFilters {
 
 export interface PlanningRunSelection {
   runId: string
+}
+
+export interface PlanningSuggestionTypeFilter {
+  /** '', 'planned-work-order', or 'planned-purchase' — '' means all types. */
+  type: string
 }
 
 export interface PlanningDemandForm {
@@ -126,6 +129,11 @@ export function useBusinessPlanning() {
   const demandForm = defaultDemandForm(businessContext.organizationId, businessContext.environmentId)
   const runRequest = defaultRunRequest(businessContext.organizationId, businessContext.environmentId)
   const runSelection = defaultRunSelection()
+  // 计划建议「分型筛选」(生产/采购)，纯前端过滤，不带入后端查询。
+  const suggestionTypeFilter = reactive<PlanningSuggestionTypeFilter>({ type: '' })
+  // 注：接受/批量接受建议已移除。后端 accept 校验器要求 DownstreamDocumentId 必填，
+  // 但下游真实单据创建尚未实现（#461/#472），前端只能拼造假单号提交并被持久化，
+  // 等于把未创建的 MES/ERP 单据标记成已承接。建议页降为只读视图，待真实下游单号落地后再恢复。
   const queryCache = useQueryCache()
 
   const demandsQuery = useQuery(() =>
@@ -181,12 +189,6 @@ export function useBusinessPlanning() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
   })
-  const acceptSuggestionMutation = useMutation({
-    ...acceptBusinessConsolePlanningSuggestionMutationOptions(),
-    onSuccess() {
-      void invalidatePlanningQueries().catch(ignoreBackgroundError)
-    },
-  })
 
   function syncContext() {
     suggestionFilters.organizationId = filters.organizationId
@@ -198,19 +200,6 @@ export function useBusinessPlanning() {
   }
 
   return {
-    acceptSuggestion: (suggestionId: string, body: BusinessConsoleAcceptPlanningSuggestionRequest) =>
-      acceptSuggestionMutation.mutateAsync({
-        path: {
-          suggestionId,
-        },
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-        body,
-      }),
-    acceptSuggestionError: acceptSuggestionMutation.error,
-    acceptSuggestionPending: acceptSuggestionMutation.isLoading,
     createDemandError: createDemandMutation.error,
     createDemandPending: createDemandMutation.isLoading,
     createOrUpdateDemand: () =>
@@ -257,6 +246,7 @@ export function useBusinessPlanning() {
     runRequest,
     runSelection,
     suggestionFilters,
+    suggestionTypeFilter,
     suggestions: computed<BusinessConsolePlanningSuggestionItem[]>(() =>
       unwrapItems(
         suggestionsQuery.data.value as BusinessConsolePlanningSuggestionListEnvelope | undefined,

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
@@ -81,7 +82,10 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            new TestWebHostEnvironment());
 
         var principalAaa = await service.GetCurrentPrincipalAsync(
             CreateHttpContext(tokenService.CreateAccessToken(user, session, "org-aaa", "env-dev")),
@@ -181,6 +185,42 @@ public sealed class IamAuthServiceScopeTests
         Assert.Equal("env-dev", principal.EnvironmentId);
     }
 
+    [Fact]
+    public async Task PostgreSql_auth_service_rejects_enterprise_identity_stubs_outside_development()
+    {
+        await using var connection = new SqliteConnection("Filename=:memory:");
+        await connection.OpenAsync();
+        await using var db = CreateDbContext(connection);
+        var mfaChallenges = new InMemoryMfaChallengeStore();
+        var service = CreateAuthService(
+            db,
+            new IamPasswordService(),
+            CreateTokenService(),
+            new UserId("user-production-stub"),
+            new TestWebHostEnvironment { EnvironmentName = "Production" },
+            mfaChallenges);
+
+        var oidcRequest = new OidcLoginCallbackRequest(
+            "prod-demo",
+            "entra-user-admin",
+            "admin@nerv-iip.local",
+            "org-001",
+            "env-dev",
+            "oidc-callback-secret");
+        var challengeId = mfaChallenges.Create(new MfaChallengeContext(
+            "user-production-stub",
+            "prod-demo",
+            "entra-user-admin",
+            "org-001",
+            "env-dev",
+            DateTimeOffset.UtcNow.AddMinutes(5)));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.HandleOidcCallbackAsync(oidcRequest, null, null, CancellationToken.None));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            service.VerifyMfaChallengeAsync(challengeId, "654321", null, null, CancellationToken.None));
+    }
+
     private static ApplicationDbContext CreateDbContext(SqliteConnection connection)
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -199,7 +239,9 @@ public sealed class IamAuthServiceScopeTests
         ApplicationDbContext db,
         IamPasswordService passwordService,
         IamTokenService tokenService,
-        UserId userId)
+        UserId userId,
+        TestWebHostEnvironment? environment = null,
+        IMfaChallengeStore? mfaChallenges = null)
     {
         return new PostgreSqlIamAuthService(
             new UserRepository(db),
@@ -211,7 +253,10 @@ public sealed class IamAuthServiceScopeTests
             tokenService,
             Options.Create(new IamAuthenticationOptions()),
             Options.Create(new EnterpriseIdentityOptions()),
-            new InMemoryMfaChallengeStore());
+            mfaChallenges ?? new InMemoryMfaChallengeStore(),
+            new NoopSecurityAuditRecorder(),
+            NullLogger<PostgreSqlIamAuthService>.Instance,
+            environment ?? new TestWebHostEnvironment());
     }
 
     private static HttpContext CreateHttpContext(string accessToken)
@@ -258,14 +303,6 @@ public sealed class IamAuthServiceScopeTests
                 _ => null
             };
             return Task.FromResult<Membership?>(membership);
-        }
-
-        public Task<bool> UserHasPermissionAsync(UserId userId, string permissionCode, CancellationToken cancellationToken = default)
-        {
-            _ = userId;
-            _ = permissionCode;
-            _ = cancellationToken;
-            return Task.FromResult(false);
         }
 
         public Task<bool> UserHasPermissionAsync(

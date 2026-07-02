@@ -6,6 +6,8 @@ using Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.ScanRecordAggregate;
 using Nerv.IIP.Business.BarcodeLabel.Domain.DomainEvents;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.BarcodeLabel;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
 
@@ -54,6 +56,49 @@ public sealed class BarcodeLabelIntegrationEventTests
         Assert.DoesNotContain("objectKey", json, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Accepted_scan_converter_publishes_shared_barcode_contract_with_parsed_gs1_fields()
+    {
+        var accepted = NewInventoryScan();
+
+        var integrationEvent = new BarcodeScanAcceptedIntegrationEventConverter()
+            .Convert(new LabelScannedDomainEvent(accepted));
+
+        Assert.Equal(BarcodeLabelIntegrationEventTypes.BarcodeScanAccepted, integrationEvent.EventType);
+        Assert.Equal(BarcodeLabelIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("09506000134352", integrationEvent.Payload.Gtin);
+        Assert.Equal("LOT-A", integrationEvent.Payload.LotNo);
+        Assert.Equal("SN-0001", integrationEvent.Payload.SerialNumber);
+        Assert.Equal("inventory.receipt", integrationEvent.Payload.SourceWorkflow);
+        Assert.Equal("PDA-01", integrationEvent.Payload.DeviceCode);
+    }
+
+    [Fact]
+    public void Inventory_scan_converter_routes_accepted_inventory_receipt_to_inventory_movement_request()
+    {
+        var accepted = NewInventoryScan();
+
+        var integrationEvent = new InventoryMovementRequestedFromBarcodeScanIntegrationEventConverter()
+            .Convert(new InventoryMovementRequestedFromScanDomainEvent(accepted));
+
+        Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
+        Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("barcode-label", integrationEvent.SourceService);
+        Assert.Equal("inbound", integrationEvent.Payload.MovementType);
+        Assert.Equal("SKU-FG-1000", integrationEvent.Payload.SkuCode);
+        Assert.Equal("LOT-A", integrationEvent.Payload.LotNo);
+        Assert.Equal("SN-0001", integrationEvent.Payload.SerialNo);
+        Assert.Equal(2, integrationEvent.Payload.Quantity);
+    }
+
+    [Fact]
+    public void Accepted_wms_receiving_scan_does_not_have_inventory_movement_domain_event()
+    {
+        var accepted = ScanRecord.Record("org-001", "env-dev", "PDA-01", "BC001", "wms.receiving", "ASN-001", "idem-scan-001", "accepted", null);
+
+        Assert.DoesNotContain(accepted.GetDomainEvents(), x => x is InventoryMovementRequestedFromScanDomainEvent);
+    }
+
     private static LabelPrintBatch NewPrintBatch()
     {
         var rule = BarcodeRule.Create("org-001", "env-dev", "FG", "code128", "FG", 13, "none", ["wms.inbound"], "active");
@@ -66,6 +111,28 @@ public sealed class BarcodeLabelIntegrationEventTests
             "ASN-001",
             "idem-print-001",
             """{"sku":"SKU-FG-1000"}""",
+            2);
+    }
+
+    private static ScanRecord NewInventoryScan()
+    {
+        return ScanRecord.Record(
+            "org-001",
+            "env-dev",
+            "PDA-01",
+            "(01)09506000134352(10)LOT-A(21)SN-0001(30)2",
+            "inventory.receipt",
+            "ASN-001",
+            "idem-scan-gs1-001",
+            "accepted",
+            null,
+            "SKU-FG-1000",
+            "EA",
+            "SITE-01",
+            "STAGE-01",
+            "qualified",
+            "owned",
+            null,
             2);
     }
 }

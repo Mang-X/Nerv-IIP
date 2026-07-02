@@ -11,7 +11,11 @@ public sealed record RunMrpCommand(
     DateOnly HorizonStart,
     DateOnly HorizonEnd) : ICommand<RunMrpCommandResult>;
 
-public sealed record RunMrpCommandResult(MrpRunId RunId, int SuggestionCount);
+public sealed record RunMrpCommandResult(
+    MrpRunId RunId,
+    int SuggestionCount,
+    bool HasInputDegradation,
+    IReadOnlyCollection<string> InputDegradationSources);
 
 public sealed class RunMrpCommandValidator : AbstractValidator<RunMrpCommand>
 {
@@ -49,7 +53,10 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
             snapshot.Demands,
             snapshot.Availability,
             snapshot.ProductionVersions,
-            snapshot.BomComponents));
+            snapshot.BomComponents,
+            snapshot.ScheduledReceipts,
+            snapshot.PlanningParameters,
+            snapshot.UomConversions));
 
         foreach (var calculatedSuggestion in calculated)
         {
@@ -63,6 +70,7 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
                 calculatedSuggestion.SiteCode,
                 calculatedSuggestion.Quantity,
                 calculatedSuggestion.RequiredDate,
+                calculatedSuggestion.ReleaseDate,
                 calculatedSuggestion.ReasonCode);
             foreach (var link in calculatedSuggestion.PeggingLinks)
             {
@@ -81,6 +89,6 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
         }
 
         run.Complete(calculated.Count);
-        return new RunMrpCommandResult(run.Id, calculated.Count);
+        return new RunMrpCommandResult(run.Id, calculated.Count, run.HasInputDegradation, run.InputDegradationSources);
     }
 }

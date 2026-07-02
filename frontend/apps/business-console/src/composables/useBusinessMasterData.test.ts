@@ -34,40 +34,19 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   createBusinessConsoleSiteMutationOptions: mutationOptionStub(),
-  createBusinessConsoleBusinessPartnerMutationOptions: mutationOptionStub(),
-  createBusinessConsoleReferenceDataCodeMutationOptions: mutationOptionStub(),
   createBusinessConsoleProductionLineMutationOptions: mutationOptionStub(),
   createBusinessConsoleWorkCenterMutationOptions: mutationOptionStub(),
-  createBusinessConsoleWorkshopMutationOptions: mutationOptionStub(),
   registerBusinessConsoleDeviceAssetMutationOptions: mutationOptionStub(),
   createBusinessConsoleShiftMutationOptions: mutationOptionStub(),
   createBusinessConsoleWorkCalendarMutationOptions: mutationOptionStub(),
   createBusinessConsoleTeamMutationOptions: mutationOptionStub(),
   createBusinessConsoleDepartmentMutationOptions: mutationOptionStub(),
-  addBusinessConsoleTeamMemberMutationOptions: mutationOptionStub(),
-  assignBusinessConsolePersonnelSkillMutationOptions: mutationOptionStub(),
-  disableBusinessConsoleMasterDataResourceMutationOptions: mutationOptionStub(),
-  enableBusinessConsoleMasterDataResourceMutationOptions: mutationOptionStub(),
-  removeBusinessConsoleTeamMemberMutationOptions: mutationOptionStub(),
-  updateBusinessConsoleMasterDataResourceMutationOptions: mutationOptionStub(),
   listBusinessConsoleMasterDataResourcesQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMasterDataResources' }],
     query: vi.fn(),
   })),
   listBusinessConsoleSkusQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleSkus' }],
-    query: vi.fn(),
-  })),
-  listBusinessConsoleTeamMembersQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleTeamMembers' }],
-    query: vi.fn(),
-  })),
-  listBusinessConsoleWorkersQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleWorkers' }],
-    query: vi.fn(),
-  })),
-  listBusinessConsoleWorkshopsQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleWorkshops' }],
     query: vi.fn(),
   })),
 }))
@@ -190,7 +169,7 @@ describe('business master data composables', () => {
       name: 'New widget',
       baseUomCode: 'EA',
       category: 'FG',
-      materialType: 'finished-goods',
+      materialType: 'finished-good',
       batchTrackingPolicy: 'none',
       serialTrackingPolicy: 'none',
       shelfLifePolicyCode: 'none',
@@ -244,21 +223,6 @@ describe('business master data composables', () => {
         code: 'EA',
       },
     ])
-  })
-
-  it('lists reference data resources by code set', () => {
-    useBusinessMasterDataResources('reference-data', { codeSet: 'material-type' })
-
-    expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
-      query: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        resourceType: 'reference-data',
-        codeSet: 'material-type',
-        skip: 0,
-        take: 100,
-      },
-    })
   })
 
   it('lists multiple master data resource groups for linked selectors', () => {

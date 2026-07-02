@@ -1,48 +1,48 @@
 <script setup lang="ts">
 import type { BusinessConsolePostStockMovementRequest } from '@nerv-iip/api-client'
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  Field,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProHeader,
+  DialogProTitle,
+  FieldPro,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
 } from '@nerv-iip/ui'
 import { SendIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '库存移动过账' } })
+definePage({ meta: { requiresAuth: true, title: '库存移动过账', requiredPermissions: ['business.inventory.movements.create'] } })
 
 const route = useRoute()
+const businessContext = useBusinessContextStore()
 const { postMovement, postMovementError, postMovementPending } = useInventoryMovement()
 
 const form = reactive({
-  organizationId: 'org-001',
-  environmentId: 'env-dev',
   movementType: 'receipt',
   sourceService: 'business-console',
   sourceDocumentId: '',
   sourceDocumentLineId: '',
   idempotencyKey: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   uomCode: 'EA',
-  siteCode: 'S1',
+  siteCode: '',
   locationCode: '',
   lotNo: '',
   serialNo: '',
@@ -96,8 +96,8 @@ const stableSubmissionKey = computed(() =>
 )
 const canSubmit = computed(
   () =>
-    isNonEmpty(form.organizationId) &&
-    isNonEmpty(form.environmentId) &&
+    isNonEmpty(businessContext.organizationId) &&
+    isNonEmpty(businessContext.environmentId) &&
     isNonEmpty(form.movementType) &&
     isNonEmpty(form.sourceDocumentId) &&
     isNonEmpty(form.skuCode) &&
@@ -108,7 +108,7 @@ const canSubmit = computed(
 )
 
 type QueueRow = MovementQueueRow
-const columns: DataTableColumn<QueueRow>[] = [
+const columns: DataTableProColumn<QueueRow>[] = [
   { key: 'movementId', header: '移动号', cellClass: 'font-medium' },
   { key: 'movementType', header: '类型' },
   { key: 'skuCode', header: '物料' },
@@ -120,8 +120,8 @@ const columns: DataTableColumn<QueueRow>[] = [
 async function submitMovement() {
   if (!canSubmit.value) return
   const body: BusinessConsolePostStockMovementRequest = {
-    organizationId: form.organizationId.trim(),
-    environmentId: form.environmentId.trim(),
+    organizationId: businessContext.organizationId.trim(),
+    environmentId: businessContext.environmentId.trim(),
     movementType: form.movementType,
     sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
@@ -179,107 +179,105 @@ function isNonEmpty(value: string) {
   <BusinessLayout>
     <PageHeader title="库存移动过账" :breadcrumbs="[{ label: '库存' }]" :count="`${movementQueue.length} 条本次受理`">
       <template #actions>
-        <Button v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
+        <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
-        </Button>
-        <Button size="sm" type="button" @click="movementSheetOpen = true">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" @click="movementSheetOpen = true">
           <SendIcon aria-hidden="true" />
           新建移动
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
-    <p class="text-sm text-muted-foreground">
-      常规业务应从收货、完工入库、领料或盘点单据自动发起；移动来源由业务单据带出，重复提交保护由系统处理。提交后回到库存可用量确认影响。
-    </p>
-
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="movementQueue"
       row-key="movementId"
+      :searchable="false"
+      :column-settings="false"
       empty-message="当前没有待确认库存移动。建议从收货、完工入库、领料或盘点任务发起；确需补录时点右上角新建移动。"
     >
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ row.quantity }}</span></template>
-    </DataTable>
+    </DataTablePro>
 
-    <Dialog v-model:open="movementSheetOpen">
-      <DialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>新建库存移动</DialogTitle>
-          <DialogDescription>用于少量人工补录和异常处理；常规业务应从来源单据自动发起。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="movementSheetOpen">
+      <DialogProContent class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogProHeader>
+          <DialogProTitle>新建库存移动</DialogProTitle>
+          <DialogProDescription>用于少量人工补录和异常处理；常规业务应从来源单据自动发起。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitMovement">
           <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
           <p v-if="successMessage" class="text-sm text-success" role="status">{{ successMessage }}</p>
 
-          <FieldGroup class="grid gap-3 md:grid-cols-3">
-            <Field>
-              <FieldLabel>移动类型</FieldLabel>
-              <Select v-model="form.movementType">
-                <SelectTrigger aria-label="移动类型"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="receipt">入库</SelectItem>
-                  <SelectItem value="issue">出库</SelectItem>
-                  <SelectItem value="transfer">调拨</SelectItem>
-                  <SelectItem value="adjustment">调整</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel for="movement-source-document">来源单据</FieldLabel>
-              <Input id="movement-source-document" v-model="form.sourceDocumentId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-source-line">来源行</FieldLabel>
-              <Input id="movement-source-line" v-model="form.sourceDocumentLineId" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-sku">SKU</FieldLabel>
-              <Input id="movement-sku" v-model="form.skuCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-uom">单位</FieldLabel>
-              <Input id="movement-uom" v-model="form.uomCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-site">工厂</FieldLabel>
-              <Input id="movement-site" v-model="form.siteCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-location">库位</FieldLabel>
-              <Input id="movement-location" v-model="form.locationCode" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-quantity">数量</FieldLabel>
-              <Input id="movement-quantity" v-model="form.quantity" inputmode="decimal" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-quality">质量状态</FieldLabel>
-              <Input id="movement-quality" v-model="form.qualityStatus" required />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-owner-id">货主</FieldLabel>
-              <Input id="movement-owner-id" v-model="form.ownerId" placeholder="可选货主名称或编码" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-lot">批次</FieldLabel>
-              <Input id="movement-lot" v-model="form.lotNo" />
-            </Field>
-            <Field>
-              <FieldLabel for="movement-serial">序列号</FieldLabel>
-              <Input id="movement-serial" v-model="form.serialNo" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 md:grid-cols-3">
+            <FieldPro>
+              <FieldProLabel>移动类型</FieldProLabel>
+              <SelectPro v-model="form.movementType">
+                <SelectProTrigger aria-label="移动类型"><SelectProValue /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem value="receipt">入库</SelectProItem>
+                  <SelectProItem value="issue">出库</SelectProItem>
+                  <SelectProItem value="transfer">调拨</SelectProItem>
+                  <SelectProItem value="adjustment">调整</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-source-document">来源单据</FieldProLabel>
+              <InputPro id="movement-source-document" v-model="form.sourceDocumentId" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-source-line">来源行</FieldProLabel>
+              <InputPro id="movement-source-line" v-model="form.sourceDocumentLineId" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-sku">SKU</FieldProLabel>
+              <InputPro id="movement-sku" v-model="form.skuCode" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-uom">单位</FieldProLabel>
+              <InputPro id="movement-uom" v-model="form.uomCode" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-site">工厂</FieldProLabel>
+              <InputPro id="movement-site" v-model="form.siteCode" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-location">库位</FieldProLabel>
+              <InputPro id="movement-location" v-model="form.locationCode" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-quantity">数量</FieldProLabel>
+              <InputPro id="movement-quantity" v-model="form.quantity" inputmode="decimal" required type="number" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-quality">质量状态</FieldProLabel>
+              <InputPro id="movement-quality" v-model="form.qualityStatus" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-owner-id">货主</FieldProLabel>
+              <InputPro id="movement-owner-id" v-model="form.ownerId" placeholder="可选货主名称或编码" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-lot">批次</FieldProLabel>
+              <InputPro id="movement-lot" v-model="form.lotNo" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="movement-serial">序列号</FieldProLabel>
+              <InputPro id="movement-serial" v-model="form.serialNo" />
+            </FieldPro>
+          </FieldProGroup>
 
           <div class="flex justify-end">
-            <Button type="submit" :disabled="postMovementPending || !canSubmit">
+            <ButtonPro type="submit" :disabled="postMovementPending || !canSubmit">
               <Spinner v-if="postMovementPending" aria-hidden="true" />
               <SendIcon v-else aria-hidden="true" />
               提交库存移动
-            </Button>
+            </ButtonPro>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

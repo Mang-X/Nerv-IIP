@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderA
 using Nerv.IIP.Business.Maintenance.Domain.DomainEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
@@ -41,5 +42,28 @@ public sealed class MaintenanceIntegrationEventTests
         Assert.Equal(MaintenanceIntegrationEventTypes.AssetRestored, restored.EventType);
         Assert.Equal(MaintenanceLocalIntegrationEventTypes.WorkOrderOpened, opened.EventType);
         Assert.Equal(MaintenanceLocalIntegrationEventTypes.WorkOrderCompleted, completed.EventType);
+    }
+
+    [Fact]
+    public void Spare_part_issue_converter_requests_inventory_outbound_movement()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "EA")]);
+        var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
+
+        var integrationEvent = new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent);
+
+        Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
+        Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
+        Assert.Equal("maintenance", integrationEvent.Payload.SourceService);
+        Assert.Equal("outbound", integrationEvent.Payload.MovementType);
+        Assert.Equal(workOrder.Id.ToString(), integrationEvent.Payload.SourceDocumentId);
+        Assert.Equal(domainEvent.SparePartLine.Id.ToString(), integrationEvent.Payload.SourceDocumentLineId);
+        Assert.Equal("SPARE-001", integrationEvent.Payload.SkuCode);
+        Assert.Equal("EA", integrationEvent.Payload.UomCode);
+        Assert.Equal("maintenance", integrationEvent.Payload.SiteCode);
+        Assert.Equal("maintenance-spares", integrationEvent.Payload.LocationCode);
+        Assert.Equal(-2m, integrationEvent.Payload.Quantity);
+        Assert.Contains(workOrder.Id.ToString(), integrationEvent.IdempotencyKey, StringComparison.Ordinal);
     }
 }

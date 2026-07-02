@@ -205,7 +205,7 @@ public sealed class BusinessGatewaySearchTests
         Action<IServiceCollection>? configureServices = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
             builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
             builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
             BusinessGatewayTestServiceBaseUrls.Configure(builder);

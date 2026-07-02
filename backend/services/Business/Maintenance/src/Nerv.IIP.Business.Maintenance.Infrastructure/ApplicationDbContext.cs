@@ -5,6 +5,8 @@ using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspection
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Coding;
+using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
 namespace Nerv.IIP.Business.Maintenance.Infrastructure;
@@ -19,6 +21,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<DowntimeReason> DowntimeReasons => Set<DowntimeReason>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<IntegrationEventDeadLetter> IntegrationEventDeadLetters => Set<IntegrationEventDeadLetter>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,5 +36,22 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     {
         ConfigureStronglyTypedIdValueConverter(configurationBuilder);
         base.ConfigureConventions(configurationBuilder);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+            this,
+            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+            cancellationToken);
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+            this,
+            () => base.SaveChanges(acceptAllChangesOnSuccess));
     }
 }

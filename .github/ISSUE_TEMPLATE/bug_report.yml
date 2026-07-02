@@ -1,0 +1,92 @@
+name: 🐞 Bug 报告
+description: 报告功能不符合预期的缺陷
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填写完整，便于复现与定位。提交前请先搜索是否已有相同 Issue。
+  - type: textarea
+    id: summary
+    attributes:
+      label: 问题描述
+      description: 简要说明发生了什么、为什么是问题。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 尽量给出最小可复现路径。
+      placeholder: |
+        1. 打开 ……
+        2. 点击 ……
+        3. 观察到 ……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 含报错信息、日志、截图（如有）。
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 影响分层
+      description: 维护者据此打 area:* 标签（GitHub 表单不会自动应用标签）。
+      multiple: true
+      options:
+        - area:backend
+        - area:frontend
+        - area:architecture
+        - area:infra
+        - area:sdk
+        - area:observability
+    validations:
+      required: true
+  - type: dropdown
+    id: domain
+    attributes:
+      label: 业务领域
+      description: 维护者据此打 domain:* 标签（GitHub 表单不会自动应用标签）。
+      multiple: true
+      options:
+        - domain:business-platform
+        - domain:mes
+        - domain:quality
+        - domain:demand-planning
+        - domain:industrial-telemetry
+        - domain:maintenance
+        - domain:product-engineering
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      description: |
+        - priority:p0：破坏核心业务闭环或数据完整性，须立即处理
+        - priority:p1：重要行业标准缺口 / 高优先
+        - priority:p2：增强项 / 中优先
+        - priority:p3：低优先 / 可延后
+      options:
+        - priority:p0
+        - priority:p1
+        - priority:p2
+        - priority:p3
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息
+      description: 分支 / commit、运行方式（Aspire、单机部署）、浏览器或 PDA 等。
+    validations:
+      required: true

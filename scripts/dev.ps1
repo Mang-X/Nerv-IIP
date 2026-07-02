@@ -4,6 +4,7 @@
 #     - Starts the local Nerv-IIP platform through Aspire CLI or dependency services through Docker Compose
 #   Writes:
 #     - artifacts/script-logs/** when -InfraOnly uses the Docker Compose helper
+#     - frontend/node_modules/** when the default startup path restores frontend workspace dependencies
 #   Cleanup:
 #     - Aspire-managed resources remain running until `.\nerv.ps1 stop`
 #     - Stops the managed command if a helper command times out through ScriptAutomation.ps1
@@ -108,16 +109,35 @@ function Assert-AppHostUserSecrets {
         [string] $AppHostProject
     )
 
+    $appHostSource = Join-Path (Split-Path -Parent $AppHostProject) 'Program.cs'
+    $sourceText = Get-Content -LiteralPath $appHostSource -Raw
+    $explicitSecrets = [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"\s*,\s*secret\s*:\s*true\s*\)') |
+        ForEach-Object { "Parameters:$($_.Groups['name'].Value)" }
+
     $requiredSecrets = @(
-        'Parameters:iam-jwt-signing-key',
-        'Parameters:internal-service-bearer-token',
-        'Parameters:postgres-password',
-        'Parameters:redis-password',
-        'Parameters:minio-root-user',
-        'Parameters:minio-root-password',
-        'Parameters:iam-seed-admin-password',
-        'Parameters:iam-seed-connector-host-secret'
+        $explicitSecrets
+        # Aspire's Postgres integration owns this parameter implicitly; it is not declared
+        # through AddParameter(...) in the AppHost source, but local startup still needs it.
+        'Parameters:postgres-password'
+    ) | Sort-Object -Unique
+
+    $matchedExplicitCount = @($explicitSecrets).Count
+    if ($matchedExplicitCount -eq 0) {
+        throw "Could not discover required AppHost secret parameters from $appHostSource."
+    }
+
+    $appHostSecretParameterNames = @(
+        [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"') |
+            ForEach-Object { $_.Groups['name'].Value }
     )
+
+    $nonSecretAppHostParameters = @($appHostSecretParameterNames | Where-Object {
+        $requiredSecrets -notcontains "Parameters:$_"
+    })
+    if ($nonSecretAppHostParameters.Count -gt 0) {
+        Write-Diagnostic -Level 'WARN' -Message "Found AppHost parameters that are not marked secret and were not required by dev preflight: $($nonSecretAppHostParameters -join ', ')"
+    }
+
     $secrets = Get-AppHostUserSecrets -AppHostProject $AppHostProject
     $missing = @($requiredSecrets | Where-Object {
         -not $secrets.ContainsKey($_) -or [string]::IsNullOrWhiteSpace($secrets[$_])
@@ -131,10 +151,89 @@ function Assert-AppHostUserSecrets {
 Missing required AppHost user secrets:
 $($missing -join "`n")
 
-Set them before running .\nerv.ps1 dev, for example:
+Run .\nerv.ps1 bootstrap -SkipRestore to initialize local Development secrets, or set them manually, for example:
 $($commands -join "`n")
 "@
     }
+}
+
+function Get-AspireResourceSnapshot {
+    $snapshot = Invoke-AspireOutput -Arguments @('describe', '--format', 'Json', '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'dev-describe-resources'
+    return $snapshot.Stdout | ConvertFrom-Json
+}
+
+function Get-AspireResourceProperty {
+    param(
+        [Parameter(Mandatory)]
+        [object] $Resource,
+
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $property = $Resource.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
+function Write-AspireProjectResourceLogs {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ResourceName,
+
+        [int] $Tail = 120
+    )
+
+    try {
+        $logs = Invoke-AspireOutput -Arguments @('logs', $ResourceName, '--tail', "$Tail", '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 60 -Name "dev-logs-$ResourceName"
+        $lines = @($logs.Stdout -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($lines.Count -eq 0) {
+            return
+        }
+
+        Write-Diagnostic -Level 'ERROR' -Message "Recent Aspire logs for '$ResourceName':"
+        foreach ($line in $lines) {
+            Write-Diagnostic -Level 'ERROR' -Message "  $line"
+        }
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Could not collect Aspire logs for '$ResourceName': $($_.Exception.Message)"
+    }
+}
+
+function Assert-NoStoppedAspireProjectResources {
+    try {
+        $snapshot = Get-AspireResourceSnapshot
+        $stoppedProjects = @($snapshot.resources | Where-Object {
+            (Get-AspireResourceProperty -Resource $_ -Name 'resourceType') -eq 'Project' -and
+            ((Get-AspireResourceProperty -Resource $_ -Name 'state') -eq 'Finished' -or
+                (Get-AspireResourceProperty -Resource $_ -Name 'state') -eq 'Failed')
+        } | Sort-Object displayName)
+    }
+    catch {
+        Write-Diagnostic -Level 'WARN' -Message "Could not inspect Aspire project resource states: $($_.Exception.Message)"
+        return
+    }
+
+    if ($stoppedProjects.Count -eq 0) {
+        return
+    }
+
+    Write-Diagnostic -Level 'ERROR' -Message 'One or more Aspire project resources stopped during startup:'
+    foreach ($resource in $stoppedProjects) {
+        $exitCodeValue = Get-AspireResourceProperty -Resource $resource -Name 'exitCode'
+        $exitCode = if ($null -ne $exitCodeValue) { $exitCodeValue } else { '<none>' }
+        $displayName = Get-AspireResourceProperty -Resource $resource -Name 'displayName'
+        $name = Get-AspireResourceProperty -Resource $resource -Name 'name'
+        $state = Get-AspireResourceProperty -Resource $resource -Name 'state'
+        Write-Diagnostic -Level 'ERROR' -Message "  $displayName [$name] state=$state exitCode=$exitCode"
+        Write-AspireProjectResourceLogs -ResourceName $displayName
+    }
+
+    throw "Aspire project resource startup failed: $(@($stoppedProjects | ForEach-Object { Get-AspireResourceProperty -Resource $_ -Name 'displayName' }) -join ', ')"
 }
 
 function Assert-DevelopmentHttpsCertificateTrusted {
@@ -161,6 +260,16 @@ Details:
 $($_.Exception.Message)
 "@
     }
+}
+
+function Restore-FrontendWorkspaceDependencies {
+    Write-Diagnostic 'Restoring frontend workspace dependencies before Aspire starts Vite resources.'
+    Invoke-Pnpm `
+        -Arguments @('install', '--frozen-lockfile') `
+        -WorkingDirectory (Join-Path $root 'frontend') `
+        -TimeoutSeconds 900 `
+        -Name 'dev-frontend-install' | Out-Null
+    Write-Diagnostic 'Frontend workspace dependencies are ready.'
 }
 
 function Write-AspireDockerContainerSummary {
@@ -266,6 +375,7 @@ function Wait-AspireResource {
     }
     catch {
         Write-Diagnostic -Level 'ERROR' -Message "Aspire resource '$Name' did not reach '$Status': $($_.Exception.Message)"
+        Assert-NoStoppedAspireProjectResources
         Write-AspireDockerContainerSummary
         Write-AspireDockerResourceLogs -ResourceName $Name
         throw
@@ -305,6 +415,7 @@ Write-Diagnostic 'Checking required AppHost user secrets.'
 Assert-AppHostUserSecrets -AppHostProject $appHostProject
 Write-Diagnostic 'Required AppHost user secrets are present.'
 Assert-DevelopmentHttpsCertificateTrusted
+Restore-FrontendWorkspaceDependencies
 
 $arguments = @('start', '--apphost', $appHostProject, '--non-interactive', '--nologo')
 if ($NoBuild) {
@@ -336,9 +447,13 @@ foreach ($resource in @('postgres', 'redis', 'minio')) {
     Wait-AspireResource -Name $resource -Status 'up' -TimeoutSeconds 240
 }
 
+Assert-NoStoppedAspireProjectResources
+
 foreach ($resource in @('gateway', 'business-gateway', 'console', 'business-console')) {
     Wait-AspireResource -Name $resource -Status 'up' -TimeoutSeconds 600
 }
+
+Assert-NoStoppedAspireProjectResources
 
 $status = Invoke-AspireOutput -Arguments @('ps', '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds 60 -Name 'dev-status'
 Write-Host $status.Stdout

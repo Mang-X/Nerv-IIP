@@ -175,6 +175,68 @@ public sealed record BusinessConsoleWmsOutboundOrderItem(
     string Status,
     DateTime CreatedAtUtc);
 
+public sealed record BusinessConsoleWmsWarehouseTaskListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? LocationCode,
+    string? OperatorUserId,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null);
+
+public sealed record BusinessConsoleWmsWarehouseTaskListResponse(
+    IReadOnlyCollection<BusinessConsoleWmsWarehouseTaskItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleWmsWarehouseTaskItem(
+    string WarehouseTaskId,
+    string OrganizationId,
+    string EnvironmentId,
+    string TaskType,
+    string TaskNo,
+    string SourceOrderNo,
+    string SourceOrderLineNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string FromLocationCode,
+    string ToLocationCode,
+    decimal PlannedQuantity,
+    decimal ExecutedQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
+public sealed record BusinessConsoleWmsCountExecutionListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? LocationCode,
+    int Skip = 0,
+    int Take = 100,
+    string? Status = null,
+    string? Keyword = null);
+
+public sealed record BusinessConsoleWmsCountExecutionListResponse(
+    IReadOnlyCollection<BusinessConsoleWmsCountExecutionItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleWmsCountExecutionItem(
+    string CountExecutionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string CountNo,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string LocationCode,
+    decimal ExpectedQuantity,
+    decimal? CountedQuantity,
+    decimal? VarianceQuantity,
+    string Status,
+    DateTime CreatedAtUtc,
+    DateTime? CompletedAtUtc);
+
 public sealed record BusinessConsoleWmsWcsTaskListRequest(
     string OrganizationId,
     string EnvironmentId,

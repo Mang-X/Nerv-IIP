@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -33,6 +34,7 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal("org-001", integrationEvent.OrganizationId);
         Assert.Equal("env-dev", integrationEvent.EnvironmentId);
         Assert.Contains("MPS-SUG-001", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<IIntegrationEventEnvelope>(integrationEvent);
         Assert.Contains("\"eventType\":\"erp.PurchaseRequisitionCreated\"", json, StringComparison.Ordinal);
     }
 
@@ -65,6 +67,8 @@ public sealed class ErpProcurementIntegrationEventTests
             "SUP-001",
             "SITE-01",
             [new PurchaseOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-chain-001");
+        order.ReleaseAfterApproval("approval-chain-001");
         var receipt = PurchaseReceipt.Record(order, "RCV-001", [new PurchaseReceiptLineDraft("LINE-001", 2m, "accepted")]);
         var converter = new PurchaseReceiptRecordedIntegrationEventConverter();
 

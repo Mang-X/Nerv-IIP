@@ -187,9 +187,12 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
 
-        if (ErpListPaging.IsUnknownSingleStatus(request.Status, "released"))
+        if (!string.IsNullOrWhiteSpace(request.Status))
         {
-            query = query.Where(x => false);
+            var status = request.Status.Trim().ToLowerInvariant();
+            query = status is "released" or "cancelled"
+                ? query.Where(x => x.Status == status)
+                : query.Where(x => false);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
@@ -212,7 +215,7 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
                 x.DeliveryOrderNo,
                 x.SalesOrderNo,
                 x.CustomerCode,
-                "released",
+                x.Status,
                 x.Lines
                     .OrderBy(line => line.SalesOrderLineNo)
                     .Select(line => new DeliveryOrderLineListItem(line.SalesOrderLineNo, line.Quantity))
@@ -286,7 +289,8 @@ public sealed record ListAccountPayablesQuery(
     string? Status = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListAccountPayablesResponse>;
+    int Take = 100,
+    DateOnly? AsOfDate = null) : IQuery<ListAccountPayablesResponse>;
 
 public sealed record ListAccountPayablesResponse(IReadOnlyCollection<AccountPayableListItem> Items, int Total);
 
@@ -297,6 +301,10 @@ public sealed record AccountPayableListItem(
     decimal Amount,
     decimal OpenAmount,
     string CurrencyCode,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode,
+    string AgingBucket,
     string Status,
     DateTime CreatedAtUtc);
 
@@ -334,10 +342,13 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
         var take = ErpListPaging.NormalizeTake(request.Take);
-        var items = await query
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+        var items = rows
             .Select(x => new AccountPayableListItem(
                 x.PayableNo,
                 x.SourceDocumentNo,
@@ -345,9 +356,13 @@ public sealed class ListAccountPayablesQueryHandler(ApplicationDbContext dbConte
                 x.Amount,
                 x.Amount - x.PaidAmount,
                 x.CurrencyCode,
+                x.InvoiceDate,
+                x.DueDate,
+                x.PaymentTermCode,
+                x.GetAgingBucket(asOfDate),
                 x.Amount > x.PaidAmount ? "open" : "settled",
                 x.CreatedAtUtc))
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new ListAccountPayablesResponse(items, total);
     }
@@ -359,7 +374,8 @@ public sealed record ListAccountReceivablesQuery(
     string? Status = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListAccountReceivablesResponse>;
+    int Take = 100,
+    DateOnly? AsOfDate = null) : IQuery<ListAccountReceivablesResponse>;
 
 public sealed record ListAccountReceivablesResponse(IReadOnlyCollection<AccountReceivableListItem> Items, int Total);
 
@@ -370,6 +386,10 @@ public sealed record AccountReceivableListItem(
     decimal Amount,
     decimal OpenAmount,
     string CurrencyCode,
+    DateOnly InvoiceDate,
+    DateOnly DueDate,
+    string PaymentTermCode,
+    string AgingBucket,
     string Status,
     DateTime CreatedAtUtc);
 
@@ -407,10 +427,13 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
         var total = await query.CountAsync(cancellationToken);
         var skip = Math.Max(request.Skip, 0);
         var take = ErpListPaging.NormalizeTake(request.Take);
-        var items = await query
+        var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .Skip(skip)
             .Take(take)
+            .ToArrayAsync(cancellationToken);
+        var items = rows
             .Select(x => new AccountReceivableListItem(
                 x.ReceivableNo,
                 x.SourceDocumentNo,
@@ -418,9 +441,13 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
                 x.Amount,
                 x.Amount - x.CollectedAmount,
                 x.CurrencyCode,
+                x.InvoiceDate,
+                x.DueDate,
+                x.PaymentTermCode,
+                x.GetAgingBucket(asOfDate),
                 x.Amount > x.CollectedAmount ? "open" : "settled",
                 x.CreatedAtUtc))
-            .ToArrayAsync(cancellationToken);
+            .ToArray();
 
         return new ListAccountReceivablesResponse(items, total);
     }
@@ -510,7 +537,15 @@ public sealed record JournalVoucherListItem(
     IReadOnlyCollection<JournalVoucherLineListItem> Lines,
     DateTime PostedAtUtc);
 
-public sealed record JournalVoucherLineListItem(string AccountCode, decimal DebitAmount, decimal CreditAmount, string Memo);
+public sealed record JournalVoucherLineListItem(
+    string AccountCode,
+    decimal DebitAmount,
+    decimal CreditAmount,
+    string Memo,
+    string CurrencyCode,
+    decimal ExchangeRate,
+    decimal LocalDebitAmount,
+    decimal LocalCreditAmount);
 
 public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListJournalVouchersQuery, ListJournalVouchersResponse>
@@ -551,7 +586,7 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
                 x.Lines.Sum(line => line.CreditAmount),
                 x.Lines
                     .OrderBy(line => line.AccountCode)
-                    .Select(line => new JournalVoucherLineListItem(line.AccountCode, line.DebitAmount, line.CreditAmount, line.Memo))
+                    .Select(line => new JournalVoucherLineListItem(line.AccountCode, line.DebitAmount, line.CreditAmount, line.Memo, line.CurrencyCode, line.ExchangeRate, line.LocalDebitAmount, line.LocalCreditAmount))
                     .ToArray(),
                 x.PostedAtUtc))
             .ToArrayAsync(cancellationToken);
@@ -561,29 +596,46 @@ public sealed class ListJournalVouchersQueryHandler(ApplicationDbContext dbConte
 }
 
 public sealed record GetFinanceSummaryQuery(string OrganizationId, string EnvironmentId) : IQuery<FinanceSummaryResponse>;
-public sealed record FinanceSummaryResponse(decimal OpenPayableAmount, decimal OpenReceivableAmount, decimal CostCandidateAmount, int PostedVoucherCount);
+public sealed record CurrencyAmountSummary(string CurrencyCode, decimal OpenAmount, decimal LocalOpenAmount);
+public sealed record FinanceSummaryResponse(
+    decimal OpenPayableAmount,
+    decimal OpenReceivableAmount,
+    decimal CostCandidateAmount,
+    int PostedVoucherCount,
+    IReadOnlyCollection<CurrencyAmountSummary> PayablesByCurrency = null!,
+    IReadOnlyCollection<CurrencyAmountSummary> ReceivablesByCurrency = null!,
+    IReadOnlyCollection<CurrencyAmountSummary> CostCandidatesByCurrency = null!);
 
 public sealed class GetFinanceSummaryQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetFinanceSummaryQuery, FinanceSummaryResponse>
 {
     public async Task<FinanceSummaryResponse> Handle(GetFinanceSummaryQuery request, CancellationToken cancellationToken)
     {
-        var payables = await dbContext.AccountPayables
+        var payablesByCurrency = await dbContext.AccountPayables
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount - x.PaidAmount, cancellationToken);
-        var receivables = await dbContext.AccountReceivables
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount - line.PaidAmount), x.Sum(line => line.LocalAmount - line.LocalPaidAmount)))
+            .ToArrayAsync(cancellationToken);
+        var receivablesByCurrency = await dbContext.AccountReceivables
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount - x.CollectedAmount, cancellationToken);
-        var costCandidates = await dbContext.CostCandidates
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount - line.CollectedAmount), x.Sum(line => line.LocalAmount - line.LocalCollectedAmount)))
+            .ToArrayAsync(cancellationToken);
+        var costCandidatesByCurrency = await dbContext.CostCandidates
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
-            .SumAsync(x => x.Amount, cancellationToken);
+            .GroupBy(x => x.CurrencyCode)
+            .Select(x => new CurrencyAmountSummary(x.Key, x.Sum(line => line.Amount), x.Sum(line => line.LocalAmount)))
+            .ToArrayAsync(cancellationToken);
         var vouchers = await dbContext.JournalVouchers
             .AsNoTracking()
             .CountAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId, cancellationToken);
-        return new FinanceSummaryResponse(payables, receivables, costCandidates, vouchers);
+        var payables = payablesByCurrency.Sum(x => x.OpenAmount);
+        var receivables = receivablesByCurrency.Sum(x => x.OpenAmount);
+        var costCandidates = costCandidatesByCurrency.Sum(x => x.OpenAmount);
+        return new FinanceSummaryResponse(payables, receivables, costCandidates, vouchers, payablesByCurrency, receivablesByCurrency, costCandidatesByCurrency);
     }
 }
 

@@ -23,8 +23,24 @@ public sealed class MaintenanceAggregateTests
             workOrder.GetDomainEvents(),
             x => Assert.IsType<MaintenanceWorkOrderOpenedDomainEvent>(x),
             x => Assert.IsType<AssetUnavailableDomainEvent>(x),
+            x => Assert.IsType<MaintenanceSparePartIssuedDomainEvent>(x),
             x => Assert.IsType<MaintenanceWorkOrderCompletedDomainEvent>(x),
             x => Assert.IsType<AssetRestoredDomainEvent>(x));
+    }
+
+    [Fact]
+    public void Work_order_from_alarm_can_be_marked_alarm_cleared_without_auto_completion()
+    {
+        var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+
+        workOrder.MarkAlarmCleared(clearedAtUtc);
+        workOrder.MarkAlarmCleared(clearedAtUtc.AddMinutes(5));
+
+        Assert.True(workOrder.AlarmCleared);
+        Assert.Equal(clearedAtUtc, workOrder.AlarmClearedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceWorkOrderAlarmClearedDomainEvent>());
     }
 
     [Fact]
@@ -36,6 +52,14 @@ public sealed class MaintenanceAggregateTests
 
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is AssetRestoredDomainEvent);
+    }
+
+    [Fact]
+    public void Repair_start_cannot_be_before_work_order_opened_time()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => workOrder.MarkRepairStarted(workOrder.OpenedAtUtc.AddMinutes(-1)));
     }
 
     [Theory]
@@ -72,6 +96,40 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Maintenance_plan_tracks_next_due_date_for_iso_day_interval()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        Assert.Equal(new DateOnly(2026, 6, 1), plan.NextDueOn);
+        Assert.True(plan.IsDueOn(new DateOnly(2026, 6, 8)));
+
+        plan.MarkGenerated(new DateOnly(2026, 6, 8));
+
+        Assert.Equal(new DateOnly(2026, 6, 8), plan.LastGeneratedOn);
+        Assert.Equal(new DateOnly(2026, 6, 15), plan.NextDueOn);
+        Assert.False(plan.IsDueOn(new DateOnly(2026, 6, 14)));
+    }
+
+    [Fact]
+    public void Maintenance_plan_catches_up_missed_periods_without_phase_drift()
+    {
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+
+        var dueDates = plan.ConsumeDueDates(new DateOnly(2026, 6, 22));
+
+        Assert.Equal(
+            [
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 8),
+                new DateOnly(2026, 6, 15),
+                new DateOnly(2026, 6, 22),
+            ],
+            dueDates);
+        Assert.Equal(new DateOnly(2026, 6, 22), plan.LastGeneratedOn);
+        Assert.Equal(new DateOnly(2026, 6, 29), plan.NextDueOn);
+    }
+
+    [Fact]
     public void Inspection_must_reference_a_plan_or_work_order()
     {
         Assert.Throws<ArgumentException>(() =>
@@ -83,11 +141,13 @@ public sealed class MaintenanceAggregateTests
     {
         var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "weekly-inspection", "P7D", DateOnly.FromDateTime(DateTime.UtcNow), "maintenance");
         var inspection = MaintenanceInspection.RecordForPlan("org-001", "env-dev", plan.Id, "operator-001", "passed", DateTimeOffset.UtcNow);
-        var reason = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure");
+        var reason = DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure");
 
         Assert.Equal("P7D", plan.Interval);
         Assert.Equal(plan.Id, inspection.PlanId);
         Assert.Equal("equipment-failure", reason.ReasonCode);
+        Assert.Equal("breakdown", reason.ReasonCategory);
+        Assert.Equal("equipment-failure", reason.LossCategory);
         Assert.IsType<MaintenancePlanCreatedDomainEvent>(plan.GetDomainEvents().Single());
         Assert.IsType<MaintenanceInspectionRecordedDomainEvent>(inspection.GetDomainEvents().Single());
     }

@@ -19,8 +19,15 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").IsRequired().HasMaxLength(100).HasComment("MES operation task id reported against.");
         builder.Property(x => x.GoodQuantity).HasColumnName("good_quantity").HasPrecision(18, 6).IsRequired().HasComment("Good quantity reported for the operation.");
         builder.Property(x => x.ScrapQuantity).HasColumnName("scrap_quantity").HasPrecision(18, 6).IsRequired().HasComment("Scrap quantity reported for the operation.");
+        builder.Property(x => x.ReworkQuantity).HasColumnName("rework_quantity").HasPrecision(18, 6).IsRequired().HasComment("Quantity reported as rework for the operation.");
+        builder.Property(x => x.ScrapReasonCode).HasColumnName("scrap_reason_code").HasMaxLength(100).HasComment("Optional scrap reason code linked to reported scrap quantity.");
+        builder.Property(x => x.DefectRecordNo).HasColumnName("defect_record_no").HasMaxLength(100).HasComment("Optional MES defect record number linked to this production report.");
+        builder.Property(x => x.ProducedLotNo).HasColumnName("produced_lot_no").HasMaxLength(100).HasComment("Optional produced finished-goods lot number for genealogy.");
+        builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number for genealogy.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
+        builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
+            .HasName("ak_production_reports_scope_report_no");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

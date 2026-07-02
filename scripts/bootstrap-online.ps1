@@ -230,6 +230,46 @@ function New-SecretValue {
     return [Convert]::ToBase64String($buffer)
 }
 
+function ConvertTo-Base64Url {
+    param(
+        [Parameter(Mandatory)]
+        [byte[]] $Bytes
+    )
+
+    return [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function New-IamJwtSigningMaterial {
+    $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+    try {
+        $parameters = $rsa.ExportParameters($false)
+        $privateKeyPem = $rsa.ExportPkcs8PrivateKeyPem()
+
+        $kid = "local-dev-$([DateTimeOffset]::UtcNow.ToString('yyyyMMddHHmmss'))"
+        $jwk = [ordered]@{
+            kty = 'RSA'
+            use = 'sig'
+            kid = $kid
+            alg = 'RS256'
+            n = ConvertTo-Base64Url -Bytes $parameters.Modulus
+            e = ConvertTo-Base64Url -Bytes $parameters.Exponent
+        }
+
+        $jwks = [ordered]@{
+            keys = @($jwk)
+        } | ConvertTo-Json -Compress -Depth 5
+
+        return [pscustomobject]@{
+            Kid = $kid
+            PrivateKeyPem = [string] $privateKeyPem
+            JwksJson = $jwks
+        }
+    }
+    finally {
+        $rsa.Dispose()
+    }
+}
+
 function Get-AppHostUserSecrets {
     param(
         [Parameter(Mandatory)]
@@ -259,6 +299,30 @@ function Get-AppHostUserSecrets {
     return $secrets
 }
 
+function Set-AppHostUserSecret {
+    param(
+        [Parameter(Mandatory)]
+        [hashtable] $ExistingSecrets,
+
+        [Parameter(Mandatory)]
+        [string] $AppHostProject,
+
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [Parameter(Mandatory)]
+        [string] $Value
+    )
+
+    Invoke-DotNet `
+        -Arguments @('user-secrets', 'set', $Name, $Value, '--project', $AppHostProject) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name "bootstrap-secret-$($Name.Replace(':', '-'))" `
+        -SensitiveArgumentIndexes @(3) | Out-Null
+    $ExistingSecrets[$Name] = '<set>'
+}
+
 function Set-AppHostUserSecretIfMissing {
     param(
         [Parameter(Mandatory)]
@@ -278,12 +342,7 @@ function Set-AppHostUserSecretIfMissing {
         return $false
     }
 
-    Invoke-DotNet `
-        -Arguments @('user-secrets', 'set', $Name, $Value, '--project', $AppHostProject) `
-        -WorkingDirectory $root `
-        -TimeoutSeconds 120 `
-        -Name "bootstrap-secret-$($Name.Replace(':', '-'))" `
-        -SensitiveArgumentIndexes @(3) | Out-Null
+    Set-AppHostUserSecret -ExistingSecrets $ExistingSecrets -AppHostProject $AppHostProject -Name $Name -Value $Value
     $ExistingSecrets[$Name] = '<set>'
     return $true
 }
@@ -306,7 +365,6 @@ function Initialize-LocalAppHostSecrets {
     }
 
     $secretMap = [ordered]@{
-        'Parameters:iam-jwt-signing-key' = New-SecretValue -Bytes 48
         'Parameters:internal-service-bearer-token' = New-SecretValue -Bytes 48
         'Parameters:postgres-password' = New-SecretValue -Bytes 24
         'Parameters:redis-password' = New-SecretValue -Bytes 24
@@ -314,6 +372,29 @@ function Initialize-LocalAppHostSecrets {
         'Parameters:minio-root-password' = New-SecretValue -Bytes 24
         'Parameters:iam-seed-admin-password' = $adminPassword
         'Parameters:iam-seed-connector-host-secret' = New-SecretValue -Bytes 32
+        'Parameters:connector-ingestion-token-signing-key' = New-SecretValue -Bytes 48
+    }
+
+    $iamJwtSecrets = @(
+        'Parameters:iam-jwt-signing-key-id',
+        'Parameters:iam-jwt-private-key-pem',
+        'Parameters:iam-jwt-jwks-json'
+    )
+    $missingIamJwtSecrets = @($iamJwtSecrets | Where-Object {
+        -not $existing.ContainsKey($_) -or [string]::IsNullOrWhiteSpace($existing[$_])
+    })
+    if ($missingIamJwtSecrets.Count -gt 0) {
+        $jwtMaterial = New-IamJwtSigningMaterial
+        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-signing-key-id' -Value $jwtMaterial.Kid
+        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-private-key-pem' -Value $jwtMaterial.PrivateKeyPem
+        Set-AppHostUserSecret -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-jwt-jwks-json' -Value $jwtMaterial.JwksJson
+        foreach ($name in $iamJwtSecrets) {
+            $created.Add($name)
+        }
+    }
+
+    if (Set-AppHostUserSecretIfMissing -ExistingSecrets $existing -AppHostProject $AppHostProject -Name 'Parameters:iam-secrets-pepper' -Value (New-SecretValue -Bytes 48)) {
+        $created.Add('Parameters:iam-secrets-pepper')
     }
 
     foreach ($entry in $secretMap.GetEnumerator()) {

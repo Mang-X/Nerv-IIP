@@ -63,6 +63,45 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Business_console_endpoint_accepts_rs256_token_when_jwks_omits_optional_algorithm()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var masterData = new RecordingMasterDataClient();
+        await using var factory = CreateFactory(
+            auth,
+            services =>
+            {
+                services.RemoveAll<IBusinessMasterDataClient>();
+                services.AddSingleton<IBusinessMasterDataClient>(masterData);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            },
+            builder => builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJsonWithoutAlgorithm()));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Equal(BusinessGatewayPermissions.MasterDataProductsRead, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
+    public async Task Business_console_endpoint_rejects_hs256_token_with_rsa_key_id()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.Hs256AccessTokenWithRsaKid());
+
+        var response = await client.GetAsync("/api/business-console/v1/master-data/skus?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_returns_resource_list_when_permission_is_allowed()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -122,6 +161,31 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Product_engineering_standard_operation_create_uses_collection_level_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var engineering = new RecordingProductEngineeringClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(engineering);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/engineering/standard-operations",
+            BusinessConsoleTestRequestBodies.ValidEngineeringWriteBody("/api/business-console/v1/engineering/standard-operations"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.EngineeringStandardOperationsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Null(auth.LastRequirement.ResourceType);
+        Assert.Null(auth.LastRequirement.ResourceId);
+    }
+
+    [Fact]
     public async Task Business_console_endpoint_rejects_context_mismatch_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -150,6 +214,39 @@ public sealed class BusinessGatewayAuthorizationTests
     }
 
     [Fact]
+    public async Task Business_console_routing_release_rejects_blank_operation_code_before_permission_check()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/engineering/routings/release", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            routingCode = "ROUTE-1000",
+            revision = "A",
+            skuCode = "SKU-FG-1000",
+            effectiveDate = "2026-06-01",
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 10,
+                    workCenterCode = "WC-MIX-01",
+                    operationCode = "   ",
+                    operationName = "混合",
+                    standardMinutes = 30,
+                },
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Fact]
     public async Task Business_console_alarm_rule_endpoint_rejects_invalid_comparison_operator_before_permission_check()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
@@ -171,6 +268,39 @@ public sealed class BusinessGatewayAuthorizationTests
             unitCode = "celsius",
             isEnabled = true,
         });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, auth.CallCount);
+    }
+
+    [Theory]
+    [InlineData("POST", "/api/business-console/v1/quality/reason-codes", "low", "rework")]
+    [InlineData("PUT", "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", "major", "use-as-is")]
+    public async Task Business_console_quality_reason_endpoint_rejects_invalid_catalog_values_before_permission_check(
+        string method,
+        string path,
+        string severity,
+        string defaultDisposition)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(auth);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+        using var request = new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = JsonContent.Create(new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reasonCode = "QR-SCRATCH",
+                reasonName = "Scratch",
+                groupName = "Appearance",
+                severity,
+                defaultDisposition,
+            }),
+        };
+
+        var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, auth.CallCount);
@@ -259,6 +389,45 @@ public sealed class BusinessGatewayAuthorizationTests
             downstreamDocumentType = "work-order",
             downstreamDocumentId = "WO-001",
         },
+        "/api/business-console/v1/planning/demands/demand-001/cancel" => new
+        {
+            demandSourceId = "demand-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+        },
+        "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr" => new
+        {
+            inspectionRecordId = "inspection-001",
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            defectReason = "Supplier certificate mismatch",
+        },
+        "/api/business-console/v1/telemetry/samples" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            tagKey = "temperature",
+            bucketStartUtc = "2026-06-01T08:00:00Z",
+            bucketEndUtc = "2026-06-01T08:01:00Z",
+            sampleCount = 1,
+            minValue = 95m,
+            maxValue = 95m,
+            averageValue = 95m,
+            sourceSequence = "seq-001",
+            sourceSystem = "manual-seed",
+            sourceConnector = "business-console",
+        },
+        "/api/business-console/v1/telemetry/alarms" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "DEV-OIL-01",
+            alarmCode = "OIL_TEMP_HIGH",
+            severity = "warning",
+            raisedAtUtc = "2026-06-01T08:00:00Z",
+            externalAlarmId = "alarm-001",
+        },
         "/api/business-console/v1/telemetry/alarm-rules" => new
         {
             organizationId = "org-001",
@@ -290,6 +459,96 @@ public sealed class BusinessGatewayAuthorizationTests
         "/api/business-console/v1/approval/delegations/delegation-001/revoke" => new
         {
             revokedBy = "u-manager",
+        },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/versions" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            displayName = "SKU code v2",
+            appliesTo = "sku",
+            scope = 3,
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 1 },
+            },
+            isActive = true,
+            effectiveFromUtc = "2026-06-01T00:00:00Z",
+            createdBy = "admin-001",
+            changeReason = "align plant convention",
+        },
+        "/api/business-console/v1/master-data/code-rules/master-data.sku/preview" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            ruleKey = "master-data.sku",
+            segments = new object[]
+            {
+                new { type = 0, value = "SKU-" },
+                new { type = 2, width = 4, start = 42 },
+            },
+            siteCode = "SITE-01",
+        },
+        "/api/business-console/v1/master-data/product-categories/CAT-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "CAT-001",
+            categoryName = "Finished Goods",
+            parentCode = (string?)null,
+            description = "Finished goods category",
+        },
+        "/api/business-console/v1/master-data/product-categories/CAT-001/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            categoryCode = "CAT-001",
+            reason = "obsolete",
+        },
+        "/api/business-console/v1/master-data/skills/SK-WELD" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "SK-WELD",
+            skillName = "Welding",
+            groupName = "Manufacturing",
+            requiresCertification = true,
+            validityMonths = 24,
+            description = "Welding qualification",
+        },
+        "/api/business-console/v1/master-data/skills/SK-WELD/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "SK-WELD",
+            reason = "obsolete",
+        },
+        "/api/business-console/v1/quality/reason-codes" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+            reasonName = "Scratch",
+            groupName = "Appearance",
+            severity = "minor",
+            defaultDisposition = "rework",
+        },
+        "/api/business-console/v1/quality/reason-codes/QR-SCRATCH" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
+            reasonName = "Deep scratch",
+            groupName = "Appearance",
+            severity = "major",
+            defaultDisposition = "scrap",
+        },
+        "/api/business-console/v1/quality/reason-codes/QR-SCRATCH/archive" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "QR-SCRATCH",
         },
         "/api/business-console/v1/master-data/teams/T-001/members" => new
         {
@@ -475,13 +734,25 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/disable", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/workshops", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/device-assets?lineCode=LINE-001&workCenterCode=WC-001", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/workshops", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/workers", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/personnel-skills/matrix", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/teams/T-001/members", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Delete, "/api/business-console/v1/master-data/teams/T-001/members/user-001", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skus", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/product-categories", BusinessGatewayPermissions.MasterDataProductsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/product-categories/CAT-001", BusinessGatewayPermissions.MasterDataProductsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/product-categories", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/master-data/product-categories/CAT-001", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/product-categories/CAT-001/archive", BusinessGatewayPermissions.MasterDataProductsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skills", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/skills/SK-WELD", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skills", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/master-data/skills/SK-WELD", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/skills/SK-WELD/archive", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/business-partners", BusinessGatewayPermissions.MasterDataPartnersManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/units-of-measure", BusinessGatewayPermissions.MasterDataProductsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/uom-conversions", BusinessGatewayPermissions.MasterDataProductsManage);
@@ -495,23 +766,52 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/departments", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/personnel-skills", BusinessGatewayPermissions.MasterDataResourcesManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/reference-data", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/master-data/code-rules/master-data.sku", BusinessGatewayPermissions.MasterDataResourcesRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/versions", BusinessGatewayPermissions.MasterDataResourcesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/master-data/code-rules/master-data.sku/preview", BusinessGatewayPermissions.MasterDataResourcesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/inventory/availability", BusinessGatewayPermissions.InventoryLedgerRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/movements", BusinessGatewayPermissions.InventoryMovementsCreate);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/inventory/count-tasks/count-001/adjustments", BusinessGatewayPermissions.InventoryCountsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-plans", BusinessGatewayPermissions.QualityInspectionRecordsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records", BusinessGatewayPermissions.QualityInspectionRecordsCreate);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/inspection-records/inspection-001/failures/ncr", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/ncrs", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes", BusinessGatewayPermissions.QualityNcrManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH", BusinessGatewayPermissions.QualityNcrManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/reason-codes/QR-SCRATCH/archive", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/disposition", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/quality/ncrs/ncr-001/close", BusinessGatewayPermissions.QualityNcrManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents", BusinessGatewayPermissions.EngineeringDocumentsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/documents/DOC-001/A", BusinessGatewayPermissions.EngineeringDocumentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/items", BusinessGatewayPermissions.EngineeringItemsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/items/ITEM-001/A", BusinessGatewayPermissions.EngineeringItemsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/EBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/explosion?itemCode=FG-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-boms/where-used?componentCode=RM-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/MBOM-001/A", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/explosion?skuCode=FG-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/manufacturing-boms/where-used?componentCode=RM-001&effectiveDate=2026-03-01", BusinessGatewayPermissions.EngineeringBomsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/manufacturing-boms/release", BusinessGatewayPermissions.EngineeringBomsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings", BusinessGatewayPermissions.EngineeringRoutingsRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/routings/RTG-001/A", BusinessGatewayPermissions.EngineeringRoutingsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/routings/release", BusinessGatewayPermissions.EngineeringRoutingsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.read");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/standard-operations/OP-001", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/standard-operations/OP-001/archive", "business.engineering.standard-operations.manage");
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
@@ -525,6 +825,7 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/suggestions", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/suggestions/suggestion-001/accept", BusinessGatewayPermissions.PlanningSuggestionsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands/demand-001/cancel", BusinessGatewayPermissions.PlanningDemandsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans/preview", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/scheduling/plans", BusinessGatewayPermissions.SchedulingPlansRead);
@@ -537,6 +838,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/equipment/alarms", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/tags?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotTelemetryRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarm-rules?deviceAssetId=DEV-OIL-01", BusinessGatewayPermissions.IiotAlarmsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/samples", BusinessGatewayPermissions.IiotTelemetryWrite);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarms", BusinessGatewayPermissions.IiotAlarmsWrite);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/telemetry/alarm-rules", "business.iiot.alarm-rules.manage");
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/alarms?deviceAssetId=DEV-OIL-01&status=raised", BusinessGatewayPermissions.IiotAlarmsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/telemetry/devices/DEV-OIL-01/history?fromUtc=2026-06-01T08:00:00Z&toUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.IiotTelemetryRead);
@@ -601,12 +904,15 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/putaway-tasks", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/inbound-orders/inbound-order-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks", BusinessGatewayPermissions.WmsShipmentsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/picking-tasks", BusinessGatewayPermissions.WmsShipmentsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete", BusinessGatewayPermissions.WmsShipmentsManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/count-executions", BusinessGatewayPermissions.WmsReceiptsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/count-executions/count-execution-001/complete", BusinessGatewayPermissions.WmsReceiptsManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/wms/wcs-tasks", BusinessGatewayPermissions.WmsAutomationManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch", BusinessGatewayPermissions.WmsAutomationManage);
@@ -638,12 +944,14 @@ public sealed class BusinessGatewayAuthorizationTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         FakeBusinessGatewayAuthorizationClient auth,
-        Action<IServiceCollection>? configureServices = null) =>
+        Action<IServiceCollection>? configureServices = null,
+        Action<IWebHostBuilder>? configureBuilder = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Iam:Jwt:SigningKey", BusinessGatewayTestTokens.SigningKey);
+            builder.UseSetting("Iam:Jwt:JwksJson", BusinessGatewayTestTokens.PublicJwksJson());
             builder.UseSetting("Iam:Jwt:Issuer", BusinessGatewayTestTokens.Issuer);
             builder.UseSetting("Iam:Jwt:Audience", BusinessGatewayTestTokens.Audience);
+            configureBuilder?.Invoke(builder);
             BusinessGatewayTestServiceBaseUrls.Configure(builder);
             builder.ConfigureServices(services =>
             {

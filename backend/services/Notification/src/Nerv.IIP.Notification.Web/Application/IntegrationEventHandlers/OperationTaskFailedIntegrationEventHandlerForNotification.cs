@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
@@ -16,11 +17,11 @@ namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IOptions<OpsNotificationRecipientOptions> recipientOptions)
     : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-task-failed";
-    private const string DefaultRecipientRef = "role:ops-admin";
 
     private readonly IntegrationEventConsumerGuard<OperationTaskFailedIntegrationEvent> consumerGuard = new(
         new IntegrationEventEnvelopeValidator(),
@@ -57,21 +58,15 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
         var instanceKey = Required(payload.InstanceKey, "Operation instance key is required.");
         var operationCode = Required(payload.OperationCode, "Operation code is required.");
 
-        if (await dbContext.ProcessedIntegrationEvents.AnyAsync(
-            x => x.ConsumerName == ConsumerName && x.EventId == eventId,
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            DateTimeOffset.UtcNow,
             cancellationToken))
         {
             return;
         }
-
-        dbContext.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
-            ConsumerName,
-            eventId,
-            eventType,
-            integrationEvent.EventVersion,
-            sourceService,
-            dedupeKey,
-            DateTimeOffset.UtcNow));
 
         var summary = payload.FailureCode is null
             ? $"Operation {operationCode} failed for {instanceKey}."
@@ -86,7 +81,7 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
             Resource: new NotificationResourceRef("operation-task", operationTaskId, null),
             Title: "Operation failed",
             Summary: summary,
-            SuggestedRecipientRefs: [DefaultRecipientRef]);
+            SuggestedRecipientRefs: recipientOptions.Value.ResolveDefaultRecipientRefs());
 
         await sender.Send(new SubmitNotificationIntentCommand(
             organizationId,

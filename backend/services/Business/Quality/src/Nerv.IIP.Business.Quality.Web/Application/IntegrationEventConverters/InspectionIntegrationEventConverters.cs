@@ -13,6 +13,7 @@ public sealed class InspectionPassedIntegrationEventConverter(IQualityIntegratio
             domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionPassed,
             "inspection-passed",
+            QualityStockReleaseTargetStatuses.Unrestricted,
             contextAccessor.GetContext());
     }
 }
@@ -26,6 +27,21 @@ public sealed class InspectionRejectedIntegrationEventConverter(IQualityIntegrat
             domainEvent.InspectionRecord,
             QualityIntegrationEventTypes.InspectionRejected,
             "inspection-rejected",
+            QualityStockReleaseTargetStatuses.Blocked,
+            contextAccessor.GetContext());
+    }
+}
+
+public sealed class InspectionConditionalReleasedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<InspectionConditionalReleasedDomainEvent, InspectionResultIntegrationEvent>
+{
+    public InspectionResultIntegrationEvent Convert(InspectionConditionalReleasedDomainEvent domainEvent)
+    {
+        return InspectionResultIntegrationEvents.Create(
+            domainEvent.InspectionRecord,
+            QualityIntegrationEventTypes.InspectionConditionalReleased,
+            "inspection-conditional-release",
+            QualityStockReleaseTargetStatuses.Restricted,
             contextAccessor.GetContext());
     }
 }
@@ -36,6 +52,7 @@ internal static class InspectionResultIntegrationEvents
         InspectionRecord record,
         string eventType,
         string idempotencyPrefix,
+        string? targetQualityStatus,
         QualityIntegrationEventContext context)
     {
         var occurredAtUtc = DateTimeOffset.UtcNow;
@@ -51,13 +68,13 @@ internal static class InspectionResultIntegrationEvents
             record.EnvironmentId,
             context.Actor,
             EventIds.Idempotency(idempotencyPrefix, record.OrganizationId, record.EnvironmentId, record.SourceService, record.SourceDocumentId),
-            InspectionIntegrationEventPayloads.ToPayload(record, occurredAtUtc));
+            InspectionIntegrationEventPayloads.ToPayload(record, occurredAtUtc, targetQualityStatus));
     }
 }
 
 internal static class InspectionIntegrationEventPayloads
 {
-    public static InspectionResultPayload ToPayload(InspectionRecord record, DateTimeOffset occurredAtUtc)
+    public static InspectionResultPayload ToPayload(InspectionRecord record, DateTimeOffset occurredAtUtc, string? targetQualityStatus)
     {
         return new InspectionResultPayload(
             record.Id.ToString(),
@@ -70,6 +87,51 @@ internal static class InspectionIntegrationEventPayloads
             record.Result,
             record.DispositionReason,
             record.DispositionAttachmentFileIds,
-            occurredAtUtc);
+            occurredAtUtc,
+            ToStockRelease(record, targetQualityStatus),
+            record.ResultLines.Select(ToResultLinePayload).ToArray(),
+            // Quality domain stores the batch identity as BatchNo; Inventory-facing contracts expose it as LotNo.
+            record.BatchNo,
+            record.SerialNo,
+            record.SiteCode,
+            record.LocationCode,
+            record.OwnerType,
+            record.OwnerId,
+            record.UomCode);
+    }
+
+    private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record, string? targetQualityStatus)
+    {
+        if (string.IsNullOrWhiteSpace(record.UomCode)
+            || string.IsNullOrWhiteSpace(record.SiteCode)
+            || string.IsNullOrWhiteSpace(record.LocationCode)
+            || string.IsNullOrWhiteSpace(record.SourceQualityStatus)
+            || string.IsNullOrWhiteSpace(record.OwnerType))
+        {
+            return null;
+        }
+
+        return new StockReleaseDimensionPayload(
+            record.UomCode,
+            record.SiteCode,
+            record.LocationCode,
+            record.BatchNo,
+            record.SerialNo,
+            record.SourceQualityStatus,
+            record.OwnerType,
+            record.OwnerId,
+            targetQualityStatus);
+    }
+
+    private static InspectionResultLinePayload ToResultLinePayload(InspectionResultLine line)
+    {
+        return new InspectionResultLinePayload(
+            line.CharacteristicCode,
+            line.MeasuredValue,
+            line.ObservedValue,
+            line.UnitCode,
+            line.Result,
+            line.DefectReason,
+            line.DefectQuantity);
     }
 }

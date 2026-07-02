@@ -112,6 +112,12 @@ public sealed class ApprovalTemplate : Entity<ApprovalTemplateId>, IAggregateRoo
             {
                 throw new ArgumentException("Duplicate approval step numbers require the same explicit parallel group key.", nameof(stepDefinitions));
             }
+
+            var policies = parallelCandidate.Select(x => ApprovalCompletionPolicies.Normalize(x.CompletionPolicy)).Distinct(StringComparer.Ordinal).ToArray();
+            if (policies.Length != 1)
+            {
+                throw new ArgumentException("Duplicate approval step numbers require the same completion policy.", nameof(stepDefinitions));
+            }
         }
 
         foreach (var definition in materializedSteps)
@@ -138,6 +144,8 @@ public sealed class ApprovalTemplateStep : Entity<ApprovalTemplateStepId>
         StepNo = definition.StepNo;
         StepName = ApprovalText.Required(definition.StepName);
         ParallelGroupKey = ApprovalText.Optional(definition.ParallelGroupKey);
+        CompletionPolicy = ApprovalCompletionPolicies.Normalize(definition.CompletionPolicy);
+        ConditionExpression = ApprovalText.Optional(definition.ConditionExpression);
         ApproverType = ApprovalText.RequiredLower(definition.ApproverType);
         ApproverRef = ApprovalText.Required(definition.ApproverRef);
         DueInHours = definition.DueInHours;
@@ -151,6 +159,8 @@ public sealed class ApprovalTemplateStep : Entity<ApprovalTemplateStepId>
     public int StepNo { get; private set; }
     public string StepName { get; private set; } = string.Empty;
     public string? ParallelGroupKey { get; private set; }
+    public string CompletionPolicy { get; private set; } = string.Empty;
+    public string? ConditionExpression { get; private set; }
     public string ApproverType { get; private set; } = string.Empty;
     public string ApproverRef { get; private set; } = string.Empty;
     public int? DueInHours { get; private set; }
@@ -162,4 +172,22 @@ public sealed record ApprovalTemplateStepDefinition(
     string? ParallelGroupKey,
     string ApproverType,
     string ApproverRef,
-    int? DueInHours);
+    int? DueInHours,
+    string CompletionPolicy = ApprovalCompletionPolicies.All,
+    string? ConditionExpression = null);
+
+public static class ApprovalCompletionPolicies
+{
+    public const string All = "all";
+    public const string Any = "any";
+
+    private static readonly HashSet<string> Supported = [All, Any];
+
+    public static string Normalize(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? All : value.Trim().ToLowerInvariant();
+        return Supported.Contains(normalized)
+            ? normalized
+            : throw new ArgumentException("Approval completion policy must be all or any.", nameof(value));
+    }
+}

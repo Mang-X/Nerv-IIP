@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 架构与实现就绪文档
+    url: https://github.com/Mang-X/Nerv-IIP/blob/main/docs/architecture/implementation-readiness.md
+    about: 提问前请先查阅当前阶段、已交付服务、数据库 schema 与环境前置条件。
+  - name: 平台上下文地图
+    url: https://github.com/Mang-X/Nerv-IIP/blob/main/docs/architecture/context-map.md
+    about: 了解服务边界（IAM / FileStorage / AppHub / Ops / Notification / Business）与领域划分。
+  - name: 讨论与提问
+    url: https://github.com/Mang-X/Nerv-IIP/discussions
+    about: 开放式问题、方案探讨请走 Discussions，不要开 Issue。

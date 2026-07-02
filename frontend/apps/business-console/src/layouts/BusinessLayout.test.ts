@@ -68,6 +68,52 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
   })
 
+  it('trims top domains and side navigation by principal permissions', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: ['business.inventory.ledger.read'],
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    const domains = shell.props('topDomains') as Domain[]
+    expect(domains.map((d) => d.id)).toEqual(['workbench', 'inventory'])
+
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量'])
+  })
+
+  it('drops side navigation groups after permission trimming removes every item', () => {
+    routeState.path = '/wms/wcs'
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: ['business.wms.automation.manage'],
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    const domains = shell.props('topDomains') as Domain[]
+    expect(domains.map((d) => d.id)).toEqual(['workbench', 'wms'])
+
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav).toHaveLength(1)
+    expect(sideNav[0]?.items.map((i) => i.title)).toEqual(['WCS 任务'])
+  })
+
   it('resolves WMS routes to the 仓储作业 domain', () => {
     routeState.path = '/wms/inbound'
     const wrapper = mountLayout()
@@ -75,7 +121,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('wms')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '出库发货', 'WCS 任务'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务', '盘点执行'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
@@ -92,12 +138,6 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(planning?.items.some((i) => i.title === '生产准备检查')).toBe(false)
   })
 
-  it('resolves the 工艺与版本 route to the 产品工程 domain', () => {
-    routeState.path = '/master-data/process'
-    const wrapper = mountLayout()
-    expect(wrapper.getComponent(AppShellTStub).props('currentDomainId')).toBe('engineering')
-  })
-
   it('uses a fallback for the authenticated user display name', () => {
     const pinia = createPinia()
     const auth = useAuthStore(pinia)
@@ -110,9 +150,29 @@ describe('BusinessLayout (T-shaped)', () => {
   })
 
   it('renders the home page as a business workbench instead of a route directory', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [
+          'business.inventory.ledger.read',
+          'business.inventory.movements.create',
+          'business.inventory.counts.manage',
+          'business.quality.inspection-records.read',
+          'business.quality.ncr.read',
+          'business.mes.work-orders.read',
+          'business.mes.operations.read',
+          'business.mes.reporting.read',
+        ],
+      },
+    })
+
     const wrapper = mount(IndexPage, {
       global: {
-        plugins: [createPinia(), createBusinessConsoleI18n({ locale: 'en-US' })],
+        plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
         stubs: {
           BusinessLayout: { template: '<main><slot /></main>' },
           RouterLink: { props: ['to'], template: '<a><slot /></a>' },

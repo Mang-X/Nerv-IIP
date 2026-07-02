@@ -48,7 +48,8 @@ public sealed record CreateOrUpdateBarcodeRuleRequest(
     int Length,
     string ChecksumRule,
     IReadOnlyCollection<string> AllowedSourceDocumentTypes,
-    string Status);
+    string Status,
+    int? Gs1CompanyPrefixLength = null);
 
 public sealed record CreateOrUpdateBarcodeRuleResponse(BarcodeRuleId BarcodeRuleId);
 
@@ -119,7 +120,15 @@ public sealed record RecordScanRequest(
     string SourceDocumentId,
     string IdempotencyKey,
     string Result,
-    string? RejectionReason);
+    string? RejectionReason,
+    string? SkuCode,
+    string? UomCode,
+    string? SiteCode,
+    string? LocationCode,
+    string? QualityStatus,
+    string? OwnerType,
+    string? OwnerId,
+    decimal? Quantity);
 
 public sealed record RecordScanResponse(ScanRecordId ScanRecordId);
 
@@ -175,7 +184,8 @@ public sealed class CreateOrUpdateBarcodeRuleEndpoint(ISender sender)
             req.Length,
             req.ChecksumRule,
             req.AllowedSourceDocumentTypes,
-            req.Status), ct);
+            req.Status,
+            req.Gs1CompanyPrefixLength), ct);
         await Send.OkAsync(new CreateOrUpdateBarcodeRuleResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -297,7 +307,15 @@ public sealed class RecordScanEndpoint(ISender sender)
             req.SourceDocumentId,
             req.IdempotencyKey,
             req.Result,
-            req.RejectionReason), ct);
+            req.RejectionReason,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.LocationCode,
+            req.QualityStatus,
+            req.OwnerType,
+            req.OwnerId,
+            req.Quantity), ct);
         await Send.OkAsync(new RecordScanResponse(id).AsResponseData(), cancellation: ct);
     }
 }

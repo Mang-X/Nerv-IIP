@@ -1,5 +1,6 @@
+using System.Reflection;
+using System.Text.Json;
 using Nerv.IIP.Contracts.ConnectorProtocol;
-using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTemplateAggregate;
 using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
@@ -18,7 +19,7 @@ public sealed class OperationTaskAggregateTests
         task.AssignInitialAuditId(AuditId());
 
         var fact = task.ToFact();
-        var response = task.ToResponse();
+        var response = task.ToDetailFact();
 
         Assert.Equal("op-000001", fact.OperationTaskId);
         Assert.Equal("queued", fact.Status);
@@ -96,7 +97,7 @@ public sealed class OperationTaskAggregateTests
         Assert.Equal("dispatched", task.ToFact().Status);
         Assert.Equal("attempt-000001", dispatch.AttemptId);
         Assert.Equal("connector-host-001", dispatch.ConnectorHostId);
-        var attempt = Assert.Single(task.ToResponse().Attempts);
+        var attempt = Assert.Single(task.ToDetailFact().Attempts);
         Assert.Equal("started", attempt.Status);
         Assert.Throws<InvalidOperationResultException>(secondClaim);
     }
@@ -113,11 +114,11 @@ public sealed class OperationTaskAggregateTests
         var pending = task.ToFact().Approval;
         Assert.NotNull(pending);
         Assert.Equal("pending", pending.Status);
-        Assert.Contains(task.ToResponse().AuditRecords, x => x.Action == "operation.approval-requested");
+        Assert.Contains(task.ToDetailFact().AuditRecords, x => x.Action == "operation.approval-requested");
         Assert.Throws<InvalidOperationResultException>(claimBeforeApproval);
 
         task.Approve(
-            new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "approved for maintenance window", "corr-approval"),
+            new DecideOperationApprovalInput("org-001", "env-dev", "ops-approver", "approved for maintenance window", "corr-approval"),
             AuditId("audit-000003"),
             Now.AddMinutes(1));
 
@@ -136,7 +137,7 @@ public sealed class OperationTaskAggregateTests
         task.AssignPendingAuditIds([AuditId("audit-000001"), AuditId("audit-000002")]);
 
         task.Reject(
-            new DecideOperationApprovalRequest("org-001", "env-dev", "ops-approver", "not in change window", "corr-reject"),
+            new DecideOperationApprovalInput("org-001", "env-dev", "ops-approver", "not in change window", "corr-reject"),
             AuditId("audit-000003"),
             Now.AddMinutes(1));
 
@@ -216,11 +217,74 @@ public sealed class OperationTaskAggregateTests
             AuditRecord.ComputeIntegrityHash(
                 "audit-000001",
                 "op-000001",
+                1,
+                string.Empty,
                 "operation.requested",
                 "local-admin",
                 Now,
                 "corr-001"),
             audit.IntegrityHash);
+    }
+
+    [Fact]
+    public void Audit_records_include_monotonic_chain_metadata()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-chain-001"), Template("lifecycle.restart"), Now);
+        task.AssignInitialAuditId(AuditId("audit-000001"));
+        var dispatch = Claim(task, "attempt-000001", "audit-000002", "lease-001", "connector-host-001");
+        task.RecordResult(Result(dispatch, "succeeded"), AuditId("audit-000003"));
+
+        var records = task.AuditRecords.OrderBy(x => x.SequenceNo).ToArray();
+
+        Assert.Equal([1L, 2L, 3L], records.Select(x => x.SequenceNo).ToArray());
+        Assert.Equal(string.Empty, records[0].PreviousIntegrityHash);
+        Assert.Equal(records[0].IntegrityHash, records[1].PreviousIntegrityHash);
+        Assert.Equal(records[1].IntegrityHash, records[2].PreviousIntegrityHash);
+        Assert.All(records, x => Assert.True(x.HasValidIntegrityHash()));
+    }
+
+    [Fact]
+    public void Audit_integrity_validator_distinguishes_legacy_unchained_hashes_from_tampering()
+    {
+        var legacyHash = AuditRecord.ComputeLegacyIntegrityHash(
+            "audit-legacy-001",
+            "op-000001",
+            "operation.requested",
+            "local-admin",
+            Now,
+            "corr-001");
+        var legacyRecord = new AuditRecordFact(
+            "audit-legacy-001",
+            "op-000001",
+            1,
+            string.Empty,
+            "operation.requested",
+            "local-admin",
+            Now,
+            "corr-001",
+            legacyHash);
+
+        var result = AuditIntegrityValidator.Validate([legacyRecord]);
+
+        Assert.False(result.IsValid);
+        Assert.Equal("legacy-unchained-history", result.FailureCode);
+        Assert.Equal("audit-legacy-001", result.FirstInvalidAuditRecordId);
+    }
+
+    [Fact]
+    public void Approval_decision_rejects_requester_self_approval()
+    {
+        var task = OperationTask.Create(TaskId(), CreateRequest("idem-self-approval-001"), Template("lifecycle.restart", requiresApproval: true), Now);
+        task.AssignPendingAuditIds([AuditId("audit-000001"), AuditId("audit-000002")]);
+
+        var approve = () => task.Approve(
+            new DecideOperationApprovalInput("org-001", "env-dev", "local-admin", "self approval", "corr-self-approval"),
+            AuditId("audit-000003"),
+            Now.AddMinutes(1));
+
+        var ex = Assert.Throws<InvalidOperationTaskRequestException>(approve);
+        Assert.Contains("requester cannot approve", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("approval-pending", task.ToFact().Status);
     }
 
     [Fact]
@@ -240,6 +304,35 @@ public sealed class OperationTaskAggregateTests
     }
 
     [Fact]
+    public void Attempt_fact_reads_failure_json_with_legacy_connector_failure_shape()
+    {
+        var task = CreateTask();
+        Claim(task, "attempt-000001", "audit-000002", "lease-001", "connector-host-001");
+        var attempt = Assert.Single(task.Attempts);
+        var legacyFailureJson = JsonSerializer.Serialize(
+            new FailureReason(
+                "restart-failed",
+                "process exited",
+                "connector",
+                Retryable: true,
+                new Dictionary<string, string> { ["exitCode"] = "1" }),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        typeof(OperationAttempt)
+            .GetProperty(nameof(OperationAttempt.FailureJson), BindingFlags.Instance | BindingFlags.Public)!
+            .SetValue(attempt, legacyFailureJson);
+
+        var failure = Assert.Single(task.ToDetailFact().Attempts).Failure;
+
+        Assert.NotNull(failure);
+        Assert.Equal("restart-failed", failure.Code);
+        Assert.Equal("process exited", failure.Message);
+        Assert.Equal("connector", failure.Category);
+        Assert.True(failure.Retryable);
+        Assert.Equal("1", failure.Detail["exitCode"]);
+    }
+
+    [Fact]
     public void Abandoned_claim_can_be_retried_until_max_attempts()
     {
         var task = CreateTask();
@@ -251,7 +344,7 @@ public sealed class OperationTaskAggregateTests
         Assert.Equal("dispatched", task.ToFact().Status);
         Assert.Equal(2, secondDispatch.AttemptNo);
         Assert.Equal("connector-host-002", secondDispatch.ConnectorHostId);
-        Assert.Equal(["abandoned", "started"], task.ToResponse().Attempts.Select(x => x.Status));
+        Assert.Equal(["abandoned", "started"], task.ToDetailFact().Attempts.Select(x => x.Status));
     }
 
     [Fact]
@@ -278,7 +371,7 @@ public sealed class OperationTaskAggregateTests
 
         Assert.Throws<InvalidOperationResultException>(() => task.RecordResult(mismatched, AuditId("audit-000003")));
         Assert.Equal("dispatched", task.ToFact().Status);
-        Assert.Equal("started", Assert.Single(task.ToResponse().Attempts).Status);
+        Assert.Equal("started", Assert.Single(task.ToDetailFact().Attempts).Status);
     }
 
     private static OperationTask CreateTask()
@@ -288,7 +381,7 @@ public sealed class OperationTaskAggregateTests
         return task;
     }
 
-    private static OperationTaskDispatchItem Claim(
+    private static OperationTaskDispatchFact Claim(
         OperationTask task,
         string attemptId,
         string auditId,
@@ -306,23 +399,22 @@ public sealed class OperationTaskAggregateTests
             maxAttempts);
     }
 
-    private static CreateOperationTaskRequest CreateRequest(string idempotencyKey)
+    private static CreateOperationTaskInput CreateRequest(string idempotencyKey)
     {
-        return new CreateOperationTaskRequest(
+        return new CreateOperationTaskInput(
             "org-001",
             "env-dev",
             "demo-api-001",
             "lifecycle.restart",
             idempotencyKey,
             "local-admin",
-            "manual restart",
             "corr-001",
             new Dictionary<string, string> { ["signal"] = "restart" });
     }
 
-    private static OperationResult Result(OperationTaskDispatchItem dispatch, string executionStatus, FailureReason? failure = null)
+    private static OperationResultInput Result(OperationTaskDispatchFact dispatch, string executionStatus, OperationFailureFact? failure = null)
     {
-        return new OperationResult(
+        return new OperationResultInput(
             new ConnectorRequestContext(
                 "1.0",
                 "1.0",
@@ -342,9 +434,9 @@ public sealed class OperationTaskAggregateTests
             new Dictionary<string, string>());
     }
 
-    private static FailureReason Failure(string code, string message)
+    private static OperationFailureFact Failure(string code, string message)
     {
-        return new FailureReason(code, message, "connector", true, new Dictionary<string, string>());
+        return new OperationFailureFact(code, message, "connector", true, new Dictionary<string, string>());
     }
 
     private static OperationTaskId TaskId(string id = "op-000001") => new(id);

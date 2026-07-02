@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.RequestForQuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 
 namespace Nerv.IIP.Business.Erp.Infrastructure.EntityConfigurations;
@@ -129,8 +130,10 @@ public sealed class PurchaseOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.PurchaseOrderNo).HasColumnName("purchase_order_no").IsRequired().HasMaxLength(100).HasComment("Purchase order number.");
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Purchase order currency code.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase order status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Purchase order total amount.");
+        builder.Property(x => x.ApprovalChainId).HasColumnName("approval_chain_id").HasMaxLength(150).HasComment("BusinessApproval chain id that gates purchase order release.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.HasMany(x => x.Lines).WithOne().HasForeignKey("PurchaseOrderId").OnDelete(DeleteBehavior.Cascade);
         builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -153,6 +156,9 @@ public sealed class PurchaseOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").IsRequired().HasPrecision(18, 6).HasComment("ERP recorded receipt quantity.");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Purchase unit price.");
         builder.Property(x => x.PromisedDate).HasColumnName("promised_date").IsRequired().HasComment("Promised receipt date.");
+        builder.Property(x => x.OverReceiptTolerancePercent).HasColumnName("over_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed over receipt tolerance percent for the line.");
+        builder.Property(x => x.UnderReceiptTolerancePercent).HasColumnName("under_receipt_tolerance_percent").IsRequired().HasPrecision(9, 4).HasComment("Allowed under receipt tolerance percent for final delivery close.");
+        builder.Property(x => x.FinalDelivery).HasColumnName("final_delivery").IsRequired().HasComment("Whether final delivery was declared and the line is closed despite remaining quantity.");
         builder.Ignore(x => x.OpenQuantity);
         builder.Ignore(x => x.LineAmount);
     }
@@ -170,6 +176,8 @@ public sealed class PurchaseReceiptEntityTypeConfiguration : IEntityTypeConfigur
         builder.Property(x => x.PurchaseOrderNo).HasColumnName("purchase_order_no").IsRequired().HasMaxLength(100).HasComment("Referenced purchase order number.");
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Receipt currency code copied from purchase order.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Receipt exchange rate to local currency.");
         builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Receipt quality state summary.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase receipt status.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").IsRequired().HasComment("UTC recording time.");
@@ -188,7 +196,55 @@ public sealed class PurchaseReceiptLineEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Purchase receipt line id.");
         builder.Property<PurchaseReceiptId>("PurchaseReceiptId").HasColumnName("purchase_receipt_id").IsRequired().HasComment("Owning purchase receipt id.");
         builder.Property(x => x.PurchaseOrderLineNo).HasColumnName("purchase_order_line_no").IsRequired().HasMaxLength(100).HasComment("Referenced purchase order line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("MasterData SKU code copied from purchase order line for stock posting.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("MasterData UOM code copied from purchase order line for stock posting.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").IsRequired().HasMaxLength(100).HasComment("Inventory receipt location code.");
+        builder.Property(x => x.LotNo).HasColumnName("lot_no").HasMaxLength(100).HasComment("Optional received lot number.");
         builder.Property(x => x.ReceivedQuantity).HasColumnName("received_quantity").IsRequired().HasPrecision(18, 6).HasComment("Received quantity.");
         builder.Property(x => x.QualityStatus).HasColumnName("quality_status").IsRequired().HasMaxLength(50).HasComment("Line quality status.");
+    }
+}
+
+public sealed class SupplierInvoiceEntityTypeConfiguration : IEntityTypeConfiguration<SupplierInvoice>
+{
+    public void Configure(EntityTypeBuilder<SupplierInvoice> builder)
+    {
+        builder.ToTable("supplier_invoices", table => table.HasComment("ERP supplier invoice header matched against purchase order and receipt."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Supplier invoice aggregate id.");
+        PurchaseRequisitionEntityTypeConfiguration.AddTenantColumns(builder);
+        builder.Property(x => x.InvoiceNo).HasColumnName("invoice_no").IsRequired().HasMaxLength(100).HasComment("Supplier invoice number.");
+        builder.Property(x => x.PurchaseOrderNo).HasColumnName("purchase_order_no").IsRequired().HasMaxLength(100).HasComment("Matched purchase order number.");
+        builder.Property(x => x.PurchaseReceiptNo).HasColumnName("purchase_receipt_no").IsRequired().HasMaxLength(100).HasComment("Matched purchase receipt number.");
+        builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
+        builder.Property(x => x.InvoiceDate).HasColumnName("invoice_date").IsRequired().HasComment("Supplier invoice date.");
+        builder.Property(x => x.DueDate).HasColumnName("due_date").IsRequired().HasComment("Payment due date.");
+        builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Invoice currency code.");
+        builder.Property(x => x.ExchangeRate).HasColumnName("exchange_rate").IsRequired().HasPrecision(18, 8).HasComment("Invoice exchange rate to local currency.");
+        builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Matched invoice total amount.");
+        builder.Property(x => x.LocalTotalAmount).HasColumnName("local_total_amount").IsRequired().HasPrecision(18, 6).HasComment("Matched invoice total amount in local currency.");
+        builder.Property(x => x.MatchStatus).HasColumnName("match_status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Three-way match status.");
+        builder.Property(x => x.MatchedAtUtc).HasColumnName("matched_at_utc").IsRequired().HasComment("UTC match time.");
+        builder.HasMany(x => x.Lines).WithOne().HasForeignKey("SupplierInvoiceId").OnDelete(DeleteBehavior.Cascade);
+        builder.Navigation(x => x.Lines).UsePropertyAccessMode(PropertyAccessMode.Field);
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.InvoiceNo }).IsUnique();
+    }
+}
+
+public sealed class SupplierInvoiceLineEntityTypeConfiguration : IEntityTypeConfiguration<SupplierInvoiceLine>
+{
+    public void Configure(EntityTypeBuilder<SupplierInvoiceLine> builder)
+    {
+        builder.ToTable("supplier_invoice_lines", table => table.HasComment("ERP supplier invoice lines used for three-way match."));
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Supplier invoice line id.");
+        builder.Property<SupplierInvoiceId>("SupplierInvoiceId").HasColumnName("supplier_invoice_id").IsRequired().HasComment("Owning supplier invoice id.");
+        builder.Property(x => x.PurchaseOrderLineNo).HasColumnName("purchase_order_line_no").IsRequired().HasMaxLength(100).HasComment("Matched purchase order line number.");
+        builder.Property(x => x.PurchaseReceiptLineNo).HasColumnName("purchase_receipt_line_no").IsRequired().HasMaxLength(100).HasComment("Matched purchase receipt line number.");
+        builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Matched SKU code.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Matched UOM code.");
+        builder.Property(x => x.InvoiceQuantity).HasColumnName("invoice_quantity").IsRequired().HasPrecision(18, 6).HasComment("Supplier invoice quantity.");
+        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").IsRequired().HasPrecision(18, 6).HasComment("Supplier invoice unit price.");
+        builder.Ignore(x => x.LineAmount);
     }
 }

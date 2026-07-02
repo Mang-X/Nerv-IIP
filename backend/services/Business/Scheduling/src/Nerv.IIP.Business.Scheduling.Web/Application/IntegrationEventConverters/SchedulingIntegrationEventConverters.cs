@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
-using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Scheduling;
 using static Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters.SchedulingIntegrationEventConverterHelpers;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
@@ -87,14 +87,14 @@ public sealed class SchedulePlanGeneratedIntegrationEventConverter(
 public sealed class ScheduleConflictDetectedIntegrationEventConverter(
     TimeProvider timeProvider,
     ISchedulingIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<ScheduleConflictDetectedDomainEvent, SchedulingIntegrationEvent<ScheduleConflictDetectedPayload>>
+    : IIntegrationEventConverter<ScheduleConflictDetectedDomainEvent, ScheduleConflictDetectedIntegrationEvent>
 {
-    public SchedulingIntegrationEvent<ScheduleConflictDetectedPayload> Convert(ScheduleConflictDetectedDomainEvent domainEvent)
+    public ScheduleConflictDetectedIntegrationEvent Convert(ScheduleConflictDetectedDomainEvent domainEvent)
     {
         var plan = domainEvent.SchedulePlan;
         var conflict = domainEvent.Conflict;
         var context = contextAccessor.GetContext();
-        return Envelope(
+        var envelope = Envelope(
             SchedulingIntegrationEventTypes.ScheduleConflictDetected,
             plan.OrganizationId,
             plan.EnvironmentId,
@@ -114,22 +114,48 @@ public sealed class ScheduleConflictDetectedIntegrationEventConverter(
                 conflict.ResourceId),
             timeProvider,
             context);
+        return new ScheduleConflictDetectedIntegrationEvent(
+            envelope.EventId,
+            envelope.EventType,
+            envelope.EventVersion,
+            envelope.OccurredAtUtc,
+            envelope.SourceService,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.OrganizationId,
+            envelope.EnvironmentId,
+            envelope.Actor,
+            envelope.IdempotencyKey,
+            envelope.Payload);
     }
 }
 
 public sealed class SchedulePlanReleasedIntegrationEventConverter(
     TimeProvider timeProvider,
     ISchedulingIntegrationEventContextAccessor contextAccessor)
-    : IIntegrationEventConverter<SchedulePlanReleasedDomainEvent, SchedulingIntegrationEvent<SchedulePlanLifecyclePayload>>
+    : IIntegrationEventConverter<SchedulePlanReleasedDomainEvent, SchedulePlanReleasedIntegrationEvent>
 {
-    public SchedulingIntegrationEvent<SchedulePlanLifecyclePayload> Convert(SchedulePlanReleasedDomainEvent domainEvent)
+    public SchedulePlanReleasedIntegrationEvent Convert(SchedulePlanReleasedDomainEvent domainEvent)
     {
-        return PlanLifecycleEnvelope(
+        var envelope = PlanLifecycleEnvelope(
             SchedulingIntegrationEventTypes.SchedulePlanReleased,
             "schedule-plan-released",
             domainEvent.SchedulePlan,
             timeProvider,
             contextAccessor.GetContext());
+        return new SchedulePlanReleasedIntegrationEvent(
+            envelope.EventId,
+            envelope.EventType,
+            envelope.EventVersion,
+            envelope.OccurredAtUtc,
+            envelope.SourceService,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.OrganizationId,
+            envelope.EnvironmentId,
+            envelope.Actor,
+            envelope.IdempotencyKey,
+            envelope.Payload);
     }
 }
 
@@ -164,7 +190,9 @@ internal static class SchedulingIntegrationEventConverterHelpers
                         x.OperationId,
                         x.OperationSequence,
                         x.ResourceId,
-                        x.WorkCenterId))
+                        x.WorkCenterId,
+                        x.StartUtc,
+                        x.EndUtc))
                     .ToArray()),
             timeProvider,
             context);

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
 using Nerv.IIP.Ops.Infrastructure;
+using Nerv.IIP.Ops.Web.Application;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Ops.Web.Application.Queries;
@@ -26,7 +27,8 @@ public sealed class ListOperationTasksQueryHandler(IServiceProvider serviceProvi
         if (context is null)
         {
             return serviceProvider.GetRequiredService<IOpsStateStore>()
-                .ListTasks(request.OrganizationId, request.EnvironmentId, request.Page, request.PageSize);
+                .ListTasks(request.OrganizationId, request.EnvironmentId, request.Page, request.PageSize)
+                .ToContract();
         }
 
         var page = request.Page is > 0 ? request.Page.Value : DefaultPage;

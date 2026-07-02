@@ -3,6 +3,7 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application.Permissions;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Roles;
@@ -23,6 +24,7 @@ public interface IIamRoleApplicationService
     Task<RoleResponse> PatchRolePermissionsAsync(
         string roleId,
         IReadOnlyList<string> permissionCodes,
+        SecurityAuditContext? auditContext,
         CancellationToken cancellationToken);
 }
 
@@ -59,8 +61,10 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
     public Task<RoleResponse> PatchRolePermissionsAsync(
         string roleId,
         IReadOnlyList<string> permissionCodes,
+        SecurityAuditContext? auditContext,
         CancellationToken cancellationToken)
     {
+        _ = auditContext;
         var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
         try
         {
@@ -82,7 +86,9 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
 
 }
 
-public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository repository) : IIamRoleApplicationService
+public sealed class PostgreSqlIamRoleApplicationService(
+    IRoleRepository repository,
+    ISecurityAuditRecorder securityAudit) : IIamRoleApplicationService
 {
     public async Task<PagedListResponse<RoleResponse>> ListRolesAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
@@ -128,12 +134,24 @@ public sealed class PostgreSqlIamRoleApplicationService(IRoleRepository reposito
     public async Task<RoleResponse> PatchRolePermissionsAsync(
         string roleId,
         IReadOnlyList<string> permissionCodes,
+        SecurityAuditContext? auditContext,
         CancellationToken cancellationToken)
     {
         var role = await repository.GetByIdAsync(new RoleId(roleId), cancellationToken)
             ?? throw new KnownException($"Role '{roleId}' was not found.");
         var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
+        var before = role.Permissions.Select(x => x.PermissionCode).Order(StringComparer.Ordinal).ToArray();
         role.ReplacePermissions(seededCodes);
+        var after = role.Permissions.Select(x => x.PermissionCode).Order(StringComparer.Ordinal).ToArray();
+        await securityAudit.RecordAsync(
+            auditContext ?? new SecurityAuditContext("unknown", Guid.CreateVersion7().ToString("N"), null, "unknown", "unknown"),
+            "iam.role.permissions.changed",
+            "role",
+            role.Id.Id,
+            "success",
+            new { before, after },
+            DateTimeOffset.UtcNow,
+            cancellationToken);
         return ToResponse(role);
     }
 

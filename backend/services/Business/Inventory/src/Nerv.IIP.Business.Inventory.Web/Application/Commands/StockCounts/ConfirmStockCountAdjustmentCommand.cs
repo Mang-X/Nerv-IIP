@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
@@ -63,10 +64,28 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(ApplicationDbConte
             cancellationToken)
             ?? throw new KnownException("Stock ledger does not exist for the requested count adjustment.");
 
-        var movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+        StockMovement movement;
+        try
+        {
+            movement = task.ConfirmAdjustment(ledger, request.CountedQuantity, request.IdempotencyKey);
+        }
+        catch (StockCountRecountRequiredException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+        catch (InventoryDomainException exception) when (IsCommittedStockGuard(exception))
+        {
+            throw new KnownException(exception.Message);
+        }
+
         dbContext.StockMovements.Add(movement);
         var adjustment = StockCountAdjustment.Record(task, movement, request.IdempotencyKey);
         dbContext.StockCountAdjustments.Add(adjustment);
         return new ConfirmStockCountAdjustmentResult(movement.Id, task.VarianceQuantity ?? 0, ledger.OnHandQuantity);
+    }
+
+    private static bool IsCommittedStockGuard(InventoryDomainException exception)
+    {
+        return exception.Reason == InventoryDomainFailureReason.CommittedStockProtection;
     }
 }

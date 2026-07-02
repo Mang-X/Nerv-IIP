@@ -1,9 +1,14 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 
 public partial record ProductionReportMaterialConsumptionId : IGuidStronglyTypedId;
 
 public sealed class ProductionReportMaterialConsumption : Entity<ProductionReportMaterialConsumptionId>, IAggregateRoot
 {
+    public const string UnspecifiedUomCode = "UNSPECIFIED";
+    public const int FailureMessageMaxLength = 500;
+
     private ProductionReportMaterialConsumption()
     {
     }
@@ -16,6 +21,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string operationTaskId,
         string materialId,
         string materialLotId,
+        string uomCode,
         decimal consumedQuantity,
         string materialIssueRequestNo)
     {
@@ -26,6 +32,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = DomainGuard.Required(materialLotId, nameof(materialLotId));
+        UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
         ConsumedQuantity = DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
         MaterialIssueRequestNo = DomainGuard.Required(materialIssueRequestNo, nameof(materialIssueRequestNo));
     }
@@ -37,8 +44,12 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
     public string OperationTaskId { get; private set; } = string.Empty;
     public string MaterialId { get; private set; } = string.Empty;
     public string MaterialLotId { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = string.Empty;
     public decimal ConsumedQuantity { get; private set; }
     public string MaterialIssueRequestNo { get; private set; } = string.Empty;
+    public string? InventoryPostingFailureCode { get; private set; }
+    public string? InventoryPostingFailureMessage { get; private set; }
+    public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
 
     public static ProductionReportMaterialConsumption Record(
         string organizationId,
@@ -48,10 +59,11 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         string operationTaskId,
         string materialId,
         string materialLotId,
+        string uomCode,
         decimal consumedQuantity,
         string materialIssueRequestNo)
     {
-        return new ProductionReportMaterialConsumption(
+        var consumption = new ProductionReportMaterialConsumption(
             organizationId,
             environmentId,
             reportNo,
@@ -59,7 +71,25 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
             operationTaskId,
             materialId,
             materialLotId,
+            uomCode,
             consumedQuantity,
             materialIssueRequestNo);
+        consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
+        return consumption;
+    }
+
+    public void MarkInventoryPostingFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        InventoryPostingFailureCode = DomainGuard.Required(failureCode, nameof(failureCode));
+        InventoryPostingFailureMessage = NormalizeFailureMessage(failureMessage);
+        InventoryPostingFailedAtUtc = failedAtUtc;
+    }
+
+    private static string NormalizeFailureMessage(string failureMessage)
+    {
+        var normalized = DomainGuard.Required(failureMessage, nameof(failureMessage));
+        return normalized.Length <= FailureMessageMaxLength
+            ? normalized
+            : normalized[..FailureMessageMaxLength];
     }
 }

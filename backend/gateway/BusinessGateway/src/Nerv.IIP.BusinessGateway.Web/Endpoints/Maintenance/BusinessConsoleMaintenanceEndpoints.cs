@@ -167,6 +167,32 @@ public sealed class ListBusinessConsoleMaintenancePlansEndpoint(
 }
 
 [Tags("Business Console Maintenance")]
+[HttpPost("/api/business-console/v1/maintenance/plans/generate-due")]
+[BusinessGatewayOperationId("generateDueBusinessConsoleMaintenanceWorkOrders")]
+public sealed class GenerateDueBusinessConsoleMaintenanceWorkOrdersEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest, BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenancePlansManage)
+{
+    protected override string OrganizationId(BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request) => "maintenance-plan";
+
+    protected override string? ResourceId(BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request) => "generate-due";
+
+    protected override Task<BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse> ForwardAsync(
+        BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.GenerateDueWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
 [HttpPost("/api/business-console/v1/maintenance/inspections")]
 [BusinessGatewayOperationId("recordBusinessConsoleMaintenanceInspection")]
 public sealed class RecordBusinessConsoleMaintenanceInspectionEndpoint(
@@ -263,6 +289,32 @@ public sealed class CreateBusinessConsoleMaintenanceSparePartEndpoint(
 }
 
 [Tags("Business Console Maintenance")]
+[HttpGet("/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability")]
+[BusinessGatewayOperationId("queryBusinessConsoleMaintenanceAssetReliability")]
+public sealed class QueryBusinessConsoleMaintenanceAssetReliabilityEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMaintenanceClient maintenance,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleQueryMaintenanceAssetReliabilityRequest, BusinessConsoleAssetReliabilityResponse>(
+        auth,
+        BusinessGatewayPermissions.MaintenanceWorkOrdersRead)
+{
+    protected override string OrganizationId(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) => request.EnvironmentId;
+
+    protected override string? ResourceType(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) => "maintenance-asset";
+
+    protected override string? ResourceId(BusinessConsoleQueryMaintenanceAssetReliabilityRequest request) => Route<string>("deviceAssetId");
+
+    protected override Task<BusinessConsoleAssetReliabilityResponse> ForwardAsync(
+        BusinessConsoleQueryMaintenanceAssetReliabilityRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        maintenance.QueryAssetReliabilityAsync(tokenProvider.BearerToken, Route<string>("deviceAssetId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Maintenance")]
 [HttpGet("/api/business-console/v1/maintenance/availability-windows")]
 [BusinessGatewayOperationId("queryBusinessConsoleMaintenanceAvailabilityWindows")]
 public sealed class QueryBusinessConsoleMaintenanceAvailabilityWindowsEndpoint(
@@ -343,12 +395,23 @@ public sealed class BusinessConsoleCreateMaintenancePlanRequestValidator : Valid
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.PlanCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.PlanCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
         RuleFor(x => x.Interval).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Owner).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WindowEndUtc)
             .GreaterThan(x => x.WindowStartUtc)
             .When(x => x.WindowStartUtc.HasValue && x.WindowEndUtc.HasValue);
+    }
+}
+
+public sealed class BusinessConsoleGenerateDueMaintenanceWorkOrdersRequestValidator : Validator<BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest>
+{
+    public BusinessConsoleGenerateDueMaintenanceWorkOrdersRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RequestedBy).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -363,6 +426,16 @@ public sealed class BusinessConsoleRecordMaintenanceInspectionRequestValidator :
         RuleFor(x => x).Must(x => !string.IsNullOrWhiteSpace(x.PlanId) || !string.IsNullOrWhiteSpace(x.WorkOrderId));
         RuleFor(x => x.Inspector).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Result).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleQueryMaintenanceAssetReliabilityRequestValidator : Validator<BusinessConsoleQueryMaintenanceAssetReliabilityRequest>
+{
+    public BusinessConsoleQueryMaintenanceAssetReliabilityRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
     }
 }
 

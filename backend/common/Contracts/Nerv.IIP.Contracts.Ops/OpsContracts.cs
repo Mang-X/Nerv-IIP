@@ -59,6 +59,8 @@ public sealed record OperationAttemptSummary(
 public sealed record AuditRecordSummary(
     string AuditRecordId,
     string OperationTaskId,
+    long SequenceNo,
+    string PreviousIntegrityHash,
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,
@@ -82,6 +84,14 @@ public sealed record DecideOperationApprovalRequest(
 
 public sealed record AuditRecordListResponse(IReadOnlyList<AuditRecordSummary> Items);
 
+public sealed record AuditIntegrityValidationResponse(
+    bool IsValid,
+    int CheckedRecords,
+    string? FirstInvalidAuditRecordId,
+    long? FirstInvalidSequenceNo,
+    string? FailureCode,
+    string? FailureMessage);
+
 public sealed record SubmitAuditIntentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -93,6 +103,8 @@ public sealed record SubmitAuditIntentRequest(
 public sealed record AuditIntentResponse(
     string AuditRecordId,
     string OperationTaskId,
+    long SequenceNo,
+    string PreviousIntegrityHash,
     string Action,
     string Actor,
     DateTimeOffset OccurredAtUtc,

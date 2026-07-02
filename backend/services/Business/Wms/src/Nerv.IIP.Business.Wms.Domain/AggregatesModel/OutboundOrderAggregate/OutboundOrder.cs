@@ -12,6 +12,8 @@ public enum OutboundOrderStatus
 {
     Open = 0,
     Completed = 1,
+    InventoryPostingFailed = 2,
+    Cancelled = 3,
 }
 
 public sealed record OutboundOrderLineDraft(
@@ -71,8 +73,10 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
     public OutboundOrderStatus Status { get; private set; }
     public string? PackReviewNo { get; private set; }
     public bool? PackReviewPassed { get; private set; }
+    public string? CancellationReason { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
+    public DateTime? CancelledAtUtc { get; private set; }
     public IReadOnlyCollection<OutboundOrderLine> Lines => lines;
 
     public static OutboundOrder Create(
@@ -92,15 +96,15 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         string lineNo,
         string fromLocationCode,
         string toLocationCode,
-        decimal quantity)
+        decimal quantity,
+        string? inventoryReservationId = null)
     {
         EnsureOpen();
         var line = FindLine(lineNo);
-        if (quantity > line.RequestedQuantity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Pick quantity cannot exceed outbound line quantity.");
-        }
+        EnsurePickingQuantity(line, quantity);
 
+        line.MarkPickLocation(fromLocationCode);
+        line.MarkInventoryReserved(inventoryReservationId);
         return WarehouseTask.CreatePicking(
             OrganizationId,
             EnvironmentId,
@@ -115,7 +119,33 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             quantity);
     }
 
-    public InventoryMovementRequest CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
+    public void EnsureCanCreatePickingTask(string lineNo, decimal quantity)
+    {
+        EnsureOpen();
+        EnsurePickingQuantity(FindLine(lineNo), quantity);
+    }
+
+    private static void EnsurePickingQuantity(OutboundOrderLine line, decimal quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new KnownException("Pick quantity must be positive.");
+        }
+
+        if (quantity > line.RequestedQuantity)
+        {
+            throw new KnownException("Pick quantity cannot exceed outbound line quantity.");
+        }
+    }
+
+    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(string packReviewNo, bool passed, string idempotencyKey)
+        => CompletePackReview(packReviewNo, passed, idempotencyKey, null);
+
+    public IReadOnlyCollection<InventoryMovementRequest> CompletePackReview(
+        string packReviewNo,
+        bool passed,
+        string idempotencyKey,
+        IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
     {
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
@@ -124,30 +154,164 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Outbound order cannot complete when pack review failed.");
         }
 
-        var line = lines[0];
+        EnsureHasLines();
         PackReviewNo = WmsText.Required(packReviewNo, nameof(packReviewNo));
         PackReviewPassed = true;
         Status = OutboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
-        var request = InventoryMovementRequest.Create(
-            OrganizationId,
-            EnvironmentId,
-            "outbound",
-            OutboundOrderNo,
-            line.LineNo,
-            idempotencyKey,
-            line.SkuCode,
-            line.UomCode,
-            SiteCode,
-            line.PickLocationCode,
-            line.LotNo,
-            line.SerialNo,
-            line.QualityStatus,
-            line.OwnerType,
-            line.OwnerId,
-            line.RequestedQuantity);
+        var singleLine = lines.Count == 1;
+        foreach (var line in lines)
+        {
+            line.RecordFulfillment(GetExecutedQuantity(line, executedQuantitiesByLine));
+        }
+
+        var postingLines = lines.Where(x => x.IssuedQuantity > 0).ToArray();
+        if (postingLines.Length == 0)
+        {
+            throw new InvalidOperationException("Outbound order cannot complete without executed pick quantity.");
+        }
+
+        singleLine = postingLines.Length == 1;
+        var requests = postingLines.Select(line => InventoryMovementRequest.Create(
+                OrganizationId,
+                EnvironmentId,
+                "outbound",
+                OutboundOrderNo,
+                line.LineNo,
+                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                line.SkuCode,
+                line.UomCode,
+                SiteCode,
+                line.PickLocationCode,
+                line.LotNo,
+                line.SerialNo,
+                line.QualityStatus,
+                line.OwnerType,
+                line.OwnerId,
+                line.IssuedQuantity,
+                line.InventoryReservationId))
+            .ToArray();
         this.AddDomainEvent(new OutboundOrderCompletedDomainEvent(this));
-        return request;
+        return requests;
+    }
+
+    private static decimal GetExecutedQuantity(OutboundOrderLine line, IReadOnlyDictionary<string, decimal>? executedQuantitiesByLine)
+    {
+        if (executedQuantitiesByLine is null || !executedQuantitiesByLine.TryGetValue(line.LineNo, out var executedQuantity))
+        {
+            return line.RequestedQuantity;
+        }
+
+        if (executedQuantity < 0)
+        {
+            throw new InvalidOperationException($"Executed quantity for outbound line '{line.LineNo}' must be within requested quantity.");
+        }
+
+        return Math.Min(executedQuantity, line.RequestedQuantity);
+    }
+
+    public void MarkInventoryPostingFailed()
+    {
+        if (Status == OutboundOrderStatus.InventoryPostingFailed)
+        {
+            return;
+        }
+
+        if (Status != OutboundOrderStatus.Completed)
+        {
+            throw new InvalidOperationException("Only completed outbound orders can be marked as Inventory posting failed.");
+        }
+
+        Status = OutboundOrderStatus.InventoryPostingFailed;
+    }
+
+    public void EnsureCanCancel()
+    {
+        EnsureOpen();
+    }
+
+    public void Cancel(string reason)
+    {
+        EnsureCanCancel();
+        CancellationReason = WmsText.Required(reason, nameof(reason));
+        foreach (var line in lines)
+        {
+            line.ClearInventoryReservation();
+        }
+
+        Status = OutboundOrderStatus.Cancelled;
+        CancelledAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new OutboundOrderCancelledDomainEvent(this));
+    }
+
+    public void MarkInventoryReservationReleased(string inventoryReservationId)
+    {
+        var reservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
+        foreach (var line in lines.Where(x => x.InventoryReservationId == reservationId))
+        {
+            line.ClearInventoryReservation();
+        }
+    }
+
+    public void EnsureCanRetryInventoryPosting(IReadOnlyCollection<string> lineNos)
+    {
+        if (Status != OutboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new InvalidOperationException("Only outbound orders with failed Inventory posting can be retried.");
+        }
+
+        if (lineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed outbound line is required for Inventory posting retry.");
+        }
+
+        foreach (var lineNo in lineNos)
+        {
+            var line = FindLine(lineNo);
+            if (line.InventoryReservationId is not null)
+            {
+                throw new InvalidOperationException($"Outbound line '{lineNo}' still has an Inventory reservation and cannot be retried safely.");
+            }
+        }
+    }
+
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string?> inventoryReservationIds)
+    {
+        _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
+        EnsureCanRetryInventoryPosting(inventoryReservationIds.Keys.ToArray());
+        Status = OutboundOrderStatus.Completed;
+        var retryLines = lines
+            .Where(line => inventoryReservationIds.ContainsKey(line.LineNo))
+            .OrderBy(line => line.LineNo, StringComparer.Ordinal)
+            .ToArray();
+        var singleLine = retryLines.Length == 1;
+        var requests = retryLines.Select(line =>
+            {
+                var inventoryReservationId = inventoryReservationIds[line.LineNo];
+                line.MarkInventoryReserved(inventoryReservationId);
+                return InventoryMovementRequest.Create(
+                    OrganizationId,
+                    EnvironmentId,
+                    "outbound",
+                    OutboundOrderNo,
+                    line.LineNo,
+                    singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                    line.SkuCode,
+                    line.UomCode,
+                    SiteCode,
+                    line.PickLocationCode,
+                    line.LotNo,
+                    line.SerialNo,
+                    line.QualityStatus,
+                    line.OwnerType,
+                    line.OwnerId,
+                    line.RequestedQuantity,
+                    line.InventoryReservationId);
+            })
+            .ToArray();
+        return requests;
     }
 
     private OutboundOrderLine FindLine(string lineNo)
@@ -158,9 +322,17 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 
     private void EnsureOpen()
     {
-        if (Status == OutboundOrderStatus.Completed)
+        if (Status != OutboundOrderStatus.Open)
         {
-            throw new InvalidOperationException("Completed outbound orders are immutable.");
+            throw new InvalidOperationException("Completed or failed outbound orders are immutable.");
+        }
+    }
+
+    private void EnsureHasLines()
+    {
+        if (lines.Count == 0)
+        {
+            throw new InvalidOperationException("Outbound order must contain at least one line before completion.");
         }
     }
 }
@@ -195,9 +367,51 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public string? InventoryReservationId { get; private set; }
+    public decimal IssuedQuantity { get; private set; }
+    public decimal BackorderQuantity { get; private set; }
+    public bool FulfillmentRecorded { get; private set; }
 
     public static OutboundOrderLine Create(OutboundOrderLineDraft draft)
     {
         return new OutboundOrderLine(draft);
+    }
+
+    public void MarkInventoryReserved(string? inventoryReservationId)
+    {
+        if (string.IsNullOrWhiteSpace(inventoryReservationId))
+        {
+            return;
+        }
+
+        var normalizedReservationId = WmsText.Required(inventoryReservationId, nameof(inventoryReservationId));
+        if (InventoryReservationId is not null && InventoryReservationId != normalizedReservationId)
+        {
+            throw new InvalidOperationException("Outbound line already has a different Inventory reservation id.");
+        }
+
+        InventoryReservationId = normalizedReservationId;
+    }
+
+    public void MarkPickLocation(string pickLocationCode)
+    {
+        PickLocationCode = WmsText.Required(pickLocationCode, nameof(pickLocationCode));
+    }
+
+    public void RecordFulfillment(decimal issuedQuantity)
+    {
+        if (issuedQuantity < 0 || issuedQuantity > RequestedQuantity)
+        {
+            throw new InvalidOperationException("Issued quantity must be within requested quantity.");
+        }
+
+        IssuedQuantity = issuedQuantity;
+        BackorderQuantity = RequestedQuantity - issuedQuantity;
+        FulfillmentRecorded = true;
+    }
+
+    public void ClearInventoryReservation()
+    {
+        InventoryReservationId = null;
     }
 }

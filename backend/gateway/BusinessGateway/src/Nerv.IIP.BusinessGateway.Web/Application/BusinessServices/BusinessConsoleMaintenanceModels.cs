@@ -40,14 +40,25 @@ public sealed record BusinessConsoleCreateMaintenancePlanRequest(
     string OrganizationId,
     string EnvironmentId,
     string DeviceAssetId,
-    string PlanCode,
+    string? PlanCode,
     string Interval,
     DateOnly StartsOn,
     string Owner,
     DateTimeOffset? WindowStartUtc,
-    DateTimeOffset? WindowEndUtc);
+    DateTimeOffset? WindowEndUtc,
+    string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleCreateMaintenancePlanResponse(string PlanId);
+
+public sealed record BusinessConsoleGenerateDueMaintenanceWorkOrdersRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly BusinessDate,
+    string RequestedBy);
+
+public sealed record BusinessConsoleGenerateDueMaintenanceWorkOrdersResponse(
+    int GeneratedCount,
+    IReadOnlyCollection<string> WorkOrderIds);
 
 public sealed record BusinessConsoleRecordMaintenanceInspectionRequest(
     string OrganizationId,
@@ -125,3 +136,22 @@ public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string? UomCode);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartResponse(string SparePartLineId);
+
+public sealed record BusinessConsoleQueryMaintenanceAssetReliabilityRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc);
+
+public sealed record BusinessConsoleAssetReliabilityResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int FailureCount,
+    int RepairCount,
+    decimal? MtbfHours,
+    decimal? MttrMinutes,
+    string MtbfRuntimeSource,
+    bool MtbfRuntimeHasSamples);

@@ -1,25 +1,25 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesTraceability } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  DataTable,
-  Input,
+  ButtonPro,
+  DataTablePro,
+  InputPro,
   PageHeader,
   SectionCard,
   SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-definePage({ meta: { requiresAuth: true, title: '追溯查询' } })
+definePage({ meta: { requiresAuth: true, title: '追溯查询', requiredPermissions: ['business.mes.traceability.read'] } })
 
 const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } = useMesTraceability()
 
@@ -31,7 +31,7 @@ const batchModel = computed({
 })
 
 type NodeRow = (typeof nodes)['value'][number]
-const columns: DataTableColumn<NodeRow>[] = [
+const columns: DataTableProColumn<NodeRow>[] = [
   { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
   { key: 'nodeType', header: '类型', width: 'w-32' },
   { key: 'displayName', header: '名称' },
@@ -47,10 +47,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="追溯查询" :breadcrumbs="[{ label: '制造执行' }]">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -61,26 +61,28 @@ function formatError(error: unknown) {
 
     <Toolbar :show-search="false">
       <template #filters>
-        <Select v-model="filters.mode">
-          <SelectTrigger class="h-9 w-36" aria-label="查询类型"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="work-order">工单</SelectItem>
-            <SelectItem value="batch">批次/序列号</SelectItem>
-            <SelectItem value="material-lot">物料批</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input v-model="filters.workOrderId" class="h-9 w-40" placeholder="工单号" aria-label="工单号" />
-        <Input v-model="batchModel" class="h-9 w-44" placeholder="批次/序列号/物料批" aria-label="批次或物料批" />
+        <SelectPro v-model="filters.mode">
+          <SelectProTrigger class="h-9 w-36" aria-label="查询类型"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="work-order">工单</SelectProItem>
+            <SelectProItem value="batch">批次/序列号</SelectProItem>
+            <SelectProItem value="material-lot">物料批</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <InputPro v-model="filters.workOrderId" class="h-9 w-40" placeholder="工单号" aria-label="工单号" />
+        <InputPro v-model="batchModel" class="h-9 w-44" placeholder="批次/序列号/物料批" aria-label="批次或物料批" />
       </template>
     </Toolbar>
 
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
       :columns="columns"
       :rows="nodes"
       row-key="nodeId"
       :loading="traceabilityPending"
+      :searchable="false"
+      :column-settings="false"
       empty-message="暂无追溯数据。输入工单、批次/序列号或物料批后查询执行证据链。"
     />
   </BusinessLayout>

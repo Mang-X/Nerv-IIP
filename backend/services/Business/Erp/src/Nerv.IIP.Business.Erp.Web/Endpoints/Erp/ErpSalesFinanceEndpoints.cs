@@ -38,14 +38,50 @@ public sealed record ListSalesDocumentsRequest(
     int Skip = 0,
     int Take = 100);
 
-public sealed record CreateAccountPayableRequest(string OrganizationId, string EnvironmentId, string? PayableNo, string SourceDocumentNo, string SupplierCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
+public sealed record CreateAccountPayableRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? PayableNo,
+    string SourceDocumentNo,
+    string SupplierCode,
+    decimal Amount,
+    string CurrencyCode,
+    DateOnly? InvoiceDate = null,
+    DateOnly? DueDate = null,
+    string? PaymentTermCode = null,
+    string? IdempotencyKey = null,
+    decimal ExchangeRate = 1m);
 public sealed record CreateAccountPayableResponse(AccountPayableId AccountPayableId);
-public sealed record CreateAccountReceivableRequest(string OrganizationId, string EnvironmentId, string? ReceivableNo, string SourceDocumentNo, string CustomerCode, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
+public sealed record CreateAccountReceivableRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? ReceivableNo,
+    string SourceDocumentNo,
+    string CustomerCode,
+    decimal Amount,
+    string CurrencyCode,
+    DateOnly? InvoiceDate = null,
+    DateOnly? DueDate = null,
+    string? PaymentTermCode = null,
+    string? IdempotencyKey = null,
+    decimal ExchangeRate = 1m);
 public sealed record CreateAccountReceivableResponse(AccountReceivableId AccountReceivableId);
-public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null);
+public sealed record CreateCostCandidateRequest(string OrganizationId, string EnvironmentId, string? CandidateNo, string SourceType, string SourceDocumentNo, decimal Amount, string CurrencyCode, string? IdempotencyKey = null, decimal ExchangeRate = 1m);
 public sealed record CreateCostCandidateResponse(CostCandidateId CostCandidateId);
 public sealed record PostJournalVoucherRequest(string OrganizationId, string EnvironmentId, string? VoucherNo, DateOnly PostingDate, IReadOnlyCollection<JournalVoucherCommandLine> Lines, string? IdempotencyKey = null);
 public sealed record PostJournalVoucherResponse(JournalVoucherId JournalVoucherId);
+public sealed record RegisterAccountPayablePaymentRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string PayableNo,
+    decimal Amount,
+    DateOnly PaymentDate,
+    string CashAccountCode,
+    string IdempotencyKey,
+    string? PaymentCurrencyCode = null,
+    decimal PaymentExchangeRate = 1m,
+    IReadOnlyCollection<PayablePaymentAllocationCommandLine>? Allocations = null);
+public sealed record RegisterAccountReceivableCollectionRequest(string OrganizationId, string EnvironmentId, string ReceivableNo, decimal Amount, DateOnly CollectionDate, string CashAccountCode, string IdempotencyKey);
 public sealed record GetFinanceSummaryRequest(string OrganizationId, string EnvironmentId);
 public sealed record ListFinanceDocumentsRequest(
     string OrganizationId,
@@ -53,7 +89,8 @@ public sealed record ListFinanceDocumentsRequest(
     string? Status = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    DateOnly? AsOfDate = null);
 public sealed record GetAccountPayableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
 public sealed record GetAccountReceivableBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string SourceDocumentNo);
 public sealed record GetCostCandidateBySourceDocumentRequest(string OrganizationId, string EnvironmentId, string? SourceType, string SourceDocumentNo);
@@ -163,7 +200,7 @@ public sealed class CreateAccountPayableEndpoint(ISender sender) : ErpEndpoint<C
 
     public override async Task HandleAsync(CreateAccountPayableRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateAccountPayableCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.SourceDocumentNo, req.SupplierCode, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateAccountPayableCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.SourceDocumentNo, req.SupplierCode, req.Amount, req.CurrencyCode, req.InvoiceDate, req.DueDate, req.PaymentTermCode, req.IdempotencyKey, req.ExchangeRate), ct);
         await Send.OkAsync(new CreateAccountPayableResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -174,7 +211,7 @@ public sealed class CreateAccountReceivableEndpoint(ISender sender) : ErpEndpoin
 
     public override async Task HandleAsync(CreateAccountReceivableRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateAccountReceivableCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.SourceDocumentNo, req.CustomerCode, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateAccountReceivableCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.SourceDocumentNo, req.CustomerCode, req.Amount, req.CurrencyCode, req.InvoiceDate, req.DueDate, req.PaymentTermCode, req.IdempotencyKey, req.ExchangeRate), ct);
         await Send.OkAsync(new CreateAccountReceivableResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -185,7 +222,7 @@ public sealed class CreateCostCandidateEndpoint(ISender sender) : ErpEndpoint<Cr
 
     public override async Task HandleAsync(CreateCostCandidateRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode, req.IdempotencyKey), ct);
+        var id = await sender.Send(new CreateCostCandidateCommand(req.OrganizationId, req.EnvironmentId, req.CandidateNo, req.SourceType, req.SourceDocumentNo, req.Amount, req.CurrencyCode, req.IdempotencyKey, req.ExchangeRate), ct);
         await Send.OkAsync(new CreateCostCandidateResponse(id).AsResponseData(), cancellation: ct);
     }
 }
@@ -212,6 +249,28 @@ public sealed class ListJournalVouchersEndpoint(ISender sender) : ErpEndpoint<Li
     }
 }
 
+public sealed class RegisterAccountPayablePaymentEndpoint(ISender sender) : ErpEndpoint<RegisterAccountPayablePaymentRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<RegisterAccountPayablePaymentEndpoint>());
+
+    public override async Task HandleAsync(RegisterAccountPayablePaymentRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RegisterAccountPayablePaymentCommand(req.OrganizationId, req.EnvironmentId, req.PayableNo, req.Amount, req.PaymentDate, req.CashAccountCode, req.IdempotencyKey, req.PaymentCurrencyCode, req.PaymentExchangeRate, req.Allocations), ct);
+        await Send.OkAsync("registered".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RegisterAccountReceivableCollectionEndpoint(ISender sender) : ErpEndpoint<RegisterAccountReceivableCollectionRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<RegisterAccountReceivableCollectionEndpoint>());
+
+    public override async Task HandleAsync(RegisterAccountReceivableCollectionRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RegisterAccountReceivableCollectionCommand(req.OrganizationId, req.EnvironmentId, req.ReceivableNo, req.Amount, req.CollectionDate, req.CashAccountCode, req.IdempotencyKey), ct);
+        await Send.OkAsync("registered".AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class GetFinanceSummaryEndpoint(ISender sender) : ErpEndpoint<GetFinanceSummaryRequest, ResponseData<FinanceSummaryResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpFinanceEndpointContracts.Get<GetFinanceSummaryEndpoint>());
@@ -229,7 +288,7 @@ public sealed class ListAccountPayablesEndpoint(ISender sender) : ErpEndpoint<Li
 
     public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListAccountPayablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListAccountPayablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take, req.AsOfDate), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -240,7 +299,7 @@ public sealed class ListAccountReceivablesEndpoint(ISender sender) : ErpEndpoint
 
     public override async Task HandleAsync(ListFinanceDocumentsRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListAccountReceivablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListAccountReceivablesQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take, req.AsOfDate), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -315,6 +374,8 @@ public static class ErpFinanceEndpointContracts
         new(typeof(CreateAccountReceivableEndpoint), "POST", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountReceivable"),
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
         new(typeof(PostJournalVoucherEndpoint), "POST", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "postErpJournalVoucher"),
+        new(typeof(RegisterAccountPayablePaymentEndpoint), "POST", "/api/business/v1/erp/finance/payables/payment", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountPayablePayment"),
+        new(typeof(RegisterAccountReceivableCollectionEndpoint), "POST", "/api/business/v1/erp/finance/receivables/collection", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "registerErpAccountReceivableCollection"),
         new(typeof(ListJournalVouchersEndpoint), "GET", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpJournalVouchers"),
         new(typeof(GetFinanceSummaryEndpoint), "GET", "/api/business/v1/erp/finance/summary", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpFinanceSummary"),
         new(typeof(ListAccountPayablesEndpoint), "GET", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpAccountPayables"),

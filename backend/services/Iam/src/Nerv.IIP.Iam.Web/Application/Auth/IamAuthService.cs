@@ -7,6 +7,8 @@ using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserSessionAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Domain;
 
@@ -22,7 +24,10 @@ public sealed class PostgreSqlIamAuthService(
     IamTokenService tokenService,
     IOptions<IamAuthenticationOptions> authenticationOptions,
     IOptions<EnterpriseIdentityOptions> enterpriseIdentityOptions,
-    IMfaChallengeStore mfaChallenges)
+    IMfaChallengeStore mfaChallenges,
+    ISecurityAuditRecorder securityAudit,
+    ILogger<PostgreSqlIamAuthService> logger,
+    IHostEnvironment environment)
     : IIamAuthService
 {
     public async Task<AuthResponse> LoginAsync(
@@ -35,12 +40,31 @@ public sealed class PostgreSqlIamAuthService(
         var user = await userRepository.GetByLoginNameAsync(loginName, cancellationToken);
         if (user is null || !user.Enabled)
         {
+            await securityAudit.RecordAndSaveAsync(
+                new SecurityAuditContext($"login:{loginName}", Guid.CreateVersion7().ToString("N"), ipAddress, "unknown", "unknown"),
+                "iam.auth.login.failed",
+                "user",
+                loginName,
+                "failure",
+                new { reason = "unknown-or-disabled-user", loginName },
+                DateTimeOffset.UtcNow,
+                cancellationToken);
             throw Unauthorized();
         }
 
         var now = DateTimeOffset.UtcNow;
         if (user.IsLockedOut(now))
         {
+            var auditContext = await CreateUserAuditContextAsync(user, $"user:{user.Id.Id}", ipAddress, cancellationToken);
+            await securityAudit.RecordAndSaveAsync(
+                auditContext,
+                "iam.auth.login.failed",
+                "user",
+                user.Id.Id,
+                "failure",
+                new { reason = "locked-out", user.FailedLoginCount, user.LockoutUntilUtc },
+                now,
+                cancellationToken);
             throw Unauthorized();
         }
 
@@ -50,6 +74,16 @@ public sealed class PostgreSqlIamAuthService(
                 now,
                 authenticationOptions.Value.FailedLoginLockoutThreshold,
                 authenticationOptions.Value.FailedLoginLockoutWindow);
+            var auditContext = await CreateUserAuditContextAsync(user, $"user:{user.Id.Id}", ipAddress, cancellationToken);
+            await securityAudit.RecordAsync(
+                auditContext,
+                "iam.auth.login.failed",
+                "user",
+                user.Id.Id,
+                "failure",
+                new { reason = "bad-password", user.FailedLoginCount, user.LockoutUntilUtc },
+                now,
+                cancellationToken);
             await userRepository.PersistFailedLoginAsync(user, cancellationToken);
             throw Unauthorized();
         }
@@ -73,6 +107,22 @@ public sealed class PostgreSqlIamAuthService(
             cancellationToken);
         if (session is null)
         {
+            var replayedSession = await userSessionRepository.GetByRefreshTokenHashAsync(refreshTokenHash, cancellationToken);
+            if (replayedSession is not null && replayedSession.RevokedAtUtc is not null)
+            {
+                var revokedCount = await userSessionRepository.RevokeFamilyAsync(
+                    replayedSession.TokenFamilyId,
+                    now,
+                    "refresh-reuse-detected",
+                    cancellationToken);
+                logger.LogWarning(
+                    "RefreshTokenReuseDetected UserId={UserId} TokenFamilyId={TokenFamilyId} ReplayedSessionId={SessionId} RevokedSessions={RevokedSessions}",
+                    replayedSession.UserId.Id,
+                    replayedSession.TokenFamilyId,
+                    replayedSession.Id.Id,
+                    revokedCount);
+            }
+
             throw Unauthorized();
         }
 
@@ -82,10 +132,14 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
-        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
+        return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken, previousSession: session);
     }
 
-    public async Task RevokeSessionAsync(string sessionId, string reason, CancellationToken cancellationToken)
+    public async Task RevokeSessionAsync(
+        string sessionId,
+        string reason,
+        SecurityAuditContext? auditContext,
+        CancellationToken cancellationToken)
     {
         var session = await userSessionRepository.GetByIdAsync(new UserSessionId(sessionId), cancellationToken);
         if (session is null)
@@ -93,7 +147,17 @@ public sealed class PostgreSqlIamAuthService(
             return;
         }
 
-        session.Revoke(DateTimeOffset.UtcNow, reason);
+        var now = DateTimeOffset.UtcNow;
+        session.Revoke(now, reason);
+        await securityAudit.RecordAsync(
+            auditContext ?? await CreateSessionAuditContextAsync(session, $"user:{session.UserId.Id}", session.IpAddress, cancellationToken),
+            "iam.session.revoked",
+            "session",
+            session.Id.Id,
+            "success",
+            new { reason, userId = session.UserId.Id, session.RevokedAtUtc },
+            now,
+            cancellationToken);
     }
 
     public async Task<CurrentPrincipalResponse?> GetCurrentPrincipalAsync(HttpContext httpContext, CancellationToken cancellationToken)
@@ -169,11 +233,6 @@ public sealed class PostgreSqlIamAuthService(
                 cancellationToken));
     }
 
-    public async Task<bool> UserHasPermissionAsync(string userId, string permissionCode, CancellationToken cancellationToken)
-    {
-        return await membershipRepository.UserHasPermissionAsync(new UserId(userId), permissionCode, cancellationToken);
-    }
-
     public async Task<bool> UserHasPermissionAsync(
         string userId,
         string organizationId,
@@ -198,12 +257,13 @@ public sealed class PostgreSqlIamAuthService(
         string secret,
         CancellationToken cancellationToken)
     {
-        var secretHash = tokenService.HashSecret(secret);
-        var credential = await connectorHostCredentialRepository.GetByConnectorHostAndSecretHashAsync(
+        var credential = await connectorHostCredentialRepository.GetByConnectorHostIdAsync(
             connectorHostId,
-            secretHash,
             cancellationToken);
-        if (credential is null || !credential.IsValidAt(DateTimeOffset.UtcNow))
+        var now = DateTimeOffset.UtcNow;
+        if (credential is null
+            || !credential.IsValidAt(now)
+            || !tokenService.VerifySecret(secret, credential.SecretHash))
         {
             throw Unauthorized();
         }
@@ -222,9 +282,10 @@ public sealed class PostgreSqlIamAuthService(
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var secretHash = tokenService.HashSecret(clientSecret);
         var externalClient = await externalClientRepository.GetByClientIdAsync(clientId, cancellationToken);
-        if (externalClient is null || !externalClient.CanAuthenticate(secretHash, now))
+        if (externalClient is null
+            || !externalClient.CanAuthenticate(now)
+            || !tokenService.VerifySecret(clientSecret, externalClient.SecretHash))
         {
             throw Unauthorized();
         }
@@ -296,6 +357,7 @@ public sealed class PostgreSqlIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var provider = GetEnabledProvider(request.Provider);
         EnsureCallbackSecret(request.CallbackSecret, provider);
         EnsureAllowedEmailDomain(request.Email, provider);
@@ -343,6 +405,7 @@ public sealed class PostgreSqlIamAuthService(
         string? ipAddress,
         CancellationToken cancellationToken)
     {
+        EnsureEnterpriseIdentityStubAllowed();
         var context = mfaChallenges.Consume(
             challengeId,
             code,
@@ -387,7 +450,8 @@ public sealed class PostgreSqlIamAuthService(
         string authenticationMethod = "password",
         string? externalProvider = null,
         string? externalSubject = null,
-        DateTimeOffset? mfaVerifiedAtUtc = null)
+        DateTimeOffset? mfaVerifiedAtUtc = null,
+        UserSession? previousSession = null)
     {
         var refreshToken = tokenService.CreateRefreshToken();
         var now = DateTimeOffset.UtcNow;
@@ -417,7 +481,9 @@ public sealed class PostgreSqlIamAuthService(
             authenticationMethod,
             externalProvider,
             externalSubject,
-            mfaVerifiedAtUtc);
+            mfaVerifiedAtUtc,
+            previousSession?.TokenFamilyId,
+            previousSession?.Id.Id);
 
         await userSessionRepository.AddAsync(session, cancellationToken);
         var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
@@ -457,6 +523,36 @@ public sealed class PostgreSqlIamAuthService(
             cancellationToken);
     }
 
+    private async Task<SecurityAuditContext> CreateUserAuditContextAsync(
+        User user,
+        string actor,
+        string? sourceIp,
+        CancellationToken cancellationToken)
+    {
+        var membership = await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken);
+        return new SecurityAuditContext(
+            actor,
+            Guid.CreateVersion7().ToString("N"),
+            sourceIp,
+            membership?.OrganizationId.Id ?? "unknown",
+            membership?.EnvironmentId.Id ?? "unknown");
+    }
+
+    private async Task<SecurityAuditContext> CreateSessionAuditContextAsync(
+        UserSession session,
+        string actor,
+        string? sourceIp,
+        CancellationToken cancellationToken)
+    {
+        var membership = await membershipRepository.GetFirstByUserIdAsync(session.UserId, cancellationToken);
+        return new SecurityAuditContext(
+            actor,
+            Guid.CreateVersion7().ToString("N"),
+            sourceIp,
+            membership?.OrganizationId.Id ?? "unknown",
+            membership?.EnvironmentId.Id ?? "unknown");
+    }
+
     private static HashSet<string> SplitScope(string? scope)
     {
         if (string.IsNullOrWhiteSpace(scope))
@@ -478,6 +574,14 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         return options;
+    }
+
+    private void EnsureEnterpriseIdentityStubAllowed()
+    {
+        if (!environment.IsDevelopment())
+        {
+            throw Unauthorized();
+        }
     }
 
     private static void EnsureCallbackSecret(string callbackSecret, OidcProviderOptions provider)

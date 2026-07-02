@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { DataTableColumn } from '@nerv-iip/ui'
+import type { DataTableProColumn } from '@nerv-iip/ui'
 import { useMesOverview } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Card,
-  CardContent,
-  DataTable,
+  ButtonPro,
+  CardPro,
+  CardProContent,
+  DataTablePro,
   PageHeader,
   SectionCard,
   SectionCards,
@@ -24,7 +24,7 @@ import {
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '生产驾驶舱' } })
+definePage({ meta: { requiresAuth: true, title: '生产驾驶舱', requiredPermissions: ['business.mes.overview.read'] } })
 
 const { blockers, counts, overviewError, overviewPending, pendingWork, refreshOverview } = useMesOverview()
 
@@ -71,7 +71,7 @@ const roleLanes = computed(() => [
 ])
 
 type BlockerRow = (typeof blockers)['value'][number]
-const blockerColumns: DataTableColumn<BlockerRow>[] = [
+const blockerColumns: DataTableProColumn<BlockerRow>[] = [
   { key: 'areaCode', header: '区域', width: 'w-28', accessor: (r) => r.areaCode ?? '未知' },
   { key: 'code', header: '代码', cellClass: 'font-medium', accessor: (r) => r.code ?? '未知' },
   { key: 'message', header: '说明', accessor: (r) => r.message ?? '无说明' },
@@ -90,10 +90,10 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="生产驾驶舱" :breadcrumbs="[{ label: '制造执行' }]">
       <template #actions>
-        <Button size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="overviewPending" @click="refreshOverview">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
@@ -136,20 +136,22 @@ function formatError(error: unknown) {
           <span class="text-sm font-semibold text-foreground">现场阻塞</span>
           <RouterLink class="text-sm font-medium text-brand hover:underline" :to="{ path: '/mes/capacity' }">异常与产能</RouterLink>
         </div>
-        <DataTable
+        <DataTablePro
           :columns="blockerColumns"
           :rows="blockers"
           :row-key="(r) => `${r.areaCode}-${r.code}`"
           :loading="overviewPending"
+          :searchable="false"
+          :column-settings="false"
           empty-message="当前没有生产阻塞。可进入工单与派工继续安排今日任务。"
         >
           <template #cell-count="{ row }"><span class="tabular-nums">{{ row.count ?? 0 }}</span></template>
-        </DataTable>
+        </DataTablePro>
       </div>
 
       <div class="grid gap-4">
-        <Card>
-          <CardContent class="p-0">
+        <CardPro>
+          <CardProContent class="p-0">
             <div class="border-b px-4 py-3">
               <h2 class="text-sm font-semibold text-foreground">角色工作台</h2>
               <p class="mt-1 text-xs text-muted-foreground">把同一批生产事实按一线角色重组入口。</p>
@@ -171,11 +173,11 @@ function formatError(error: unknown) {
                 </div>
               </RouterLink>
             </div>
-          </CardContent>
-        </Card>
+          </CardProContent>
+        </CardPro>
 
-        <Card>
-          <CardContent class="grid gap-3">
+        <CardPro>
+          <CardProContent class="grid gap-3">
             <div class="flex items-center gap-2">
               <PackageCheckIcon class="size-4 text-primary" aria-hidden="true" />
               <h2 class="text-sm font-semibold text-foreground">下一步建议</h2>
@@ -186,18 +188,18 @@ function formatError(error: unknown) {
               <p>3. 班中执行以工序执行为主，不要求一线人员跨模块手工拼接编号。</p>
             </div>
             <div class="flex flex-wrap gap-2 pt-1">
-              <Button size="sm" type="button" as-child>
+              <ButtonPro size="sm" type="button" as-child>
                 <RouterLink :to="{ path: '/mes/work-orders' }"><FactoryIcon aria-hidden="true" />工单与派工</RouterLink>
-              </Button>
-              <Button size="sm" type="button" variant="outline" as-child>
+              </ButtonPro>
+              <ButtonPro size="sm" type="button" variant="outline" as-child>
                 <RouterLink :to="{ path: '/mes/operation-tasks' }"><ClipboardCheckIcon aria-hidden="true" />工序执行</RouterLink>
-              </Button>
-              <Button size="sm" type="button" variant="outline" as-child>
+              </ButtonPro>
+              <ButtonPro size="sm" type="button" variant="outline" as-child>
                 <RouterLink :to="{ path: '/mes/capacity' }"><WrenchIcon aria-hidden="true" />异常与产能</RouterLink>
-              </Button>
+              </ButtonPro>
             </div>
-          </CardContent>
-        </Card>
+          </CardProContent>
+        </CardPro>
       </div>
     </div>
   </BusinessLayout>

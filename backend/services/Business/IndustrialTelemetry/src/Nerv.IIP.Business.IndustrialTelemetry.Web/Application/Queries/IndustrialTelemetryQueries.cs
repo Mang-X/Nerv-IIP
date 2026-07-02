@@ -51,6 +51,11 @@ public sealed record AlarmRuleListItem(
     decimal ThresholdValue,
     string UnitCode,
     bool IsEnabled,
+    decimal DeadbandValue,
+    int OnDelaySeconds,
+    int OffDelaySeconds,
+    int MinDurationSeconds,
+    string Priority,
     DateTimeOffset UpdatedAtUtc);
 
 public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
@@ -81,6 +86,11 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
                 x.ThresholdValue,
                 x.UnitCode,
                 x.IsEnabled,
+                x.DeadbandValue,
+                x.OnDelaySeconds,
+                x.OffDelaySeconds,
+                x.MinDurationSeconds,
+                x.Priority,
                 x.UpdatedAtUtc))
             .Skip(request.Skip)
             .Take(request.Take)
@@ -91,7 +101,7 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
 
 public sealed record ListAlarmEventsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
-public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
+public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Priority, string? TagKey, decimal? ObservedValue, decimal? ThresholdValue, string? UnitCode, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
 
 public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListAlarmEventsQuery, PagedListResponse<AlarmEventListItem>>
@@ -107,7 +117,7 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RaisedAtUtc)
-            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
+            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Priority, x.TagKey, x.ObservedValue, x.ThresholdValue, x.UnitCode, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
@@ -167,6 +177,7 @@ public sealed record OeeResponse(
     DateTimeOffset WindowEndUtc,
     int StateSampleCount,
     decimal AvailabilityRate,
+    decimal LoadingRate,
     decimal PerformanceRate,
     decimal QualityRate,
     decimal OeeRate,
@@ -187,14 +198,6 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryOeeQuery, OeeResponse>
 {
-    private static readonly HashSet<string> RunningStates = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "available",
-        "ready",
-        "running",
-        "standby",
-    };
-
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
     {
         var carryInState = await dbContext.DeviceStateSnapshots
@@ -220,10 +223,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             ? inWindowStates
             : [carryInState, .. inWindowStates];
 
-        var availabilityRate = CalculateAvailabilityRate(states, request.WindowStartUtc, request.WindowEndUtc);
+        var runtimeRates = CalculateRuntimeRates(states, request.WindowStartUtc, request.WindowEndUtc);
         var performanceRate = states.Length > 0 ? 1m : 0m;
         var qualityRate = states.Length > 0 ? 1m : 0m;
-        var oeeRate = availabilityRate * performanceRate * qualityRate;
+        var oeeRate = runtimeRates.AvailabilityRate * performanceRate * qualityRate;
 
         return new OeeResponse(
             request.OrganizationId,
@@ -232,7 +235,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             request.WindowStartUtc,
             request.WindowEndUtc,
             states.Length,
-            Math.Round(availabilityRate, 6),
+            Math.Round(runtimeRates.AvailabilityRate, 6),
+            Math.Round(runtimeRates.LoadingRate, 6),
             performanceRate,
             qualityRate,
             Math.Round(oeeRate, 6),
@@ -240,20 +244,16 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             true);
     }
 
-    private static decimal CalculateAvailabilityRate(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
+    private static OeeRuntimeRates CalculateRuntimeRates(IReadOnlyList<OeeStatePoint> states, DateTimeOffset windowStartUtc, DateTimeOffset windowEndUtc)
     {
         if (states.Count == 0)
         {
-            return 0m;
+            return new OeeRuntimeRates(0m, 0m);
         }
 
         var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
-        if (totalTicks <= 0)
-        {
-            return 0m;
-        }
-
-        var runningTicks = 0L;
+        var loadingTicks = 0L;
+        var productiveRuntimeTicks = 0L;
         for (var i = 0; i < states.Count; i++)
         {
             var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
@@ -263,21 +263,40 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
                 segmentEnd = windowEndUtc;
             }
 
-            if (segmentEnd <= segmentStart || !IsRunningState(states[i].State))
+            if (segmentEnd <= segmentStart || IsPlannedDownState(states[i].State))
             {
                 continue;
             }
 
-            runningTicks += segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            var segmentTicks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
+            loadingTicks += segmentTicks;
+            if (IsProductiveRuntimeState(states[i].State))
+            {
+                productiveRuntimeTicks += segmentTicks;
+            }
         }
 
-        return decimal.Divide(runningTicks, totalTicks);
+        if (loadingTicks <= 0)
+        {
+            return new OeeRuntimeRates(0m, 0m);
+        }
+
+        var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
+        var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
+        return new OeeRuntimeRates(availabilityRate, loadingRate);
     }
 
-    private static bool IsRunningState(string state)
+    private static bool IsProductiveRuntimeState(string state)
     {
-        return RunningStates.Contains(state);
+        return EquipmentRuntimeDeviceStates.IsProductiveRuntime(state);
     }
+
+    private static bool IsPlannedDownState(string state)
+    {
+        return EquipmentRuntimeDeviceStates.IsPlannedDownState(state);
+    }
+
+    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
 }
@@ -374,8 +393,6 @@ public sealed class QueryRuntimeAvailabilityQueryValidator : AbstractValidator<Q
 public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryRuntimeAvailabilityQuery, EquipmentRuntimeAvailabilityResponse>
 {
-    private static readonly string[] AvailableStates = ["available", "idle", "ready", "running", "standby"];
-
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryRuntimeAvailabilityQuery request, CancellationToken cancellationToken)
     {
         var requestedDeviceAssetIds = request.DeviceAssetIds?
@@ -515,7 +532,7 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
 
     private static bool IsAvailableState(string state)
     {
-        return AvailableStates.Contains(state, StringComparer.OrdinalIgnoreCase);
+        return EquipmentRuntimeDeviceStates.IsRuntimeAvailable(state);
     }
 
     private static EquipmentRuntimeSeverity MapAlarmSeverity(string severity)

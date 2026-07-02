@@ -5,39 +5,38 @@ import type {
   BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { DataTableColumn, DataTableSort } from '@nerv-iip/ui'
+import type { DataTableProColumn, DataTableSort } from '@nerv-iip/ui'
+import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/useBusinessMasterData'
 import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  Button,
-  Checkbox,
-  DataTable,
-  DataTablePagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-  Input,
+  ButtonPro,
+  CheckboxPro,
+  DataTablePro,
+  DialogPro,
+  DialogProContent,
+  DialogProDescription,
+  DialogProFooter,
+  DialogProHeader,
+  DialogProTitle,
+  DropdownMenuProItem,
+  DropdownMenuProSeparator,
+  FieldPro,
+  FieldProDescription,
+  FieldProGroup,
+  FieldProLabel,
+  InputPro,
   PageHeader,
   RowActions,
-  SectionCard,
-  SectionCards,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
-  StatusBadge,
+  StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
 import { watchDebounced } from '@vueuse/core'
@@ -54,7 +53,7 @@ import {
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-definePage({ meta: { requiresAuth: true, title: '工单与派工' } })
+definePage({ meta: { requiresAuth: true, title: '工单与派工', requiredPermissions: ['business.mes.work-orders.read'] } })
 
 type Row = BusinessConsoleMesWorkOrderItem
 
@@ -76,6 +75,7 @@ const {
 const route = useRoute()
 const router = useRouter()
 const { skus } = useBusinessSkus()
+const { resolveSku, resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 
 const rushSuccess = shallowRef('')
@@ -100,30 +100,15 @@ watch(workCenterFilter, (value) => {
   filters.workCenterId = value === 'all' ? undefined : value
 })
 
-const statusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '已下达', value: 'Released' },
-  { label: '可开工', value: 'Ready' },
-  { label: '执行中', value: 'Running' },
-  { label: '已完成', value: 'Completed' },
-  { label: '已关闭', value: 'Closed' },
-  { label: '阻塞', value: 'Blocked' },
-]
-const demandEntries = [
-  { title: '正常订单', description: '销售订单进入计划池', action: '去生产计划', path: '/mes/plans?source=sales' },
-  { title: '备货生产', description: '主生产计划确认后下达', action: '查看计划来源', path: '/mes/plans?source=stock' },
-  { title: '安全库存补充', description: '库存水位触发补货', action: '处理补货计划', path: '/mes/plans?source=safety' },
-  { title: '急单插单', description: '临时插单或返工补单', action: '创建急单', path: '' },
-]
-
+const statusOptions = mesWorkOrderStatusOptions
 const rushForm = reactive({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
-  skuId: 'FG-SAD-FRT-001',
+  skuId: '',
   productionVersionId: '',
   quantity: '1',
   dueUtc: toLocalDateTimeInput(new Date(Date.now() + 86_400_000)),
-  workCenterId: 'WC-001',
+  workCenterId: '',
   operationTaskId: '',
   operationSequence: '10',
   durationMinutes: '60',
@@ -160,27 +145,6 @@ const workCenterOptions = computed(() => toResourceOptions(workCenterResources.v
 const skuOptions = computed(() => toResourceOptions(skus.value))
 
 const visibleWorkOrders = computed(() => workOrders.value)
-
-const openOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => (order.status ?? '').toLowerCase() !== 'closed').length,
-)
-const blockedOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => ['blocked', 'hold', 'held'].includes((order.status ?? '').toLowerCase())).length,
-)
-const readyOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => ['ready', 'released'].includes((order.status ?? '').toLowerCase())).length,
-)
-const runningOrderCount = computed(
-  () => visibleWorkOrders.value.filter((order) => ['running', 'inprogress', 'started'].includes((order.status ?? '').toLowerCase())).length,
-)
-const operationCount = computed(() =>
-  visibleWorkOrders.value.reduce((total, order) => total + (order.operationTasks?.length ?? 0), 0),
-)
-const dispatchLanes = computed(() => [
-  { title: '待派工', value: readyOrderCount.value, description: '已具备下达或开工条件，优先确认工作中心与班次。', tone: 'border-primary/20 bg-primary/5' },
-  { title: '执行中', value: runningOrderCount.value, description: '现场已经开始生产，关注报工、质量和停机异常。', tone: 'border-brand/30 bg-brand/5' },
-  { title: '受阻', value: blockedOrderCount.value, description: '先处理物料、质量、设备或准备检查问题。', tone: blockedOrderCount.value > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-success/30 bg-success/5' },
-])
 
 const canCreateRush = computed(
   () =>
@@ -237,22 +201,6 @@ watch([page, pageSize], () => {
 }, { immediate: true })
 
 watch(
-  () => rushForm.skuId,
-  (skuId) => {
-    if (skuId === 'FG-SAD-RR-001') {
-      rushForm.productionVersionId = 'PV-RR-2026-B'
-      rushForm.workCenterId = rushForm.workCenterId || 'WC-OIL-FILL'
-      return
-    }
-    if (skuId === 'FG-SAD-FRT-001') {
-      rushForm.productionVersionId = 'PV-FRT-2026-A'
-      rushForm.workCenterId = rushForm.workCenterId || 'WC-TUBE-WELD'
-    }
-  },
-  { immediate: true },
-)
-
-watch(
   () => route.query,
   (query) => {
     const workOrderId = firstQueryValue(query.workOrderId)
@@ -265,7 +213,7 @@ watch(
   { immediate: true },
 )
 
-const columns: DataTableColumn<Row>[] = [
+const columns: DataTableProColumn<Row>[] = [
   { key: 'workOrderId', header: '工单', sortable: true, cellClass: 'font-medium' },
   { key: 'status', header: '状态', sortable: true, width: 'w-24' },
   { key: 'quantity', header: '数量', align: 'end', sortable: true, width: 'w-24', accessor: (r) => r.quantity ?? 0 },
@@ -276,14 +224,6 @@ const columns: DataTableColumn<Row>[] = [
 
 function rowKey(order: Row) {
   return order.workOrderId ?? `${order.skuId ?? 'wo'}-${order.dueUtc ?? ''}`
-}
-
-function openDemandEntry(path: string) {
-  if (!path) {
-    rushSheetOpen.value = true
-    return
-  }
-  void router.push(path)
 }
 
 function useWorkOrder(order: Row) {
@@ -382,6 +322,7 @@ function formatStatus(value?: string | null) {
     blocked: '阻塞',
     closed: '已关闭',
     completed: '已完成',
+    inprogress: '执行中',
     queued: '排队中',
     ready: '可开工',
     released: '已下达',
@@ -417,76 +358,51 @@ function isNonEmpty(value: string) {
       :count="`${workOrdersTotal} 个工单`"
     >
       <template #actions>
-        <Button size="sm" type="button" variant="outline" @click="router.push('/mes/plans')">
+        <ButtonPro size="sm" type="button" variant="outline" @click="router.push('/mes/plans')">
           <CalendarCheckIcon aria-hidden="true" />
           生产计划
-        </Button>
-        <Button size="sm" type="button" variant="outline" @click="rushSheetOpen = true">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" @click="rushSheetOpen = true">
           <FactoryIcon aria-hidden="true" />
           创建急单
-        </Button>
-        <Button size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" :disabled="workOrdersPending" @click="refreshWorkOrders">
           <RefreshCwIcon aria-hidden="true" />
           刷新
-        </Button>
+        </ButtonPro>
       </template>
     </PageHeader>
 
-    <div class="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-4 py-3">
-      <span class="text-sm font-semibold text-foreground">工单来源</span>
-      <button
-        v-for="entry in demandEntries"
-        :key="entry.title"
-        class="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:border-primary/50 hover:bg-muted/40"
-        type="button"
-        @click="openDemandEntry(entry.path)"
-      >
-        <span class="font-medium text-foreground">{{ entry.title }}</span>
-        <span class="text-muted-foreground">{{ entry.description }}</span>
-        <span class="font-medium text-primary">{{ entry.action }}</span>
-      </button>
-    </div>
-
-    <div class="grid gap-3 lg:grid-cols-3">
-      <div v-for="lane in dispatchLanes" :key="lane.title" class="grid gap-3 rounded-lg border p-4" :class="lane.tone">
-        <div class="flex items-center justify-between">
-          <p class="text-sm font-semibold text-foreground">{{ lane.title }}</p>
-          <span class="text-2xl font-semibold tabular-nums">{{ lane.value }}</span>
-        </div>
-        <p class="text-sm leading-6 text-muted-foreground">{{ lane.description }}</p>
-      </div>
-    </div>
-
-    <SectionCards :columns="3">
-      <SectionCard description="工单数" :value="workOrdersTotal" hint="后端分页总数" />
-      <SectionCard description="未关闭工单" :value="openOrderCount" hint="仍需现场跟进" />
-      <SectionCard description="工序任务" :value="operationCount" hint="工单下可见任务" />
-    </SectionCards>
-
     <Toolbar v-model:search="keyword" search-placeholder="搜索工单、物料、生产版本">
       <template #filters>
-        <Select v-model="statusFilter">
-          <SelectTrigger class="h-9 w-32" aria-label="工单状态"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select v-model="workCenterFilter">
-          <SelectTrigger class="h-9 w-40" aria-label="工作中心"><SelectValue placeholder="全部工作中心" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部工作中心</SelectItem>
-            <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-          </SelectContent>
-        </Select>
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="工单状态"><SelectProValue /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="workCenterFilter">
+          <SelectProTrigger class="h-9 w-40" aria-label="工作中心"><SelectProValue placeholder="全部工作中心" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部工作中心</SelectProItem>
+            <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
       <template #actions>
-        <Button type="button" variant="ghost" size="sm" @click="resetFilters">重置</Button>
+        <ButtonPro type="button" variant="ghost" size="sm" @click="resetFilters">重置</ButtonPro>
       </template>
     </Toolbar>
 
     <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">{{ listErrorMessage }}</p>
 
-    <DataTable
+    <DataTablePro
+      manual
+      :page="page"
+      :page-size="pageSize"
+      :total-items="workOrdersTotal"
+      @update:page="page = $event"
+      @update:page-size="(v) => (pageSize = String(v))"
       v-model:sort="sort"
       :columns="columns"
       :rows="pagedWorkOrders"
@@ -494,6 +410,8 @@ function isNonEmpty(value: string) {
       :client-sort="false"
       :loading="workOrdersPending"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
+      :searchable="false"
+      :column-settings="false"
     >
       <template #cell-workOrderId="{ row }">
         <RouterLink
@@ -501,15 +419,15 @@ function isNonEmpty(value: string) {
           :to="`/mes/work-orders/${encodeURIComponent(row.workOrderId)}`"
           class="flex flex-col gap-0.5 text-left"
         >
-          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderId }}</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="font-medium text-brand underline-offset-4 hover:underline">{{ row.workOrderNo ?? row.workOrderId }}</span>
+          <span class="text-xs text-muted-foreground">{{ resolveSku(row.skuCode ?? row.skuId) ?? '无' }}</span>
         </RouterLink>
         <div v-else class="flex flex-col gap-0.5">
           <span class="font-medium text-muted-foreground">无编号</span>
-          <span class="text-xs text-muted-foreground">{{ row.skuId ?? '无物料' }}</span>
+          <span class="text-xs text-muted-foreground">{{ resolveSku(row.skuCode ?? row.skuId) ?? '无' }}</span>
         </div>
       </template>
-      <template #cell-status="{ row }"><StatusBadge :value="row.status" /></template>
+      <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template>
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
       <template #cell-operationCount="{ row }">
@@ -519,96 +437,95 @@ function isNonEmpty(value: string) {
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
             class="text-xs text-muted-foreground"
           >
-            {{ task.operationSequence ?? '无' }} / {{ task.workCenterId ?? '无' }} / {{ formatStatus(task.status) }}
+            {{ task.operationSequence ?? '无' }} / {{ task.workCenterName ?? resolveWorkCenter(task.workCenterCode ?? task.workCenterId) ?? '无' }} / {{ task.operationTaskNo ?? task.operationTaskId ?? '无任务' }} / {{ formatStatus(task.status) }}
           </span>
           <span v-if="!(row.operationTasks?.length)" class="text-xs text-muted-foreground">暂无工序任务</span>
         </div>
       </template>
       <template #cell-actions="{ row }">
         <RowActions :label="`工单操作 ${row.workOrderId ?? ''}`">
-          <DropdownMenuItem @click="openOrderDetail(row)">
+          <DropdownMenuProItem @click="openOrderDetail(row)">
             <EyeIcon aria-hidden="true" />
             查看详情
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/materials', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/materials', row)">
             <PackageCheckIcon aria-hidden="true" />
             齐套检查
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/operation-tasks', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/operation-tasks', row)">
             <RouteIcon aria-hidden="true" />
             查看工序
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem :disabled="!canReportOrder(row)" @click="useWorkOrder(row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProSeparator />
+          <DropdownMenuProItem :disabled="!canReportOrder(row)" @click="useWorkOrder(row)">
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
-          </DropdownMenuItem>
-          <DropdownMenuItem @click="openRelatedPage('/mes/capacity', row)">
+          </DropdownMenuProItem>
+          <DropdownMenuProItem @click="openRelatedPage('/mes/capacity', row)">
             <WrenchIcon aria-hidden="true" />
             异常与产能
-          </DropdownMenuItem>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
-    </DataTable>
+    </DataTablePro>
 
-    <DataTablePagination v-model:page="page" v-model:page-size="pageSize" :total-items="workOrdersTotal" />
 
-    <Dialog v-model:open="rushSheetOpen">
-      <DialogContent class="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>创建急单</DialogTitle>
-          <DialogDescription>急单用于生产插单和临时补单；提交后系统返回受影响工单和排程版本。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="rushSheetOpen">
+      <DialogProContent class="sm:max-w-2xl">
+        <DialogProHeader>
+          <DialogProTitle>创建急单</DialogProTitle>
+          <DialogProDescription>急单用于生产插单和临时补单；提交后系统返回受影响工单和排程版本。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitRushWorkOrder">
           <p v-if="rushErrorMessage" class="text-sm text-destructive" role="alert">{{ rushErrorMessage }}</p>
           <p v-if="rushSuccess" class="text-sm text-success" role="status">{{ rushSuccess }}</p>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field>
-              <FieldLabel for="rush-sku">物料 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-if="skuOptions.length" v-model="rushForm.skuId">
-                <SelectTrigger id="rush-sku"><SelectValue placeholder="选择物料" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="option in skuOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input v-else id="rush-sku" v-model="rushForm.skuId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-version">生产版本</FieldLabel>
-              <Input id="rush-version" v-model="rushForm.productionVersionId" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-quantity">数量 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="rush-quantity" v-model="rushForm.quantity" inputmode="decimal" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-due">交期 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="rush-due" v-model="rushForm.dueUtc" required type="datetime-local" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-work-center">工作中心 <span class="text-destructive">*</span></FieldLabel>
-              <Select v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
-                <SelectTrigger id="rush-work-center"><SelectValue placeholder="选择工作中心" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-operation-task">工序任务</FieldLabel>
-              <Input id="rush-operation-task" v-model="rushForm.operationTaskId" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-operation-sequence">工序序号</FieldLabel>
-              <Input id="rush-operation-sequence" v-model="rushForm.operationSequence" inputmode="numeric" type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="rush-duration">工时分钟 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="rush-duration" v-model="rushForm.durationMinutes" inputmode="numeric" required type="number" />
-            </Field>
-          </FieldGroup>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro>
+              <FieldProLabel for="rush-sku">物料 <span class="text-destructive">*</span></FieldProLabel>
+              <SelectPro v-if="skuOptions.length" v-model="rushForm.skuId">
+                <SelectProTrigger id="rush-sku"><SelectProValue placeholder="选择物料" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="option in skuOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <InputPro v-else id="rush-sku" v-model="rushForm.skuId" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-version">生产版本</FieldProLabel>
+              <InputPro id="rush-version" v-model="rushForm.productionVersionId" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-quantity">数量 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="rush-quantity" v-model="rushForm.quantity" inputmode="decimal" required type="number" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-due">交期 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="rush-due" v-model="rushForm.dueUtc" required type="datetime-local" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-work-center">工作中心 <span class="text-destructive">*</span></FieldProLabel>
+              <SelectPro v-if="workCenterOptions.length" v-model="rushForm.workCenterId">
+                <SelectProTrigger id="rush-work-center"><SelectProValue placeholder="选择工作中心" /></SelectProTrigger>
+                <SelectProContent>
+                  <SelectProItem v-for="option in workCenterOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
+                </SelectProContent>
+              </SelectPro>
+              <InputPro v-else id="rush-work-center" v-model="rushForm.workCenterId" required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-operation-task">工序任务</FieldProLabel>
+              <InputPro id="rush-operation-task" v-model="rushForm.operationTaskId" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-operation-sequence">工序序号</FieldProLabel>
+              <InputPro id="rush-operation-sequence" v-model="rushForm.operationSequence" inputmode="numeric" type="number" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="rush-duration">工时分钟 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="rush-duration" v-model="rushForm.durationMinutes" inputmode="numeric" required type="number" />
+            </FieldPro>
+          </FieldProGroup>
 
           <div v-if="lastRushScheduleVersion || lastRushAffectedWorkOrders.length" class="grid gap-2 rounded-lg border p-3">
             <p class="text-sm font-semibold text-foreground">排程结果</p>
@@ -616,72 +533,72 @@ function isNonEmpty(value: string) {
             <p v-if="lastRushAffectedWorkOrders.length" class="text-sm text-muted-foreground">受影响工单：{{ lastRushAffectedWorkOrders.join(', ') }}</p>
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="rushSheetOpen = false">取消</Button>
-            <Button type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="rushSheetOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
               <Spinner v-if="createRushWorkOrderPending" aria-hidden="true" />
               <FactoryIcon v-else aria-hidden="true" />
               创建急单
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
 
-    <Dialog v-model:open="reportSheetOpen">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>生产报工</DialogTitle>
-          <DialogDescription>从工单或工序任务进入报工，系统带出必要字段，一线人员只补充数量和完成状态。</DialogDescription>
-        </DialogHeader>
+    <DialogPro v-model:open="reportSheetOpen">
+      <DialogProContent>
+        <DialogProHeader>
+          <DialogProTitle>生产报工</DialogProTitle>
+          <DialogProDescription>从工单或工序任务进入报工，系统带出必要字段，一线人员只补充数量和完成状态。</DialogProDescription>
+        </DialogProHeader>
         <form class="grid content-start gap-4" @submit.prevent="submitProductionReport">
           <p v-if="reportErrorMessage" class="text-sm text-destructive" role="alert">{{ reportErrorMessage }}</p>
           <p v-if="reportSuccess" class="text-sm text-success" role="status">{{ reportSuccess }}</p>
 
-          <FieldGroup class="grid gap-3 sm:grid-cols-2">
-            <Field class="sm:col-span-2">
-              <FieldLabel>报工对象</FieldLabel>
+          <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+            <FieldPro class="sm:col-span-2">
+              <FieldProLabel>报工对象</FieldProLabel>
               <div class="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 工单与工序来自所选行，只能从工单列表或工序任务带入。
               </div>
-            </Field>
-            <Field>
-              <FieldLabel for="report-work-order">工单号 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-work-order" v-model="reportForm.workOrderId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="report-operation-task">工序任务 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-operation-task" v-model="reportForm.operationTaskId" readonly required />
-            </Field>
-            <Field>
-              <FieldLabel for="report-good">良品数 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" min="0" required type="number" />
-            </Field>
-            <Field>
-              <FieldLabel for="report-scrap">报废数 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" min="0" required type="number" />
-              <FieldDescription>良品和报废必须为非负数，合计必须大于 0。</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel for="report-time">报工时间 <span class="text-destructive">*</span></FieldLabel>
-              <Input id="report-time" v-model="reportForm.reportedAtUtc" required type="datetime-local" />
-            </Field>
-            <Field orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
-              <FieldLabel for="report-complete">完成当前工序</FieldLabel>
-              <Checkbox id="report-complete" v-model:checked="reportForm.completesOperation" />
-            </Field>
-          </FieldGroup>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-work-order">工单号 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="report-work-order" v-model="reportForm.workOrderId" readonly required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-operation-task">工序任务 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="report-operation-task" v-model="reportForm.operationTaskId" readonly required />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-good">良品数 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="report-good" v-model="reportForm.goodQuantity" inputmode="decimal" min="0" required type="number" />
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-scrap">报废数 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="report-scrap" v-model="reportForm.scrapQuantity" inputmode="decimal" min="0" required type="number" />
+              <FieldProDescription>良品和报废必须为非负数，合计必须大于 0。</FieldProDescription>
+            </FieldPro>
+            <FieldPro>
+              <FieldProLabel for="report-time">报工时间 <span class="text-destructive">*</span></FieldProLabel>
+              <InputPro id="report-time" v-model="reportForm.reportedAtUtc" required type="datetime-local" />
+            </FieldPro>
+            <FieldPro orientation="horizontal" class="items-center justify-between rounded-lg border p-3">
+              <FieldProLabel for="report-complete">完成当前工序</FieldProLabel>
+              <CheckboxPro id="report-complete" v-model:checked="reportForm.completesOperation" />
+            </FieldPro>
+          </FieldProGroup>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" @click="reportSheetOpen = false">取消</Button>
-            <Button type="submit" :disabled="recordProductionReportPending || !canRecordReport">
+          <DialogProFooter>
+            <ButtonPro type="button" variant="outline" @click="reportSheetOpen = false">取消</ButtonPro>
+            <ButtonPro type="submit" :disabled="recordProductionReportPending || !canRecordReport">
               <Spinner v-if="recordProductionReportPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
               提交报工
-            </Button>
-          </DialogFooter>
+            </ButtonPro>
+          </DialogProFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DialogProContent>
+    </DialogPro>
   </BusinessLayout>
 </template>

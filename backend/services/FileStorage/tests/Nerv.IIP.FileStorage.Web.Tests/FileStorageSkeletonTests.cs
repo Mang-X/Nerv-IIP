@@ -112,7 +112,7 @@ public sealed class FileStorageSkeletonTests(WebApplicationFactory<Program> fact
         Assert.Equal("application/zip", completed.ContentType);
         Assert.Equal(4096, completed.SizeBytes);
         Assert.Equal("sha256:test", completed.Checksum);
-        Assert.Equal("pending", completed.ScanStatus);
+        Assert.Equal("clean", completed.ScanStatus);
         Assert.Equal("available", completed.Status);
         await AssertObjectKeyIsNotExposedAsync(completeResponse);
         await AssertFlatOwnerFieldsAreNotExposedAsync(completeResponse);

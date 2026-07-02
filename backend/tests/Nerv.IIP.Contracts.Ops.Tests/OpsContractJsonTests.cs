@@ -40,7 +40,7 @@ public sealed class OpsContractJsonTests
                 300,
                 3,
                 null)],
-            [new AuditRecordSummary("audit-000001", "op-000001", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001", "sha256:contract-test")]);
+            [new AuditRecordSummary("audit-000001", "op-000001", 1, "", "operation.completed", "connector-host-001", DateTimeOffset.Parse("2026-05-15T00:00:02Z"), "corr-ops-001", "sha256:contract-test")]);
 
         var json = JsonSerializer.Serialize(source, JsonOptions);
         var result = JsonSerializer.Deserialize<OperationTaskResponse>(json, JsonOptions);
@@ -62,6 +62,8 @@ public sealed class OpsContractJsonTests
         Assert.Equal(1, attemptNo.GetInt32());
         Assert.True(root.TryGetProperty("auditRecords", out var auditRecords));
         Assert.Equal(JsonValueKind.Array, auditRecords.ValueKind);
+        Assert.Equal(1, auditRecords[0].GetProperty("sequenceNo").GetInt64());
+        Assert.Equal("", auditRecords[0].GetProperty("previousIntegrityHash").GetString());
 
         Assert.NotNull(result);
         Assert.Equal("op-000001", result.OperationTaskId);
@@ -84,6 +86,8 @@ public sealed class OpsContractJsonTests
         var response = new AuditIntentResponse(
             "audit-000002",
             "op-000001",
+            2,
+            "sha256:previous",
             "manual.reviewed",
             "user:auditor",
             DateTimeOffset.Parse("2026-05-22T00:00:00Z"),
@@ -101,6 +105,8 @@ public sealed class OpsContractJsonTests
         Assert.Equal("op-000001", requestDocument.RootElement.GetProperty("operationTaskId").GetString());
         Assert.Equal("manual.reviewed", requestDocument.RootElement.GetProperty("action").GetString());
         Assert.Equal("audit-000002", responseDocument.RootElement.GetProperty("auditRecordId").GetString());
+        Assert.Equal(2, responseDocument.RootElement.GetProperty("sequenceNo").GetInt64());
+        Assert.Equal("sha256:previous", responseDocument.RootElement.GetProperty("previousIntegrityHash").GetString());
         Assert.Equal("corr-audit-001", responseDocument.RootElement.GetProperty("correlationId").GetString());
         Assert.Equal("sha256:contract-test", responseDocument.RootElement.GetProperty("integrityHash").GetString());
         Assert.NotNull(requestResult);
