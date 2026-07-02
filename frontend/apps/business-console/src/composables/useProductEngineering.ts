@@ -15,6 +15,7 @@ import {
   archiveBusinessConsoleEngineeringProductionVersionMutationOptions,
   createBusinessConsoleEngineeringItemRevisionMutationOptions,
   createBusinessConsoleEngineeringProductionVersionMutationOptions,
+  getBusinessConsoleEngineeringBomDiffQueryOptions,
   getBusinessConsoleEngineeringBomExplosionQueryOptions,
   getBusinessConsoleEngineeringBomQueryOptions,
   getBusinessConsoleEngineeringBomWhereUsedQueryOptions,
@@ -37,6 +38,7 @@ import {
   updateBusinessConsoleEngineeringStandardOperationMutationOptions,
   archiveBusinessConsoleEngineeringStandardOperationMutationOptions,
   registerBusinessConsoleEngineeringDocumentMutationOptions,
+  previewBusinessConsoleEngineeringChangeImpactMutationOptions,
   releaseBusinessConsoleEngineeringBomMutationOptions,
   releaseBusinessConsoleEngineeringChangeMutationOptions,
   releaseBusinessConsoleEngineeringManufacturingBomMutationOptions,
@@ -44,6 +46,7 @@ import {
   resolveBusinessConsoleEngineeringProductionVersionQueryOptions,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
   type BusinessConsoleBomExplosionResponse,
+  type BusinessConsoleBomDiffResponse,
   type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleCreateEngineeringItemRevisionRequest,
   type BusinessConsoleCreateProductionVersionRequest,
@@ -66,6 +69,8 @@ import {
   type BusinessConsoleRegisterEngineeringDocumentRequest,
   type BusinessConsoleReleaseEngineeringBomRequest,
   type BusinessConsoleReleaseEngineeringChangeRequest,
+  type BusinessConsoleEngineeringChangeImpactPreviewRequest,
+  type BusinessConsoleEngineeringChangeImpactPreviewResponse,
   type BusinessConsoleReleaseManufacturingBomRequest,
   type BusinessConsoleReleaseRoutingRequest,
   type BusinessConsoleResolveProductionVersionResponse,
@@ -162,6 +167,14 @@ export interface BomWhereUsedInput {
   effectiveDate: string
 }
 
+export interface BomDiffInput {
+  bomKind: 'engineering' | 'manufacturing'
+  fromBomCode: string
+  fromRevision: string
+  toBomCode: string
+  toRevision: string
+}
+
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
   return value === undefined || value === '' ? {} : { [key]: value }
 }
@@ -200,6 +213,7 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useBomAnalysis() {
   const context = useBusinessContextStore()
   const explosion = shallowRef<BusinessConsoleBomExplosionResponse>()
+  const diff = shallowRef<BusinessConsoleBomDiffResponse>()
   const whereUsed = shallowRef<BusinessConsoleBomWhereUsedResponse>()
   const pending = ref(false)
   const error = ref<unknown>()
@@ -228,9 +242,29 @@ export function useBomAnalysis() {
 
   return {
     explosion,
+    diff,
     whereUsed,
     pending,
     error,
+    loadBomDiff: (input: BomDiffInput) =>
+      run(async () => {
+        const envelope = await runQueryOption(
+          getBusinessConsoleEngineeringBomDiffQueryOptions({
+            query: {
+              ...commonQuery(),
+              bomKind: input.bomKind,
+              fromBomCode: input.fromBomCode,
+              fromRevision: input.fromRevision,
+              toBomCode: input.toBomCode,
+              toRevision: input.toRevision,
+            },
+          }),
+        )
+        diff.value = unwrapDetail<BusinessConsoleBomDiffResponse>(envelope)
+        explosion.value = undefined
+        whereUsed.value = undefined
+        return diff.value
+      }),
     loadEngineeringExplosion: (input: BomExplosionInput) =>
       run(async () => {
         const envelope = await runQueryOption(
@@ -246,6 +280,7 @@ export function useBomAnalysis() {
           }),
         )
         explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
+        diff.value = undefined
         whereUsed.value = undefined
         return explosion.value
       }),
@@ -264,6 +299,7 @@ export function useBomAnalysis() {
           }),
         )
         explosion.value = unwrapDetail<BusinessConsoleBomExplosionResponse>(envelope)
+        diff.value = undefined
         whereUsed.value = undefined
         return explosion.value
       }),
@@ -280,6 +316,7 @@ export function useBomAnalysis() {
         )
         whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
         explosion.value = undefined
+        diff.value = undefined
         return whereUsed.value
       }),
     loadManufacturingWhereUsed: (input: BomWhereUsedInput) =>
@@ -295,6 +332,7 @@ export function useBomAnalysis() {
         )
         whereUsed.value = unwrapDetail<BusinessConsoleBomWhereUsedResponse>(envelope)
         explosion.value = undefined
+        diff.value = undefined
         return whereUsed.value
       }),
   }
@@ -938,6 +976,10 @@ export function useEngineeringChanges() {
     ...releaseBusinessConsoleEngineeringChangeMutationOptions(),
     onSuccess: invalidateList,
   } as unknown as UseMutationOptions)
+  const previewMutation = useMutation({
+    ...previewBusinessConsoleEngineeringChangeImpactMutationOptions(),
+  } as unknown as UseMutationOptions)
+  const impactPreview = shallowRef<BusinessConsoleEngineeringChangeImpactPreviewResponse>()
 
   return {
     filters,
@@ -955,6 +997,20 @@ export function useEngineeringChanges() {
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
+
+    previewImpact: async (body: BusinessConsoleEngineeringChangeImpactPreviewRequest) => {
+      const envelope = await (previewMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body })
+      impactPreview.value = unwrapDetail<BusinessConsoleEngineeringChangeImpactPreviewResponse>(
+        envelope as { success?: boolean, data?: BusinessConsoleEngineeringChangeImpactPreviewResponse | null } | undefined,
+      )
+      return impactPreview.value
+    },
+    previewPending: previewMutation.isLoading,
+    previewError: previewMutation.error,
+    impactPreview,
+    clearImpactPreview: () => {
+      impactPreview.value = undefined
+    },
 
     // 按需取某变更明细（含受影响版本），用于「查看」。失败抛错由调用方处理。
     fetchChangeDetail: async (changeNumber: string) => {

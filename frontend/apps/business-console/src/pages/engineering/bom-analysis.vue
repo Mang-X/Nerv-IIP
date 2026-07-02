@@ -2,6 +2,7 @@
 import type {
   BusinessConsoleBomExplosionDiagnostic,
   BusinessConsoleBomExplosionNode,
+  BusinessConsoleBomDiffLineItem,
   BusinessConsoleBomWhereUsedItem,
 } from '@nerv-iip/api-client'
 import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
@@ -34,7 +35,7 @@ import { useRoute, useRouter } from 'vue-router'
 definePage({ meta: { requiresAuth: true, title: 'BOM 分析', requiredPermissions: ['business.engineering.boms.read'] } })
 
 type BomKind = 'engineering' | 'manufacturing'
-type AnalysisView = 'tree' | 'explosion' | 'where-used'
+type AnalysisView = 'tree' | 'explosion' | 'where-used' | 'diff'
 
 interface TreeRow extends BusinessConsoleBomExplosionNode {
   key: string
@@ -46,9 +47,11 @@ const route = useRoute()
 const router = useRouter()
 const {
   explosion,
+  diff,
   whereUsed,
   pending,
   error,
+  loadBomDiff,
   loadEngineeringExplosion,
   loadManufacturingExplosion,
   loadEngineeringWhereUsed,
@@ -64,6 +67,10 @@ const form = reactive({
   lotSize: '1',
   bomCode: '',
   revision: '',
+  fromBomCode: '',
+  fromRevision: '',
+  toBomCode: '',
+  toRevision: '',
 })
 const submitted = ref(false)
 
@@ -71,6 +78,7 @@ const analysisViews: Array<{ value: AnalysisView, label: string }> = [
   { value: 'tree', label: '树视图' },
   { value: 'explosion', label: '爆炸' },
   { value: 'where-used', label: '反查' },
+  { value: 'diff', label: '对比' },
 ]
 const kindOptions = [
   { value: 'engineering', label: 'EBOM' },
@@ -80,6 +88,9 @@ const kindOptions = [
 const codeLabel = computed(() => form.kind === 'engineering' ? '父项物料' : '产出物料')
 const codePlaceholder = computed(() => form.kind === 'engineering' ? '如 FG-100' : '如 SKU-FG-100')
 const canSubmit = computed(() => {
+  if (form.view === 'diff') {
+    return !!form.fromBomCode.trim() && !!form.fromRevision.trim() && !!form.toBomCode.trim() && !!form.toRevision.trim()
+  }
   if (!form.effectiveDate) return false
   return form.view === 'where-used'
     ? form.componentCode.trim().length > 0
@@ -87,9 +98,14 @@ const canSubmit = computed(() => {
 })
 const root = computed(() => explosion.value?.root)
 const diagnostics = computed(() => explosion.value?.diagnostics ?? [])
+const diffRows = computed(() => diff.value?.lines ?? [])
 const whereUsedRows = computed(() => whereUsed.value?.items ?? [])
 const flattenedNodes = computed(() => flattenBom(root.value))
-const resultCount = computed(() => form.view === 'where-used' ? whereUsedRows.value.length : flattenedNodes.value.length)
+const resultCount = computed(() => {
+  if (form.view === 'where-used') return whereUsedRows.value.length
+  if (form.view === 'diff') return diffRows.value.length
+  return flattenedNodes.value.length
+})
 const warningCount = computed(() => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() !== 'error').length)
 const errorCount = computed(() => diagnostics.value.filter((d) => (d.severity ?? '').toLowerCase() === 'error').length)
 const errorMessage = computed(() => formatError(error.value))
@@ -117,6 +133,14 @@ const whereUsedColumns: DataTableProColumn<BusinessConsoleBomWhereUsedItem>[] = 
   { key: 'effectiveDate', header: '生效日', width: 'w-28' },
   { key: 'flags', header: '行属性', width: 'w-44' },
 ]
+const diffColumns: DataTableProColumn<BusinessConsoleBomDiffLineItem>[] = [
+  { key: 'changeType', header: '变化', width: 'w-24' },
+  { key: 'itemCode', header: '物料', cellClass: 'font-medium' },
+  { key: 'quantity', header: '数量', align: 'end', width: 'w-32' },
+  { key: 'uom', header: '单位', width: 'w-28' },
+  { key: 'rates', header: '损耗/得率', align: 'end', width: 'w-40' },
+  { key: 'fields', header: '字段变化' },
+]
 const diagnosticColumns: DataTableProColumn<BusinessConsoleBomExplosionDiagnostic>[] = [
   { key: 'severity', header: '级别', width: 'w-24' },
   { key: 'itemCode', header: '物料', width: 'w-32' },
@@ -129,6 +153,10 @@ watch(() => form.kind, () => {
   form.componentCode = ''
   form.bomCode = ''
   form.revision = ''
+  form.fromBomCode = ''
+  form.fromRevision = ''
+  form.toBomCode = ''
+  form.toRevision = ''
 })
 
 onMounted(() => {
@@ -147,13 +175,17 @@ function applyRouteQuery() {
   const kind = firstQuery(route.query.kind)
   const view = firstQuery(route.query.view)
   form.kind = kind === 'manufacturing' ? 'manufacturing' : 'engineering'
-  if (view === 'tree' || view === 'explosion' || view === 'where-used') form.view = view
+  if (view === 'tree' || view === 'explosion' || view === 'where-used' || view === 'diff') form.view = view
   form.rootCode = firstQuery(route.query.itemCode) ?? firstQuery(route.query.skuCode) ?? ''
   form.componentCode = firstQuery(route.query.componentCode) ?? ''
   form.effectiveDate = firstQuery(route.query.effectiveDate) ?? today()
   form.lotSize = firstQuery(route.query.lotSize) ?? '1'
   form.bomCode = firstQuery(route.query.bomCode) ?? ''
   form.revision = firstQuery(route.query.revision) ?? ''
+  form.fromBomCode = firstQuery(route.query.fromBomCode) ?? ''
+  form.fromRevision = firstQuery(route.query.fromRevision) ?? ''
+  form.toBomCode = firstQuery(route.query.toBomCode) ?? ''
+  form.toRevision = firstQuery(route.query.toRevision) ?? ''
 }
 
 async function submit() {
@@ -169,18 +201,35 @@ async function submit() {
       ...route.query,
       kind: form.kind,
       view: form.view,
-      effectiveDate,
+      effectiveDate: form.view === 'diff' ? undefined : effectiveDate,
       ...(form.view === 'where-used'
         ? { componentCode: form.componentCode.trim(), itemCode: undefined, skuCode: undefined }
+        : form.view === 'diff'
+          ? { componentCode: undefined, itemCode: undefined, skuCode: undefined }
         : {
             [form.kind === 'engineering' ? 'itemCode' : 'skuCode']: form.rootCode.trim(),
             componentCode: undefined,
           }),
-      lotSize: form.view === 'where-used' ? undefined : String(lotSize ?? 1),
-      bomCode,
-      revision,
+      lotSize: form.view === 'where-used' || form.view === 'diff' ? undefined : String(lotSize ?? 1),
+      bomCode: form.view === 'diff' ? undefined : bomCode,
+      revision: form.view === 'diff' ? undefined : revision,
+      fromBomCode: form.view === 'diff' ? form.fromBomCode.trim() : undefined,
+      fromRevision: form.view === 'diff' ? form.fromRevision.trim() : undefined,
+      toBomCode: form.view === 'diff' ? form.toBomCode.trim() : undefined,
+      toRevision: form.view === 'diff' ? form.toRevision.trim() : undefined,
     },
   })
+
+  if (form.view === 'diff') {
+    await loadBomDiff({
+      bomKind: form.kind,
+      fromBomCode: form.fromBomCode.trim(),
+      fromRevision: form.fromRevision.trim(),
+      toBomCode: form.toBomCode.trim(),
+      toRevision: form.toRevision.trim(),
+    })
+    return
+  }
 
   if (form.view === 'where-used') {
     const input = { componentCode: form.componentCode.trim(), effectiveDate }
@@ -237,6 +286,70 @@ function flagLabels(row: Pick<TreeRow, 'isPhantom' | 'backflush' | 'alternateGro
   return labels
 }
 
+function diffChangeLabel(changeType?: string | null) {
+  const normalized = (changeType ?? '').toLowerCase()
+  if (normalized === 'added') return '新增'
+  if (normalized === 'removed') return '删除'
+  if (normalized === 'replaced') return '替换'
+  if (normalized === 'changed') return '变更'
+  return changeType || '变化'
+}
+
+function diffChangeTone(changeType?: string | null): StatusTone {
+  const normalized = (changeType ?? '').toLowerCase()
+  if (normalized === 'added') return 'success'
+  if (normalized === 'removed') return 'danger'
+  if (normalized === 'replaced') return 'warning'
+  return 'info'
+}
+
+function diffItemLabel(row: BusinessConsoleBomDiffLineItem) {
+  if (row.changeType?.toLowerCase() === 'replaced') {
+    return `${row.oldItemCode || '无'} -> ${row.newItemCode || '无'}`
+  }
+  return row.newItemCode || row.oldItemCode || '无'
+}
+
+function formatText(value?: number | string | null) {
+  if (value === null || value === undefined || value === '') return '无'
+  return String(value)
+}
+
+function formatQuantityDiff(row: BusinessConsoleBomDiffLineItem) {
+  return `${formatQty(row.oldQuantity)} -> ${formatQty(row.newQuantity)}`
+}
+
+function formatRateDiff(oldValue?: number | null, newValue?: number | null) {
+  return `${formatRate(oldValue)} -> ${formatRate(newValue)}`
+}
+
+function formatTextDiff(oldValue?: string | null, newValue?: string | null) {
+  return `${formatText(oldValue)} -> ${formatText(newValue)}`
+}
+
+function fieldChangeLabels(row: BusinessConsoleBomDiffLineItem) {
+  const labels = row.fieldChanges?.map((field) =>
+    `${fieldLabel(field.fieldName)}: ${field.oldValue ?? '无'} -> ${field.newValue ?? '无'}`,
+  ) ?? []
+  return labels.length ? labels : ['无']
+}
+
+function fieldLabel(fieldName?: string | null) {
+  const labels: Record<string, string> = {
+    quantity: '数量',
+    unitOfMeasureCode: '单位',
+    scrapRate: '损耗',
+    yieldRate: '得率',
+    isPhantom: '虚拟件',
+    alternateGroup: '替代组',
+    alternatePriority: '替代优先级',
+    substituteSkuCodes: '替代料',
+    referenceDesignators: '位号',
+    backflush: '倒冲',
+  }
+  return labels[fieldName ?? ''] ?? (fieldName || '字段')
+}
+
 function isContextNode(row: Pick<TreeRow, 'itemCode'>) {
   return !!form.componentCode && row.itemCode?.toLowerCase() === form.componentCode.trim().toLowerCase()
 }
@@ -261,7 +374,7 @@ function formatError(value: unknown) {
   <BusinessLayout>
     <PageHeader
       title="BOM 分析"
-      description="多级 BOM 树、滚算爆炸与反查"
+      description="多级 BOM 树、滚算爆炸、反查与版本对比"
     />
 
     <SectionCards :columns="3">
@@ -295,27 +408,57 @@ function formatError(value: unknown) {
           </SelectPro>
         </FieldPro>
 
-        <FieldPro v-if="form.view !== 'where-used'" :data-invalid="submitted && !form.rootCode.trim()">
+        <FieldPro v-if="form.view !== 'where-used' && form.view !== 'diff'" :data-invalid="submitted && !form.rootCode.trim()">
           <FieldProLabel for="bom-root">{{ codeLabel }}</FieldProLabel>
           <InputPro id="bom-root" v-model="form.rootCode" :placeholder="codePlaceholder" />
         </FieldPro>
-        <FieldPro v-else :data-invalid="submitted && !form.componentCode.trim()">
+        <FieldPro v-else-if="form.view === 'where-used'" :data-invalid="submitted && !form.componentCode.trim()">
           <FieldProLabel for="bom-component">组件物料</FieldProLabel>
           <InputPro id="bom-component" v-model="form.componentCode" placeholder="如 RM-200" />
         </FieldPro>
+        <FieldPro v-else>
+          <FieldProLabel>对比对象</FieldProLabel>
+          <InputPro :model-value="form.kind === 'engineering' ? 'EBOM' : 'MBOM'" disabled />
+        </FieldPro>
 
-        <FieldPro>
+        <FieldPro v-if="form.view !== 'diff'">
           <FieldProLabel for="bom-effective">有效日期</FieldProLabel>
           <DatePickerPro id="bom-effective" v-model="form.effectiveDate" />
         </FieldPro>
 
-        <FieldPro v-if="form.view !== 'where-used'">
+        <FieldPro v-if="form.view !== 'where-used' && form.view !== 'diff'">
           <FieldProLabel for="bom-lot">批量</FieldProLabel>
           <InputPro id="bom-lot" v-model="form.lotSize" type="number" min="0.000001" step="any" />
         </FieldPro>
       </div>
 
-      <div v-if="form.view !== 'where-used'" class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+      <div v-if="form.view === 'diff'" class="grid gap-3 md:grid-cols-[1fr_8rem_1fr_8rem_auto]">
+        <FieldPro :data-invalid="submitted && !form.fromBomCode.trim()">
+          <FieldProLabel for="bom-from-code">来源 BOM</FieldProLabel>
+          <InputPro id="bom-from-code" v-model="form.fromBomCode" placeholder="如 EBOM-FG" />
+        </FieldPro>
+        <FieldPro :data-invalid="submitted && !form.fromRevision.trim()">
+          <FieldProLabel for="bom-from-revision">来源修订</FieldProLabel>
+          <InputPro id="bom-from-revision" v-model="form.fromRevision" placeholder="A" />
+        </FieldPro>
+        <FieldPro :data-invalid="submitted && !form.toBomCode.trim()">
+          <FieldProLabel for="bom-to-code">目标 BOM</FieldProLabel>
+          <InputPro id="bom-to-code" v-model="form.toBomCode" placeholder="如 EBOM-FG" />
+        </FieldPro>
+        <FieldPro :data-invalid="submitted && !form.toRevision.trim()">
+          <FieldProLabel for="bom-to-revision">目标修订</FieldProLabel>
+          <InputPro id="bom-to-revision" v-model="form.toRevision" placeholder="B" />
+        </FieldPro>
+        <div class="flex items-end">
+          <ButtonPro type="submit" :disabled="pending">
+            <Spinner v-if="pending" aria-hidden="true" />
+            <NetworkIcon v-else aria-hidden="true" />
+            对比
+          </ButtonPro>
+        </div>
+      </div>
+
+      <div v-else-if="form.view !== 'where-used'" class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
         <FieldPro>
           <FieldProLabel for="bom-code">指定 BOM</FieldProLabel>
           <InputPro id="bom-code" v-model="form.bomCode" placeholder="留空自动选择" />
@@ -341,7 +484,7 @@ function formatError(value: unknown) {
       </div>
 
       <p v-if="submitted && !canSubmit" class="text-sm text-destructive" role="alert">
-        请填写物料编码和有效日期。
+        请填写当前视图需要的 BOM 版本或物料与有效日期。
       </p>
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     </form>
@@ -403,6 +546,35 @@ function formatError(value: unknown) {
         <div class="grid gap-0.5 text-sm">
           <span>{{ row.substituteSkuCodes || row.alternateGroup || '无' }}</span>
           <span v-if="row.referenceDesignators" class="text-xs text-muted-foreground">{{ row.referenceDesignators }}</span>
+        </div>
+      </template>
+    </DataTablePro>
+
+    <DataTablePro
+      v-else-if="form.view === 'diff'"
+      :columns="diffColumns"
+      :rows="diffRows"
+      :row-key="(row) => `${row.changeType}:${row.oldItemCode ?? ''}:${row.newItemCode ?? ''}`"
+      :loading="pending"
+      empty-message="当前两个 BOM 版本没有结构差异。"
+    >
+      <template #cell-changeType="{ row }">
+        <StatusBadgePro :label="diffChangeLabel(row.changeType)" :tone="diffChangeTone(row.changeType)" />
+      </template>
+      <template #cell-itemCode="{ row }">{{ diffItemLabel(row) }}</template>
+      <template #cell-quantity="{ row }">
+        {{ formatQuantityDiff(row) }}
+      </template>
+      <template #cell-uom="{ row }">
+        {{ formatTextDiff(row.oldUnitOfMeasureCode, row.newUnitOfMeasureCode) }}
+      </template>
+      <template #cell-rates="{ row }">
+        {{ formatRateDiff(row.oldScrapRate, row.newScrapRate) }} /
+        {{ formatRateDiff(row.oldYieldRate, row.newYieldRate) }}
+      </template>
+      <template #cell-fields="{ row }">
+        <div class="flex flex-wrap gap-1">
+          <StatusBadgePro v-for="label in fieldChangeLabels(row)" :key="label" :label="label" tone="neutral" />
         </div>
       </template>
     </DataTablePro>

@@ -5104,6 +5104,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
 
     public BusinessConsoleBomWhereUsedRequest? LastBomWhereUsedRequest { get; private set; }
 
+    public BusinessConsoleBomDiffRequest? LastBomDiffRequest { get; private set; }
+
     public BusinessConsoleListProductionVersionsRequest? LastProductionVersionListRequest { get; private set; }
 
     public BusinessConsoleReleaseManufacturingBomRequest? LastReleaseManufacturingBomRequest { get; private set; }
@@ -5113,6 +5115,8 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
     public BusinessConsoleUpdateStandardOperationRequest? LastUpdateStandardOperationRequest { get; private set; }
 
     public BusinessConsoleArchiveStandardOperationRequest? LastArchiveStandardOperationRequest { get; private set; }
+
+    public BusinessConsoleEngineeringChangeImpactPreviewRequest? LastImpactPreviewRequest { get; private set; }
 
     public Task<BusinessConsoleEngineeringEntityResponse> RegisterEngineeringDocumentAsync(
         string internalBearerToken,
@@ -5237,6 +5241,22 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         LastInternalToken = internalBearerToken;
         LastBomWhereUsedRequest = request;
         return Task.FromResult(new BusinessConsoleBomWhereUsedResponse(request.ComponentCode, []));
+    }
+
+    public Task<BusinessConsoleBomDiffResponse> GetBomDiffAsync(
+        string internalBearerToken,
+        BusinessConsoleBomDiffRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastBomDiffRequest = request;
+        return Task.FromResult(new BusinessConsoleBomDiffResponse(
+            request.BomKind,
+            $"{request.FromBomCode}:{request.FromRevision}",
+            $"{request.ToBomCode}:{request.ToRevision}",
+            "SKU-FG-001",
+            [],
+            new BusinessConsoleBomDiffSummary(0, 0, 0, 0)));
     }
 
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
@@ -5411,6 +5431,16 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
+        string internalBearerToken,
+        BusinessConsoleEngineeringChangeImpactPreviewRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastImpactPreviewRequest = request;
+        return Task.FromResult(new BusinessConsoleEngineeringChangeImpactPreviewResponse(request.EffectiveDate, [], []));
     }
 
     public Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(

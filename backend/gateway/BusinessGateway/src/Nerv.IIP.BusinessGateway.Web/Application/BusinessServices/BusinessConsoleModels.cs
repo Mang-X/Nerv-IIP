@@ -1142,6 +1142,48 @@ public sealed record BusinessConsoleBomWhereUsedResponse(
     string ComponentCode,
     IReadOnlyCollection<BusinessConsoleBomWhereUsedItem> Items);
 
+public sealed record BusinessConsoleBomDiffRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BomKind,
+    string FromBomCode,
+    string FromRevision,
+    string ToBomCode,
+    string ToRevision);
+
+public sealed record BusinessConsoleBomDiffFieldChange(
+    string FieldName,
+    string? OldValue,
+    string? NewValue);
+
+public sealed record BusinessConsoleBomDiffLineItem(
+    string ChangeType,
+    string? OldItemCode,
+    string? NewItemCode,
+    decimal? OldQuantity,
+    decimal? NewQuantity,
+    string? OldUnitOfMeasureCode,
+    string? NewUnitOfMeasureCode,
+    decimal? OldScrapRate,
+    decimal? NewScrapRate,
+    decimal? OldYieldRate,
+    decimal? NewYieldRate,
+    string? OldAlternateGroup,
+    string? NewAlternateGroup,
+    string? OldSubstituteSkuCodes,
+    string? NewSubstituteSkuCodes,
+    IReadOnlyCollection<BusinessConsoleBomDiffFieldChange> FieldChanges);
+
+public sealed record BusinessConsoleBomDiffSummary(int Added, int Removed, int Replaced, int Changed);
+
+public sealed record BusinessConsoleBomDiffResponse(
+    string BomKind,
+    string FromVersionId,
+    string ToVersionId,
+    string RootItemCode,
+    IReadOnlyCollection<BusinessConsoleBomDiffLineItem> Lines,
+    BusinessConsoleBomDiffSummary Summary);
+
 public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1387,6 +1429,36 @@ public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionKind,
     string VersionId,
     string? SupersededByVersionId = null);
+
+public sealed record BusinessConsoleEngineeringChangeImpactPreviewRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactAffectedVersionRequest> AffectedVersions);
+
+public sealed record BusinessConsoleEngineeringChangeImpactAffectedVersionRequest(
+    string VersionKind,
+    string VersionId);
+
+public sealed record BusinessConsoleEngineeringChangeImpactNode(
+    string NodeType,
+    string VersionId,
+    string DisplayName,
+    string ImpactLevel,
+    string? RelatedVersionId,
+    string? SkuCode,
+    string? ConsoleRoute);
+
+public sealed record BusinessConsoleEngineeringChangeImpactRisk(
+    string Code,
+    string Severity,
+    string Message,
+    string? RelatedVersionId);
+
+public sealed record BusinessConsoleEngineeringChangeImpactPreviewResponse(
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactNode> Nodes,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactRisk> Risks);
 
 public sealed record BusinessConsoleListEngineeringChangesRequest(
     string OrganizationId,

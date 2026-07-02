@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleEngineeringChangeImpactNode,
+  BusinessConsoleEngineeringChangeImpactRisk,
   BusinessConsoleEngineeringChangeItem,
   BusinessConsoleReleaseEngineeringChangeRequest,
 } from '@nerv-iip/api-client'
@@ -40,8 +42,9 @@ import {
   StatusBadgePro,
   Toolbar,
 } from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
+import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
@@ -56,6 +59,10 @@ const {
   refresh,
   releaseChange,
   releasePending,
+  previewImpact,
+  previewPending,
+  impactPreview,
+  clearImpactPreview,
   fetchChangeDetail,
 } = useEngineeringChanges()
 
@@ -110,6 +117,18 @@ const columns: DataTableProColumn<BusinessConsoleEngineeringChangeItem>[] = [
   { key: 'affected', header: '受影响版本', width: 'w-28', align: 'end' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-20' },
 ]
+const impactColumns: DataTableProColumn<BusinessConsoleEngineeringChangeImpactNode>[] = [
+  { key: 'nodeType', header: '对象', width: 'w-36' },
+  { key: 'displayName', header: '影响节点', cellClass: 'font-medium' },
+  { key: 'impactLevel', header: '级别', width: 'w-28' },
+  { key: 'skuCode', header: 'SKU', width: 'w-32' },
+  { key: 'route', header: '跳转', align: 'end', width: 'w-24' },
+]
+const riskColumns: DataTableProColumn<BusinessConsoleEngineeringChangeImpactRisk>[] = [
+  { key: 'severity', header: '级别', width: 'w-24' },
+  { key: 'message', header: '风险提示' },
+  { key: 'relatedVersionId', header: '关联版本', width: 'w-40' },
+]
 
 // ── 发布变更向导（一步发布，非多步审批）────────────────────────
 interface AffectedRow {
@@ -145,9 +164,13 @@ const affectedListValid = computed(() =>
 const canSubmit = computed(() =>
   reasonValid.value && approvalValid.value && effectiveValid.value && affectedListValid.value,
 )
+const canPreview = computed(() => effectiveValid.value && affectedListValid.value)
+const impactNodes = computed(() => impactPreview.value?.nodes ?? [])
+const impactRisks = computed(() => impactPreview.value?.risks ?? [])
 
 function openCreate() {
   Object.assign(form, blankForm())
+  clearImpactPreview()
   showErrors.value = false
   formOpen.value = true
 }
@@ -157,6 +180,27 @@ function addAffected() {
 function removeAffected(index: number) {
   if (form.affectedVersions.length <= 1) return
   form.affectedVersions.splice(index, 1)
+}
+
+async function previewFormImpact() {
+  if (!canPreview.value) {
+    showErrors.value = true
+    return
+  }
+  try {
+    await previewImpact({
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      effectiveDate: form.effectiveDate ?? undefined,
+      affectedVersions: form.affectedVersions.map((row) => ({
+        versionKind: row.versionKind.trim(),
+        versionId: row.versionId.trim(),
+      })),
+    })
+  }
+  catch (error) {
+    notifyError(error)
+  }
 }
 
 async function submitForm() {
@@ -212,6 +256,44 @@ async function openView(row: BusinessConsoleEngineeringChangeItem) {
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+
+function impactNodeTypeLabel(type?: string | null) {
+  const labels: Record<string, string> = {
+    'engineering-bom': 'EBOM',
+    'manufacturing-bom': 'MBOM',
+    routing: '工艺路线',
+    'production-version': '生产版本',
+    'mrp-candidate': 'MRP 候选',
+    'mes-work-order-candidate': 'MES 工单',
+    'aps-plan-candidate': 'APS 排程',
+  }
+  return labels[(type ?? '').toLowerCase()] ?? (type || '影响节点')
+}
+
+function impactLevelTone(level?: string | null): StatusTone {
+  const normalized = (level ?? '').toLowerCase()
+  if (normalized === 'direct') return 'danger'
+  if (normalized === 'derived') return 'warning'
+  if (normalized === 'downstream' || normalized === 'candidate') return 'info'
+  return 'info'
+}
+
+function impactLevelLabel(level?: string | null) {
+  const labels: Record<string, string> = {
+    direct: '直接',
+    derived: '派生',
+    downstream: '下游',
+    candidate: '候选',
+  }
+  return labels[(level ?? '').toLowerCase()] ?? (level || '候选')
+}
+
+function riskTone(severity?: string | null): StatusTone {
+  const normalized = (severity ?? '').toLowerCase()
+  if (normalized === 'error' || normalized === 'critical') return 'danger'
+  if (normalized === 'warning') return 'warning'
+  return 'info'
 }
 </script>
 
@@ -307,6 +389,57 @@ function formatError(error: unknown) {
                     <Trash2Icon aria-hidden="true" />
                   </ButtonPro>
                 </div>
+              </div>
+
+              <div class="grid gap-3 rounded-md border bg-muted/20 p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <FormSectionTitle>发布前影响预览</FormSectionTitle>
+                    <p class="mt-1 text-sm text-muted-foreground">
+                      展示受影响的 MBOM、Routing、ProductionVersion 与下游候选，不自动修改下游单据。
+                    </p>
+                  </div>
+                  <ButtonPro type="button" variant="outline" :disabled="previewPending" @click="previewFormImpact">
+                    <Spinner v-if="previewPending" aria-hidden="true" />
+                    <NetworkIcon v-else aria-hidden="true" />
+                    预览影响
+                  </ButtonPro>
+                </div>
+
+                <DataTablePro
+                  :columns="impactColumns"
+                  :rows="impactNodes"
+                  :row-key="(row) => `${row.nodeType}:${row.versionId}:${row.relatedVersionId ?? ''}`"
+                  :loading="previewPending"
+                  :searchable="false"
+                  :column-settings="false"
+                  empty-message="填写受影响版本后可预览影响链。"
+                >
+                  <template #cell-nodeType="{ row }">{{ impactNodeTypeLabel(row.nodeType) }}</template>
+                  <template #cell-impactLevel="{ row }">
+                    <StatusBadgePro :label="impactLevelLabel(row.impactLevel)" :tone="impactLevelTone(row.impactLevel)" />
+                  </template>
+                  <template #cell-skuCode="{ row }">{{ row.skuCode || '—' }}</template>
+                  <template #cell-route="{ row }">
+                    <RouterLink v-if="row.consoleRoute" class="text-primary underline-offset-4 hover:underline" :to="row.consoleRoute">打开</RouterLink>
+                    <span v-else class="text-muted-foreground">暂无入口</span>
+                  </template>
+                </DataTablePro>
+
+                <DataTablePro
+                  v-if="impactRisks.length"
+                  :columns="riskColumns"
+                  :rows="impactRisks"
+                  :row-key="(row) => `${row.code}:${row.relatedVersionId ?? ''}`"
+                  :searchable="false"
+                  :column-settings="false"
+                  empty-message="没有风险提示。"
+                >
+                  <template #cell-severity="{ row }">
+                    <StatusBadgePro :label="row.severity || 'info'" :tone="riskTone(row.severity)" />
+                  </template>
+                  <template #cell-relatedVersionId="{ row }">{{ row.relatedVersionId || '—' }}</template>
+                </DataTablePro>
               </div>
 
               <DialogProFooter>

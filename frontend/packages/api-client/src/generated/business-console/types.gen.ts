@@ -1334,6 +1334,55 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomDiffResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffResponse = {
+    bomKind?: string;
+    fromVersionId?: string;
+    toVersionId?: string;
+    rootItemCode?: string;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffLineItem>;
+    summary?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffSummary;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffLineItem = {
+    changeType?: string;
+    oldItemCode?: string | null;
+    newItemCode?: string | null;
+    oldQuantity?: number | null;
+    newQuantity?: number | null;
+    oldUnitOfMeasureCode?: string | null;
+    newUnitOfMeasureCode?: string | null;
+    oldScrapRate?: number | null;
+    newScrapRate?: number | null;
+    oldYieldRate?: number | null;
+    newYieldRate?: number | null;
+    oldAlternateGroup?: string | null;
+    newAlternateGroup?: string | null;
+    oldSubstituteSkuCodes?: string | null;
+    newSubstituteSkuCodes?: string | null;
+    fieldChanges?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffFieldChange>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffFieldChange = {
+    fieldName?: string;
+    oldValue?: string | null;
+    newValue?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffSummary = {
+    added?: number;
+    removed?: number;
+    replaced?: number;
+    changed?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBomDiffRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleManufacturingBomListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleManufacturingBomListResponse | null;
 };
@@ -1571,6 +1620,45 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     versionKind?: string;
     versionId?: string;
     supersededByVersionId?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeImpactPreviewResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewResponse = {
+    effectiveDate?: string;
+    nodes?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactNode>;
+    risks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactRisk>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactNode = {
+    nodeType?: string;
+    versionId?: string;
+    displayName?: string;
+    impactLevel?: string;
+    relatedVersionId?: string | null;
+    skuCode?: string | null;
+    consoleRoute?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactRisk = {
+    code?: string;
+    severity?: string;
+    message?: string;
+    relatedVersionId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewRequest = {
+    organizationId: string;
+    environmentId: string;
+    effectiveDate?: string;
+    affectedVersions: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest = {
+    versionKind?: string;
+    versionId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6871,6 +6959,47 @@ export type GetBusinessConsoleEngineeringBomWhereUsedResponses = {
 
 export type GetBusinessConsoleEngineeringBomWhereUsedResponse = GetBusinessConsoleEngineeringBomWhereUsedResponses[keyof GetBusinessConsoleEngineeringBomWhereUsedResponses];
 
+export type GetBusinessConsoleEngineeringBomDiffData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        bomKind: string;
+        fromBomCode: string;
+        fromRevision: string;
+        toBomCode: string;
+        toRevision: string;
+    };
+    url: '/api/business-console/v1/engineering/boms/diff';
+};
+
+export type GetBusinessConsoleEngineeringBomDiffErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleEngineeringBomDiffError = GetBusinessConsoleEngineeringBomDiffErrors[keyof GetBusinessConsoleEngineeringBomDiffErrors];
+
+export type GetBusinessConsoleEngineeringBomDiffResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBomDiffResponse;
+};
+
+export type GetBusinessConsoleEngineeringBomDiffResponse = GetBusinessConsoleEngineeringBomDiffResponses[keyof GetBusinessConsoleEngineeringBomDiffResponses];
+
 export type ListBusinessConsoleEngineeringManufacturingBomsData = {
     body?: never;
     path?: never;
@@ -7351,6 +7480,39 @@ export type ReleaseBusinessConsoleEngineeringChangeResponses = {
 };
 
 export type ReleaseBusinessConsoleEngineeringChangeResponse = ReleaseBusinessConsoleEngineeringChangeResponses[keyof ReleaseBusinessConsoleEngineeringChangeResponses];
+
+export type PreviewBusinessConsoleEngineeringChangeImpactData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/engineering/engineering-changes/impact-preview';
+};
+
+export type PreviewBusinessConsoleEngineeringChangeImpactErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleEngineeringChangeImpactError = PreviewBusinessConsoleEngineeringChangeImpactErrors[keyof PreviewBusinessConsoleEngineeringChangeImpactErrors];
+
+export type PreviewBusinessConsoleEngineeringChangeImpactResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeImpactPreviewResponse;
+};
+
+export type PreviewBusinessConsoleEngineeringChangeImpactResponse = PreviewBusinessConsoleEngineeringChangeImpactResponses[keyof PreviewBusinessConsoleEngineeringChangeImpactResponses];
 
 export type ListBusinessConsoleEngineeringChangesData = {
     body?: never;

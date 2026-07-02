@@ -369,6 +369,11 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleBomWhereUsedRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleBomDiffResponse> GetBomDiffAsync(
+        string internalBearerToken,
+        BusinessConsoleBomDiffRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -444,6 +449,11 @@ public interface IBusinessProductEngineeringClient
     Task<BusinessConsoleEngineeringEntityResponse> ReleaseEngineeringChangeAsync(
         string internalBearerToken,
         BusinessConsoleReleaseEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
+        string internalBearerToken,
+        BusinessConsoleEngineeringChangeImpactPreviewRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleEngineeringChangeListResponse> ListEngineeringChangesAsync(
@@ -2703,6 +2713,24 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             null,
             cancellationToken);
 
+    public Task<BusinessConsoleBomDiffResponse> GetBomDiffAsync(
+        string internalBearerToken,
+        BusinessConsoleBomDiffRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleBomDiffResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/engineering/boms/diff?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("bomKind", request.BomKind),
+                ("fromBomCode", request.FromBomCode),
+                ("fromRevision", request.FromRevision),
+                ("toBomCode", request.ToBomCode),
+                ("toRevision", request.ToRevision)),
+            null,
+            cancellationToken);
+
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
         BusinessConsoleListManufacturingBomsRequest request,
@@ -2893,6 +2921,17 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/engineering/engineering-changes/release",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
+        string internalBearerToken,
+        BusinessConsoleEngineeringChangeImpactPreviewRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringChangeImpactPreviewResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/impact-preview",
             request,
             cancellationToken);
 

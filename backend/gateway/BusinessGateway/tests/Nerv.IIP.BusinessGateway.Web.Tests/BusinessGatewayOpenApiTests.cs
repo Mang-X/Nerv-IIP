@@ -92,6 +92,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/where-used", "get", "getBusinessConsoleEngineeringBomWhereUsed");
+        AssertOperationId(paths, "/api/business-console/v1/engineering/boms/diff", "get", "getBusinessConsoleEngineeringBomDiff");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/release", "post", "releaseBusinessConsoleEngineeringBom");
         AssertOperationId(paths, "/api/business-console/v1/engineering/manufacturing-boms", "get", "listBusinessConsoleEngineeringManufacturingBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/manufacturing-boms/explosion", "get", "getBusinessConsoleEngineeringManufacturingBomExplosion");
@@ -105,6 +106,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/standard-operations/{operationCode}", "put", "updateBusinessConsoleEngineeringStandardOperation");
         AssertOperationId(paths, "/api/business-console/v1/engineering/standard-operations/{operationCode}/archive", "post", "archiveBusinessConsoleEngineeringStandardOperation");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/release", "post", "releaseBusinessConsoleEngineeringChange");
+        AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-changes/impact-preview", "post", "previewBusinessConsoleEngineeringChangeImpact");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions", "get", "listBusinessConsoleEngineeringProductionVersions");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions", "post", "createBusinessConsoleEngineeringProductionVersion");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions/{productionVersionId}", "put", "updateBusinessConsoleEngineeringProductionVersion");
