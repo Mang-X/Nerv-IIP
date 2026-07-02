@@ -165,14 +165,14 @@ const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
   lineChange: '换线窗口',
   changeover: '换型窗口',
 }
-/** 资源时间块(维护/停机/换线/换型):斜纹块 + 标签,不渲染 .nerv-card(故不可拖拽)。 */
-function blockHtml(t: ScheduleTask): string {
+/** 资源时间块(维护/停机/换线/换型)背景带的低调内标签(与格子融合,非卡片)。 */
+function blockLabelHtml(t: ScheduleTask): string {
   const fmtHm = (iso: string) => {
     const d = new Date(iso)
     return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
   const span = t.startUtc && t.endUtc ? `${fmtHm(t.startUtc)}-${fmtHm(t.endUtc)}` : ''
-  return `<div class="nerv-blk"><span class="nerv-blk-label">${BLOCK_LABEL[t.blockKind!]}</span>${span ? `<span class="nerv-blk-span">${span}</span>` : ''}</div>`
+  return `<span class="nerv-block-bg-label">${BLOCK_LABEL[t.blockKind!]}${span ? ` · ${span}` : ''}</span>`
 }
 
 /** 资源排产板工单卡片(条内 HTML)。布局对齐参考图:WO+优先级+插单+锁 / 产品·工序 / 数量·交期 / 换型·占用 / 齐套。 */
@@ -318,6 +318,9 @@ export class DhtmlxEngine implements SchedulingEngine {
   private keyDown?: (e: KeyboardEvent) => void
   private tipEl?: HTMLElement
   private tipTaskId?: string
+  private tipRaf = 0
+  private tipPendingX = 0
+  private tipPendingY = 0
   private settleRaf = 0
   private dropHint?: HTMLElement
   private dragging = false
@@ -372,6 +375,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
     // 计划基线只在工单甘特出现;资源排产板是卡片板,不画计划/实际基线(避免卡片上多出细线)。
     if (options.view !== 'resource') this.addBaselineLayer(inst)
+    // 资源时间块作为背景带:见 task_class 的 .nerv-block 处理(条本身样式化,不再单独背景层——
+    // addTaskLayer 在 split 泳道视图不渲染子任务)。
+    // 资源排产板:时间块(维护/停机/换线/换型)画成齐行铺满的淡斜纹背景带(位于工单卡片之下)。
     // 资源视图跨泳道拖拽改派:记录指针 Y(监听 document,DHTMLX 拖拽会捕获指针,container 上收不到)。
     // 同时用自有覆盖层做拖拽落点预览(不被 DHTMLX 重绘冲掉)。
     if (options.view === 'resource') {
@@ -580,6 +586,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.tipEl = undefined
     this.tipTaskId = undefined
     this.dragging = false
+    cancelAnimationFrame(this.tipRaf)
+    this.tipRaf = 0
     cancelAnimationFrame(this.settleRaf)
     cancelAnimationFrame(this.resizeRaf)
     this.resizeObserver?.disconnect()
@@ -702,6 +710,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       const cls: string[] = []
+      // 资源时间块(维护/停机/换线/换型):条本身样式化为「背景带」——无圆角无边距的淡斜纹、
+      // 置于工单卡片之下、不拦截交互(见 scheduling.css .nerv-block),与格子融为一体而非卡片。
       if (t?.blockKind) cls.push('nerv-block', `nerv-block-${t.blockKind}`)
       if (t?.type === 'order') cls.push('nerv-order')
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
@@ -719,7 +729,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       if (!isResource || t?.type !== 'operation') return ''
-      return t.blockKind ? blockHtml(t) : cardHtml(t)
+      // 时间块:条内只放低调标签(条本身已由 CSS 样式成背景带)。
+      if (t.blockKind) return blockLabelHtml(t)
+      return cardHtml(t)
     }
     inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
       if (isResource) return ''
@@ -944,12 +956,24 @@ export class DhtmlxEngine implements SchedulingEngine {
       this.tipTaskId = id
     }
     tip.style.display = 'block'
-    tip.style.transform = `translate(${Math.round(e.clientX + 14)}px, ${Math.round(e.clientY + 18)}px)`
-    // 下一帧淡入(display:none → block 时 transition 不生效,需分帧)。
-    if (tip.style.opacity !== '1') requestAnimationFrame(() => (tip.style.opacity = '1'))
+    // pointermove 高频:把位置写入合并到每帧一次 rAF(避免每个事件都触发合成),用 translate 定位(GPU 层,不触发 layout)。
+    this.tipPendingX = e.clientX + 14
+    this.tipPendingY = e.clientY + 18
+    if (!this.tipRaf) {
+      this.tipRaf = requestAnimationFrame(() => {
+        this.tipRaf = 0
+        const el = this.tipEl
+        if (!el || el.style.display === 'none') return
+        el.style.transform = `translate(${Math.round(this.tipPendingX)}px, ${Math.round(this.tipPendingY)}px)`
+        // 首帧就位后再淡入(display:none → block 时 transition 不生效,需分帧)。
+        if (el.style.opacity !== '1') el.style.opacity = '1'
+      })
+    }
   }
 
   private hideTip(): void {
+    cancelAnimationFrame(this.tipRaf)
+    this.tipRaf = 0
     const tip = this.tipEl
     if (!tip || tip.style.display === 'none') return
     tip.style.opacity = '0'

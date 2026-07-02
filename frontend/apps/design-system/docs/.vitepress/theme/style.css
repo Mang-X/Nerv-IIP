@@ -11,6 +11,7 @@
 
 @source '../../../../../packages/ui/src';
 @source '../../../../../packages/ui-mobile/src';
+@source '../../../../../packages/scheduling/src';
 
 @import 'tw-animate-css';
 

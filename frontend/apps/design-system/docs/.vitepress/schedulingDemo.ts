@@ -169,3 +169,63 @@ export function makeModel(): ScheduleModel {
   m.tasks.push(milestone, maintenance, changeover)
   return m
 }
+
+// ── 工作日历 / 班次演示 ────────────────────────────────────────────────
+// 引擎按「本地时间」着色:周末(周六/周日)= 周末底纹;每天 08:00 前或 20:00 后 = 非工作/夜班底纹;
+// 资源板小时刻度还会插入三班制刻度(夜 00–08 / 早 08–16 / 中 16–24)。这里造一份跨周末、跨昼夜的
+// horizon(周五午后 → 周一早间),放几条工序,让读者能亲眼指认「哪块是周末 / 夜班 / 非工作」。
+// 2026-06-12 = 周五,06-13 周六,06-14 周日,06-15 周一。基点取周五 12:00(本地)。
+const calBase = new Date(2026, 5, 12, 12, 0, 0) // 月份 0-based:5 = 6 月
+const calIso = (h: number) => new Date(calBase.getTime() + h * H).toISOString()
+
+const calPlan = {
+  planId: 'APS-2026-0612-CAL',
+  status: 'generated',
+  algorithmVersion: 'heuristic-1',
+  generatedAtUtc: calIso(0),
+  assignments: [
+    // 周五午后早班尾:一条正常工时内的工序。
+    { assignmentId: 'CAL-1', orderId: 'WO-2026-011', operationId: '下料', operationSequence: 10, resourceId: '激光切割-01', workCenterId: '激光切割-01', startUtc: calIso(1), endUtc: calIso(4), isLocked: false },
+    // 周五夜班:跨入 20:00 后的非工作/夜班底纹区(赶工)。
+    { assignmentId: 'CAL-2', orderId: 'WO-2026-011', operationId: '焊接', operationSequence: 20, resourceId: '焊接-01', workCenterId: '焊接-01', startUtc: calIso(7), endUtc: calIso(11), isLocked: false },
+    // 周六:整条落在周末底纹上(周末加班)。
+    { assignmentId: 'CAL-3', orderId: 'WO-2026-012', operationId: '机加工', operationSequence: 10, resourceId: '加工中心-03', workCenterId: '加工中心-03', startUtc: calIso(26), endUtc: calIso(31), isLocked: false },
+    // 周一早班:回到正常工时。
+    { assignmentId: 'CAL-4', orderId: 'WO-2026-012', operationId: '折弯', operationSequence: 20, resourceId: '折弯-02', workCenterId: '折弯-02', startUtc: calIso(69), endUtc: calIso(73), isLocked: false },
+  ],
+  resourceLoads: [
+    { resourceId: '激光切割-01', windowStartUtc: calIso(0), windowEndUtc: calIso(76), assignedMinutes: 180, availableMinutes: 480, utilization: 0.38 },
+    { resourceId: '焊接-01', windowStartUtc: calIso(0), windowEndUtc: calIso(76), assignedMinutes: 240, availableMinutes: 480, utilization: 0.5 },
+    { resourceId: '折弯-02', windowStartUtc: calIso(0), windowEndUtc: calIso(76), assignedMinutes: 240, availableMinutes: 480, utilization: 0.5 },
+    { resourceId: '加工中心-03', windowStartUtc: calIso(0), windowEndUtc: calIso(76), assignedMinutes: 300, availableMinutes: 480, utilization: 0.63 },
+  ],
+  conflicts: [],
+  unscheduledOperations: [],
+  changeSummary: [],
+  ganttItems: [],
+}
+
+const CAL_PRODUCT: Record<string, string> = { 'WO-2026-011': '横梁支架', 'WO-2026-012': '悬架臂' }
+
+/**
+ * 跨周末、跨昼夜的示例排程模型,用于演示引擎自动渲染的日历要素:
+ * 周末底纹、非工作/夜班底纹、三班制刻度、「现在」标线。horizon 覆盖周五→周一含夜间。
+ * 与 makeModel() 同风格,返回全新 ScheduleModel。
+ */
+export function makeCalendarModel(): ScheduleModel {
+  const m = toModel(calPlan as never)
+  for (const t of m.tasks) {
+    if (t.type !== 'operation') continue
+    const wc = WC[t.workCenterId ?? ''] ?? WC['激光切割-01']
+    t.product = CAL_PRODUCT[t.orderId] ?? '通用件'
+    t.quantity = 80
+    t.colorKey = wc.color
+    t.dimensions = {
+      workCenter: t.dimensions?.workCenter ?? { id: t.workCenterId ?? '', label: t.workCenterId ?? '' },
+      device: { id: wc.device[0], label: wc.device[1] },
+      team: { id: wc.team[0], label: wc.team[1] },
+      line: { id: wc.line[0], label: wc.line[1] },
+    }
+  }
+  return m
+}

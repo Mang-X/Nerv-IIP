@@ -455,45 +455,44 @@
   transition: opacity var(--nerv-dur-fast) var(--nerv-ease);
 }
 
-/* 资源时间块(维护/停机/换线/换型):斜纹底 + 虚线框 + 居中标签;不可拖拽(无 .nerv-card) */
+/* 资源时间块(维护/停机/换线/换型):条本身样式化为「背景带」,与格子融为一体——
+   无圆角/无外边距的淡斜纹,置于工单卡片之下(z-index),pointer-events:none 不拦截卡片交互。
+   addTaskLayer 背景层在 split 泳道视图不渲染子任务,故直接样式化条本身。 */
 .nerv-gantt-dhx .gantt_task_line.nerv-block {
   --blk: var(--muted-foreground);
-  background-color: color-mix(in srgb, var(--blk) 10%, transparent) !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: hidden;
+  background-color: color-mix(in srgb, var(--blk) 7%, transparent) !important;
   background-image: repeating-linear-gradient(
     -45deg,
     transparent 0,
-    transparent 5px,
-    color-mix(in srgb, var(--blk) 22%, transparent) 5px,
-    color-mix(in srgb, var(--blk) 22%, transparent) 7px
+    transparent 7px,
+    color-mix(in srgb, var(--blk) 12%, transparent) 7px,
+    color-mix(in srgb, var(--blk) 12%, transparent) 8px
   ) !important;
-  border: 1px dashed color-mix(in srgb, var(--blk) 55%, transparent) !important;
-  border-radius: 6px !important;
 }
 .nerv-gantt-dhx .gantt_task_line.nerv-block-maintenance { --blk: var(--sched-block-maintenance); }
 .nerv-gantt-dhx .gantt_task_line.nerv-block-downtime { --blk: var(--sched-block-downtime); }
 .nerv-gantt-dhx .gantt_task_line.nerv-block-lineChange { --blk: var(--sched-block-linechange); }
 .nerv-gantt-dhx .gantt_task_line.nerv-block-changeover { --blk: var(--sched-block-changeover); }
-.nerv-gantt-dhx .nerv-blk {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  height: 100%;
-  padding: 2px;
-  text-align: center;
-  overflow: hidden;
-}
-.nerv-gantt-dhx .nerv-blk-label {
-  font-size: 0.66rem;
-  font-weight: 700;
-  color: color-mix(in srgb, var(--blk) 70%, var(--foreground));
-  white-space: nowrap;
-}
-.nerv-gantt-dhx .nerv-blk-span {
-  font-size: 0.6rem;
+/* 工单卡片浮于背景带之上 */
+.nerv-gantt-dhx .gantt_task_line:has(.nerv-card) { z-index: 1; }
+/* 块内低调标签(非卡片):小字,贴左上。 */
+.nerv-gantt-dhx .nerv-block-bg-label {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
   color: var(--muted-foreground);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .nerv-gantt-dhx .nerv-card {
   position: relative;
@@ -804,6 +803,22 @@
   font-size: 0.78rem !important;
   line-height: 1.5 !important;
   padding: 10px 12px !important;
+}
+
+/* 资源板自绘 tooltip(.nerv-tip):跟指针高频移动的浮层,不用玻璃(backdrop-filter 每帧重采样背景
+   → 顿挫)。改近实心背景 + 发丝边框 + 阴影,只靠 transform 定位(GPU 合成,不触发 layout)。 */
+.nerv-tip {
+  max-width: 320px;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--popover), transparent 4%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 10px 12px;
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -9,9 +9,24 @@ import { GanttChart } from '@nerv-iip/scheduling'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
 import { Button } from '@nerv-iip/ui'
 import { computed, ref } from 'vue'
-import { makeModel } from '../../.vitepress/schedulingDemo'
+import { makeModel, makeCalendarModel } from '../../.vitepress/schedulingDemo'
 
 const model = ref(makeModel())
+
+// 图例↔实图 对照:共用同一张甘特实例(避免多开重实例),旁边列表逐项标注视觉语言。
+const galleryModel = ref(makeModel())
+const ganttLegend = [
+  { swatch: 'cat', key: 'weld', label: '工序分色', desc: '按车间/工序着色(如焊接=红、下料=绿),一眼分辨工序归属。' },
+  { swatch: 'planned', label: '计划基线', desc: '半透明浅条 = 计划时段;实心条 = 实际排程,错位即偏差(WO-2026-003 晚 3h)。' },
+  { swatch: 'dep', label: '依赖箭头', desc: '前序完成→后序开始(FS)的连线,勾勒工艺路线。' },
+  { swatch: 'milestone', label: '里程碑菱形', desc: '菱形节点(冲焊下线)无时长;条尾小菱形+标签为阶段点(冲焊完成)。' },
+  { swatch: 'conflict', label: '冲突描边', desc: '红色粗描边 = 产能/交期冲突,点选查看原因。' },
+  { swatch: 'locked', label: '锁定虚线', desc: '虚线框 = 已锁定,重预览时不被算法挪动。' },
+  { swatch: 'offwork', label: '非工作底纹', desc: '浅底纹 = 每日 20:00–次日 08:00 及周末,引擎自动着色。' },
+  { swatch: 'now', label: '现在线', desc: '竖线 = 当前时刻,横切进度与延误。' },
+]
+
+const calendarModel = ref(makeCalendarModel())
 
 // 拖拽落点更新模型(否则引擎按原模型重绘,条会弹回原位)。
 function onDrag(p) {
@@ -109,13 +124,34 @@ function onDrag(p) {
   </div>
 </Demo>
 
-### 图例:读懂颜色 / 基线 / 里程碑
+### 图例 ↔ 实际效果 对照
 
-`SchedulingLegend`(`view="order"`)讲清工单甘特的视觉语言:工序分色、计划基线、依赖箭头、里程碑菱形、冲突/锁定框、当前时刻线。
+同一张甘特(即上例数据),对着右侧清单在图里逐一指认视觉语言——不是只看图例条,而是「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="order"`)嵌在图底作为速查条。
 
 <Demo block>
-  <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden">
+  <div style="height: 380px; width: 100%">
+    <GanttChart :model="galleryModel" scale="hour" :read-only="true" />
+  </div>
+  <div style="border:1px solid var(--border); border-top:0; border-radius:0 0 8px 8px; overflow:hidden; margin-top:-1px">
     <SchedulingLegend view="order" :categories="cats" />
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:.5rem; margin-top:1rem">
+    <div v-for="item in ganttLegend" :key="item.label" style="display:flex; gap:.625rem; align-items:flex-start; border:1px solid var(--border); border-radius:8px; padding:.625rem .75rem">
+      <span style="flex:none; display:inline-flex; align-items:center; justify-content:center; width:28px; height:18px; margin-top:.1rem">
+        <span v-if="item.swatch === 'cat'" style="width:24px; height:10px; border-radius:3px" :style="{ background: `var(--nerv-cat-${item.key})` }"></span>
+        <span v-else-if="item.swatch === 'planned'" style="width:24px; height:10px; border-radius:3px; border:1px dashed color-mix(in srgb, var(--muted-foreground) 50%, transparent); background:color-mix(in srgb, var(--muted-foreground) 15%, transparent)"></span>
+        <svg v-else-if="item.swatch === 'dep'" width="26" height="12" viewBox="0 0 26 12" style="color:var(--muted-foreground)"><path d="M1 6h18" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M16 3l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <span v-else-if="item.swatch === 'milestone'" style="width:11px; height:11px; transform:rotate(45deg); border-radius:2px; background:var(--brand)"></span>
+        <span v-else-if="item.swatch === 'conflict'" style="width:24px; height:10px; border-radius:3px; border:2px solid var(--destructive); background:color-mix(in srgb, var(--destructive) 22%, transparent)"></span>
+        <span v-else-if="item.swatch === 'locked'" style="width:24px; height:10px; border-radius:3px; border:1px dashed color-mix(in srgb, var(--brand) 70%, transparent)"></span>
+        <span v-else-if="item.swatch === 'offwork'" style="width:24px; height:12px; border-radius:3px; background:var(--muted)"></span>
+        <span v-else-if="item.swatch === 'now'" style="width:2px; height:16px; border-radius:99px; background:var(--brand)"></span>
+      </span>
+      <div style="font-size:.8125rem; line-height:1.35">
+        <div style="font-weight:600; margin-bottom:.15rem">{{ item.label }}</div>
+        <div style="color:var(--muted-foreground)">{{ item.desc }}</div>
+      </div>
+    </div>
   </div>
 </Demo>
 
@@ -165,6 +201,16 @@ function onDrag(p) {
 <Demo block>
   <div style="height: 220px; width: 100%">
     <GanttChart :model="emptyModel" />
+  </div>
+</Demo>
+
+### 工作日历 / 班次
+
+引擎按日历自动着底纹:**每日 20:00–次日 08:00** 与**周末**染成非工作/夜班浅底纹,**「现在」竖线**标当前时刻。下例 horizon 跨周五 → 周一(含夜间),浅色带即不可排产时段——赶工工序(周五夜班、周六加班)会明显压在底纹上。
+
+<Demo block>
+  <div style="height: 300px; width: 100%">
+    <GanttChart :model="calendarModel" scale="hour" :read-only="true" />
   </div>
 </Demo>
 

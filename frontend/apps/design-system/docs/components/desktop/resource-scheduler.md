@@ -8,9 +8,30 @@ aside: false
 import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
 import { computed, ref } from 'vue'
-import { makeModel } from '../../.vitepress/schedulingDemo'
+import { makeModel, makeCalendarModel } from '../../.vitepress/schedulingDemo'
 
 const model = ref(makeModel())
+
+// 图例↔实图 对照:共用同一张排产板实例,旁边逐项标注视觉语言。
+const galleryModel = ref(makeModel())
+const resLegend = [
+  { swatch: 'cat', key: 'weld', label: '工序色卡', desc: '卡片主色按车间/工序着色,一眼分辨机台在做什么工序。' },
+  { swatch: 'priority', label: '优先级', desc: '高优先级卡片标「高」角标(WO-2026-003)。' },
+  { swatch: 'rush', label: '插单 ⚡', desc: '紧急加入的工单标 ⚡(WO-2026-002),提醒计划员优先保障。' },
+  { swatch: 'kit', label: '齐套 足/缺/危', desc: '齐套 chip 按阈值变色:绿=足、黄=缺、红=危(WO-2026-003 装配 60% 危)。' },
+  { swatch: 'changeover', label: '换型 chip', desc: '灰底「换型」chip 标换型耗时(WO-2026-002 机加工 45 分钟)。' },
+  { swatch: 'bottleneck', label: '瓶颈过载', desc: '泳道负载带随利用率加深,>1 显红「瓶颈」(焊接-01 利用率 125%)。' },
+  { swatch: 'conflict', label: '冲突描边', desc: '红色粗描边 = 产能/交期冲突,点选查看原因。' },
+  { swatch: 'locked', label: '锁定虚线', desc: '虚线框 = 已锁定,重预览时不被算法挪动。' },
+  { swatch: 'block-maintenance', label: '维护块', desc: '斜纹块(灰)= 设备维护,不可拖拽(折弯-02「定期保养」)。' },
+  { swatch: 'block-downtime', label: '停机块', desc: '斜纹块(红)= 计划停机,资源不可用。' },
+  { swatch: 'block-linechange', label: '换线块', desc: '斜纹块(蓝)= 换线窗口,产线切换准备占用资源。' },
+  { swatch: 'block-changeover', label: '换型块', desc: '斜纹块(橙)= 换型窗口,工装/模具换型占用资源(加工中心-03「产品换型」)。' },
+  { swatch: 'offwork', label: '非工作·夜班底纹', desc: '浅底纹 = 20:00–08:00 及周末;小时刻度下还分早/中/夜三班。' },
+  { swatch: 'now', label: '现在线', desc: '竖线 = 当前时刻。' },
+]
+
+const calendarModel = ref(makeCalendarModel())
 
 // 拖拽落点更新模型:改时间(横向)与改派资源/泳道(纵向)。
 // 本 demo 里 resourceId === workCenterId === 泳道 id,故同步更新维度归属让卡片换道。
@@ -92,15 +113,57 @@ function onDrag(p) {
 
 组件左上角自带维度切换(工作中心 / 设备 / 班组 / 产线),由模型 `groupDimensions` 驱动;切换后泳道按所选维度重铺、卡片落到对应资源行。上方基础用法 demo 即可直接点选切换。
 
-### 图例:排产板视觉语言
+### 图例 ↔ 实际效果 对照
 
-`SchedulingLegend`(`view="resource"`)讲清优先级 / 插单 / 齐套分级 / 换型 / 瓶颈 / 冲突 / 锁定,以及四类资源时间块斜纹配色。
+同一张排产板(即上例数据),对着右侧清单在板上逐一指认卡片与泳道的视觉语言——「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="resource"`)嵌在图底作为速查条。
 
 <Demo block>
-  <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden">
+  <div style="height: 400px; width: 100%">
+    <ResourceSchedulerBoard :model="galleryModel" :read-only="true" />
+  </div>
+  <div style="border:1px solid var(--border); border-top:0; border-radius:0 0 8px 8px; overflow:hidden; margin-top:-1px">
     <SchedulingLegend view="resource" :categories="cats" />
   </div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:.5rem; margin-top:1rem">
+    <div v-for="item in resLegend" :key="item.label" style="display:flex; gap:.625rem; align-items:flex-start; border:1px solid var(--border); border-radius:8px; padding:.625rem .75rem">
+      <span style="flex:none; display:inline-flex; align-items:center; justify-content:center; width:28px; height:18px; margin-top:.1rem">
+        <span v-if="item.swatch === 'cat'" style="width:24px; height:10px; border-radius:3px" :style="{ background: `var(--nerv-cat-${item.key})` }"></span>
+        <span v-else-if="item.swatch === 'priority'" style="border-radius:4px; padding:1px 4px; font-size:.55rem; font-weight:700; color:var(--destructive); background:color-mix(in srgb, var(--destructive) 15%, transparent)">高</span>
+        <svg v-else-if="item.swatch === 'rush'" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" style="color:var(--sched-rush)"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+        <span v-else-if="item.swatch === 'kit'" style="display:inline-flex; gap:2px">
+          <span style="width:7px; height:7px; border-radius:99px; background:var(--sched-kit-ok)"></span>
+          <span style="width:7px; height:7px; border-radius:99px; background:var(--sched-kit-warn)"></span>
+          <span style="width:7px; height:7px; border-radius:99px; background:var(--sched-kit-bad)"></span>
+        </span>
+        <span v-else-if="item.swatch === 'changeover'" style="border-radius:3px; padding:1px 5px; font-size:.55rem; font-weight:600; background:color-mix(in srgb, var(--foreground) 10%, transparent)">换型</span>
+        <span v-else-if="item.swatch === 'bottleneck'" style="border-radius:3px; padding:1px 5px; font-size:.55rem; font-weight:700; color:var(--destructive); background:color-mix(in srgb, var(--destructive) 15%, transparent)">瓶颈</span>
+        <span v-else-if="item.swatch === 'conflict'" style="width:24px; height:10px; border-radius:3px; border:2px solid var(--destructive); background:color-mix(in srgb, var(--destructive) 15%, transparent)"></span>
+        <span v-else-if="item.swatch === 'locked'" style="width:24px; height:10px; border-radius:3px; border:1px dashed color-mix(in srgb, var(--muted-foreground) 70%, transparent)"></span>
+        <span v-else-if="item.swatch === 'block-maintenance'" class="ds-hatch" style="--h: var(--sched-block-maintenance)"></span>
+        <span v-else-if="item.swatch === 'block-downtime'" class="ds-hatch" style="--h: var(--sched-block-downtime)"></span>
+        <span v-else-if="item.swatch === 'block-linechange'" class="ds-hatch" style="--h: var(--sched-block-linechange)"></span>
+        <span v-else-if="item.swatch === 'block-changeover'" class="ds-hatch" style="--h: var(--sched-block-changeover)"></span>
+        <span v-else-if="item.swatch === 'offwork'" style="width:24px; height:12px; border-radius:3px; background:color-mix(in srgb, var(--foreground) 5%, transparent)"></span>
+        <span v-else-if="item.swatch === 'now'" style="width:2px; height:16px; border-radius:99px; background:var(--brand)"></span>
+      </span>
+      <div style="font-size:.8125rem; line-height:1.35">
+        <div style="font-weight:600; margin-bottom:.15rem">{{ item.label }}</div>
+        <div style="color:var(--muted-foreground)">{{ item.desc }}</div>
+      </div>
+    </div>
+  </div>
 </Demo>
+
+<style scoped>
+.ds-hatch {
+  width: 24px;
+  height: 12px;
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--h) 12%, transparent);
+  background-image: repeating-linear-gradient(-45deg, transparent 0, transparent 2px, color-mix(in srgb, var(--h) 50%, transparent) 2px, color-mix(in srgb, var(--h) 50%, transparent) 3px);
+  border: 1px solid color-mix(in srgb, var(--h) 45%, transparent);
+}
+</style>
 
 ### 选中资源时间块 → 详情
 
@@ -144,6 +207,16 @@ function onDrag(p) {
 <Demo block>
   <div style="height: 200px; width: 100%">
     <ResourceSchedulerBoard :model="emptyModel" />
+  </div>
+</Demo>
+
+### 工作日历 / 班次
+
+引擎按日历自动渲染:**非工作时段与周末**染浅底纹(每日 20:00–次日 08:00、周六/周日),**小时刻度**下顶部插入三班制刻度(**夜班 00–08 / 早班 08–16 / 中班 16–24**,夜班与非工作淡化),**「现在」竖线**标当前时刻。下例 horizon 跨周五 → 周一(含夜间):浅色带即不可排产/夜班时段,周六整列为周末底纹,赶工卡片压在底纹上一目了然。
+
+<Demo block>
+  <div style="height: 320px; width: 100%">
+    <ResourceSchedulerBoard :model="calendarModel" scale="hour" :read-only="true" />
   </div>
 </Demo>
 
