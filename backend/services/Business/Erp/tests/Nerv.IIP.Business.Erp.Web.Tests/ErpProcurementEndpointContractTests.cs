@@ -18,12 +18,17 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(11, contracts.Length);
+        Assert.Equal(12, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createErpPurchaseRequisitionFromSuggestion");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/erp/purchase-requisitions"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listErpPurchaseRequisitions");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/rfqs"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -78,6 +83,7 @@ public sealed class ErpProcurementEndpointContractTests
 
     [Theory]
     [InlineData(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint))]
+    [InlineData(typeof(ListPurchaseRequisitionsEndpoint))]
     [InlineData(typeof(CreateRequestForQuotationEndpoint))]
     [InlineData(typeof(ReceiveSupplierQuotationEndpoint))]
     [InlineData(typeof(ListRequestsForQuotationEndpoint))]
@@ -99,6 +105,62 @@ public sealed class ErpProcurementEndpointContractTests
 
         Assert.Contains(typeof(ISender), parameterTypes);
         Assert.DoesNotContain(typeof(ApplicationDbContext), parameterTypes);
+    }
+
+    [Fact]
+    public async Task List_purchase_requisitions_query_applies_status_keyword_and_server_paging()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext);
+        await handler.Handle(new CreatePurchaseRequisitionFromSuggestionCommand(
+            "org-001",
+            "env-dev",
+            "PR-001",
+            "suggestion-001",
+            "SKU-RM-1000",
+            "kg",
+            "SITE-01",
+            3m,
+            new DateOnly(2026, 6, 5)), CancellationToken.None);
+        await handler.Handle(new CreatePurchaseRequisitionFromSuggestionCommand(
+            "org-001",
+            "env-dev",
+            "PR-002",
+            "suggestion-002",
+            "SKU-RM-2000",
+            "kg",
+            "SITE-02",
+            4m,
+            new DateOnly(2026, 6, 6)), CancellationToken.None);
+        await handler.Handle(new CreatePurchaseRequisitionFromSuggestionCommand(
+            "org-other",
+            "env-dev",
+            "PR-003",
+            "suggestion-003",
+            "SKU-RM-2000",
+            "kg",
+            "SITE-02",
+            5m,
+            new DateOnly(2026, 6, 7)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
+            new ListPurchaseRequisitionsQuery("org-001", "env-dev", "Open", "PR-002", 0, 1),
+            CancellationToken.None);
+        var unknownStatus = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
+            new ListPurchaseRequisitionsQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
+            CancellationToken.None);
+
+        Assert.Equal(1, response.Total);
+        var item = Assert.Single(response.Items);
+        Assert.Equal("PR-002", item.RequisitionNo);
+        Assert.Equal("suggestion-002", item.SuggestionId);
+        Assert.Equal("Open", item.Status);
+        Assert.Equal("SKU-RM-2000", item.SkuCode);
+        Assert.Equal(0, unknownStatus.Total);
+        Assert.Empty(unknownStatus.Items);
     }
 
     [Fact]

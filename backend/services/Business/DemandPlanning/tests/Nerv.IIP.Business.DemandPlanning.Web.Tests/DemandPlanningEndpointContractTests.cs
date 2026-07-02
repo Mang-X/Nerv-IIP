@@ -209,8 +209,29 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
         Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
         Assert.Equal("PurchaseRequisition", suggestion.AcceptedDownstreamDocumentType);
-        Assert.Null(suggestion.AcceptedDownstreamDocumentId);
-        Assert.Equal(0, bridge.CreateCount);
+        Assert.Equal("PR-SHOULD-BE-CREATED", suggestion.AcceptedDownstreamDocumentId);
+        Assert.Equal(1, bridge.CreateCount);
+    }
+
+    [Fact]
+    public async Task Purchase_suggestion_acceptance_creates_real_erp_requisition_reference_through_bridge()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var suggestion = PlanningSuggestion.Create("org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs", "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        dbContext.PlanningSuggestions.Add(suggestion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
+
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+
+        Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
+        Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
+        Assert.Equal("PurchaseRequisition", suggestion.AcceptedDownstreamDocumentType);
+        Assert.Equal("PR-SHOULD-BE-CREATED", suggestion.AcceptedDownstreamDocumentId);
+        Assert.Equal(1, bridge.CreateCount);
     }
 
     [Fact]
@@ -229,7 +250,7 @@ public sealed class DemandPlanningEndpointContractTests
 
         Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
         Assert.Equal("PurchaseRequisition", suggestion.AcceptedDownstreamDocumentType);
-        Assert.Null(suggestion.AcceptedDownstreamDocumentId);
+        Assert.Equal("PR-SHOULD-BE-CREATED", suggestion.AcceptedDownstreamDocumentId);
     }
 
     [Fact]
@@ -404,10 +425,13 @@ public sealed class DemandPlanningEndpointContractTests
             CancellationToken cancellationToken)
         {
             CreateCount++;
+            var referenceId = string.Equals(request.DownstreamService, "BusinessErp", StringComparison.OrdinalIgnoreCase)
+                ? "PR-SHOULD-BE-CREATED"
+                : "WO-SHOULD-NOT-BE-CREATED";
             return Task.FromResult(new PlanningSuggestionDownstreamReference(
                 request.DownstreamService,
                 request.DownstreamDocumentType,
-                "WO-SHOULD-NOT-BE-CREATED"));
+                referenceId));
         }
     }
 
