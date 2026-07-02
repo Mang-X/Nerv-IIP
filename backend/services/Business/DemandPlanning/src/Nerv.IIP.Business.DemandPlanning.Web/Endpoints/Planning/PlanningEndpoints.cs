@@ -74,6 +74,12 @@ public sealed record AcceptPlanningSuggestionRequest(
     string? DownstreamDocumentId,
     string? IdempotencyKey = null);
 
+public sealed record AcceptPlanningSuggestionResponse(
+    bool Accepted,
+    string DownstreamService,
+    string DownstreamDocumentType,
+    string? DownstreamDocumentId);
+
 public sealed class CreateOrUpdateDemandSourceEndpoint(ISender sender)
     : DemandPlanningEndpoint<CreateOrUpdateDemandSourceRequest, ResponseData<CreateOrUpdateDemandSourceResponse>>
 {
@@ -195,7 +201,7 @@ public sealed class ListPlanningSuggestionsEndpoint(ISender sender)
 }
 
 public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
-    : DemandPlanningEndpoint<AcceptPlanningSuggestionRequest, ResponseData<string>>
+    : DemandPlanningEndpoint<AcceptPlanningSuggestionRequest, ResponseData<AcceptPlanningSuggestionResponse>>
 {
     public override void Configure()
     {
@@ -204,13 +210,17 @@ public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
 
     public override async Task HandleAsync(AcceptPlanningSuggestionRequest req, CancellationToken ct)
     {
-        await sender.Send(new AcceptPlanningSuggestionCommand(
+        var result = await sender.Send(new AcceptPlanningSuggestionCommand(
             req.SuggestionId,
             req.DownstreamService,
             req.DownstreamDocumentType,
             req.DownstreamDocumentId,
             req.IdempotencyKey), ct);
-        await Send.OkAsync("accepted".AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new AcceptPlanningSuggestionResponse(
+            true,
+            result.DownstreamService,
+            result.DownstreamDocumentType,
+            result.DownstreamDocumentId).AsResponseData(), cancellation: ct);
     }
 }
 

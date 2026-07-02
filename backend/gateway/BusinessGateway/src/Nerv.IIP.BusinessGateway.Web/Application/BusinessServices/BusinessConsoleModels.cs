@@ -999,7 +999,11 @@ public sealed record BusinessConsoleNcrCloseRequest(
     string? ScrapMovementId,
     string? ReturnDocumentId);
 
-public sealed record BusinessConsoleAcceptedResponse(bool Accepted);
+public sealed record BusinessConsoleAcceptedResponse(
+    bool Accepted,
+    string? DownstreamService = null,
+    string? DownstreamDocumentType = null,
+    string? DownstreamDocumentId = null);
 
 public sealed record BusinessConsoleEngineeringContextRequest(
     string OrganizationId,
@@ -1577,7 +1581,10 @@ public sealed record BusinessConsolePlanningSuggestionItem(
     decimal Quantity,
     DateOnly RequiredDate,
     string Status,
-    string ReasonCode);
+    string ReasonCode,
+    string? DownstreamService = null,
+    string? DownstreamDocumentType = null,
+    string? DownstreamDocumentId = null);
 
 public sealed record BusinessConsolePlanningSuggestionListResponse(IReadOnlyCollection<BusinessConsolePlanningSuggestionItem> Items);
 
@@ -1716,7 +1723,9 @@ public sealed record BusinessConsoleCreateErpPurchaseRequisitionRequest(
     DateOnly RequiredDate,
     string? IdempotencyKey = null);
 
-public sealed record BusinessConsoleCreateErpPurchaseRequisitionResponse(string PurchaseRequisitionId);
+public sealed record BusinessConsoleCreateErpPurchaseRequisitionResponse(
+    string PurchaseRequisitionId,
+    string? RequisitionNo = null);
 
 public sealed record BusinessConsoleCreateErpRequestForQuotationRequest(
     string OrganizationId,
@@ -1805,6 +1814,22 @@ public sealed record BusinessConsoleErpRequestForQuotationLineItem(
     decimal Quantity,
     string SiteCode,
     DateOnly RequiredDate);
+
+public sealed record BusinessConsoleErpPurchaseRequisitionListResponse(
+    IReadOnlyCollection<BusinessConsoleErpPurchaseRequisitionItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpPurchaseRequisitionItem(
+    string PurchaseRequisitionId,
+    string RequisitionNo,
+    string SuggestionId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    string Status,
+    DateTime CreatedAtUtc);
 
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items,

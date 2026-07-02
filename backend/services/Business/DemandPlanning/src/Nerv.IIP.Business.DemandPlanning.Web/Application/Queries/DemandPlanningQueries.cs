@@ -93,6 +93,8 @@ public sealed record PlanningSuggestionResponse(
     DateOnly ReleaseDate,
     PlanningSuggestionStatus Status,
     string ReasonCode,
+    string? AcceptedDownstreamService,
+    string? AcceptedDownstreamDocumentType,
     string? AcceptedDownstreamDocumentId);
 
 public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbContext)
@@ -121,6 +123,8 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.ReleaseDate,
                 x.Status,
                 x.ReasonCode,
+                x.AcceptedDownstreamService,
+                x.AcceptedDownstreamDocumentType,
                 x.AcceptedDownstreamDocumentId))
             .ToListAsync(cancellationToken);
     }

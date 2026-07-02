@@ -162,6 +162,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertJwtBearerSecurity(paths, "/api/business-console/v1/workbench/summary", "get");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-orders", "get", "listBusinessConsoleErpPurchaseOrders");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "get", "listBusinessConsoleErpRequestsForQuotation");
+        AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions", "get", "listBusinessConsoleErpPurchaseRequisitions");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion", "post", "createBusinessConsoleErpPurchaseRequisitionFromSuggestion");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/rfqs", "post", "createBusinessConsoleErpRequestForQuotation");
         AssertOperationId(paths, "/api/business-console/v1/erp/procurement/supplier-quotations", "post", "receiveBusinessConsoleErpSupplierQuotation");
