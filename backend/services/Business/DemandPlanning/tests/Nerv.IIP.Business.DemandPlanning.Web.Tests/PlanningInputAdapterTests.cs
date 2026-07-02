@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Planning;
@@ -68,6 +69,54 @@ public sealed class PlanningInputAdapterTests
         Assert.Empty(snapshot.ScheduledReceipts);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], engineering.RequestedParentSkuCodes);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Upstream_adapter_includes_only_released_mps_buckets_as_mrp_inputs_with_source_type()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var released = MasterProductionSchedule.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 10),
+            12m);
+        released.MarkReviewed("planner.li");
+        released.Release("planning.manager");
+        var draft = MasterProductionSchedule.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-2000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 12),
+            8m);
+        dbContext.MasterProductionSchedules.AddRange(released, draft);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var engineering = new FakePlanningProductEngineeringClient();
+        var inventory = new FakePlanningInventoryClient();
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(dbContext, engineering, inventory);
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30),
+            CancellationToken.None);
+
+        var demand = Assert.Single(snapshot.Demands);
+        Assert.Equal("mps", demand.SourceType);
+        Assert.StartsWith("MPS:", demand.DemandSourceReference, StringComparison.Ordinal);
+        Assert.Equal("SKU-FG-1000", demand.SkuCode);
+        Assert.Equal(12m, demand.Quantity);
+        Assert.Equal(new DateOnly(2026, 6, 10), demand.DueDate);
+        Assert.DoesNotContain(snapshot.Demands, x => x.SkuCode == "SKU-FG-2000");
+        Assert.Contains("SKU-FG-1000", engineering.RequestedParentSkuCodes);
+        Assert.Contains("SKU-FG-1000", inventory.RequestedSkuCodes);
     }
 
     [Fact]

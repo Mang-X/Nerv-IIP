@@ -85,6 +85,14 @@ const targetInspectionPlan = computed(() =>
 const targetInspectionPlanMissing = computed(() =>
   !!targetInspectionPlanId.value && !inspectionPlansPending.value && !targetInspectionPlan.value,
 )
+const scanAuditRoute = computed(() => ({
+  path: '/barcode/scans',
+  query: {
+    sourceWorkflow: 'quality.inspection',
+    sourceDocumentId: recordForm.sourceDocumentId || targetInspectionPlanId.value || undefined,
+    scannedValue: recordForm.serialNo || recordForm.batchNo || undefined,
+  },
+}))
 const shouldCreateRecordFromLocatedPlan = computed(() => firstQuery(route.query.action).toLowerCase() === 'create')
 watch(
   () => route.query,
@@ -254,6 +262,9 @@ function isPresent(value: string | undefined | null): value is string {
       <template #actions>
         <ButtonPro v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`">返回工单 {{ contextWorkOrderId }}</RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="scanAuditRoute">扫码记录</RouterLink>
         </ButtonPro>
         <ButtonPro size="sm" type="button" @click="recordSheetOpen = true">
           <ClipboardCheckIcon aria-hidden="true" />

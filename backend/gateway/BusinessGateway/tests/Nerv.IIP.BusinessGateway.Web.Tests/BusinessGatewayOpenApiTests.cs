@@ -110,6 +110,11 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions/{productionVersionId}", "put", "updateBusinessConsoleEngineeringProductionVersion");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions/{productionVersionId}/archive", "post", "archiveBusinessConsoleEngineeringProductionVersion");
         AssertOperationId(paths, "/api/business-console/v1/engineering/production-versions/resolve", "get", "resolveBusinessConsoleEngineeringProductionVersion");
+        AssertOperationId(paths, "/api/business-console/v1/planning/mps", "get", "listBusinessConsolePlanningMpsBuckets");
+        AssertOperationId(paths, "/api/business-console/v1/planning/mps", "post", "createBusinessConsolePlanningMpsBucket");
+        AssertOperationId(paths, "/api/business-console/v1/planning/mps/{mpsId}", "put", "updateBusinessConsolePlanningMpsBucket");
+        AssertOperationId(paths, "/api/business-console/v1/planning/mps/{mpsId}/review", "post", "reviewBusinessConsolePlanningMpsBucket");
+        AssertOperationId(paths, "/api/business-console/v1/planning/mps/{mpsId}/release", "post", "releaseBusinessConsolePlanningMpsBucket");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "get", "listBusinessConsolePlanningDemands");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands", "post", "createOrUpdateBusinessConsolePlanningDemand");
         AssertOperationId(paths, "/api/business-console/v1/planning/demands/{demandSourceId}/cancel", "post", "cancelBusinessConsolePlanningDemand");

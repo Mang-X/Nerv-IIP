@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   BusinessConsoleDemandSourceItem,
+  BusinessConsoleMpsBucketItem,
   BusinessConsoleMrpPeggingItem,
   BusinessConsoleMrpRunItem,
   BusinessConsolePlanningSuggestionItem,
@@ -47,6 +48,9 @@ const {
   acceptSuggestion,
   acceptSuggestionError,
   acceptSuggestionPending,
+  createMpsBucket,
+  createMpsBucketError,
+  createMpsBucketPending,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -57,6 +61,16 @@ const {
   mrpRuns,
   mrpRunsError,
   mrpRunsPending,
+  mpsBuckets,
+  mpsBucketsError,
+  mpsBucketsPending,
+  mpsForm,
+  releaseMpsBucket,
+  releaseMpsBucketError,
+  releaseMpsBucketPending,
+  reviewMpsBucket,
+  reviewMpsBucketError,
+  reviewMpsBucketPending,
   pegging,
   peggingPending,
   refreshPlanning,
@@ -123,9 +137,27 @@ const canSubmitDemand = computed(() =>
   && !!demandForm.uomCode?.trim()
   && (demandForm.quantity ?? 0) > 0,
 )
+const canSubmitMps = computed(() =>
+  !!mpsForm.skuCode?.trim()
+  && !!mpsForm.siteCode?.trim()
+  && !!mpsForm.uomCode?.trim()
+  && !!mpsForm.bucketDate
+  && (mpsForm.quantity ?? 0) > 0,
+)
 
 const errorMessage = computed(() =>
-  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError, acceptSuggestionError]
+  [
+    demandsError,
+    mpsBucketsError,
+    mrpRunsError,
+    suggestionsError,
+    createDemandError,
+    createMpsBucketError,
+    reviewMpsBucketError,
+    releaseMpsBucketError,
+    runMrpError,
+    acceptSuggestionError,
+  ]
     .map((ref) => formatError(ref.value)).find(Boolean) ?? '',
 )
 function formatError(error: unknown) {
@@ -133,6 +165,7 @@ function formatError(error: unknown) {
 }
 
 const demandOpen = shallowRef(false)
+const mpsOpen = shallowRef(false)
 const mrpOpen = shallowRef(false)
 
 const demandTypeOptions = [
@@ -149,6 +182,7 @@ const suggestionStatusOptions = [
 const productionSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-work-order'))
 const purchaseSuggestions = computed(() => suggestions.value.filter((i) => i.suggestionType === 'planned-purchase'))
 const openSuggestionCount = computed(() => suggestions.value.filter((i) => isOpen(i.status)).length)
+const releasedMpsCount = computed(() => mpsBuckets.value.filter((i) => isMpsReleased(i.status)).length)
 
 // KPI #3：换掉无意义的跨 SKU/单位求和，改 3 张语义卡。
 // 卡1：待评审建议条数（生产 N / 采购 N 拆分作脚注）。
@@ -173,7 +207,7 @@ const latestRun = computed(() => {
   return [...runs].sort((a, b) => (a.horizonStart ?? '').localeCompare(b.horizonStart ?? ''))[runs.length - 1]
 })
 const latestRunKpiValue = computed(() => (latestRun.value ? planningStatus(latestRun.value.status).label : '未运行'))
-const latestRunKpiHint = computed(() => (latestRun.value ? `生成 ${latestRun.value.suggestionCount ?? 0} 条建议` : '尚未运行 MRP'))
+const latestRunKpiHint = computed(() => (latestRun.value ? `输入 ${inputSourcesLabel(latestRun.value.inputSources)}` : '尚未运行 MRP'))
 
 // MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
 function coverageRate(run: BusinessConsoleMrpRunItem): string {
@@ -247,10 +281,21 @@ const demandColumns: DataTableProColumn<BusinessConsoleDemandSourceItem>[] = [
   { key: 'urgency', header: '紧迫度', width: 'w-28' },
   { key: 'coverage', header: '覆盖', width: 'w-28' },
 ]
+const mpsColumns: DataTableProColumn<BusinessConsoleMpsBucketItem>[] = [
+  { key: 'bucketDate', header: '计划桶', cellClass: 'font-medium', width: 'w-32' },
+  { key: 'skuCode', header: 'SKU' },
+  { key: 'siteCode', header: '工厂', width: 'w-40' },
+  { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
+  { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'reviewRelease', header: '评审/发布', width: 'w-40' },
+  { key: 'actions', header: '', align: 'end', width: 'w-44' },
+]
 const runColumns: DataTableProColumn<BusinessConsoleMrpRunItem>[] = [
   // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
   { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'inputSources', header: '输入来源', width: 'w-52' },
+  { key: 'inputCoverage', header: '输入覆盖', width: 'w-40' },
   { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
   { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
   { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
@@ -281,9 +326,23 @@ async function submitDemand() {
   await createOrUpdateDemand()
   demandOpen.value = false
 }
+async function submitMpsBucket() {
+  await createMpsBucket()
+  mpsOpen.value = false
+}
 async function submitMrpRun() {
   await runMrp()
   mrpOpen.value = false
+}
+async function reviewMps(row: BusinessConsoleMpsBucketItem) {
+  if (!row.mpsId) return
+  await reviewMpsBucket(row.mpsId)
+  notifySuccess('MPS bucket 已完成评审。')
+}
+async function releaseMps(row: BusinessConsoleMpsBucketItem) {
+  if (!row.mpsId) return
+  await releaseMpsBucket(row.mpsId)
+  notifySuccess('MPS bucket 已发布，可作为 MRP 输入。')
 }
 async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.suggestionType) return
@@ -310,6 +369,16 @@ function planningStatus(status?: string | null): { label: string, tone: StatusTo
   if (s === 'failed') return { label: '失败', tone: 'danger' }
   if (s === 'open' || s === 'pending') return { label: '待评审', tone: 'warning' }
   return { label: status || '未知', tone: 'neutral' }
+}
+function mpsStatus(status?: string | null): { label: string, tone: StatusTone } {
+  const s = (status ?? '').toLowerCase()
+  if (s === 'released') return { label: '已发布', tone: 'success' }
+  if (s === 'reviewed') return { label: '已评审', tone: 'info' }
+  if (s === 'draft') return { label: '草稿', tone: 'neutral' }
+  return { label: status || '未知', tone: 'neutral' }
+}
+function isMpsReleased(status?: string | null) {
+  return status?.toLowerCase() === 'released'
 }
 function demandTypeLabel(value?: string | null) {
   return ({ 'forecast': '预测', 'safety-stock': '安全库存', 'sales-order': '销售订单' } as Record<string, string>)[value ?? ''] ?? (value || '未指定')
@@ -363,6 +432,23 @@ function inputDegradationSourceLabel(source: string) {
     'master-data-planning-parameters': '主数据规划参数',
   } as Record<string, string>)[source] ?? source
 }
+function inputSourcesLabel(sources?: readonly string[] | null) {
+  return sources && sources.length > 0 ? sources.map(inputSourceLabel).join('、') : '未记录'
+}
+function inputSourceLabel(source: string) {
+  return ({
+    'mps': 'MPS 主计划',
+    'demand-source': '需求池',
+    'sales-order': '销售需求',
+    'forecast': '预测',
+    'safety-stock': '安全库存',
+  } as Record<string, string>)[source] ?? source
+}
+function inputCoverageLabel(run: BusinessConsoleMrpRunItem) {
+  const start = run.inputCoverageStart ?? run.horizonStart
+  const end = run.inputCoverageEnd ?? run.horizonEnd
+  return `${formatDate(start)} ~ ${formatDate(end)}`
+}
 
 function parseVersionReference(reference?: string | null) {
   if (!reference) return {}
@@ -412,7 +498,7 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
         <DialogProContent>
           <DialogProHeader>
             <DialogProTitle>运行 MRP</DialogProTitle>
-            <DialogProDescription>按计划周期对当前需求池运行物料需求计划，生成生产与采购建议。</DialogProDescription>
+            <DialogProDescription>按计划周期汇总已发布 MPS、销售需求、预测和安全库存，生成生产与采购建议。</DialogProDescription>
           </DialogProHeader>
           <form class="grid gap-4" @submit.prevent="submitMrpRun">
             <FieldProGroup class="grid gap-3 sm:grid-cols-2">
@@ -430,6 +516,67 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
               <ButtonPro type="submit" :disabled="runMrpPending">
                 <Spinner v-if="runMrpPending" aria-hidden="true" />
                 运行
+              </ButtonPro>
+            </DialogProFooter>
+          </form>
+        </DialogProContent>
+      </DialogPro>
+
+      <DialogPro v-model:open="mpsOpen">
+        <DialogProTrigger as-child>
+          <ButtonPro size="sm" type="button" variant="outline">
+            <PlusIcon aria-hidden="true" />
+            新建 MPS
+          </ButtonPro>
+        </DialogProTrigger>
+        <DialogProContent class="sm:max-w-2xl">
+          <DialogProHeader>
+            <DialogProTitle>新建 MPS bucket</DialogProTitle>
+            <DialogProDescription>维护主生产计划 bucket，评审并发布后进入 MRP 输入。</DialogProDescription>
+          </DialogProHeader>
+          <form class="grid gap-4" @submit.prevent="submitMpsBucket">
+            <FieldProGroup class="grid gap-3 sm:grid-cols-2">
+              <FieldPro>
+                <FieldProLabel for="mps-sku">SKU</FieldProLabel>
+                <SelectPro v-model="mpsForm.skuCode">
+                  <SelectProTrigger id="mps-sku"><SelectProValue placeholder="选择 SKU" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="mps-site">工厂</FieldProLabel>
+                <SelectPro v-model="mpsForm.siteCode">
+                  <SelectProTrigger id="mps-site"><SelectProValue placeholder="选择工厂" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="mps-uom">单位</FieldProLabel>
+                <SelectPro v-model="mpsForm.uomCode">
+                  <SelectProTrigger id="mps-uom"><SelectProValue placeholder="选择单位" /></SelectProTrigger>
+                  <SelectProContent>
+                    <SelectProItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{ o.label }}</SelectProItem>
+                  </SelectProContent>
+                </SelectPro>
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel for="mps-qty">计划数量</FieldProLabel>
+                <InputPro id="mps-qty" v-model.number="mpsForm.quantity" min="0.0001" step="0.0001" type="number" />
+              </FieldPro>
+              <FieldPro>
+                <FieldProLabel>计划桶日期</FieldProLabel>
+                <DatePickerPro v-model="mpsForm.bucketDate" placeholder="选择计划日期" class="w-full" />
+              </FieldPro>
+            </FieldProGroup>
+            <DialogProFooter>
+              <ButtonPro type="button" variant="outline" @click="mpsOpen = false">取消</ButtonPro>
+              <ButtonPro type="submit" :disabled="createMpsBucketPending || !canSubmitMps">
+                <Spinner v-if="createMpsBucketPending" aria-hidden="true" />
+                保存 MPS
               </ButtonPro>
             </DialogProFooter>
           </form>
@@ -512,7 +659,8 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
     </template>
   </PageHeader>
 
-  <SectionCards :columns="3">
+  <SectionCards :columns="4">
+    <SectionCard description="MPS 已发布" :value="releasedMpsCount" footnote="bucket 可进入 MRP" :hint="`总计 ${mpsBuckets.length} 个主计划 bucket`" />
     <SectionCard description="待评审建议" :value="openSuggestionCount" footnote="条计划建议待接受" :hint="reviewKpiHint" />
     <SectionCard description="需求覆盖 (SKU)" :value="demandSkuKpi" footnote="已生成建议 / 需求 SKU 数" hint="按 SKU 去重统计" />
     <SectionCard description="最近一次 MRP" :value="latestRunKpiValue" :footnote="latestRun ? runHorizonLabel(latestRun) : '—'" :hint="latestRunKpiHint" />
@@ -523,6 +671,7 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
   <TabsPro default-value="demands">
     <TabsProList>
       <TabsProTrigger value="demands">需求池 ({{ demands.length }})</TabsProTrigger>
+      <TabsProTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</TabsProTrigger>
       <TabsProTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</TabsProTrigger>
       <TabsProTrigger value="suggestions">计划建议 ({{ suggestions.length }})</TabsProTrigger>
     </TabsProList>
@@ -549,10 +698,66 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
       </DataTablePro>
     </TabsProContent>
 
+    <TabsProContent value="mps">
+      <DataTablePro :columns="mpsColumns" :rows="mpsBuckets" row-key="mpsId" :loading="mpsBucketsPending" :searchable="false" :column-settings="false" empty-message="当前范围没有 MPS bucket。">
+        <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
+        <template #cell-skuCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ skuLabel(row.skuCode) }}</span>
+            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
+          </div>
+        </template>
+        <template #cell-siteCode="{ row }">
+          <div class="flex flex-col gap-0.5">
+            <span>{{ siteLabel(row.siteCode) }}</span>
+            <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{ row.siteCode }}</span>
+          </div>
+        </template>
+        <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
+        <template #cell-status="{ row }"><StatusBadgePro :label="mpsStatus(row.status).label" :tone="mpsStatus(row.status).tone" /></template>
+        <template #cell-reviewRelease="{ row }">
+          <div class="flex min-w-0 flex-col gap-0.5 text-sm">
+            <span>{{ row.reviewedBy ? `评审 ${row.reviewedBy}` : '未评审' }}</span>
+            <span class="text-muted-foreground">{{ row.releasedBy ? `发布 ${row.releasedBy}` : '未发布' }}</span>
+          </div>
+        </template>
+        <template #cell-actions="{ row }">
+          <div class="flex justify-end gap-2">
+            <ButtonPro
+              v-if="row.status?.toLowerCase() === 'draft'"
+              size="sm"
+              type="button"
+              variant="outline"
+              :disabled="reviewMpsBucketPending"
+              @click="reviewMps(row)"
+            >
+              <Spinner v-if="reviewMpsBucketPending" aria-hidden="true" />
+              <CheckIcon v-else aria-hidden="true" />
+              评审
+            </ButtonPro>
+            <ButtonPro
+              v-if="row.status?.toLowerCase() === 'reviewed'"
+              size="sm"
+              type="button"
+              variant="outline"
+              :disabled="releaseMpsBucketPending"
+              @click="releaseMps(row)"
+            >
+              <Spinner v-if="releaseMpsBucketPending" aria-hidden="true" />
+              <CheckIcon v-else aria-hidden="true" />
+              发布
+            </ButtonPro>
+          </div>
+        </template>
+      </DataTablePro>
+    </TabsProContent>
+
     <TabsProContent value="runs" class="grid gap-4">
       <DataTablePro :columns="runColumns" :rows="mrpRuns" row-key="runId" :loading="mrpRunsPending" :searchable="false" :column-settings="false" empty-message="尚未运行 MRP。">
         <template #cell-horizon="{ row }">{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template>
         <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-inputSources="{ row }">{{ inputSourcesLabel(row.inputSources) }}</template>
+        <template #cell-inputCoverage="{ row }">{{ inputCoverageLabel(row) }}</template>
         <template #cell-demandCount="{ row }"><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template>
         <template #cell-inputDegradationSources="{ row }">
           <StatusBadgePro

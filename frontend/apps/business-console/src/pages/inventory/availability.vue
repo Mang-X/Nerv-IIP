@@ -94,6 +94,14 @@ function lineContextQuery(line: Line) {
     serialNo: line.serialNo ?? undefined,
   }
 }
+function scanContextQuery(line: Line) {
+  const sourceDocumentId = line.lotNo ?? line.serialNo ?? filters.skuCode
+  return {
+    sourceWorkflow: 'inventory.count',
+    sourceDocumentId: sourceDocumentId || undefined,
+    scannedValue: line.serialNo ?? line.lotNo ?? undefined,
+  }
+}
 function openMovement(line: Line) {
   void router.push({ path: '/inventory/movements', query: lineContextQuery(line) })
 }
@@ -184,17 +192,25 @@ function formatError(error: unknown) {
       <template #cell-availableQuantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.availableQuantity) }}</span></template>
       <template #cell-frozen="{ row }"><span class="tabular-nums">{{ formatQuantity(lineFrozen(row.onHandQuantity, row.availableQuantity)) }}</span></template>
       <template #cell-actions="{ row }">
-        <RowActions :label="`库存操作 ${row.locationCode ?? ''}`">
-          <DropdownMenuProItem @click="openMovement(row)">
-            <MoveRightIcon aria-hidden="true" />
-            发起移动
-          </DropdownMenuProItem>
-          <DropdownMenuProSeparator />
-          <DropdownMenuProItem @click="openCount(row)">
-            <ClipboardListIcon aria-hidden="true" />
-            创建盘点
-          </DropdownMenuProItem>
-        </RowActions>
+        <div class="flex justify-end gap-2">
+          <RouterLink
+            class="inline-flex h-8 items-center rounded-md px-2 text-sm text-primary underline-offset-4 hover:underline"
+            :to="{ path: '/barcode/scans', query: scanContextQuery(row) }"
+          >
+            扫码记录
+          </RouterLink>
+          <RowActions :label="`库存操作 ${row.locationCode ?? ''}`">
+            <DropdownMenuProItem @click="openMovement(row)">
+              <MoveRightIcon aria-hidden="true" />
+              发起移动
+            </DropdownMenuProItem>
+            <DropdownMenuProSeparator />
+            <DropdownMenuProItem @click="openCount(row)">
+              <ClipboardListIcon aria-hidden="true" />
+              创建盘点
+            </DropdownMenuProItem>
+          </RowActions>
+        </div>
       </template>
     </DataTablePro>
   </BusinessLayout>
