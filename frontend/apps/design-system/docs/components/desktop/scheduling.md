@@ -1,9 +1,11 @@
 ---
 title: Scheduling 排产工作台
+pageClass: ds-wide
+aside: false
 ---
 
 <script setup>
-import { SchedulingWorkbench, toModel } from '@nerv-iip/scheduling'
+import { GanttChart, ResourceSchedulerBoard, toModel } from '@nerv-iip/scheduling'
 import { computed } from 'vue'
 
 const H = 3_600_000
@@ -38,14 +40,11 @@ const demoPlan = {
   unscheduledOperations: [
     { orderId: 'WO-2026-004', operationId: '喷涂', reasonCode: 'material', message: '面漆未齐套,等待采购到货' },
   ],
-  changeSummary: [
-    { orderId: 'WO-2026-001', operationId: '焊接', changeType: 'preserved', message: '锁定,保持原计划' },
-    { orderId: 'WO-2026-003', operationId: '总装', changeType: 'delayed', message: '受前序占用,后移 3 小时' },
-  ],
+  changeSummary: [],
   ganttItems: [],
 }
 
-// 部分卡片字段(负责人/优先级/齐套/维度归属等)当前 APS 契约未提供;此处为文档展示补样例值。
+// 部分卡片字段(负责人/优先级/齐套/维度归属等)当前 APS 契约未提供,此处补样例值供展示。
 const WC = {
   '激光切割-01': { color: 'cut', device: ['DEV-L1', '激光切割机 L1'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
   '折弯-02': { color: 'bend', device: ['DEV-B2', '数控折弯机 B2'], team: ['T-A', '甲班'], line: ['LN-SHEET', '钣金线'] },
@@ -87,96 +86,107 @@ const model = computed(() => {
 
 # Scheduling 排产工作台
 
-统一接口的排产工作台,含两个视图——**工单甘特**(工单 → 工序 WBS 时间线)与**资源排产板**(一资源一泳道)。编辑走「锁定—重预览」闭环:拖动调整、锁定关键工序、按锁定项重排、发布计划。
+`@nerv-iip/scheduling` 提供两个引擎无关的排产可视化组件——**工单甘特 `GanttChart`** 与**资源排产板 `ResourceSchedulerBoard`**,共享同一 `ScheduleModel` 数据契约。二者可单独使用,也可用 `SchedulingWorkbench` 组合(工具栏 + 视图切换 + 冲突/未排/变更面板 + 锁定—重预览编辑闭环)。
 
-时间轴由 DHTMLX 引擎渲染,采用「引擎无关」适配:引擎在部署时提供(开发用试用版,交付时向客户手动分发正式版)。**未配置本地引擎包时,画布区显示占位,而工具栏、视图切换、冲突/未排/变更侧栏与图例仍照常渲染**——足以确认布局与交互。
+时间轴由 DHTMLX 引擎渲染,引擎在部署时提供(开发用试用版,交付时向客户手动分发正式版)。未配置本地引擎包时画布显示占位,不影响其余布局。
 
-## 基础用法
+## 工单甘特 GanttChart
 
-传入引擎无关的 `ScheduleModel`(用 `toModel` 从 APS `SchedulePlanContract` 映射)。工作台自带工具栏、视图切换与右侧详情/冲突面板。
+工单 → 工序 WBS 视角的时间线:工序条、依赖链、里程碑、进度。给跟单与管理看进度和瓶颈。
 
-<ClientOnly>
-<Demo>
-  <div style="height: 560px; width: 100%">
-    <SchedulingWorkbench :model="model" default-view="order" />
+<Demo block>
+  <div style="height: 440px; width: 100%">
+    <GanttChart :model="model" />
   </div>
 </Demo>
-</ClientOnly>
+
+```vue
+<script setup lang="ts">
+import { GanttChart, toModel } from '@nerv-iip/scheduling'
+import type { SchedulePlanContract } from '@nerv-iip/api-client'
+
+const model = toModel(plan as SchedulePlanContract) // plan 来自 APS facade
+</script>
+
+<template>
+  <GanttChart :model="model" @task-select="onSelect" />
+</template>
+```
+
+## 资源排产板 ResourceSchedulerBoard
+
+一资源一泳道,左轴维度可切换(工作中心 / 设备 / 班组 / 产线)。给计划员看机台负载、换型与过载。
+
+<Demo block>
+  <div style="height: 440px; width: 100%">
+    <ResourceSchedulerBoard :model="model" />
+  </div>
+</Demo>
+
+```vue
+<script setup lang="ts">
+import { ResourceSchedulerBoard, toModel } from '@nerv-iip/scheduling'
+
+const model = toModel(plan) // 含 groupDimensions 时左轴维度可切换
+</script>
+
+<template>
+  <ResourceSchedulerBoard :model="model" @task-drag-end="onDrag" />
+</template>
+```
+
+## 数据模型
+
+两个组件都只消费引擎无关的 `ScheduleModel`,用 `toModel(plan)` 从 APS `SchedulePlanContract` 映射;换引擎只换适配器,组件层与业务层零改动。映射只采用契约真实字段,当前 APS 未提供的卡片字段(负责人、优先级、齐套率、换型等)留空、**不伪造**,待后端补齐后自动填充。
+
+## 组合:SchedulingWorkbench
+
+`SchedulingWorkbench` 把两视图组合成完整工作台:工具栏(刻度/缩放/今天/撤销重做)、视图切换、右侧详情与冲突/未排/变更面板,以及「锁定 → 重新排程 → 发布」编辑闭环。`preview` / `release` 由业务层注入,未注入时对应动作自动隐藏。
 
 ```vue
 <script setup lang="ts">
 import { SchedulingWorkbench, toModel } from '@nerv-iip/scheduling'
-import type { SchedulePlanContract } from '@nerv-iip/api-client'
 
-// plan 来自 APS facade(BusinessGateway list/detail/gantt)
-const model = toModel(plan as SchedulePlanContract)
-
-// 后端「带锁定重预览」/「发布」由业务层注入;缺省不注入则工具栏隐藏这两个动作。
-async function release(planId: string) {
-  await releaseBusinessConsoleSchedulingPlan({ path: { planId } })
-}
+const model = toModel(plan)
+async function release(planId: string) { await releaseSchedulingPlan(planId) }
 </script>
 
 <template>
-  <SchedulingWorkbench :model="model" default-view="order" :release="release" />
+  <SchedulingWorkbench :model="model" default-view="order" :release="release" @fix="goFix" />
 </template>
 ```
 
-## 两个视图
-
-| 视图 | 组件 | 用途 |
-|---|---|---|
-| 工单甘特 | `GanttChart` | 工单 → 工序 WBS 时间线,看依赖链、进度与瓶颈;给跟单/管理看。 |
-| 资源排产板 | `ResourceSchedulerBoard` | 一资源一泳道,左轴维度可切换(工作中心 / 设备 / 班组 / 产线);看机台负载与换型。 |
-
-两者可经 `SchedulingWorkbench` 组合(带工具栏与面板),也可单独使用,由父层自行组织工具栏与详情。
-
-## 数据模型
-
-组件只消费引擎无关的 `ScheduleModel`,不直接碰 APS 契约细节。用 `toModel(plan)` 从 `SchedulePlanContract` 映射;换引擎只换适配器,组件层与业务层零改动。
-
-映射只采用契约真实字段;当前 APS 契约未提供的卡片字段(负责人、优先级、齐套率、换型时间、资源占用等)留空、**不伪造**,待后端补齐后自动填充。
-
-## 编辑闭环
-
-「锁定—重预览」贴合后端确定性有限产能重排:
-
-1. 拖动工序改时间(横向)或改派资源(跨泳道);
-2. 在详情面板显式**锁定**要保留的工序;
-3. 工具栏「重新排程」→ 携锁定项调用后端 `preview` 重算 → 变更摘要 / 冲突刷新;
-4. 「发布计划」提交 `release`。撤销/重做为前端快照栈。
-
-`preview` / `release` 由业务层注入;**未注入时工具栏隐藏对应动作**,避免无后端时的空操作。
-
 ## 属性
+
+### GanttChart / ResourceSchedulerBoard
+
+二者属性与事件一致,差异仅在视角(甘特按工单树、排产板按资源泳道)。
+
+| 属性 | 说明 | 类型 | 默认 |
+|---|---|---|---|
+| `model` | 排程数据模型(`toModel` 输出) | `ScheduleModel` | — |
+| `scale` | 时间刻度 | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
+| `readOnly` | 只读(禁用拖拽编辑) | `boolean` | `false` |
+| `loading` | 加载态(骨架占位) | `boolean` | `false` |
+| `engineKind` | 渲染引擎选择 | `'auto' \| 'dhtmlx'` | `'auto'` |
+
+**Emits**:`taskSelect(taskId)`、`taskDragEnd(payload)`(落点归一化,不泄露引擎结构)、`conflictClick(taskId)`。
+**Expose**:`command(cmd)` — 下发 `zoomIn`/`zoomOut`/`scaleTo`/`scrollToToday`/`fitToScreen`/`selectTask` 等命令。
 
 ### SchedulingWorkbench
 
 | 属性 | 说明 | 类型 | 默认 |
 |---|---|---|---|
-| `model` | 排程数据模型(`toModel` 输出) | `ScheduleModel` | — |
-| `loading` | 加载态(骨架占位) | `boolean` | `false` |
-| `readOnly` | 只读(禁用拖拽编辑) | `boolean` | `false` |
+| `model` | 排程数据模型 | `ScheduleModel` | — |
+| `loading` | 加载态 | `boolean` | `false` |
+| `readOnly` | 只读 | `boolean` | `false` |
 | `defaultView` | 初始视图 | `'order' \| 'resource'` | `'order'` |
 | `engineKind` | 渲染引擎选择 | `'auto' \| 'dhtmlx'` | `'auto'` |
-| `preview` | 携锁定分配重预览(注入后端);缺省则隐藏「重新排程」 | `(locked: ScheduleAssignmentContract[]) => Promise<ScheduleModel>` | — |
-| `release` | 发布当前计划;缺省则隐藏「发布」 | `(planId: string) => Promise<void>` | — |
+| `preview` | 携锁定分配重预览;缺省则隐藏「重新排程」 | `(locked) => Promise<ScheduleModel>` | — |
+| `release` | 发布当前计划;缺省则隐藏「发布」 | `(planId) => Promise<void>` | — |
 
-**Emits**:`fix(orderId, operationId)` — 未排产项点击「去处理」时抛出,供页面跳转补料/改派。
-
-### GanttChart / ResourceSchedulerBoard
-
-| 属性 | 说明 | 类型 | 默认 |
-|---|---|---|---|
-| `model` | 排程数据模型 | `ScheduleModel` | — |
-| `scale` | 时间刻度 | `'auto' \| 'hour' \| 'day' \| 'week' \| 'month'` | `'auto'` |
-| `readOnly` | 只读 | `boolean` | `false` |
-| `loading` | 加载态 | `boolean` | `false` |
-| `engineKind` | 渲染引擎选择 | `'auto' \| 'dhtmlx'` | `'auto'` |
-
-**Emits**:`taskSelect(taskId)`、`taskDragEnd(payload)`(落点归一化,不泄露引擎结构)、`conflictClick(taskId)`。
-**Expose**:`command(cmd)` — 下发 `zoomIn`/`zoomOut`/`scaleTo`/`scrollToToday`/`fitToScreen`/`selectTask` 等引擎命令。
+**Emits**:`fix(orderId, operationId)` — 未排产项点「去处理」时抛出,供页面跳转补料/改派。
 
 ## 引擎
 
-引擎无关设计:组件层只依赖 `SchedulingEngine` 接口(`mount`/`setData`/`applyCommand`/`on`/`destroy`),不依赖具体实现。本包对接 DHTMLX Gantt 专业版;正式自研引擎在后续 PR 落地,届时只增适配器、组件层不改动。DHTMLX 评估许可禁止分发,库文件不入库——无本地 vendor 时组件优雅占位。
+引擎无关设计:组件层只依赖 `SchedulingEngine` 接口(`mount`/`setData`/`applyCommand`/`on`/`destroy`),不依赖具体实现。本包对接 DHTMLX Gantt 专业版;正式自研引擎在后续 PR 落地,届时只增适配器、组件层不改。DHTMLX 评估许可禁止分发,库文件不入库——无本地 vendor 时组件优雅占位。
