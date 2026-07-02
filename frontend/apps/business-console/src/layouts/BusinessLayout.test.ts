@@ -59,7 +59,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
     const domains = shell.props('topDomains') as Domain[]
     expect(domains.map((d) => d.id)).toEqual([
-      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'barcode', 'equipment',
+      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'barcode', 'equipment', 'approval',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
