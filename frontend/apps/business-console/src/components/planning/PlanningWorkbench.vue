@@ -46,7 +46,6 @@ import { useRouter } from 'vue-router'
 const {
   acceptSuggestion,
   acceptSuggestionError,
-  acceptSuggestionPending,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -134,6 +133,7 @@ function formatError(error: unknown) {
 
 const demandOpen = shallowRef(false)
 const mrpOpen = shallowRef(false)
+const acceptingSuggestionId = shallowRef<string | null>(null)
 
 const demandTypeOptions = [
   { label: '销售订单', value: 'sales-order' },
@@ -288,6 +288,8 @@ async function submitMrpRun() {
 }
 async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.suggestionType) return
+  if (acceptingSuggestionId.value) return
+  acceptingSuggestionId.value = row.suggestionId
   try {
     const response = await acceptSuggestion({
       suggestionId: row.suggestionId,
@@ -301,6 +303,9 @@ async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionIt
   }
   catch (error) {
     notifyError(error, '计划建议接受失败，请检查生产版本、供应商、库存或权限状态。')
+  }
+  finally {
+    acceptingSuggestionId.value = null
   }
 }
 
@@ -781,10 +786,10 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
             size="sm"
             type="button"
             variant="outline"
-            :disabled="acceptSuggestionPending"
+            :disabled="acceptingSuggestionId === row.suggestionId"
             @click="acceptPlanningSuggestion(row)"
           >
-            <Spinner v-if="acceptSuggestionPending" aria-hidden="true" />
+            <Spinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
             <CheckIcon v-else aria-hidden="true" />
             接受
           </ButtonPro>
