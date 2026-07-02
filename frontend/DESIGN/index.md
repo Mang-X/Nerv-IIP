@@ -94,7 +94,7 @@ See `components/install-backlog.md` for full list and install commands.
 | Paginated table footer | Pagination Bar | `patterns/blocks/pagination-bar.md` |
 | 甘特 / 资源排产可视化 | Scheduling Workbench | `patterns/blocks/scheduling-workbench.md` |
 
-> **排程可视化组件**（`GanttChart` / `ResourceSchedulerBoard` / `SchedulingWorkbench`）来自独立包 **`@nerv-iip/scheduling`**（非 `@nerv-iip/ui`）：引擎无关契约 + DHTMLX 试用适配器 + NativeEngine 兜底。组件契约见 `components/gantt-chart.md`、`components/resource-scheduler-board.md`；引擎接缝见包 `README.md`。
+> **排程可视化组件**（`GanttChart` / `ResourceSchedulerBoard` / `SchedulingWorkbench`）来自独立包 **`@nerv-iip/scheduling`**（非 `@nerv-iip/ui`）：引擎无关契约 + DHTMLX 适配器(试用开发 / 正式手动分发),无本地引擎时优雅占位。组件契约见 `components/gantt-chart.md`、`components/resource-scheduler-board.md`；引擎接缝见包 `README.md`。
 
 ## Roadmaps
 

@@ -39,12 +39,12 @@ BusinessGateway `/api/business-console/v1/scheduling/plans`:`list` / `{planId}`(
 
 ## 6. 技术落点(引擎可替换)
 
-详见 `frontend/packages/scheduling/README.md`。三层:Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器(DhtmlxEngine / NativeEngine,共同通过引擎契约测试)→ `ScheduleModel` + `aps-mapper`。
-MVP 引擎:DHTMLX Gantt 9.x 专业版**试用**(评估许可,禁分发,不入 git);无许可环境回落 NativeEngine。换自研版本只换适配器。
+详见 `frontend/packages/scheduling/README.md`。两层:Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器(本包只保留 DhtmlxEngine;正式自研引擎见后续 PR,经引擎契约测试可替换)→ `ScheduleModel` + `aps-mapper`。
+引擎:DHTMLX Gantt 9.x 专业版(评估许可,禁分发,不入 git;开发用试用版,生产部署给客户手动分发正式版);无本地引擎包时组件优雅占位。换自研版本只换适配器。
 
 ## 7. 分期
 
-- **P0(已落地)**:可视化只读 + 视图切换 + 冲突/未排产/变更面板 + 检视;NativeEngine 渲染;APS facade 对接(读)+ 发布。
+- **P0(已落地)**:可视化只读 + 视图切换 + 冲突/未排产/变更面板 + 检视;DHTMLX 引擎渲染(无 vendor 时占位);APS facade 对接(读)+ 发布。
 - **P1**:DHTMLX 试用渲染接入(资源面板/关键路径/自动排程辅助)、拖拽改派/改期落地到重预览。
 - **后续**:真正的后端重预览(见 §8 缺口)、依赖编辑、产能日历可视化、与 #207 设备 availability 联动着色。
 

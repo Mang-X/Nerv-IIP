@@ -16,7 +16,7 @@ defineProps<{
   scale?: TimeScale              // 'auto'(默认) | 'hour' | 'day' | 'week' | 'month'
   readOnly?: boolean             // 默认 false
   loading?: boolean              // true → 骨架占位
-  engineKind?: 'auto' | 'native' | 'dhtmlx'  // 默认 auto(有 DHTMLX 用之,否则 NativeEngine)
+  engineKind?: 'auto' | 'dhtmlx'  // 默认 auto(有 DHTMLX 引擎则用之,否则显示占位)
 }>()
 defineEmits<{
   taskSelect: [taskId: string]
@@ -29,7 +29,7 @@ defineEmits<{
 ## 视觉（设计系统 v2 token，零裸 hex/palette）
 
 - 工序条：`--brand` 实心圆角胶囊；工单分组条：`--muted`。冲突：`--destructive` 描边。选中：`--brand` 描边 + 辉光。
-- 网格发丝线 `--border`；now 线 `--brand` 虚线（NativeEngine 取 horizon 中点，确定性）。
+- 网格发丝线 `--border`；now 线 `--brand` 虚线。
 - 亮/暗 + 运行时动态色由 `useColorMode` / `--brand` 驱动;DHTMLX 皮肤经 `engine/dhtmlx/skin.ts` 绑 token。
 
 ## 交互 / 可达性
@@ -40,4 +40,4 @@ defineEmits<{
 ## Do / Don't
 
 - **Do** 通过 `SchedulingWorkbench` 组合工具栏/面板使用；单独使用时父层负责 toolbar 与 inspector。
-- **Don't** 直接 import DHTMLX 或 NativeEngine；**Don't** 在模板出现 reasonCode/operationId 等工程语言。
+- **Don't** 直接 import 引擎实现(DHTMLX);**Don't** 在模板出现 reasonCode/operationId 等工程语言。

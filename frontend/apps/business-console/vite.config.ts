@@ -6,7 +6,7 @@ import { defineConfig } from 'vite-plus'
 import VueRouter from 'vue-router/vite'
 
 // DHTMLX 试用包为可选依赖。若未通过私有源安装(node_modules)且无本地 vendor 拷贝,
-// 则把 `@dhx/trial-gantt` 别名到 stub,保证 dev/build 在无许可时不失败(回落 NativeEngine)。
+// 则把 `@dhx/trial-gantt` 别名到 stub,保证 dev/build 在无许可时不失败(排程组件此时显示占位)。
 const dhxInstalled = existsSync(
   fileURLToPath(new URL('../../node_modules/@dhx/trial-gantt/package.json', import.meta.url)),
 )
