@@ -18,6 +18,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '追溯查询', requiredPermissions: ['business.mes.traceability.read'] } })
 
@@ -29,6 +30,11 @@ const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
   set: (value: string) => { filters.batchOrSerial = value; filters.materialLotId = value },
 })
+const scanRecordQuery = computed(() => ({
+  sourceWorkflow: filters.mode === 'work-order' ? 'production.report' : 'production.report',
+  sourceDocumentId: filters.workOrderId || batchModel.value || undefined,
+  scannedValue: batchModel.value || undefined,
+}))
 
 type NodeRow = (typeof nodes)['value'][number]
 const columns: DataTableProColumn<NodeRow>[] = [
@@ -47,6 +53,9 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="追溯查询" :breadcrumbs="[{ label: '制造执行' }]">
       <template #actions>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/barcode/scans', query: scanRecordQuery }">扫码记录</RouterLink>
+        </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="traceabilityPending" @click="refreshTraceability">
           <RefreshCwIcon aria-hidden="true" />
           刷新

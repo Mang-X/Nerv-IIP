@@ -206,6 +206,12 @@ const columns: DataTableProColumn<InboundRow>[] = [
 function rowKey(row: InboundRow) {
   return row.inboundOrderId ?? row.inboundOrderNo ?? '入库单'
 }
+function scanRecordHref(row: InboundRow) {
+  const params = new URLSearchParams({ sourceWorkflow: 'wms.receiving' })
+  const sourceDocumentId = row.inboundOrderNo ?? row.inboundOrderId
+  if (sourceDocumentId) params.set('sourceDocumentId', sourceDocumentId)
+  return `/barcode/scans?${params.toString()}`
+}
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
@@ -273,16 +279,21 @@ function formatError(error: unknown) {
     >
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
-        <ButtonPro
-          size="sm"
-          type="button"
-          variant="outline"
-          :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
-          :disabled="isCompleted(row) || !row.inboundOrderId"
-          @click="openComplete(row)"
-        >
-          完成入库
-        </ButtonPro>
+        <div class="flex justify-end gap-2">
+          <ButtonPro size="sm" type="button" variant="ghost" as-child>
+            <a :href="scanRecordHref(row)">扫码记录</a>
+          </ButtonPro>
+          <ButtonPro
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
+            :disabled="isCompleted(row) || !row.inboundOrderId"
+            @click="openComplete(row)"
+          >
+            完成入库
+          </ButtonPro>
+        </div>
       </template>
     </DataTablePro>
 
