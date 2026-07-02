@@ -345,6 +345,7 @@ function sourceTypeLabel(value?: string | null) {
     'safety-stock': '安全库存来源',
     mps: 'MPS 来源',
     component: '组件展开',
+    demand: '需求来源',
     'scheduled-receipt': '在途来源',
   }
   return map[(value ?? '').toLowerCase()] ?? '来源未分类'
@@ -419,8 +420,9 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
 function explanationRows(row: BusinessConsolePlanningSuggestionItem) {
   const explanation = row.netRequirementExplanation
   if (!explanation) return []
+  const grossDemandLabel = explanation.primarySourceType === 'component' ? '组件毛需求' : '总需求'
   return [
-    { label: '总需求', value: explanation.grossDemandQuantity },
+    { label: grossDemandLabel, value: explanation.grossDemandQuantity },
     { label: '现有库存', value: explanation.onHandQuantity },
     { label: '预留', value: explanation.reservedQuantity },
     { label: '可抵扣库存', value: explanation.availableToNetQuantity },
@@ -760,6 +762,7 @@ function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
               <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                 <span>scrap {{ formatRatio(row.netRequirementExplanation.scrapRate) }}</span>
                 <span>yield {{ formatRatio(row.netRequirementExplanation.yieldRate) }}</span>
+                <span v-if="row.netRequirementExplanation.primarySourceType === 'component' && (row.netRequirementExplanation.scrapRate || row.netRequirementExplanation.yieldRate !== 1)">scrap/yield 已计入组件毛需求</span>
                 <span v-if="row.netRequirementExplanation.uomConversions?.length">单位 {{ row.netRequirementExplanation.uomConversions.join('；') }}</span>
                 <span v-if="row.netRequirementExplanation.degradationSources?.length">退化 {{ inputDegradationLabel(row.netRequirementExplanation.degradationSources) }}</span>
               </div>

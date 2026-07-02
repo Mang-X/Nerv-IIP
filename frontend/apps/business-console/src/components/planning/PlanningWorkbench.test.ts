@@ -63,33 +63,62 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
       runSelection: reactive({ runId: 'run-001' }),
       suggestionFilters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', status: 'open' }),
       suggestionTypeFilter: reactive({ type: 'all' }),
-      suggestions: shallowRef([{
-        suggestionId: 'suggestion-001',
-        runId: 'run-001',
-        suggestionType: 'planned-work-order',
-        skuCode: 'FG-SHOCK',
-        uomCode: 'pcs',
-        siteCode: 'SITE-01',
-        quantity: 4,
-        requiredDate: '2026-06-01',
-        status: 'Open',
-        reasonCode: 'net-requirement',
-        netRequirementExplanation: {
-          grossDemandQuantity: 10,
-          onHandQuantity: 8,
-          reservedQuantity: 0,
-          availableToNetQuantity: 6,
-          scheduledReceiptQuantity: 0,
-          safetyStockQuantity: 2,
-          netRequirementQuantity: 4,
-          plannedQuantity: 4,
-          scrapRate: 0,
-          yieldRate: 1,
-          primarySourceType: 'sales',
-          formula: '10 - 8 + 0 + 2 - 0 = 4',
-          degradationSources: [],
+      suggestions: shallowRef([
+        {
+          suggestionId: 'suggestion-001',
+          runId: 'run-001',
+          suggestionType: 'planned-work-order',
+          skuCode: 'FG-SHOCK',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 4,
+          requiredDate: '2026-06-01',
+          status: 'Open',
+          reasonCode: 'net-requirement',
+          netRequirementExplanation: {
+            grossDemandQuantity: 10,
+            onHandQuantity: 8,
+            reservedQuantity: 0,
+            availableToNetQuantity: 6,
+            scheduledReceiptQuantity: 0,
+            safetyStockQuantity: 2,
+            netRequirementQuantity: 4,
+            plannedQuantity: 4,
+            scrapRate: 0,
+            yieldRate: 1,
+            primarySourceType: 'demand',
+            formula: '10 - 6 - 0 = 4',
+            degradationSources: [],
+          },
         },
-      }]),
+        {
+          suggestionId: 'suggestion-002',
+          runId: 'run-001',
+          suggestionType: 'planned-purchase',
+          skuCode: 'RM-SHOCK',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 27.5,
+          requiredDate: '2026-06-01',
+          status: 'Open',
+          reasonCode: 'component-net-requirement',
+          netRequirementExplanation: {
+            grossDemandQuantity: 27.5,
+            onHandQuantity: 0,
+            reservedQuantity: 0,
+            availableToNetQuantity: 0,
+            scheduledReceiptQuantity: 0,
+            safetyStockQuantity: 0,
+            netRequirementQuantity: 27.5,
+            plannedQuantity: 27.5,
+            scrapRate: 0.1,
+            yieldRate: 0.8,
+            primarySourceType: 'component',
+            formula: '27.5 - 0 - 0 = 27.5; scrap/yield 0.1/0.8',
+            degradationSources: [],
+          },
+        },
+      ]),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
     }),
@@ -172,8 +201,10 @@ describe('PlanningWorkbench', () => {
     const wrapper = mount(PlanningWorkbench)
 
     expect(wrapper.text()).toContain('净需求公式')
-    expect(wrapper.text()).toContain('10 - 8 + 0 + 2 - 0 = 4')
-    expect(wrapper.text()).toContain('销售来源')
+    expect(wrapper.text()).toContain('10 - 6 - 0 = 4')
+    expect(wrapper.text()).toContain('需求来源')
+    expect(wrapper.text()).toContain('组件毛需求')
+    expect(wrapper.text()).toContain('scrap/yield 已计入组件毛需求')
     expect(wrapper.text()).toContain('SO-1001')
   })
 })
