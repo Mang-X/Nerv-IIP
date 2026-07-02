@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button } from '@nerv-iip/ui'
+import { ButtonPro } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
@@ -13,10 +13,10 @@ const isOrder = computed(() => props.task?.type === 'order')
 const isBlock = computed(() => !!props.task?.blockKind)
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
 const BLOCK = {
-  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'oklch(0.55 0.02 260)' },
-  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--destructive)' },
-  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'oklch(0.58 0.13 250)' },
-  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'oklch(0.7 0.15 60)' },
+  maintenance: { label: '设备维护', desc: '设备保养期,该时段不排产', tone: 'var(--sched-block-maintenance)' },
+  downtime: { label: '计划停机', desc: '计划性停机,资源不可用', tone: 'var(--sched-block-downtime)' },
+  lineChange: { label: '换线窗口', desc: '产线切换准备,占用资源', tone: 'var(--sched-block-linechange)' },
+  changeover: { label: '换型窗口', desc: '工装/模具换型,占用资源', tone: 'var(--sched-block-changeover)' },
 } as const
 
 function fmt(iso?: string) {
@@ -41,8 +41,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 <template>
   <div class="border-b border-border/60">
     <div v-if="!task" class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
-      <span class="text-sm font-medium text-muted-foreground">未选择</span>
-      <span class="text-xs text-muted-foreground/70">点击甘特条 / 排产卡查看完整详情</span>
+      <span class="text-sm font-medium text-muted-foreground">未选择工序</span>
     </div>
 
     <!-- 资源时间块:专有信息(不套工单模板) -->
@@ -73,7 +72,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
             'bg-muted text-muted-foreground': task.priority === 'low',
           }"
         >{{ PRIO[task.priority][0] }}优先</span>
-        <span v-if="task.isRush" class="inline-flex items-center gap-0.5 rounded bg-[oklch(0.7_0.17_60/0.15)] px-1.5 py-px text-[0.65rem] font-semibold" style="color: oklch(0.62 0.17 60)">⚡ 插单</span>
+        <span v-if="task.isRush" class="inline-flex items-center gap-0.5 rounded px-1.5 py-px text-[0.65rem] font-semibold" style="color: var(--sched-rush); background: color-mix(in oklch, var(--sched-rush), transparent 85%)">⚡ 插单</span>
         <span v-if="task.locked" class="inline-flex items-center gap-0.5 rounded bg-brand/12 px-1.5 py-px text-[0.65rem] font-semibold text-brand">已锁定</span>
       </div>
       <p class="mt-1 text-[0.82rem] text-foreground">
@@ -82,7 +81,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       </p>
 
       <!-- 锁定/解锁:锁定后不可拖拽,这里提供解锁交互 -->
-      <Button
+      <ButtonPro
         v-if="!isOrder"
         size="sm"
         :variant="task.locked ? 'secondary' : 'outline'"
@@ -91,7 +90,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
       >
         <component :is="task.locked ? UnlockIcon : LockIcon" class="size-3.5" aria-hidden="true" />
         {{ task.locked ? '解锁(允许拖拽)' : '锁定此工序' }}
-      </Button>
+      </ButtonPro>
 
       <!-- 冲突横幅 -->
       <div

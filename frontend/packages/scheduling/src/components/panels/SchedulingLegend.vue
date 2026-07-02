@@ -42,14 +42,14 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
       <span class="inline-flex items-center gap-1.5">
         <span class="rounded bg-destructive/15 px-1 py-px text-[0.58rem] font-bold text-destructive">高</span>优先级
       </span>
-      <span class="inline-flex items-center gap-1" style="color: oklch(0.7 0.17 60)">
+      <span class="inline-flex items-center gap-1" style="color: var(--sched-rush)">
         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" /></svg>
         <span class="text-muted-foreground">插单</span>
       </span>
       <span class="inline-flex items-center gap-1">
-        <span class="size-1.5 rounded-full" style="background: oklch(0.6 0.14 150)"></span>
-        <span class="size-1.5 rounded-full" style="background: oklch(0.82 0.15 85)"></span>
-        <span class="size-1.5 rounded-full" style="background: oklch(0.58 0.2 25)"></span>
+        <span class="size-1.5 rounded-full" style="background: var(--sched-kit-ok)"></span>
+        <span class="size-1.5 rounded-full" style="background: var(--sched-kit-warn)"></span>
+        <span class="size-1.5 rounded-full" style="background: var(--sched-kit-bad)"></span>
         齐套 足 / 缺 / 危
       </span>
       <span class="inline-flex items-center gap-1.5">
@@ -66,16 +66,16 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
       </span>
       <!-- 资源时间块:斜纹块,各色一类 -->
       <span class="inline-flex items-center gap-1.5">
-        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.55 0.02 260)"></span>设备维护
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-maintenance)"></span>设备维护
       </span>
       <span class="inline-flex items-center gap-1.5">
-        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--destructive)"></span>计划停机
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-downtime)"></span>计划停机
       </span>
       <span class="inline-flex items-center gap-1.5">
-        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.58 0.13 250)"></span>换线窗口
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-linechange)"></span>换线窗口
       </span>
       <span class="inline-flex items-center gap-1.5">
-        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: oklch(0.7 0.15 60)"></span>换型窗口
+        <span class="nerv-leg-hatch h-2.5 w-6 rounded-[3px]" style="--h: var(--sched-block-changeover)"></span>换型窗口
       </span>
       <span class="inline-flex items-center gap-1.5">
         <span class="h-2.5 w-6 rounded-[3px] bg-foreground/[0.05]"></span>非工作 / 夜班

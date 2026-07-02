@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
-import { Button, Tabs, TabsContent, TabsList, TabsTrigger, toast } from '@nerv-iip/ui'
+import { ButtonPro, TabsPro, TabsProContent, TabsProList, TabsProTrigger, toast } from '@nerv-iip/ui'
 import { ListFilterIcon, PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
@@ -57,6 +57,10 @@ const sidebarOpen = ref(true)
 const previewFn = props.preview ?? (async () => workingModel.value)
 const releaseFn = props.release ?? (async () => {})
 const edits = useSchedulingEdits(workingModel, { preview: previewFn, release: releaseFn })
+
+// 只有业务层注入了 preview/release 才展示对应动作,避免只读/演示挂载时出现假成功提示。
+const canRepreview = computed(() => !!props.preview)
+const canRelease = computed(() => !!props.release)
 
 const ganttRef = ref<InstanceType<typeof GanttChart>>()
 const boardRef = ref<InstanceType<typeof ResourceSchedulerBoard>>()
@@ -119,6 +123,8 @@ async function onRelease() {
       :can-redo="edits.canRedo.value"
       :dirty="edits.dirty.value"
       :busy="edits.busy.value"
+      :can-repreview="canRepreview"
+      :can-release="canRelease"
       @scale-change="scale = $event"
       @zoom-in="sendCommand({ kind: 'zoomIn' })"
       @zoom-out="sendCommand({ kind: 'zoomOut' })"
@@ -132,13 +138,13 @@ async function onRelease() {
     />
 
     <div class="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
-      <Tabs v-model="view">
-        <TabsList>
-          <TabsTrigger value="order">工单甘特</TabsTrigger>
-          <TabsTrigger value="resource">资源排产板</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      <Button
+      <TabsPro v-model="view">
+        <TabsProList>
+          <TabsProTrigger value="order">工单甘特</TabsProTrigger>
+          <TabsProTrigger value="resource">资源排产板</TabsProTrigger>
+        </TabsProList>
+      </TabsPro>
+      <ButtonPro
         size="sm"
         variant="ghost"
         class="ml-auto h-8 gap-1.5"
@@ -147,7 +153,7 @@ async function onRelease() {
       >
         <ListFilterIcon aria-hidden="true" />
         图例
-      </Button>
+      </ButtonPro>
     </div>
 
     <div class="flex min-h-0 flex-1">
@@ -182,8 +188,8 @@ async function onRelease() {
       <button
         v-if="!sidebarOpen"
         type="button"
-        class="flex w-9 shrink-0 items-center justify-center border-l border-border/60 bg-card/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        title="展开侧栏"
+        class="flex w-9 shrink-0 items-center justify-center border-l border-border/60 bg-card/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-label="展开侧栏"
         @click="sidebarOpen = true"
       >
         <PanelRightOpenIcon class="size-4" aria-hidden="true" />
@@ -192,30 +198,30 @@ async function onRelease() {
       <aside v-else class="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-card/60">
         <div class="flex items-center justify-between px-3 pt-2.5">
           <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
-          <Button size="icon" variant="ghost" class="size-7 text-muted-foreground" title="收起侧栏" @click="sidebarOpen = false">
+          <ButtonPro size="icon" variant="ghost" class="size-7 text-muted-foreground" aria-label="收起侧栏" @click="sidebarOpen = false">
             <PanelRightCloseIcon class="size-4" aria-hidden="true" />
-          </Button>
+          </ButtonPro>
         </div>
 
         <!-- 选中详情(常驻,取代弹出抽屉) -->
         <TaskDetailPanel :task="selectedTask" @toggle-lock="onToggleLock" />
 
-        <Tabs default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
-          <TabsList class="mx-3 mt-3">
-            <TabsTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsTrigger>
-            <TabsTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsTrigger>
-            <TabsTrigger value="changes">变更 {{ changes.length }}</TabsTrigger>
-          </TabsList>
-          <TabsContent value="conflicts" class="min-h-0 flex-1">
+        <TabsPro default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
+          <TabsProList class="mx-3 mt-3">
+            <TabsProTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsProTrigger>
+            <TabsProTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsProTrigger>
+            <TabsProTrigger value="changes">变更 {{ changes.length }}</TabsProTrigger>
+          </TabsProList>
+          <TabsProContent value="conflicts" class="min-h-0 flex-1">
             <ConflictPanel :conflicts="conflicts" @select="focusTask" />
-          </TabsContent>
-          <TabsContent value="unscheduled" class="min-h-0 flex-1">
+          </TabsProContent>
+          <TabsProContent value="unscheduled" class="min-h-0 flex-1">
             <UnscheduledPanel :items="unscheduled" @fix="(o, op) => emit('fix', o, op)" />
-          </TabsContent>
-          <TabsContent value="changes" class="min-h-0 flex-1">
+          </TabsProContent>
+          <TabsProContent value="changes" class="min-h-0 flex-1">
             <ChangeSummaryPanel :changes="changes" @select="focusTask" />
-          </TabsContent>
-        </Tabs>
+          </TabsProContent>
+        </TabsPro>
       </aside>
     </div>
 

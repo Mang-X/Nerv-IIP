@@ -2,6 +2,19 @@
    原则(impeccable):呼吸感、发丝边框、shadcn 偏平、对比度达标、玻璃仅用于浮层、不用侧边色条。
    覆盖 NativeEngine(.nerv-gantt-native)与 DHTMLX(.nerv-gantt-dhx)两套渲染。 */
 
+/* 排程域色板:一次性定义(而非散落内联 oklch)。图例/详情面板渲染在 .nerv-gantt 容器外的工作台外壳里,
+   故挂在 :root 保证包内处处可用。语义色能复用就复用,仅 rush / kit-warn / lineChange 保留专有色相。 */
+:root {
+  --sched-rush: oklch(0.7 0.17 60);
+  --sched-kit-ok: var(--success);
+  --sched-kit-warn: oklch(0.82 0.15 85);
+  --sched-kit-bad: var(--destructive);
+  --sched-block-maintenance: var(--muted-foreground);
+  --sched-block-downtime: var(--destructive);
+  --sched-block-linechange: oklch(0.58 0.13 250);
+  --sched-block-changeover: var(--sched-rush);
+}
+
 .nerv-gantt {
   position: relative;
   width: 100%;
@@ -332,10 +345,10 @@
   border: 1px dashed color-mix(in srgb, var(--blk) 55%, transparent) !important;
   border-radius: 6px !important;
 }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-maintenance { --blk: oklch(0.55 0.02 260); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-downtime { --blk: var(--destructive); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-lineChange { --blk: oklch(0.58 0.13 250); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-changeover { --blk: oklch(0.7 0.15 60); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-maintenance { --blk: var(--sched-block-maintenance); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-downtime { --blk: var(--sched-block-downtime); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-lineChange { --blk: var(--sched-block-linechange); }
+.nerv-gantt-dhx .gantt_task_line.nerv-block-changeover { --blk: var(--sched-block-changeover); }
 .nerv-gantt-dhx .nerv-blk {
   display: flex;
   flex-direction: column;
@@ -399,7 +412,7 @@
 .nerv-gantt-dhx .nerv-card-rush {
   display: inline-flex;
   align-items: center;
-  color: oklch(0.7 0.17 60);
+  color: var(--sched-rush);
 }
 .nerv-gantt-dhx .nerv-card-prio.nerv-prio-high { color: var(--destructive); background: color-mix(in oklch, var(--destructive), transparent 86%); }
 .nerv-gantt-dhx .nerv-card-prio.nerv-prio-mid { color: var(--warning); background: color-mix(in oklch, var(--warning), transparent 86%); }
@@ -432,9 +445,9 @@
   letter-spacing: 0.01em;
   border: 1px solid currentColor;
 }
-.nerv-gantt-dhx .nerv-kit-ok { color: oklch(0.62 0.15 150); background: color-mix(in oklch, oklch(0.6 0.14 150), transparent 84%); }
-.nerv-gantt-dhx .nerv-kit-warn { color: oklch(0.7 0.15 75); background: color-mix(in oklch, oklch(0.75 0.14 75), transparent 82%); }
-.nerv-gantt-dhx .nerv-kit-bad { color: oklch(0.64 0.2 25); background: color-mix(in oklch, oklch(0.58 0.2 25), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit-ok { color: var(--sched-kit-ok); background: color-mix(in oklch, var(--sched-kit-ok), transparent 84%); }
+.nerv-gantt-dhx .nerv-kit-warn { color: var(--sched-kit-warn); background: color-mix(in oklch, var(--sched-kit-warn), transparent 82%); }
+.nerv-gantt-dhx .nerv-kit-bad { color: var(--sched-kit-bad); background: color-mix(in oklch, var(--sched-kit-bad), transparent 84%); }
 .nerv-gantt-dhx .nerv-co {
   font-size: 0.62rem;
   font-weight: 600;
@@ -591,7 +604,7 @@
 }
 .nerv-gantt-dhx .gantt_marker.nerv-today-marker .gantt_marker_content {
   background-color: var(--brand) !important;
-  color: #fff;
+  color: var(--brand-foreground);
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 600;
@@ -616,5 +629,11 @@
 @media (prefers-reduced-motion: reduce) {
   .nerv-gantt-native .nerv-gantt-bar {
     transition: none;
+  }
+  /* DHTMLX 引擎:关掉条形/进度的过渡(hover 提亮、选中辉光等),尊重减少动态偏好 */
+  .nerv-gantt-dhx .gantt_task_line,
+  .nerv-gantt-dhx .gantt_task_progress,
+  .nerv-gantt-dhx .gantt_bar_task {
+    transition: none !important;
   }
 }

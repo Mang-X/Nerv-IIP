@@ -27,7 +27,7 @@ function onClick(c: ScheduleChange) {
           <button
             type="button"
             :data-change-task="c.taskId"
-            class="flex w-full items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
+            class="flex w-full items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             @click="onClick(c)"
           >
             <StatusBadge :tone="changeTone[c.changeType]" :label="changeTypeLabel[c.changeType]" />
