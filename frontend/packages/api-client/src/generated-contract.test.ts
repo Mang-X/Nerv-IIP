@@ -12,6 +12,10 @@ import type {
   BusinessConsoleWorkbenchSummaryResponse,
   CancelBusinessConsolePlanningDemandData,
   GetBusinessConsoleEngineeringStandardOperationData,
+  GetBusinessConsoleEngineeringDocumentData,
+  GetBusinessConsoleEngineeringItemData,
+  GetBusinessConsoleEngineeringChangeData,
+  ResolveBusinessConsoleEngineeringProductionVersionData,
   SearchBusinessConsoleObjectsData,
 } from './business-console'
 import {
@@ -211,6 +215,10 @@ describe('generated API client contract', () => {
       'getBusinessConsoleEngineeringManufacturingBomQueryOptions',
       'getBusinessConsoleEngineeringRoutingQueryOptions',
       'getBusinessConsoleEngineeringStandardOperationQueryOptions',
+      'getBusinessConsoleEngineeringDocumentQueryOptions',
+      'getBusinessConsoleEngineeringItemQueryOptions',
+      'getBusinessConsoleEngineeringChangeQueryOptions',
+      'resolveBusinessConsoleEngineeringProductionVersionQueryOptions',
       'cancelBusinessConsolePlanningDemandMutationOptions',
       'getBusinessConsoleWorkbenchSummary',
       'searchBusinessConsoleObjects',
@@ -275,6 +283,10 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleMaintenanceAssetReliabilityEnvelope>().toBeObject()
     expectTypeOf<CancelBusinessConsolePlanningDemandData>().toBeObject()
     expectTypeOf<GetBusinessConsoleEngineeringStandardOperationData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleEngineeringDocumentData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleEngineeringItemData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleEngineeringChangeData>().toBeObject()
+    expectTypeOf<ResolveBusinessConsoleEngineeringProductionVersionData>().toBeObject()
     expectTypeOf<SearchBusinessConsoleObjectsData>().toBeObject()
   })
 })

@@ -11,9 +11,13 @@ const routerReplace = vi.fn(async (location: { query?: Record<string, unknown> }
 
 const api = vi.hoisted(() => ({
   getBusinessConsoleEngineeringBomExplosion: vi.fn(),
+  getBusinessConsoleEngineeringBomExplosionQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomExplosion: vi.fn(),
+  getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringBomWhereUsed: vi.fn(),
+  getBusinessConsoleEngineeringBomWhereUsedQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomWhereUsed: vi.fn(),
+  getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -28,9 +32,13 @@ vi.mock('@/stores/businessContext', () => ({
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   getBusinessConsoleEngineeringBomExplosion: api.getBusinessConsoleEngineeringBomExplosion,
+  getBusinessConsoleEngineeringBomExplosionQueryOptions: api.getBusinessConsoleEngineeringBomExplosionQueryOptions,
   getBusinessConsoleEngineeringManufacturingBomExplosion: api.getBusinessConsoleEngineeringManufacturingBomExplosion,
+  getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions: api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions,
   getBusinessConsoleEngineeringBomWhereUsed: api.getBusinessConsoleEngineeringBomWhereUsed,
+  getBusinessConsoleEngineeringBomWhereUsedQueryOptions: api.getBusinessConsoleEngineeringBomWhereUsedQueryOptions,
   getBusinessConsoleEngineeringManufacturingBomWhereUsed: api.getBusinessConsoleEngineeringManufacturingBomWhereUsed,
+  getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions: api.getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions,
 }))
 
 vi.mock('@nerv-iip/ui', () => {
@@ -84,9 +92,21 @@ beforeEach(() => {
   routeState.query = {}
   routerReplace.mockClear()
   api.getBusinessConsoleEngineeringBomExplosion.mockReset()
+  api.getBusinessConsoleEngineeringBomExplosionQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomExplosion(options)).data,
+  }))
   api.getBusinessConsoleEngineeringManufacturingBomExplosion.mockReset()
+  api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringManufacturingBomExplosion(options)).data,
+  }))
   api.getBusinessConsoleEngineeringBomWhereUsed.mockReset()
+  api.getBusinessConsoleEngineeringBomWhereUsedQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomWhereUsed(options)).data,
+  }))
   api.getBusinessConsoleEngineeringManufacturingBomWhereUsed.mockReset()
+  api.getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringManufacturingBomWhereUsed(options)).data,
+  }))
 })
 
 describe('engineering bom analysis page', () => {
