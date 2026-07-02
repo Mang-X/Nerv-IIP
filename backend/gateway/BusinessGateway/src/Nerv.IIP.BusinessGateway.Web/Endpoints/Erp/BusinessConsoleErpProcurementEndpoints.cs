@@ -30,6 +30,28 @@ public sealed class ListBusinessConsoleErpRequestsForQuotationEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpGet("/api/business-console/v1/erp/procurement/purchase-requisitions")]
+[BusinessGatewayOperationId("listBusinessConsoleErpPurchaseRequisitions")]
+public sealed class ListBusinessConsoleErpPurchaseRequisitionsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleErpListRequest, BusinessConsoleErpPurchaseRequisitionListResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementRead)
+{
+    protected override string OrganizationId(BusinessConsoleErpListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleErpListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleErpPurchaseRequisitionListResponse> ForwardAsync(
+        BusinessConsoleErpListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.ListPurchaseRequisitionsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/procurement/purchase-requisitions/from-suggestion")]
 [BusinessGatewayOperationId("createBusinessConsoleErpPurchaseRequisitionFromSuggestion")]
 public sealed class CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionEndpoint(

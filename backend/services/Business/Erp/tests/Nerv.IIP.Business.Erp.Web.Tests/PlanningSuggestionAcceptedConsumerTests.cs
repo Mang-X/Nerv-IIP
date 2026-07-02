@@ -1,7 +1,9 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.DemandPlanning;
@@ -39,6 +41,49 @@ public sealed class PlanningSuggestionAcceptedConsumerTests
         var processed = Assert.Single(assertionDbContext.ProcessedIntegrationEvents);
         Assert.Equal(PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition.ConsumerName, processed.ConsumerName);
         Assert.Equal(integrationEvent.IdempotencyKey, processed.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task PlanningSuggestionAcceptedHandler_DoesNotAllocateSecondNumberAfterSynchronousAcceptBridgeCreatedRequisition()
+    {
+        await using var provider = CreateInMemoryProvider($"erp-planning-accepted-sync-bridge-{Guid.CreateVersion7():N}");
+        var integrationEvent = PlanningSuggestionAcceptedEvent();
+        var payload = integrationEvent.Payload;
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var codingService = new ErpCodingService(dbContext, scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
+            var commandHandler = new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext, codingService);
+            await commandHandler.Handle(new CreatePurchaseRequisitionFromSuggestionCommand(
+                integrationEvent.OrganizationId,
+                integrationEvent.EnvironmentId,
+                null,
+                payload.SuggestionId,
+                payload.SkuCode,
+                payload.UomCode,
+                payload.SiteCode,
+                payload.Quantity,
+                payload.RequiredDate,
+                $"planning-accept:{integrationEvent.OrganizationId}:{integrationEvent.EnvironmentId}:{payload.SuggestionId}"), CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        using (var scope = provider.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var codingService = new ErpCodingService(dbContext, scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>());
+            var handler = CreateHandler(dbContext, codingService: codingService);
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        using var assertionScope = provider.CreateScope();
+        var assertionDbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var requisition = Assert.Single(assertionDbContext.PurchaseRequisitions);
+        Assert.Equal("PR-20260702-000001", requisition.RequisitionNo);
+        var idempotencyKey = Assert.Single(assertionDbContext.CodeIdempotencyKeys);
+        Assert.Equal("planning-accept:org-001:env-dev:suggestion-001", idempotencyKey.IdempotencyKey);
     }
 
     [Theory]
@@ -147,11 +192,12 @@ public sealed class PlanningSuggestionAcceptedConsumerTests
 
     private static PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition CreateHandler(
         ApplicationDbContext dbContext,
-        IIntegrationEventDeadLetterStore? deadLetterStore = null)
+        IIntegrationEventDeadLetterStore? deadLetterStore = null,
+        ErpCodingService? codingService = null)
     {
         return new PlanningSuggestionAcceptedIntegrationEventHandlerForCreatePurchaseRequisition(
             dbContext,
-            new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext),
+            new CreatePurchaseRequisitionFromSuggestionCommandHandler(dbContext, codingService),
             deadLetterStore ?? new InMemoryIntegrationEventDeadLetterStore());
     }
 
@@ -206,6 +252,14 @@ public sealed class PlanningSuggestionAcceptedConsumerTests
         return new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(databaseName, databaseRoot)
             .Options;
+    }
+
+    private static ServiceProvider CreateInMemoryProvider(string databaseName)
+    {
+        var services = new ServiceCollection();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<IMediator, NoopMediator>();
+        return services.BuildServiceProvider();
     }
 
     private sealed class NoopMediator : IMediator

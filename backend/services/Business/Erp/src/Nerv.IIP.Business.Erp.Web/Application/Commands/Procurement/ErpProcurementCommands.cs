@@ -24,7 +24,11 @@ public sealed record CreatePurchaseRequisitionFromSuggestionCommand(
     string SiteCode,
     decimal Quantity,
     DateOnly RequiredDate,
-    string? IdempotencyKey = null) : ICommand<PurchaseRequisitionId>;
+    string? IdempotencyKey = null) : ICommand<CreatePurchaseRequisitionFromSuggestionResult>;
+
+public sealed record CreatePurchaseRequisitionFromSuggestionResult(
+    PurchaseRequisitionId PurchaseRequisitionId,
+    string RequisitionNo);
 
 public sealed class CreatePurchaseRequisitionFromSuggestionCommandValidator : AbstractValidator<CreatePurchaseRequisitionFromSuggestionCommand>
 {
@@ -42,12 +46,22 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandValidator : Ab
 }
 
 public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(ApplicationDbContext dbContext, ErpCodingService? codingService = null)
-    : ICommandHandler<CreatePurchaseRequisitionFromSuggestionCommand, PurchaseRequisitionId>
+    : ICommandHandler<CreatePurchaseRequisitionFromSuggestionCommand, CreatePurchaseRequisitionFromSuggestionResult>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
-    public async Task<PurchaseRequisitionId> Handle(CreatePurchaseRequisitionFromSuggestionCommand request, CancellationToken cancellationToken)
+    public async Task<CreatePurchaseRequisitionFromSuggestionResult> Handle(CreatePurchaseRequisitionFromSuggestionCommand request, CancellationToken cancellationToken)
     {
+        var existingForSuggestion = await dbContext.PurchaseRequisitions.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.SuggestionId == request.SuggestionId,
+            cancellationToken);
+        if (existingForSuggestion is not null)
+        {
+            return new CreatePurchaseRequisitionFromSuggestionResult(existingForSuggestion.Id, existingForSuggestion.RequisitionNo);
+        }
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "purchase-requisition",
@@ -58,11 +72,11 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(Applic
         var existing = await dbContext.PurchaseRequisitions.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
-            && (x.SuggestionId == request.SuggestionId || x.RequisitionNo == allocation.Code),
+            && x.RequisitionNo == allocation.Code,
             cancellationToken);
         if (existing is not null)
         {
-            return existing.Id;
+            return new CreatePurchaseRequisitionFromSuggestionResult(existing.Id, existing.RequisitionNo);
         }
 
         var requisition = PurchaseRequisition.CreateFromSuggestion(
@@ -76,7 +90,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(Applic
             request.Quantity,
             request.RequiredDate);
         dbContext.PurchaseRequisitions.Add(requisition);
-        return requisition.Id;
+        return new CreatePurchaseRequisitionFromSuggestionResult(requisition.Id, requisition.RequisitionNo);
     }
 }
 

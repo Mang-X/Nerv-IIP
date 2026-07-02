@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import ErpPage from './index.vue'
 
+const erpFilters = reactive<{
+  purchaseOrderStatus?: string
+  purchaseRequisitionStatus?: string
+  keyword?: string
+  skip: number
+  take: number
+}>({ purchaseOrderStatus: undefined, purchaseRequisitionStatus: undefined, keyword: undefined, skip: 0, take: 10 })
+
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({
     page: shallowRef(1),
@@ -11,9 +19,31 @@ vi.mock('@/composables/usePagedList', () => ({
   }),
 }))
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    query: {
+      keyword: 'PR-001',
+    },
+  }),
+}))
+
 vi.mock('@/composables/useBusinessErp', () => ({
   useBusinessErp: () => ({
-    filters: reactive({ status: undefined, keyword: undefined, skip: 0, take: 10 }),
+    filters: erpFilters,
+    purchaseRequisitions: computed(() => [
+      {
+        requisitionNo: 'PR-001',
+        requiredDate: '2026-07-03',
+        quantity: 8,
+        siteCode: 'SITE-01',
+        skuCode: 'SKU-RM-001',
+        status: 'Open',
+        suggestionId: 'suggestion-001',
+        uomCode: 'kg',
+      },
+    ]),
+    purchaseRequisitionsPending: shallowRef(false),
+    purchaseRequisitionsTotal: computed(() => 1),
     purchaseOrders: computed(() => [
       {
         lines: [
@@ -29,13 +59,22 @@ vi.mock('@/composables/useBusinessErp', () => ({
     ]),
     purchaseOrdersPending: shallowRef(false),
     purchaseOrdersTotal: computed(() => 42),
-    refreshPurchaseOrders: vi.fn(),
+    refreshProcurementDocuments: vi.fn(),
   }),
 }))
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 describe('ERP procurement page server-paged semantics', () => {
+  it('initializes keyword from downstream purchase requisition route query', async () => {
+    const wrapper = mount(ErpPage, { global: { stubs: { ...layoutStub } } })
+    await flushPromises()
+
+    expect(erpFilters.keyword).toBe('PR-001')
+    expect(wrapper.text()).toContain('PR-001')
+    expect(wrapper.text()).toContain('suggestion-001')
+  })
+
   it('shows semantic supply KPIs and order-level pagination total', async () => {
     const wrapper = mount(ErpPage, { global: { stubs: { ...layoutStub } } })
     await flushPromises()
@@ -63,5 +102,13 @@ describe('ERP procurement page server-paged semantics', () => {
     const buttonTexts = wrapper.findAll('button').map((b) => b.text())
     expect(buttonTexts).toContain('刷新')
     expect(wrapper.text()).toContain('SKU-001')
+  })
+
+  it('renders independent status filters for requisitions and purchase orders', async () => {
+    const wrapper = mount(ErpPage, { global: { stubs: { ...layoutStub } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('全部申请')
+    expect(wrapper.text()).toContain('全部订单')
   })
 })

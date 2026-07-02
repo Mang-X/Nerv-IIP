@@ -50,10 +50,15 @@ try
         client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddPlanningScheduledReceiptSourceClients(erpBaseAddress, mesBaseAddress);
-    builder.Services.AddHttpClient<IPlanningSuggestionDownstreamBridge, HttpMesPlanningSuggestionDownstreamBridge>(client =>
+    builder.Services.AddHttpClient<HttpMesPlanningSuggestionDownstreamBridge>(client =>
     {
         client.BaseAddress = mesBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<HttpErpPlanningSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddScoped<IPlanningSuggestionDownstreamBridge, HttpPlanningSuggestionDownstreamBridge>();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
