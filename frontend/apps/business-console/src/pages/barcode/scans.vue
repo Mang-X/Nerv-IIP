@@ -32,18 +32,11 @@ import {
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { BARCODE_SCAN_WORKFLOW_OPTIONS, barcodeScanWorkflowLabel } from './workflow-options'
 
 definePage({ meta: { requiresAuth: true, title: '扫码记录', requiredPermissions: ['business.barcodes.templates.manage'] } })
 
-const WORKFLOW_OPTIONS = [
-  { value: 'production.report', label: '生产报工' },
-  { value: 'wms.receiving', label: '仓储收货' },
-  { value: 'inventory.receipt', label: '库存入库' },
-  { value: 'inventory.issue', label: '库存出库' },
-  { value: 'inventory.adjustment', label: '库存调整' },
-  { value: 'inventory.count', label: '库存盘点' },
-  { value: 'quality.inspection', label: '质量检验' },
-]
+const WORKFLOW_OPTIONS = BARCODE_SCAN_WORKFLOW_OPTIONS
 
 const RESULT_OPTIONS = [
   { value: 'accepted', label: '已接受' },
@@ -160,8 +153,7 @@ async function submitScan() {
 }
 
 function workflowLabel(value?: string | null) {
-  if (!value) return '未标注'
-  return WORKFLOW_OPTIONS.find((option) => option.value === value)?.label ?? value
+  return barcodeScanWorkflowLabel(value)
 }
 
 function resultLabel(value?: string | null) {

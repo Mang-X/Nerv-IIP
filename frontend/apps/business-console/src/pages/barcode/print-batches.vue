@@ -32,6 +32,7 @@ import {
 import { EyeIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { isBarcodeScanWorkflow } from './workflow-options'
 
 definePage({ meta: { requiresAuth: true, title: '打印批次', requiredPermissions: ['business.barcodes.templates.manage'] } })
 
@@ -176,8 +177,7 @@ async function submitCreate() {
 
 function scanWorkflowForPrintBatch(sourceDocumentType?: string | null) {
   if (sourceDocumentType === 'work-order') return 'production.report'
-  const supported = new Set(['production.report', 'wms.receiving', 'inventory.count', 'quality.inspection', 'inventory.adjustment'])
-  return sourceDocumentType && supported.has(sourceDocumentType) ? sourceDocumentType : undefined
+  return isBarcodeScanWorkflow(sourceDocumentType) ? sourceDocumentType : undefined
 }
 
 function scanRecordRoute(batch: BusinessConsoleBarcodePrintBatchItem) {

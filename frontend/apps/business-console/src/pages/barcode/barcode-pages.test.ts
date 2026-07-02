@@ -12,6 +12,7 @@ const barcode = vi.hoisted(() => ({
   saveTemplate: vi.fn(),
   createPrintBatch: vi.fn(),
   recordScan: vi.fn(),
+  printBatchSourceDocumentType: 'production.report',
   route: { query: {} as Record<string, unknown> },
   ruleFilters: undefined as undefined | { keyword?: string, skip: number, take: number },
   templateFilters: undefined as undefined | { skip: number, take: number },
@@ -115,7 +116,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
         {
           printBatchId: 'pb-1',
           labelTemplateId: 'tpl-1',
-          sourceDocumentType: 'production.report',
+          sourceDocumentType: barcode.printBatchSourceDocumentType,
           sourceDocumentId: 'WO-001',
           requestedQuantity: 2,
           status: 'completed',
@@ -128,7 +129,7 @@ vi.mock('@/composables/useBusinessBarcode', () => ({
       printBatchDetail: computed(() => ({
         printBatchId: 'pb-1',
         labelTemplateId: 'tpl-1',
-        sourceDocumentType: 'production.report',
+        sourceDocumentType: barcode.printBatchSourceDocumentType,
         sourceDocumentId: 'WO-001',
         requestedQuantity: 2,
         status: 'completed',
@@ -224,6 +225,7 @@ describe('barcode pages', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     barcode.route.query = {}
+    barcode.printBatchSourceDocumentType = 'production.report'
     barcode.ruleFilters = undefined
     barcode.templateFilters = undefined
     barcode.printBatchFilters = undefined
@@ -396,6 +398,17 @@ describe('barcode pages', () => {
 
     expect(scanLink?.attributes('data-to')).toContain('"path":"/barcode/scans"')
     expect(scanLink?.attributes('data-to')).toContain('"sourceWorkflow":"production.report"')
+    expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
+  })
+
+  it.each(['inventory.receipt', 'inventory.issue'])('keeps %s print batches filtered when drilling into scan records', async (sourceDocumentType) => {
+    barcode.printBatchSourceDocumentType = sourceDocumentType
+    const wrapper = mount(PrintBatchesPage, { global: { stubs: { ...layoutStub, ...dialogStubs, ...selectStubs, RouterLink: routerLinkStub } } })
+    await flushPromises()
+
+    const scanLink = wrapper.findAll('[data-router-link]').find((link) => link.text().includes('扫码记录'))
+
+    expect(scanLink?.attributes('data-to')).toContain(`"sourceWorkflow":"${sourceDocumentType}"`)
     expect(scanLink?.attributes('data-to')).toContain('"sourceDocumentId":"WO-001"')
   })
 
