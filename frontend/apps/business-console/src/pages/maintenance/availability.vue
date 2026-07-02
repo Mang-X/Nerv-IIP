@@ -33,7 +33,7 @@ const unavailableCount = computed(() =>
   availabilityWindows.value.filter((window) => (window.availabilityStatus ?? '').toLowerCase() === 'unavailable').length,
 )
 const inspectionCount = computed(() =>
-  availabilityWindows.value.filter((window) => (window.reasonCode ?? '').toLowerCase().includes('inspection')).length,
+  availabilityWindows.value.filter((window) => (window.reasonCode ?? '').trim().toLowerCase() === 'equipment.inspectionrequired').length,
 )
 const errorMessage = computed(() => formatError(availabilityError.value))
 

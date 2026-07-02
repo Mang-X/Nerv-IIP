@@ -62,11 +62,15 @@ function formatError(error: unknown) {
   <BusinessLayout>
     <PageHeader title="可靠性指标" :breadcrumbs="[{ label: '设备监控' }]" :count="hasDeviceScope ? filters.deviceAssetId : '选择设备后查询'">
       <template #actions>
-        <ButtonPro size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="{ path: `/equipment/${filters.deviceAssetId}`, query: hasDeviceScope ? {} : undefined }">
+        <ButtonPro v-if="hasDeviceScope" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="`/equipment/${filters.deviceAssetId}`">
             <ActivityIcon aria-hidden="true" />
             设备详情
           </RouterLink>
+        </ButtonPro>
+        <ButtonPro v-else size="sm" type="button" variant="outline" :disabled="true">
+          <ActivityIcon aria-hidden="true" />
+          设备详情
         </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="!hasDeviceScope || reliabilityPending" @click="refreshReliability">
           <RefreshCwIcon aria-hidden="true" />
