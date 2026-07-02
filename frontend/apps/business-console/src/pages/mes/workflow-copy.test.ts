@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OperationTasksPage from './operation-tasks.vue'
 import PlansPage from './plans.vue'
 import ReceiptsPage from './receipts.vue'
+import TraceabilityPage from './traceability.vue'
 import WorkOrdersPage from './work-orders/index.vue'
 
 const routeState = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ const mesSpies = vi.hoisted(() => ({
 vi.mock('vue-router', () => ({
   RouterLink: {
     props: ['to'],
-    template: '<a data-router-link><slot /></a>',
+    template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
   },
   useRoute: () => routeState,
   useRouter: () => routerState,
@@ -99,6 +100,18 @@ vi.mock('@/composables/useBusinessMes', () => ({
     productionPlansPending: ref(false),
     productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
+  }),
+  useMesTraceability: () => ({
+    filters: reactive({
+      batchOrSerial: 'LOT-001',
+      materialLotId: 'LOT-001',
+      mode: 'batch',
+      workOrderId: '',
+    }),
+    refreshTraceability: vi.fn(),
+    traceability: ref({ edges: [], nodes: [] }),
+    traceabilityError: ref(undefined),
+    traceabilityPending: ref(false),
   }),
   useMesWorkOrderDetail: () => ({
     detail: ref(null),
@@ -306,7 +319,7 @@ function mountMesPage(component: unknown) {
         ...uiStubs,
         RouterLink: {
           props: ['to'],
-          template: '<a data-router-link><slot /></a>',
+          template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>',
         },
       },
     },
@@ -402,5 +415,17 @@ describe('MES workflow copy', () => {
       uomCode: 'EA',
       workOrderId: 'WO-001',
     }))
+  })
+
+  it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
+    const wrapper = mountMesPage(TraceabilityPage)
+
+    const scanLink = wrapper.get('[data-router-link]')
+    const target = scanLink.attributes('data-to')
+
+    expect(target).toContain('"path":"/barcode/scans"')
+    expect(target).toContain('"sourceDocumentId":"LOT-001"')
+    expect(target).toContain('"scannedValue":"LOT-001"')
+    expect(target).not.toContain('sourceWorkflow')
   })
 })
