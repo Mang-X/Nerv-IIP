@@ -70,6 +70,7 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
   { id: 'inventory', title: '库存管理', icon: PackageSearchIcon, to: { path: '/inventory/availability' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.inventory] },
   { id: 'wms', title: '仓储作业', icon: WarehouseIcon, to: { path: '/wms/inbound' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.wms] },
   { id: 'erp', title: '经营管理', icon: ReceiptTextIcon, to: { path: '/erp' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.erp] },
+  { id: 'barcode', title: '条码标签', icon: HashIcon, to: { path: '/barcode/rules' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.barcode] },
   { id: 'equipment', title: '设备监控', icon: ActivityIcon, to: { path: '/equipment' }, requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.equipment] },
 ]
 
@@ -221,6 +222,14 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       ],
     },
   ],
+  'barcode': [
+    {
+      items: [
+        { title: '条码规则', icon: HashIcon, to: { path: '/barcode/rules' }, requiredPermissions: [P.barcodeTemplatesManage] },
+        { title: '标签模板', icon: FileTextIcon, to: { path: '/barcode/templates' }, requiredPermissions: [P.barcodeTemplatesManage] },
+      ],
+    },
+  ],
   'equipment': [
     {
       label: '运行监控',
@@ -256,6 +265,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/quality')) return 'quality'
   if (isUnder(path, '/inventory')) return 'inventory'
   if (isUnder(path, '/wms')) return 'wms'
+  if (isUnder(path, '/barcode')) return 'barcode'
   if (isUnder(path, '/equipment')) return 'equipment'
   if (isUnder(path, '/maintenance')) return 'equipment'
   return 'workbench'
