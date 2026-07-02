@@ -283,11 +283,6 @@ export function useMaintenanceAvailabilityWindows(initialFilters: Partial<Mainte
 
   return {
     filters,
-    availability: computed(() =>
-      unwrapData<NonNullable<EquipmentRuntimeAvailabilityEnvelope['data']>>(
-        availabilityQuery.data.value as EquipmentRuntimeAvailabilityEnvelope | undefined,
-      ),
-    ),
     availabilityError: availabilityQuery.error,
     availabilityPending: availabilityQuery.isLoading,
     availabilityWindows: computed<EquipmentRuntimeAvailabilityWindow[]>(() =>

@@ -143,7 +143,7 @@ describe('business maintenance composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleMaintenanceSpareParts', {
       success: true,
       data: {
-        items: [{ sparePartRequestId: 'sp-1', workOrderId: 'wo-1', skuCode: 'BRG-6205', quantity: 2 }],
+        items: [{ sparePartLineId: 'sp-1', workOrderId: 'wo-1', skuCode: 'BRG-6205', quantity: 2 }],
         total: 1,
       },
     })
@@ -159,6 +159,7 @@ describe('business maintenance composables', () => {
       },
     })
     expect(spareParts.spareParts.value).toHaveLength(1)
+    expect(spareParts.spareParts.value[0]?.sparePartLineId).toBe('sp-1')
     expect(spareParts.sparePartsTotal.value).toBe(1)
 
     await spareParts.createSparePart({
@@ -214,6 +215,7 @@ describe('business maintenance composables', () => {
       }),
     })
     expect(coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAvailabilityWindows')?.enabled).toBe(true)
+    expect('availability' in availability).toBe(false)
     expect(availability.availabilityWindows.value).toHaveLength(1)
   })
 })
