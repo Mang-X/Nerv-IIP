@@ -15,7 +15,7 @@ import {
   SectionCard,
   SectionCards,
 } from '@nerv-iip/ui'
-import { ArrowLeftIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon, WrenchIcon } from 'lucide-vue-next'
+import { ArrowLeftIcon, CalendarRangeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon, TrendingUpIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -119,6 +119,24 @@ function formatError(error: unknown) {
         <ButtonPro size="sm" type="button" variant="outline" @click="recordDowntime">
           <WrenchIcon aria-hidden="true" />
           记录停机
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: filters.deviceAssetId } }">
+            <WrenchIcon aria-hidden="true" />
+            创建维修工单
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/maintenance/reliability', query: { deviceAssetId: filters.deviceAssetId } }">
+            <TrendingUpIcon aria-hidden="true" />
+            可靠性
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/maintenance/availability', query: { deviceAssetId: filters.deviceAssetId } }">
+            <CalendarRangeIcon aria-hidden="true" />
+            可用窗口
+          </RouterLink>
         </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="devicePending" @click="refreshDevice">
           <RefreshCwIcon aria-hidden="true" />

@@ -251,6 +251,10 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
       items: [
         { title: '维护工单', icon: WrenchIcon, to: { path: '/maintenance/work-orders' }, requiredPermissions: [P.maintenanceWorkOrdersRead] },
         { title: '保养计划', icon: CalendarClockIcon, to: { path: '/maintenance/plans' }, requiredPermissions: [P.maintenancePlansRead] },
+        { title: '点检记录', icon: ClipboardCheckIcon, to: { path: '/maintenance/inspections' }, requiredPermissions: [P.maintenancePlansRead] },
+        { title: '备件需求', icon: PackageSearchIcon, to: { path: '/maintenance/spare-parts' }, requiredPermissions: [P.maintenanceWorkOrdersRead] },
+        { title: '可靠性指标', icon: TrendingUpIcon, to: { path: '/maintenance/reliability' }, requiredPermissions: [P.maintenanceWorkOrdersRead] },
+        { title: '可用窗口', icon: CalendarRangeIcon, to: { path: '/maintenance/availability' }, requiredPermissions: [P.maintenanceWorkOrdersRead] },
       ],
     },
   ],
