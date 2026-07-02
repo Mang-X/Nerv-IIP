@@ -47,7 +47,9 @@ export const BUSINESS_PERMISSION_CODES = {
   iiotAlarmsRead: 'business.iiot.alarms.read',
   maintenanceWorkOrdersRead: 'business.maintenance.work-orders.read',
   maintenancePlansRead: 'business.maintenance.plans.read',
+  barcodeTemplatesManage: 'business.barcodes.templates.manage',
   approvalsRead: 'business.approvals.read',
+  approvalsManage: 'business.approvals.manage',
   notificationMessagesRead: 'notifications.messages.read',
   notificationTasksRead: 'notifications.tasks.read',
 } as const
@@ -124,5 +126,12 @@ export const BUSINESS_DOMAIN_PERMISSIONS = {
     P.iiotAlarmsRead,
     P.maintenanceWorkOrdersRead,
     P.maintenancePlansRead,
+  ],
+  barcode: [
+    P.barcodeTemplatesManage,
+  ],
+  approval: [
+    P.approvalsRead,
+    P.approvalsManage,
   ],
 } as const satisfies Record<string, readonly BusinessPermissionCode[]>

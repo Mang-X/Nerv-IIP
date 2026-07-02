@@ -20,7 +20,7 @@
 - PC Business Console：`frontend/apps/business-console/src/navigation.ts` 和 `frontend/apps/business-console/src/pages/*`
 - Business PDA：`frontend/apps/business-pda/src/pages/*`、`frontend/apps/business-pda/src/composables/*`、`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`
 - 大屏/设计系统：`frontend/apps/design-system/src/pages/board.vue`、`frontend/apps/design-system/docs/components/screen/*`、`frontend/packages/ui/src/components/screen/*`
-- 当前没有 `frontend/apps/business-board`，也没有 `frontend/apps/business-console/src/pages/barcode`、`frontend/apps/business-console/src/pages/approval` 或 `frontend/apps/business-pda/src/pages/scan.vue`。
+- 当前没有 `frontend/apps/business-board`，也没有 `frontend/apps/business-pda/src/pages/scan.vue`；Business Console 已有 `frontend/apps/business-console/src/pages/barcode` 与 `frontend/apps/business-console/src/pages/approval`。
 
 ## 总览
 
@@ -37,8 +37,8 @@
 | ERP 经营管理 | [x] | [x] | [x] 采购/销售/财务窄面 | [ ] | [ ] | 完整采购/销售/财务菜单、税务/银行/月结/报表、退货/RMA、移动审批/收货协同。 |
 | IndustrialTelemetry 设备监控 | [x] | [x] | [x] 设备看板/报警/Tag/规则/历史/OEE | [x] 报警查看 | [ ] | 报警处理闭环、OEE/停机大屏、Connector 产品化。 |
 | Maintenance 设备运维 | [x] | [x] | [x] 工单/计划 | [x] 报修/点检 | [ ] | 完整 CMMS 资产视角、备件成本、移动离线点检、维修绩效分析。 |
-| BarcodeLabel 条码标签 | [x] | [x] | [ ] | [ ] | [ ] | PC 标签规则/模板/打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。 |
-| BusinessApproval 审批中心 | [x] | [x] | [ ] | [ ] | [ ] | PC 审批中心、移动审批、工作台待办深度整合、审批模板运营页。 |
+| BarcodeLabel 条码标签 | [x] | [x] | [x] 规则/模板 | [ ] | [ ] | 打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。 |
+| BusinessApproval 审批中心 | [x] | [x] | [x] | [ ] | [ ] | PC 审批中心已接入模板、流程、任务、决策和委托；移动审批、工作台待办深度整合和跨域单据详情穿透仍后续。 |
 | Search / Workbench 工作台 | [x] facade | [x] | [x] 首页，[ ] Cmd/Ctrl+K 实装 | [x] 首页壳，[ ] 我的任务真实数据 | [ ] | 全局对象搜索面板、近期/星标、角色化待办、跨域指标和预警聚合。 |
 
 ## 后端清单
@@ -147,9 +147,9 @@
 - [x] 服务存在：`backend/services/Business/Approval`
 - [x] 覆盖 approval template、approval chain、step decision、pending tasks、overdue check、withdraw/resubmit、add signer、transfer、delegation。
 - [x] BusinessGateway 暴露 `/api/business-console/v1/approval/*` templates/chains/tasks/decisions/delegations facade。
-- [ ] PC 没有正式 approval 页面目录。
+- [x] PC 已有正式 approval 页面目录，覆盖模板、流程实例、我的任务、决策记录和委托设置。
 - [ ] PDA 没有移动审批页。
-- [ ] 还缺审批中心、模板运营、工作台待办深度整合、移动审批和跨域单据详情穿透。
+- [ ] 还缺移动审批、工作台待办深度整合和跨域单据详情穿透。
 
 ## PC Business Console 清单
 
@@ -170,7 +170,7 @@
 ### PC 仍明显落后的部分
 
 - [ ] BarcodeLabel 没有正式 PC 页面，尽管后端和 BusinessGateway 已经具备 rules/templates/print-batches/scans。
-- [ ] BusinessApproval 没有正式 PC 页面，尽管后端和 BusinessGateway 已经具备 templates/chains/tasks/decisions/delegations。
+- [x] BusinessApproval 已有正式 PC 页面，消费 BusinessGateway templates/chains/tasks/decisions/delegations facade。
 - [ ] Scheduling 没有独立 APS 顶级工作台，当前主要落在 MES `schedules` 页面和 BusinessGateway facade。
 - [x] IndustrialTelemetry 已有 tags/alarm-rules/history/OEE/runtime-availability 配置与分析页面，当前不包含独立大屏或报警处置闭环。
 - [ ] ERP 只有采购/销售/财务窄面，不能声明完整 ERP。税务、银行、月结、完整报表、退货/RMA 等未交付。
@@ -227,7 +227,7 @@
 ### P0：先补前端业务可见缺口
 
 - [ ] PC BarcodeLabel：规则、模板、打印批次、扫码记录，接现有 BusinessGateway facade。
-- [ ] PC BusinessApproval：我的待办、审批链详情、审批决策、模板、委托，接现有 BusinessGateway facade。
+- [x] PC BusinessApproval：我的待办、审批链详情、审批决策、模板、委托，接现有 BusinessGateway facade。
 - [ ] PC Workbench：真实待办、预警、跨域快捷入口、近期/星标、空态/降级状态。
 - [ ] PDA Scan：新增扫码解析 route/facade，支持工单、库位、物料、设备、批次、任务跳转。
 - [ ] PDA My Tasks：从真实任务源聚合 WMS/MES/设备/审批/质量任务，替换首页空态。
@@ -253,6 +253,6 @@
 
 - [x] 后端业务主干已经明显进入业务阶段，不再是单纯平台骨架。
 - [x] BusinessGateway 覆盖面已经比 PC/PDA 页面更完整，多个模块是“后端和 facade 已经先到位，前端未跟上”。
-- [x] PC Business Console 覆盖面扩大，但仍有 BarcodeLabel、BusinessApproval、Workbench/search 等明显缺口；Telemetry/OEE 正式 PC 页面已接入，独立大屏与报警处置闭环后置。
+- [x] PC Business Console 覆盖面扩大，但仍有 Workbench/search 等明显缺口；BarcodeLabel 与 BusinessApproval 正式页面已接入，Telemetry/OEE 正式 PC 页面已接入，独立大屏与报警处置闭环后置。
 - [x] PDA v1 已有 WMS/MES/设备运维三域一线作业，但扫码直达、个人任务、离线、移动审批/质量/库存仍未完成。
 - [x] 大屏目前只有设计系统样例和组件方向，没有业务大屏应用，不能按“已交付大屏”宣传。

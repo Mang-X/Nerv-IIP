@@ -43,6 +43,18 @@ describe('business console telemetry navigation', () => {
   })
 })
 
+describe('business console approval navigation', () => {
+  it('adds a dedicated approval center domain with read/manage permissions', () => {
+    const approvalItems = DOMAIN_SIDE_NAV.approval?.flatMap((section) => section.items) ?? []
+    const center = approvalItems.find((item) => pathOf(item.to) === '/approval')
+
+    expect(resolveDomainId('/approval')).toBe('approval')
+    expect(resolveDomainId('/approval/chains/chain-001')).toBe('approval')
+    expect(center?.title).toBe('审批中心')
+    expect(center?.requiredPermissions).toEqual([P.approvalsRead, P.approvalsManage])
+  })
+})
+
 function pathOf(to: unknown) {
   return typeof to === 'object' && to !== null && 'path' in to ? String(to.path) : ''
 }

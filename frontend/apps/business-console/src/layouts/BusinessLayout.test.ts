@@ -59,7 +59,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('title')).toBe('Nerv-IIP 业务控制台')
     const domains = shell.props('topDomains') as Domain[]
     expect(domains.map((d) => d.id)).toEqual([
-      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'equipment',
+      'workbench', 'master-data', 'engineering', 'planning', 'mes', 'quality', 'inventory', 'wms', 'erp', 'barcode', 'equipment', 'approval',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
@@ -122,6 +122,16 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('currentDomainId')).toBe('wms')
     const sideNav = shell.props('sideNav') as SideGroup[]
     expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['收货入库', '上架任务', '出库发货', '拣货任务', 'WCS 任务', '盘点执行'])
+  })
+
+  it('resolves barcode routes to the 条码标签 domain', () => {
+    routeState.path = '/barcode/rules'
+    const wrapper = mountLayout()
+    const shell = wrapper.getComponent(AppShellTStub)
+
+    expect(shell.props('currentDomainId')).toBe('barcode')
+    const sideNav = shell.props('sideNav') as SideGroup[]
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['条码规则', '标签模板'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
