@@ -5,6 +5,7 @@ import type {
   BusinessConsoleQualityItem,
 } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import { useQualityNcrs } from '@/composables/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -121,6 +122,7 @@ function openNcr(ncr: BusinessConsoleQualityItem) {
   selectedNcr.value = ncr
   dispositionSuccess.value = ''
   closeSuccess.value = ''
+  dispositionForm.dispositionApprovalChainId = ''
   closeForm.reworkWorkOrderId = contextWorkOrderId.value || (isPresent(ncr.sourceDocumentId) ? ncr.sourceDocumentId : '')
   detailOpen.value = true
 }
@@ -295,10 +297,13 @@ watch(targetNcr, (ncr) => {
                   </SelectProContent>
                 </SelectPro>
               </FieldPro>
-              <FieldPro>
-                <FieldProLabel for="ncr-approval-chain">审批链</FieldProLabel>
-                <InputPro id="ncr-approval-chain" v-model="dispositionForm.dispositionApprovalChainId" />
-              </FieldPro>
+              <BusinessDocumentApprovalPanel
+                v-model="dispositionForm.dispositionApprovalChainId"
+                title="处置审批链"
+                source-service="quality"
+                document-type="quality-ncr"
+                :document-id="selectedNcr?.code ?? selectedNcr?.id"
+              />
               <FieldPro>
                 <FieldProLabel for="ncr-disposition-files">附件文件 ID</FieldProLabel>
                 <InputPro id="ncr-disposition-files" v-model="dispositionForm.attachmentFileIds" placeholder="file-1, file-2" />

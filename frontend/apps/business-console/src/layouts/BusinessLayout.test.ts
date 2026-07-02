@@ -131,7 +131,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     expect(shell.props('currentDomainId')).toBe('barcode')
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['条码规则', '标签模板'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['条码规则', '标签模板', '打印批次', '扫码记录'])
   })
 
   it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
