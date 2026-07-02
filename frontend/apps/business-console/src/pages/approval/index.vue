@@ -57,6 +57,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, reactive, shallowRef } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -75,6 +76,7 @@ const canReadApprovals = computed(() => permissionCodes.value.includes(P.approva
 const canManageApprovals = computed(() => permissionCodes.value.includes(P.approvalsManage))
 
 const approval = useBusinessApproval(actor)
+const route = useRoute() as { query?: Record<string, unknown> } | undefined
 const taskPager = usePagedList(approval.taskFilters)
 const chainPager = usePagedList(approval.chainFilters)
 const decisionPager = usePagedList(approval.decisionFilters)
@@ -164,6 +166,8 @@ const runningChains = computed(() =>
   approval.chains.value.filter((item) => ['running', 'pending', 'open'].includes((item.status ?? '').toLowerCase())).length,
 )
 
+applyRouteApprovalFilters()
+
 function documentLabel(row: { documentType?: string | null, documentId?: string | null }) {
   const id = row.documentId ?? ''
   return id ? `${row.documentType ?? '业务单据'} · ${id}` : row.documentType ?? '业务单据'
@@ -177,6 +181,28 @@ function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
+}
+
+function applyRouteApprovalFilters() {
+  const sourceService = firstQuery(route?.query?.sourceService)
+  const documentType = firstQuery(route?.query?.documentType)
+  const documentId = firstQuery(route?.query?.documentId)
+
+  if (sourceService) approval.chainFilters.sourceService = sourceService
+  if (documentType) {
+    approval.chainFilters.documentType = documentType
+    approval.decisionFilters.documentType = documentType
+    approval.templateFilters.documentType = documentType
+  }
+  if (documentId) {
+    approval.chainFilters.documentId = documentId
+    approval.decisionFilters.documentId = documentId
+  }
 }
 
 function formatStatus(value?: boolean | string | null) {
