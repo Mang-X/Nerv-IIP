@@ -139,7 +139,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
   'planning': [
     {
       items: [
-        { title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' }, requiredPermissions: [P.planningDemandsRead, P.planningMrpRead, P.planningSuggestionsManage] },
+        { title: '需求与物料计划', icon: CalendarRangeIcon, to: { path: '/planning' }, requiredPermissions: [P.planningDemandsRead, P.planningMpsRead, P.planningMrpRead, P.planningSuggestionsManage] },
         { title: '排产工作台', icon: CalendarCogIcon, to: { path: '/scheduling' }, requiredPermissions: [P.schedulingPlansRead] },
       ],
     },

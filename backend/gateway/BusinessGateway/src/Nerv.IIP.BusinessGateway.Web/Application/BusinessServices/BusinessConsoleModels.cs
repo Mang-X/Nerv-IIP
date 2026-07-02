@@ -1497,6 +1497,62 @@ public sealed record BusinessConsolePlanningContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleMpsListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleCreateMpsBucketRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity,
+    string? IdempotencyKey = null);
+
+public sealed record BusinessConsoleUpdateMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity);
+
+public sealed record BusinessConsoleReviewMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReviewedBy);
+
+public sealed record BusinessConsoleReleaseMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReleasedBy);
+
+public sealed record BusinessConsoleMpsBucketItem(
+    string MpsId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity,
+    string Status,
+    string? ReviewedBy = null,
+    DateTimeOffset? ReviewedAtUtc = null,
+    string? ReleasedBy = null,
+    DateTimeOffset? ReleasedAtUtc = null);
+
+public sealed record BusinessConsoleMpsBucketListResponse(IReadOnlyCollection<BusinessConsoleMpsBucketItem> Items);
+
 public sealed record BusinessConsoleCreateOrUpdateDemandSourceRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1536,7 +1592,10 @@ public sealed record BusinessConsoleRunMrpResponse(
     string RunId,
     int SuggestionCount,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed record BusinessConsoleMrpRunItem(
     string RunId,
@@ -1549,7 +1608,10 @@ public sealed record BusinessConsoleMrpRunItem(
     string ProductionEngineeringSnapshotSource,
     string InventorySnapshotSource,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 

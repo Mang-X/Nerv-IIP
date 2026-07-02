@@ -19,7 +19,8 @@ public sealed record DemandSnapshot(
     string UomCode,
     string SiteCode,
     decimal Quantity,
-    DateOnly DueDate);
+    DateOnly DueDate,
+    string SourceType = "demand-source");
 
 public sealed record InventoryAvailabilitySnapshot(
     string SkuCode,

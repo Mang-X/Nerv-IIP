@@ -820,6 +820,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/planning/mps/mps-001", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/review", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/release", BusinessGatewayPermissions.PlanningMpsRelease);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRun);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);

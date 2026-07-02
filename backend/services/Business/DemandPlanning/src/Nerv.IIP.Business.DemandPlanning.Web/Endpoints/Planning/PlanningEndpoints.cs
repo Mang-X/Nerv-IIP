@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
@@ -22,6 +23,9 @@ public abstract class DemandPlanningEndpoint<TRequest, TResponse> : Endpoint<TRe
                 break;
             case "POST":
                 Post(contract.Route);
+                break;
+            case "PUT":
+                Put(contract.Route);
                 break;
             default:
                 throw new NotSupportedException($"HTTP method '{contract.HttpMethod}' is not supported by DemandPlanning endpoints.");
@@ -46,6 +50,47 @@ public sealed record CreateOrUpdateDemandSourceRequest(
 
 public sealed record CreateOrUpdateDemandSourceResponse(string DemandSourceId);
 
+public sealed record ListMasterProductionScheduleBucketsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? SiteCode,
+    DateOnly? FromDate,
+    DateOnly? ToDate,
+    MasterProductionScheduleStatus? Status);
+
+public sealed record CreateMasterProductionScheduleBucketRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity,
+    string? IdempotencyKey = null);
+
+public sealed record UpdateMasterProductionScheduleBucketRequest(
+    [property: RouteParam] MasterProductionScheduleId MpsId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity);
+
+public sealed record ReviewMasterProductionScheduleBucketRequest(
+    [property: RouteParam] MasterProductionScheduleId MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReviewedBy);
+
+public sealed record ReleaseMasterProductionScheduleBucketRequest(
+    [property: RouteParam] MasterProductionScheduleId MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReleasedBy);
+
 public sealed record ListDemandSourcesRequest(string OrganizationId, string EnvironmentId);
 
 public sealed record CancelDemandSourceRequest(
@@ -59,7 +104,10 @@ public sealed record RunMrpResponse(
     MrpRunId RunId,
     int SuggestionCount,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed record ListMrpRunsRequest(string OrganizationId, string EnvironmentId);
 
@@ -79,6 +127,114 @@ public sealed record AcceptPlanningSuggestionResponse(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId);
+
+public sealed class ListMasterProductionScheduleBucketsEndpoint(ISender sender)
+    : DemandPlanningEndpoint<ListMasterProductionScheduleBucketsRequest, ResponseData<IReadOnlyCollection<MasterProductionScheduleBucketResponse>>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<ListMasterProductionScheduleBucketsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListMasterProductionScheduleBucketsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListMasterProductionScheduleBucketsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.SiteCode,
+            req.FromDate,
+            req.ToDate,
+            req.Status), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CreateMasterProductionScheduleBucketEndpoint(ISender sender)
+    : DemandPlanningEndpoint<CreateMasterProductionScheduleBucketRequest, ResponseData<MasterProductionScheduleBucketResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<CreateMasterProductionScheduleBucketEndpoint>());
+    }
+
+    public override async Task HandleAsync(CreateMasterProductionScheduleBucketRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateMasterProductionScheduleBucketCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.BucketDate,
+            req.Quantity,
+            req.IdempotencyKey), ct);
+        var response = await sender.Send(new ListMasterProductionScheduleBucketsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.SiteCode,
+            req.BucketDate,
+            req.BucketDate), ct);
+        await Send.OkAsync(response.Single(x => x.MpsId == id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UpdateMasterProductionScheduleBucketEndpoint(ISender sender)
+    : DemandPlanningEndpoint<UpdateMasterProductionScheduleBucketRequest, ResponseData<MasterProductionScheduleBucketResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<UpdateMasterProductionScheduleBucketEndpoint>());
+    }
+
+    public override async Task HandleAsync(UpdateMasterProductionScheduleBucketRequest req, CancellationToken ct)
+    {
+        var mpsId = Route<MasterProductionScheduleId>("mpsId") ?? req.MpsId;
+        await sender.Send(new UpdateMasterProductionScheduleBucketCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            mpsId,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.BucketDate,
+            req.Quantity), ct);
+        await Send.OkAsync((await MasterProductionScheduleEndpointLoader.LoadBucketAsync(sender, req.OrganizationId, req.EnvironmentId, mpsId, ct)).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReviewMasterProductionScheduleBucketEndpoint(ISender sender)
+    : DemandPlanningEndpoint<ReviewMasterProductionScheduleBucketRequest, ResponseData<MasterProductionScheduleBucketResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<ReviewMasterProductionScheduleBucketEndpoint>());
+    }
+
+    public override async Task HandleAsync(ReviewMasterProductionScheduleBucketRequest req, CancellationToken ct)
+    {
+        var mpsId = Route<MasterProductionScheduleId>("mpsId") ?? req.MpsId;
+        await sender.Send(new ReviewMasterProductionScheduleBucketCommand(req.OrganizationId, req.EnvironmentId, mpsId, req.ReviewedBy), ct);
+        await Send.OkAsync((await MasterProductionScheduleEndpointLoader.LoadBucketAsync(sender, req.OrganizationId, req.EnvironmentId, mpsId, ct)).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReleaseMasterProductionScheduleBucketEndpoint(ISender sender)
+    : DemandPlanningEndpoint<ReleaseMasterProductionScheduleBucketRequest, ResponseData<MasterProductionScheduleBucketResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<ReleaseMasterProductionScheduleBucketEndpoint>());
+    }
+
+    public override async Task HandleAsync(ReleaseMasterProductionScheduleBucketRequest req, CancellationToken ct)
+    {
+        var mpsId = Route<MasterProductionScheduleId>("mpsId") ?? req.MpsId;
+        await sender.Send(new ReleaseMasterProductionScheduleBucketCommand(req.OrganizationId, req.EnvironmentId, mpsId, req.ReleasedBy), ct);
+        await Send.OkAsync((await MasterProductionScheduleEndpointLoader.LoadBucketAsync(sender, req.OrganizationId, req.EnvironmentId, mpsId, ct)).AsResponseData(), cancellation: ct);
+    }
+}
 
 public sealed class CreateOrUpdateDemandSourceEndpoint(ISender sender)
     : DemandPlanningEndpoint<CreateOrUpdateDemandSourceRequest, ResponseData<CreateOrUpdateDemandSourceResponse>>
@@ -151,7 +307,10 @@ public sealed class RunMrpEndpoint(ISender sender)
             result.RunId,
             result.SuggestionCount,
             result.HasInputDegradation,
-            result.InputDegradationSources).AsResponseData(), cancellation: ct);
+            result.InputDegradationSources,
+            result.InputSources,
+            result.InputCoverageStart,
+            result.InputCoverageEnd).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -236,6 +395,11 @@ public static class DemandPlanningEndpointContracts
 {
     public static readonly IReadOnlyCollection<DemandPlanningEndpointContract> All =
     [
+        new(typeof(ListMasterProductionScheduleBucketsEndpoint), "GET", "/api/business/v1/planning/mps", DemandPlanningPermissionCodes.MpsRead, InternalServiceAuthorizationPolicy.Name, "listPlanningMpsBuckets"),
+        new(typeof(CreateMasterProductionScheduleBucketEndpoint), "POST", "/api/business/v1/planning/mps", DemandPlanningPermissionCodes.MpsManage, InternalServiceAuthorizationPolicy.Name, "createPlanningMpsBucket"),
+        new(typeof(UpdateMasterProductionScheduleBucketEndpoint), "PUT", "/api/business/v1/planning/mps/{mpsId}", DemandPlanningPermissionCodes.MpsManage, InternalServiceAuthorizationPolicy.Name, "updatePlanningMpsBucket"),
+        new(typeof(ReviewMasterProductionScheduleBucketEndpoint), "POST", "/api/business/v1/planning/mps/{mpsId}/review", DemandPlanningPermissionCodes.MpsManage, InternalServiceAuthorizationPolicy.Name, "reviewPlanningMpsBucket"),
+        new(typeof(ReleaseMasterProductionScheduleBucketEndpoint), "POST", "/api/business/v1/planning/mps/{mpsId}/release", DemandPlanningPermissionCodes.MpsRelease, InternalServiceAuthorizationPolicy.Name, "releasePlanningMpsBucket"),
         new(typeof(CreateOrUpdateDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdatePlanningDemand"),
         new(typeof(ListDemandSourcesEndpoint), "GET", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsRead, InternalServiceAuthorizationPolicy.Name, "listPlanningDemands"),
         new(typeof(CancelDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands/{demandSourceId}/cancel", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "cancelPlanningDemand"),
@@ -255,5 +419,25 @@ public static class DemandPlanningEndpointContracts
     {
         contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
         return contract is not null;
+    }
+}
+
+file static class MasterProductionScheduleEndpointLoader
+{
+    public static async Task<MasterProductionScheduleBucketResponse> LoadBucketAsync(
+        ISender sender,
+        string organizationId,
+        string environmentId,
+        MasterProductionScheduleId mpsId,
+        CancellationToken cancellationToken)
+    {
+        var buckets = await sender.Send(new ListMasterProductionScheduleBucketsQuery(
+            organizationId,
+            environmentId,
+            null,
+            null,
+            null,
+            null), cancellationToken);
+        return buckets.Single(x => x.MpsId == mpsId);
     }
 }

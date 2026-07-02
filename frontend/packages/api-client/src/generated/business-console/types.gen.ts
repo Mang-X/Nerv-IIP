@@ -1697,6 +1697,65 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem = {
+    mpsId?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    bucketDate?: string;
+    quantity?: number;
+    status?: string;
+    reviewedBy?: string | null;
+    reviewedAtUtc?: string | null;
+    releasedBy?: string | null;
+    releasedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketItem = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMpsBucketItem | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMpsBucketRequest = {
+    organizationId: string;
+    environmentId: string;
+    skuCode: string;
+    uomCode: string;
+    siteCode: string;
+    bucketDate?: string;
+    quantity?: number;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMpsBucketRequest = {
+    organizationId: string;
+    environmentId: string;
+    skuCode: string;
+    uomCode: string;
+    siteCode: string;
+    bucketDate?: string;
+    quantity?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest = {
+    reviewedBy: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest = {
+    releasedBy: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDemandSourceListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDemandSourceListResponse | null;
 };
@@ -1750,6 +1809,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     suggestionCount?: number;
     hasInputDegradation?: boolean;
     inputDegradationSources?: Array<string>;
+    inputSources?: Array<string>;
+    inputCoverageStart?: string | null;
+    inputCoverageEnd?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunMrpRequest = {
@@ -1779,6 +1841,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventorySnapshotSource?: string;
     hasInputDegradation?: boolean;
     inputDegradationSources?: Array<string>;
+    inputSources?: Array<string>;
+    inputCoverageStart?: string | null;
+    inputCoverageEnd?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7528,6 +7593,191 @@ export type ResolveBusinessConsoleEngineeringProductionVersionResponses = {
 };
 
 export type ResolveBusinessConsoleEngineeringProductionVersionResponse = ResolveBusinessConsoleEngineeringProductionVersionResponses[keyof ResolveBusinessConsoleEngineeringProductionVersionResponses];
+
+export type ListBusinessConsolePlanningMpsBucketsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        skuCode?: string | null;
+        siteCode?: string | null;
+        fromDate?: string | null;
+        toDate?: string | null;
+        status?: string | null;
+    };
+    url: '/api/business-console/v1/planning/mps';
+};
+
+export type ListBusinessConsolePlanningMpsBucketsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsolePlanningMpsBucketsError = ListBusinessConsolePlanningMpsBucketsErrors[keyof ListBusinessConsolePlanningMpsBucketsErrors];
+
+export type ListBusinessConsolePlanningMpsBucketsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketListResponse;
+};
+
+export type ListBusinessConsolePlanningMpsBucketsResponse = ListBusinessConsolePlanningMpsBucketsResponses[keyof ListBusinessConsolePlanningMpsBucketsResponses];
+
+export type CreateBusinessConsolePlanningMpsBucketData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMpsBucketRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/planning/mps';
+};
+
+export type CreateBusinessConsolePlanningMpsBucketErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsolePlanningMpsBucketError = CreateBusinessConsolePlanningMpsBucketErrors[keyof CreateBusinessConsolePlanningMpsBucketErrors];
+
+export type CreateBusinessConsolePlanningMpsBucketResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketItem;
+};
+
+export type CreateBusinessConsolePlanningMpsBucketResponse = CreateBusinessConsolePlanningMpsBucketResponses[keyof CreateBusinessConsolePlanningMpsBucketResponses];
+
+export type UpdateBusinessConsolePlanningMpsBucketData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMpsBucketRequest;
+    path: {
+        mpsId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/planning/mps/{mpsId}';
+};
+
+export type UpdateBusinessConsolePlanningMpsBucketErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateBusinessConsolePlanningMpsBucketError = UpdateBusinessConsolePlanningMpsBucketErrors[keyof UpdateBusinessConsolePlanningMpsBucketErrors];
+
+export type UpdateBusinessConsolePlanningMpsBucketResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketItem;
+};
+
+export type UpdateBusinessConsolePlanningMpsBucketResponse = UpdateBusinessConsolePlanningMpsBucketResponses[keyof UpdateBusinessConsolePlanningMpsBucketResponses];
+
+export type ReviewBusinessConsolePlanningMpsBucketData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviewMpsBucketRequest;
+    path: {
+        mpsId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/planning/mps/{mpsId}/review';
+};
+
+export type ReviewBusinessConsolePlanningMpsBucketErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReviewBusinessConsolePlanningMpsBucketError = ReviewBusinessConsolePlanningMpsBucketErrors[keyof ReviewBusinessConsolePlanningMpsBucketErrors];
+
+export type ReviewBusinessConsolePlanningMpsBucketResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketItem;
+};
+
+export type ReviewBusinessConsolePlanningMpsBucketResponse = ReviewBusinessConsolePlanningMpsBucketResponses[keyof ReviewBusinessConsolePlanningMpsBucketResponses];
+
+export type ReleaseBusinessConsolePlanningMpsBucketData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReleaseMpsBucketRequest;
+    path: {
+        mpsId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/planning/mps/{mpsId}/release';
+};
+
+export type ReleaseBusinessConsolePlanningMpsBucketErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReleaseBusinessConsolePlanningMpsBucketError = ReleaseBusinessConsolePlanningMpsBucketErrors[keyof ReleaseBusinessConsolePlanningMpsBucketErrors];
+
+export type ReleaseBusinessConsolePlanningMpsBucketResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMpsBucketItem;
+};
+
+export type ReleaseBusinessConsolePlanningMpsBucketResponse = ReleaseBusinessConsolePlanningMpsBucketResponses[keyof ReleaseBusinessConsolePlanningMpsBucketResponses];
 
 export type ListBusinessConsolePlanningDemandsData = {
     body?: never;

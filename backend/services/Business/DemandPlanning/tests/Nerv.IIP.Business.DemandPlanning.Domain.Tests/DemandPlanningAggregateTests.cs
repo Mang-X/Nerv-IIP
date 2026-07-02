@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.DomainEvents;
@@ -38,12 +39,22 @@ public sealed class DemandPlanningAggregateTests
     {
         var run = MrpRun.Create("org-001", "env-dev", new DateOnly(2026, 5, 25), new DateOnly(2026, 6, 30));
 
-        run.Start(new PlanningInputSnapshot("production-version-api", "inventory-availability-api", 1, 2));
+        run.Start(new PlanningInputSnapshot(
+            "production-version-api",
+            "inventory-availability-api",
+            1,
+            2,
+            ["mps", "sales-order"],
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30)));
         run.Complete(suggestionCount: 2);
 
         Assert.Equal(MrpRunStatus.Completed, run.Status);
         Assert.Equal("production-version-api", run.ProductionEngineeringSnapshotSource);
         Assert.Equal("inventory-availability-api", run.InventorySnapshotSource);
+        Assert.Equal(["mps", "sales-order"], run.InputSources);
+        Assert.Equal(new DateOnly(2026, 6, 1), run.InputCoverageStart);
+        Assert.Equal(new DateOnly(2026, 6, 30), run.InputCoverageEnd);
         Assert.Equal(2, run.SuggestionCount);
         Assert.IsType<MrpRunCompletedDomainEvent>(run.GetDomainEvents().Last());
     }
@@ -57,9 +68,36 @@ public sealed class DemandPlanningAggregateTests
             "production-version-api",
             "inventory-http:2;scheduled-receipts:error;master-data-planning-parameters:error",
             1,
-            2));
+            2,
+            ["sales-order"],
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 1)));
 
         Assert.Equal(["scheduled-receipts", "master-data-planning-parameters"], run.InputDegradationSources);
+    }
+
+    [Fact]
+    public void Master_production_schedule_moves_from_draft_to_reviewed_to_released()
+    {
+        var bucket = MasterProductionSchedule.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m);
+
+        bucket.Update("SKU-FG-1000", "pcs", "SITE-01", new DateOnly(2026, 6, 15), 132m);
+        bucket.MarkReviewed("planner.li");
+        bucket.Release("planning.manager");
+
+        Assert.Equal(MasterProductionScheduleStatus.Released, bucket.Status);
+        Assert.Equal(132m, bucket.Quantity);
+        Assert.Equal("planner.li", bucket.ReviewedBy);
+        Assert.Equal("planning.manager", bucket.ReleasedBy);
+        Assert.NotNull(bucket.ReviewedAtUtc);
+        Assert.NotNull(bucket.ReleasedAtUtc);
     }
 
     [Fact]
