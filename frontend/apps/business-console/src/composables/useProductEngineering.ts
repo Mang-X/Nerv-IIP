@@ -43,25 +43,18 @@ import {
   releaseBusinessConsoleEngineeringRoutingMutationOptions,
   resolveBusinessConsoleEngineeringProductionVersionQueryOptions,
   updateBusinessConsoleEngineeringProductionVersionMutationOptions,
-  type BusinessConsoleBomExplosionEnvelope,
   type BusinessConsoleBomExplosionResponse,
-  type BusinessConsoleBomWhereUsedEnvelope,
   type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleCreateEngineeringItemRevisionRequest,
   type BusinessConsoleCreateProductionVersionRequest,
-  type BusinessConsoleEngineeringBomDetailEnvelope,
   type BusinessConsoleEngineeringBomItem,
   type BusinessConsoleEngineeringBomListEnvelope,
-  type BusinessConsoleEngineeringChangeDetailEnvelope,
   type BusinessConsoleEngineeringChangeItem,
   type BusinessConsoleEngineeringChangeListEnvelope,
-  type BusinessConsoleEngineeringDocumentDetailEnvelope,
   type BusinessConsoleEngineeringDocumentItem,
   type BusinessConsoleEngineeringDocumentListEnvelope,
-  type BusinessConsoleEngineeringItemDetailEnvelope,
   type BusinessConsoleEngineeringItemRevisionItem,
   type BusinessConsoleEngineeringItemListEnvelope,
-  type BusinessConsoleManufacturingBomDetailEnvelope,
   type BusinessConsoleManufacturingBomItem,
   type BusinessConsoleManufacturingBomListEnvelope,
   type BusinessConsoleProductionVersionItem,
@@ -75,9 +68,7 @@ import {
   type BusinessConsoleReleaseEngineeringChangeRequest,
   type BusinessConsoleReleaseManufacturingBomRequest,
   type BusinessConsoleReleaseRoutingRequest,
-  type BusinessConsoleResolveProductionVersionEnvelope,
   type BusinessConsoleResolveProductionVersionResponse,
-  type BusinessConsoleRoutingDetailEnvelope,
   type BusinessConsoleRoutingItem,
   type BusinessConsoleRoutingListEnvelope,
   type BusinessConsoleUpdateProductionVersionRequest,
@@ -191,9 +182,8 @@ function unwrapDetail<T>(envelope: { success?: boolean, data?: T | null } | unde
   return envelope.data ?? undefined
 }
 
-async function runQueryOption<T>(options: unknown): Promise<T> {
-  const { query } = options as { query: (context: Record<string, never>) => Promise<T> }
-  return query({})
+async function runQueryOption<T>(options: { query: (context: never) => Promise<T> }): Promise<T> {
+  return options.query({} as never)
 }
 
 function isBusinessQuery(id: string) {
@@ -243,7 +233,7 @@ export function useBomAnalysis() {
     error,
     loadEngineeringExplosion: (input: BomExplosionInput) =>
       run(async () => {
-        const envelope = await runQueryOption<BusinessConsoleBomExplosionEnvelope>(
+        const envelope = await runQueryOption(
           getBusinessConsoleEngineeringBomExplosionQueryOptions({
             query: {
               ...commonQuery(),
@@ -261,7 +251,7 @@ export function useBomAnalysis() {
       }),
     loadManufacturingExplosion: (input: BomExplosionInput) =>
       run(async () => {
-        const envelope = await runQueryOption<BusinessConsoleBomExplosionEnvelope>(
+        const envelope = await runQueryOption(
           getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions({
             query: {
               ...commonQuery(),
@@ -279,7 +269,7 @@ export function useBomAnalysis() {
       }),
     loadEngineeringWhereUsed: (input: BomWhereUsedInput) =>
       run(async () => {
-        const envelope = await runQueryOption<BusinessConsoleBomWhereUsedEnvelope>(
+        const envelope = await runQueryOption(
           getBusinessConsoleEngineeringBomWhereUsedQueryOptions({
             query: {
               ...commonQuery(),
@@ -294,7 +284,7 @@ export function useBomAnalysis() {
       }),
     loadManufacturingWhereUsed: (input: BomWhereUsedInput) =>
       run(async () => {
-        const envelope = await runQueryOption<BusinessConsoleBomWhereUsedEnvelope>(
+        const envelope = await runQueryOption(
           getBusinessConsoleEngineeringManufacturingBomWhereUsedQueryOptions({
             query: {
               ...commonQuery(),
@@ -410,7 +400,7 @@ export function useProductionVersionResolve() {
   async function resolve(input: ProductionVersionResolveInput) {
     pending.value = true
     try {
-      const envelope = await runQueryOption<BusinessConsoleResolveProductionVersionEnvelope>(
+      const envelope = await runQueryOption(
         resolveBusinessConsoleEngineeringProductionVersionQueryOptions({
           query: {
             organizationId: context.organizationId,
@@ -574,7 +564,7 @@ export function useEngineeringEboms() {
 
     // 按需取某版本明细（含组件行），用于「查看」。失败抛错由调用方处理。
     fetchEbomDetail: async (bomCode: string, revision: string) => {
-      const envelope = await runQueryOption<BusinessConsoleEngineeringBomDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringBomQueryOptions({
           path: { bomCode, revision },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
@@ -681,7 +671,7 @@ export function useEngineeringMboms() {
 
     // 按需取某版本明细（含物料行 + 配方行），用于「查看」。失败抛错由调用方处理。
     fetchMbomDetail: async (bomCode: string, revision: string) => {
-      const envelope = await runQueryOption<BusinessConsoleManufacturingBomDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringManufacturingBomQueryOptions({
           path: { bomCode, revision },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
@@ -751,7 +741,7 @@ export function useEngineeringRoutings() {
 
     // 按需取某版本明细（含工序行），用于「查看」。失败抛错由调用方处理。
     fetchRoutingDetail: async (routingCode: string, revision: string) => {
-      const envelope = await runQueryOption<BusinessConsoleRoutingDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringRoutingQueryOptions({
           path: { routingCode, revision },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
@@ -825,7 +815,7 @@ export function useEngineeringItems() {
 
     // 按需取某物料修订明细，用于「查看」。失败抛错由调用方处理。
     fetchItemDetail: async (itemCode: string, revision: string) => {
-      const envelope = await runQueryOption<BusinessConsoleEngineeringItemDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringItemQueryOptions({
           path: { itemCode, revision },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
@@ -897,7 +887,7 @@ export function useEngineeringDocuments() {
 
     // 按需取某文档修订明细，用于「查看」。失败抛错由调用方处理。
     fetchDocumentDetail: async (documentNumber: string, revision: string) => {
-      const envelope = await runQueryOption<BusinessConsoleEngineeringDocumentDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringDocumentQueryOptions({
           path: { documentNumber, revision },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
@@ -968,7 +958,7 @@ export function useEngineeringChanges() {
 
     // 按需取某变更明细（含受影响版本），用于「查看」。失败抛错由调用方处理。
     fetchChangeDetail: async (changeNumber: string) => {
-      const envelope = await runQueryOption<BusinessConsoleEngineeringChangeDetailEnvelope>(
+      const envelope = await runQueryOption(
         getBusinessConsoleEngineeringChangeQueryOptions({
           path: { changeNumber },
           query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
