@@ -265,6 +265,8 @@ export class DhtmlxEngine implements SchedulingEngine {
   private overCancel = false
   private suppressNextClick = false
   private shownLinkIds: string[] = []
+  private resizeObserver?: ResizeObserver
+  private resizeRaf = 0
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -287,6 +289,22 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.configure(inst, options)
     this.wireEvents(inst)
     inst.init(container)
+    // 容器尺寸常在挂载后才定型(文档/响应式布局、字体或图片加载后回流)。DHTMLX 不自动重排,
+    // 会停在初始(可能为 0/极窄)宽度,时间线塌陷成 1px。观察容器尺寸变化并 rAF 去抖重排。
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const w = entries[0]?.contentRect.width ?? 0
+        if (w < 2) return
+        cancelAnimationFrame(this.resizeRaf)
+        // setSizes 重算布局盒宽度(时间线 = 容器 − 网格);仅 render() 不重算盒尺寸,
+        // 容器变宽后时间线仍会停在初始(可能塌成 1px)。先 setSizes 再 render。
+        this.resizeRaf = requestAnimationFrame(() => {
+          this.gantt?.setSizes?.()
+          this.gantt?.render()
+        })
+      })
+      this.resizeObserver.observe(container)
+    }
     // 计划基线只在工单甘特出现;资源排产板是卡片板,不画计划/实际基线(避免卡片上多出细线)。
     if (options.view !== 'resource') this.addBaselineLayer(inst)
     // 资源视图跨泳道拖拽改派:记录指针 Y(监听 document,DHTMLX 拖拽会捕获指针,container 上收不到)。
@@ -463,6 +481,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.cancelZone?.remove()
     this.cancelZone = undefined
     this.dragging = false
+    cancelAnimationFrame(this.resizeRaf)
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = undefined
     g?.destructor?.()
     this.gantt = undefined
     this.markerId = undefined
