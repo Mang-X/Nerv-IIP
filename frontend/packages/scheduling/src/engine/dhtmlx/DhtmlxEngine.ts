@@ -335,6 +335,8 @@ export class DhtmlxEngine implements SchedulingEngine {
   private shownLinkIds: string[] = []
   private resizeObserver?: ResizeObserver
   private resizeRaf = 0
+  /** 资源时间块:泳道 id → 时段窗口列表,供 timeline_cell_class 给单元格上底纹(块不作任务条)。 */
+  private blockCells = new Map<string, { start: number; end: number; kind: string }[]>()
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -666,6 +668,9 @@ export class DhtmlxEngine implements SchedulingEngine {
     c.duration_step = 1
     c.time_step = 60
     c.round_dnd_dates = true
+    // 关闭 DHTMLX 自带错误弹窗:多实例同页时,跨实例的 getTask/addLink 偶发 "Task not found"
+    // 会被 DHTMLX 弹成右上角红条堆叠;我们已在调用处按容器/存在性守卫,这里再兜底禁用其错误 UI。
+    c.show_errors = false
     c.readonly = options.readOnly
     // 资源排产板用自定义拖拽(原块静止 + 虚影随指针);关闭 DHTMLX 原生 move/resize 以免冲突。
     const nativeDrag = !options.readOnly && options.view !== 'resource'
@@ -710,9 +715,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       const cls: string[] = []
-      // 资源时间块(维护/停机/换线/换型):条本身样式化为「背景带」——无圆角无边距的淡斜纹、
-      // 置于工单卡片之下、不拦截交互(见 scheduling.css .nerv-block),与格子融为一体而非卡片。
-      if (t?.blockKind) cls.push('nerv-block', `nerv-block-${t.blockKind}`)
+      // 资源时间块不作任务条(见 toGanttData 已排除),改由 timeline_cell_class 给单元格上底纹。
       if (t?.type === 'order') cls.push('nerv-order')
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
@@ -729,8 +732,6 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       if (!isResource || t?.type !== 'operation') return ''
-      // 时间块:条内只放低调标签(条本身已由 CSS 样式成背景带)。
-      if (t.blockKind) return blockLabelHtml(t)
       return cardHtml(t)
     }
     inst.templates.rightside_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
@@ -740,12 +741,28 @@ export class DhtmlxEngine implements SchedulingEngine {
       const lock = t.locked ? `<span class="nerv-card-lock">${LOCK_SVG}</span>` : ''
       return `<span class="nerv-bar-label">${task.text ?? ''}${lock}</span>`
     }
-    // 时间线底纹:周末 + 非工作/夜班时段(轻盈底色,标出可排/不可排时间)。
-    inst.templates.timeline_cell_class = (_task: unknown, date: Date) => {
+    // 时间线底纹:只两态——工作(原色,无 class)/ 非工作(周末或 20:00–08:00 夜间,统一 nerv-offwork)。
+    // 资源时间块(维护/停机/换线/换型)也走单元格底纹:该泳道在此时段有块 → 叠加 nerv-cell-block(与
+    // 日历同实现,恒在卡片之下、与格子融为一体、绝不覆盖)。
+    inst.templates.timeline_cell_class = (task: { id?: string | number }, date: Date) => {
+      const classes: string[] = []
       const day = date.getDay()
-      if (day === 0 || day === 6) return 'nerv-weekend'
       const h = date.getHours()
-      return h < 8 || h >= 20 ? 'nerv-offwork' : ''
+      if (day === 0 || day === 6 || h < 8 || h >= 20) classes.push('nerv-offwork')
+      if (this.options.view === 'resource' && this.blockCells.size) {
+        const laneId = typeof task?.id === 'string' ? task.id.replace(/^lane:/, '') : ''
+        const wins = this.blockCells.get(laneId)
+        if (wins) {
+          const ts = date.getTime()
+          for (const w of wins) {
+            if (ts >= w.start && ts < w.end) {
+              classes.push('nerv-cell-block', `nerv-cell-block-${w.kind}`)
+              break
+            }
+          }
+        }
+      }
+      return classes.join(' ')
     }
   }
 
@@ -944,9 +961,16 @@ export class DhtmlxEngine implements SchedulingEngine {
       return
     }
     const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
-    const id = bar?.getAttribute('task_id') ?? undefined
-    const t = id ? inst.getTask(id) : undefined
-    if (!bar || !id || !t?.nerv || t.nerv.type !== 'operation' || t.nerv.blockKind) {
+    // 只处理本实例容器内的条:页面可能有多个实例,document 级 mousemove 会让每个实例都触发;
+    // 用别的实例的 task_id 调本实例 getTask 会抛 "Task not found"(DHTMLX getTask 对缺失 id 抛错),
+    // 每帧抛异常还会拖垮性能(tooltip/拖拽卡顿的元凶)。先按容器归属过滤,再按存在性取 task。
+    if (!bar || !this.container?.contains(bar)) {
+      this.hideTip()
+      return
+    }
+    const id = bar.getAttribute('task_id') ?? undefined
+    const t = id && inst.isTaskExists?.(id) ? inst.getTask(id) : undefined
+    if (!id || !t?.nerv || t.nerv.type !== 'operation' || t.nerv.blockKind) {
       this.hideTip()
       return
     }
@@ -1095,8 +1119,10 @@ export class DhtmlxEngine implements SchedulingEngine {
     if (this.options.view === 'resource') {
       // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。里程碑不入资源板。
       const dim = this.options.groupBy || 'workCenter'
-      const ops = model.tasks.filter((t) => t.type === 'operation' && !t.isMilestone)
-      // 资源时间块也按所选维度落到对应泳道(已含在 ops 中,blockKind 标记)。
+      const ops = model.tasks.filter((t) => t.type === 'operation' && !t.isMilestone && !t.blockKind)
+      // 资源时间块不作任务条:改为按泳道+时段给时间线「单元格」上底纹(与非工作日历同一实现),
+      // 真正与格子融为一体、恒在卡片之下、绝不覆盖。见 timeline_cell_class + this.blockCells。
+      const blocks = model.tasks.filter((t) => !!t.blockKind)
       const resById = new Map(model.resources.map((r) => [r.id, r]))
       const groups = new Map<string, string>()
       const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
@@ -1108,6 +1134,19 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = laneOf(t)
         // 工序携带的维度标签(如「切割中心」)优先于资源原始名(如「激光切割-01」)。
         groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? groups.get(id) ?? '未分配')
+      }
+      // 时间块:按当前维度算出所属泳道 + 时段窗口,供 timeline_cell_class 给单元格上底纹;
+      // 同时播种泳道(块所在资源即使没工序,泳道也要在)。
+      this.blockCells = new Map()
+      for (const b of blocks) {
+        const id = laneOf(b)
+        if (!groups.has(id)) groups.set(id, b.dimensions?.[dim]?.label ?? b.resourceId ?? '未分配')
+        const s = Date.parse(b.startUtc)
+        const e = Date.parse(b.endUtc)
+        if (!Number.isFinite(s) || !Number.isFinite(e)) continue
+        const arr = this.blockCells.get(id) ?? []
+        arr.push({ start: s, end: e, kind: b.blockKind! })
+        this.blockCells.set(id, arr)
       }
       // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
       const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))

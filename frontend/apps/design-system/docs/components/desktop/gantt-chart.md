@@ -1,7 +1,6 @@
 ---
 title: GanttChart 工单甘特
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>

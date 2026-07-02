@@ -190,16 +190,25 @@
 .nerv-gantt-dhx .gantt_grid_data .gantt_cell {
   color: var(--foreground);
   font-size: 0.78rem;
-  /* 恢复数据单元格右侧发丝竖线(数值列右对齐读数需竖线锚定);最后一列去线 */
+  /* 左栏信息居中:资源名与产能指标都水平居中,读起来更整齐、不贴边。 */
+  text-align: center;
+  /* 恢复数据单元格右侧发丝竖线(列锚定);最后一列去线 */
   border-right: 1px solid color-mix(in oklch, var(--border), transparent 60%) !important;
   border-bottom: none !important;
 }
 .nerv-gantt-dhx .gantt_grid_data .gantt_cell:last-child {
   border-right: none !important;
 }
+/* 首列(资源名)略强层级 + 居中,去掉左内边距以真正居中 */
 .nerv-gantt-dhx .gantt_grid_data .gantt_cell:first-child {
-  font-weight: 500;
-  padding-left: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+/* 树形内容(资源名)水平居中,不再靠左贴边 */
+.nerv-gantt-dhx .gantt_grid_data .gantt_tree_content {
+  justify-content: center;
+  text-align: center;
+  width: 100%;
 }
 .nerv-gantt-dhx .gantt_scale_cell {
   color: var(--muted-foreground);
@@ -455,45 +464,23 @@
   transition: opacity var(--nerv-dur-fast) var(--nerv-ease);
 }
 
-/* 资源时间块(维护/停机/换线/换型):条本身样式化为「背景带」,与格子融为一体——
-   无圆角/无外边距的淡斜纹,置于工单卡片之下(z-index),pointer-events:none 不拦截卡片交互。
-   addTaskLayer 背景层在 split 泳道视图不渲染子任务,故直接样式化条本身。 */
-.nerv-gantt-dhx .gantt_task_line.nerv-block {
+/* 资源时间块(维护/停机/换线/换型):走时间线「单元格」底纹(与非工作日历同一实现),
+   恒在卡片之下、与格子融为一体、绝不覆盖卡片。见 DhtmlxEngine timeline_cell_class + blockCells。
+   斜纹按块类型着色;若同格也是非工作(nerv-offwork),两者叠加不冲突。 */
+.nerv-gantt-dhx .gantt_task_cell.nerv-cell-block {
   --blk: var(--muted-foreground);
-  z-index: 0 !important;
-  pointer-events: none !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  overflow: hidden;
-  background-color: color-mix(in srgb, var(--blk) 7%, transparent) !important;
   background-image: repeating-linear-gradient(
     -45deg,
     transparent 0,
-    transparent 7px,
-    color-mix(in srgb, var(--blk) 12%, transparent) 7px,
-    color-mix(in srgb, var(--blk) 12%, transparent) 8px
+    transparent 5px,
+    color-mix(in srgb, var(--blk) 15%, transparent) 5px,
+    color-mix(in srgb, var(--blk) 15%, transparent) 6px
   ) !important;
 }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-maintenance { --blk: var(--sched-block-maintenance); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-downtime { --blk: var(--sched-block-downtime); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-lineChange { --blk: var(--sched-block-linechange); }
-.nerv-gantt-dhx .gantt_task_line.nerv-block-changeover { --blk: var(--sched-block-changeover); }
-/* 工单卡片浮于背景带之上 */
-.nerv-gantt-dhx .gantt_task_line:has(.nerv-card) { z-index: 1; }
-/* 块内低调标签(非卡片):小字,贴左上。 */
-.nerv-gantt-dhx .nerv-block-bg-label {
-  display: inline-block;
-  padding: 2px 6px;
-  font-size: 0.62rem;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--muted-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
+.nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-maintenance { --blk: var(--sched-block-maintenance); }
+.nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-downtime { --blk: var(--sched-block-downtime); }
+.nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-lineChange { --blk: var(--sched-block-linechange); }
+.nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-changeover { --blk: var(--sched-block-changeover); }
 .nerv-gantt-dhx .nerv-card {
   position: relative;
   display: flex;

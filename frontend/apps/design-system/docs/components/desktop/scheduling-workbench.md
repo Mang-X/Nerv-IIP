@@ -1,7 +1,6 @@
 ---
 title: SchedulingWorkbench 排产工作台
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>

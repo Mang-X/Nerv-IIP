@@ -1,7 +1,6 @@
 ---
 title: ResourceSchedulerBoard 资源排产板
 pageClass: ds-wide
-aside: false
 ---
 
 <script setup>
