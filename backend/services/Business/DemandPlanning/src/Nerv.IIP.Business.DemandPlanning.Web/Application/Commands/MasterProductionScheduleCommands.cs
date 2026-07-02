@@ -11,8 +11,7 @@ public sealed record CreateMasterProductionScheduleBucketCommand(
     string UomCode,
     string SiteCode,
     DateOnly BucketDate,
-    decimal Quantity,
-    string? IdempotencyKey = null) : ICommand<MasterProductionScheduleId>;
+    decimal Quantity) : ICommand<MasterProductionScheduleId>;
 
 public sealed record UpdateMasterProductionScheduleBucketCommand(
     string OrganizationId,
@@ -47,7 +46,6 @@ public sealed class CreateMasterProductionScheduleBucketCommandValidator
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(32);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(64);
         RuleFor(x => x.Quantity).GreaterThan(0);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(128);
     }
 }
 
@@ -106,8 +104,8 @@ public sealed class CreateMasterProductionScheduleBucketCommandHandler(Applicati
             cancellationToken);
         if (existing is not null)
         {
-            existing.Update(request.SkuCode, request.UomCode, request.SiteCode, request.BucketDate, request.Quantity);
-            return existing.Id;
+            throw new KnownException(
+                $"MPS bucket already exists for SKU '{request.SkuCode}' at site '{request.SiteCode}' on {request.BucketDate:yyyy-MM-dd}.");
         }
 
         var bucket = MasterProductionSchedule.Create(
@@ -134,7 +132,8 @@ public sealed class UpdateMasterProductionScheduleBucketCommandHandler(Applicati
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        bucket.Update(request.SkuCode, request.UomCode, request.SiteCode, request.BucketDate, request.Quantity);
+        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() =>
+            bucket.Update(request.SkuCode, request.UomCode, request.SiteCode, request.BucketDate, request.Quantity));
     }
 }
 
@@ -149,7 +148,7 @@ public sealed class ReviewMasterProductionScheduleBucketCommandHandler(Applicati
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        bucket.MarkReviewed(request.ReviewedBy);
+        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() => bucket.MarkReviewed(request.ReviewedBy));
     }
 }
 
@@ -164,7 +163,7 @@ public sealed class ReleaseMasterProductionScheduleBucketCommandHandler(Applicat
             request.EnvironmentId,
             request.MpsId,
             cancellationToken);
-        bucket.Release(request.ReleasedBy);
+        MasterProductionScheduleCommandLoader.ApplyLifecycleTransition(() => bucket.Release(request.ReleasedBy));
     }
 }
 
@@ -183,5 +182,17 @@ file static class MasterProductionScheduleCommandLoader
             && x.EnvironmentId == environmentId,
             cancellationToken)
             ?? throw new KnownException($"MPS bucket was not found, MpsId = {mpsId}");
+    }
+
+    public static void ApplyLifecycleTransition(Action transition)
+    {
+        try
+        {
+            transition();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
     }
 }

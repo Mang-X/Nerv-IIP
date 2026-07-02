@@ -16,6 +16,7 @@ import {
   runBusinessConsolePlanningMrpMutationOptions,
   updateBusinessConsolePlanningMpsBucketMutationOptions,
 } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessPlanning } from './useBusinessPlanning'
 
@@ -190,6 +191,17 @@ describe('business planning composable', () => {
   })
 
   it('creates, updates, reviews, and releases MPS buckets through generated mutations', async () => {
+    const auth = useAuthStore()
+    auth.$patch({
+      principal: {
+        principalId: 'user-planner-001',
+        principalType: 'user',
+        loginName: 'planner.li',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [],
+      },
+    })
     const {
       createMpsBucket,
       mpsForm,
@@ -229,14 +241,14 @@ describe('business planning composable', () => {
       .toHaveBeenCalledWith({
         path: { mpsId: 'mps-1' },
         query: { organizationId: 'org-001', environmentId: 'env-dev' },
-        body: { reviewedBy: 'planner' },
+        body: { reviewedBy: 'planner.li' },
       })
     expect(releaseBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
     expect(vi.mocked(releaseBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
       .toHaveBeenCalledWith({
         path: { mpsId: 'mps-1' },
         query: { organizationId: 'org-001', environmentId: 'env-dev' },
-        body: { releasedBy: 'planner' },
+        body: { releasedBy: 'planner.li' },
       })
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })

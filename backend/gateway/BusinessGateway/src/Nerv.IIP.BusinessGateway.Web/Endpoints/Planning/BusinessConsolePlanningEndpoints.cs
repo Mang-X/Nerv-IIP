@@ -378,7 +378,6 @@ public sealed class BusinessConsoleCreateMpsBucketRequestValidator : Validator<B
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
-        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

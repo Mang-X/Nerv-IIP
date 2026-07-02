@@ -87,7 +87,7 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                 type: "character varying(32)",
                 maxLength: 32,
                 nullable: false,
-                defaultValue: "",
+                defaultValue: "Draft",
                 comment: "MPS bucket lifecycle status.");
 
             migrationBuilder.AddColumn<DateTimeOffset>(

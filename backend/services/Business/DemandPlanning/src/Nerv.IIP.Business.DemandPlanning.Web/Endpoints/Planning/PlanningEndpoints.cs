@@ -66,8 +66,7 @@ public sealed record CreateMasterProductionScheduleBucketRequest(
     string UomCode,
     string SiteCode,
     DateOnly BucketDate,
-    decimal Quantity,
-    string? IdempotencyKey = null);
+    decimal Quantity);
 
 public sealed record UpdateMasterProductionScheduleBucketRequest(
     [property: RouteParam] MasterProductionScheduleId MpsId,
@@ -167,8 +166,7 @@ public sealed class CreateMasterProductionScheduleBucketEndpoint(ISender sender)
             req.UomCode,
             req.SiteCode,
             req.BucketDate,
-            req.Quantity,
-            req.IdempotencyKey), ct);
+            req.Quantity), ct);
         var response = await sender.Send(new ListMasterProductionScheduleBucketsQuery(
             req.OrganizationId,
             req.EnvironmentId,

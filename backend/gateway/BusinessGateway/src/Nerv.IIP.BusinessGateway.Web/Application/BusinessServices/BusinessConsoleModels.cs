@@ -1513,8 +1513,7 @@ public sealed record BusinessConsoleCreateMpsBucketRequest(
     string UomCode,
     string SiteCode,
     DateOnly BucketDate,
-    decimal Quantity,
-    string? IdempotencyKey = null);
+    decimal Quantity);
 
 public sealed record BusinessConsoleUpdateMpsBucketRequest(
     [property: RouteParam] string MpsId,

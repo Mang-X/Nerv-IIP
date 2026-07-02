@@ -962,7 +962,6 @@ public sealed class BusinessGatewayProxyTests
             siteCode = "SITE-01",
             bucketDate = "2026-06-15",
             quantity = 120m,
-            idempotencyKey = "mps-create-001",
         });
         var update = await client.PutAsJsonAsync("/api/business-console/v1/planning/mps/mps-001", new
         {
@@ -993,8 +992,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, review.StatusCode);
         Assert.Equal(HttpStatusCode.OK, release.StatusCode);
         Assert.Equal("internal-test-token", planning.LastInternalToken);
-        Assert.Equal(new BusinessConsoleMpsListRequest("org-001", "env-dev", "SKU-FG-1000", null, null, "Released"), planning.LastMpsListRequest);
-        Assert.Equal("mps-create-001", planning.LastCreateMpsRequest!.IdempotencyKey);
+        Assert.Equal(new BusinessConsoleMpsListRequest("org-001", "env-dev", "SKU-FG-1000", Status: "Released"), planning.LastMpsListRequest);
         Assert.Equal("mps-001", planning.LastUpdateMpsId);
         Assert.Equal(132m, planning.LastUpdateMpsRequest!.Quantity);
         Assert.Equal("mps-001", planning.LastReviewMpsId);

@@ -23,6 +23,7 @@ import {
   type BusinessConsolePlanningSuggestionListEnvelope,
   type BusinessConsoleRunMrpRequest,
 } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
@@ -72,7 +73,6 @@ export interface PlanningMpsForm {
   siteCode: string
   bucketDate: string
   quantity: number
-  idempotencyKey: string
 }
 
 export interface PlanningSuggestionAcceptInput {
@@ -137,7 +137,6 @@ function defaultMpsForm(organizationId: string, environmentId: string): Planning
     siteCode: '',
     bucketDate: new Date().toISOString().slice(0, 10),
     quantity: 0,
-    idempotencyKey: '',
   })
 }
 
@@ -177,6 +176,7 @@ function isBusinessQuery(ids: string[]) {
 function ignoreBackgroundError(_error: unknown) {}
 
 export function useBusinessPlanning() {
+  const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
   const filters = defaultContextFilters(businessContext.organizationId, businessContext.environmentId)
   const mpsFilters = defaultMpsFilters(businessContext.organizationId, businessContext.environmentId)
@@ -315,6 +315,12 @@ export function useBusinessPlanning() {
     runRequest.environmentId = filters.environmentId
   }
 
+  function currentPlannerIdentity() {
+    return auth.principal?.loginName?.trim()
+      || auth.principal?.principalId?.trim()
+      || 'unknown-user'
+  }
+
   return {
     acceptSuggestion: (input: PlanningSuggestionAcceptInput) => {
       const target = downstreamTargetForSuggestion(input.suggestionType)
@@ -338,7 +344,6 @@ export function useBusinessPlanning() {
       createMpsMutation.mutateAsync({
         body: {
           ...mpsForm,
-          idempotencyKey: mpsForm.idempotencyKey || null,
         },
       }),
     createMpsBucketError: createMpsMutation.error,
@@ -403,7 +408,7 @@ export function useBusinessPlanning() {
           organizationId: mpsFilters.organizationId,
           environmentId: mpsFilters.environmentId,
         },
-        body: { releasedBy: 'planner' },
+        body: { releasedBy: currentPlannerIdentity() },
       }),
     releaseMpsBucketError: releaseMpsMutation.error,
     releaseMpsBucketPending: releaseMpsMutation.isLoading,
@@ -414,7 +419,7 @@ export function useBusinessPlanning() {
           organizationId: mpsFilters.organizationId,
           environmentId: mpsFilters.environmentId,
         },
-        body: { reviewedBy: 'planner' },
+        body: { reviewedBy: currentPlannerIdentity() },
       }),
     reviewMpsBucketError: reviewMpsMutation.error,
     reviewMpsBucketPending: reviewMpsMutation.isLoading,

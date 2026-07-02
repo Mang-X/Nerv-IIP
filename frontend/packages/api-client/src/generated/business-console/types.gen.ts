@@ -1735,7 +1735,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     siteCode: string;
     bucketDate?: string;
     quantity?: number;
-    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMpsBucketRequest = {

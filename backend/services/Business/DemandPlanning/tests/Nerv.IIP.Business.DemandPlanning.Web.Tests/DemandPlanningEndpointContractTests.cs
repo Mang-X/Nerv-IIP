@@ -123,8 +123,7 @@ public sealed class DemandPlanningEndpointContractTests
                 "pcs",
                 "SITE-01",
                 new DateOnly(2026, 6, 15),
-                120m,
-                "mps-create-001"),
+                120m),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await updateHandler.Handle(
@@ -156,6 +155,78 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(MasterProductionScheduleStatus.Released, bucket.Status);
         Assert.Equal("planner.li", bucket.ReviewedBy);
         Assert.Equal("planning.manager", bucket.ReleasedBy);
+    }
+
+    [Fact]
+    public async Task Mps_create_rejects_existing_natural_key_instead_of_upserting_lifecycle_state()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var command = new CreateMasterProductionScheduleBucketCommand(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m);
+
+        await createHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            createHandler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Mps_invalid_lifecycle_transitions_are_business_errors()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var updateHandler = new UpdateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var releaseHandler = new ReleaseMasterProductionScheduleBucketCommandHandler(dbContext);
+        var mpsId = await createHandler.Handle(
+            new CreateMasterProductionScheduleBucketCommand(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                120m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var directRelease = await Assert.ThrowsAsync<KnownException>(() =>
+            releaseHandler.Handle(
+                new ReleaseMasterProductionScheduleBucketCommand("org-001", "env-dev", mpsId, "planning.manager"),
+                CancellationToken.None));
+
+        Assert.Contains("reviewed", directRelease.Message, StringComparison.OrdinalIgnoreCase);
+        var bucket = await dbContext.MasterProductionSchedules.SingleAsync(x => x.Id == mpsId);
+        bucket.MarkReviewed("planner.li");
+        bucket.Release("planning.manager");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateAfterRelease = await Assert.ThrowsAsync<KnownException>(() =>
+            updateHandler.Handle(
+                new UpdateMasterProductionScheduleBucketCommand(
+                    "org-001",
+                    "env-dev",
+                    mpsId,
+                    "SKU-FG-1000",
+                    "pcs",
+                    "SITE-01",
+                    new DateOnly(2026, 6, 15),
+                    132m),
+                CancellationToken.None));
+
+        Assert.Contains("cannot be updated", updateAfterRelease.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

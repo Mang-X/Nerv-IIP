@@ -24915,12 +24915,6 @@
             "format": "decimal",
             "minimum": 0.0,
             "exclusiveMinimum": true
-          },
-          "idempotencyKey": {
-            "type": "string",
-            "maxLength": 150,
-            "minLength": 0,
-            "nullable": true
           }
         }
       },
