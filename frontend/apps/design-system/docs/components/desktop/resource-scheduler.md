@@ -17,7 +17,7 @@ const galleryModel = ref(makeModel())
 const resLegend = [
   { swatch: 'cat', key: 'weld', label: '工序色卡', desc: '卡片主色按车间/工序着色,一眼分辨机台在做什么工序。' },
   { swatch: 'priority', label: '优先级', desc: '高优先级卡片标「高」角标(WO-2026-003)。' },
-  { swatch: 'rush', label: '插单 ⚡', desc: '紧急加入的工单标 ⚡(WO-2026-002),提醒计划员优先保障。' },
+  { swatch: 'rush', label: '插单', desc: '紧急加入的工单标记(WO-2026-002),提醒计划员优先保障。' },
   { swatch: 'kit', label: '齐套 足/缺/危', desc: '齐套 chip 按阈值变色:绿=足、黄=缺、红=危(WO-2026-003 装配 60% 危)。' },
   { swatch: 'changeover', label: '换型 chip', desc: '灰底「换型」chip 标换型耗时(WO-2026-002 机加工 45 分钟)。' },
   { swatch: 'bottleneck', label: '瓶颈过载', desc: '泳道负载带随利用率加深,>1 显红「瓶颈」(焊接-01 利用率 125%)。' },

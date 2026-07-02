@@ -228,7 +228,7 @@ function onDrag(p) {
 | `kitting` | 齐套率 chip(足/缺/危 分级) | 未提供 → demo 补,生产留空 |
 | `changeoverMin` | 换型耗时 chip | 未提供 → demo 补,生产留空 |
 | `load` | 资源占用率(>1 过载瓶颈) | 未提供 → demo 补,生产留空 |
-| `isRush` | 插单高亮 ⚡ | 未提供 → demo 补,生产留空 |
+| `isRush` | 插单高亮 | 未提供 → demo 补,生产留空 |
 | `owner` / `priority` / `status` | 网格列:负责人/优先级/状态 | 未提供 → demo 补,生产留空 |
 | `dueUtc` / `product` / `quantity` | 交期 / 产品 / 数量 | 未提供 → demo 补,生产留空 |
 | `hasConflict` / `conflictReason` | 冲突框 + 原因 | 由 `conflicts` 派生 |

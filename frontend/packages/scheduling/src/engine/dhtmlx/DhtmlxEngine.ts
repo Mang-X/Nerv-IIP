@@ -462,8 +462,15 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = this.dragTaskId
         if (!id) return
         const committed = this.dragging && !this.overCancel
-        this.barEl(id)?.classList.remove('nerv-drag-source')
-        if (committed) this.commitCustomDrag(inst, id)
+        if (committed) {
+          // 关键:提交时**不**在此处去掉 nerv-drag-source。原块保持淡出,直到 commit→setData
+          // 重建出「新位置」的条(新 DOM 元素,天然无淡出类)。否则先去暗会让原块在**旧位置**
+          // 亮起一帧、再跳到新位 = 用户看到的"闪回"。
+          this.commitCustomDrag(inst, id)
+        } else {
+          // 未提交(取消 / 未越过阈值):就地恢复原块。
+          this.barEl(id)?.classList.remove('nerv-drag-source')
+        }
         this.hideDropHint()
         this.dragTaskId = undefined
       }
@@ -848,13 +855,20 @@ export class DhtmlxEngine implements SchedulingEngine {
   private showOrderLinks(taskId?: string): void {
     const g = this.gantt
     if (!g) return
+    const hadShown = this.shownLinkIds.length > 0
     for (const id of this.shownLinkIds) {
       if (!g.isLinkExists || g.isLinkExists(id)) g.deleteLink?.(id)
     }
     this.shownLinkIds = []
+    // 工单甘特:连线由 config 常显,选中/拖拽后**不需要**整表 render(render 会造成明显闪动,
+    // 用户反馈"原版不闪、我这闪"的根因)。仅当上次确实加过临时连线时才重绘一次做清理。
+    if (this.options.view !== 'resource') {
+      if (hadShown) g.render()
+      return
+    }
     const task = this.model?.tasks.find((t) => t.id === taskId)
-    if (!task || this.options.view !== 'resource') {
-      g.render()
+    if (!task) {
+      if (hadShown) g.render()
       return
     }
     const orderIds = new Set(
