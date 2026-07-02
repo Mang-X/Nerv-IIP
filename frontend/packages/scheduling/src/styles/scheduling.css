@@ -79,6 +79,35 @@
   background-color: color-mix(in oklch, var(--brand), transparent 88%) !important;
 }
 
+/* 滚动区/滚动条:DHTMLX 基础 CSS 给滚动容器铺白底(暗色下是突兀白块/白条),
+   布局分隔条也可能是浅色。统一透明 + 发丝分隔 + token 化滚动条。 */
+.nerv-gantt-dhx .gantt_task_vscroll,
+.nerv-gantt-dhx .gantt_ver_scroll,
+.nerv-gantt-dhx .gantt_hor_scroll {
+  background-color: transparent !important;
+}
+.nerv-gantt-dhx .gantt_layout_cell_border_left,
+.nerv-gantt-dhx .gantt_layout_cell_border_right,
+.nerv-gantt-dhx .gantt_layout_cell_border_top,
+.nerv-gantt-dhx .gantt_layout_cell_border_bottom {
+  border-color: var(--nerv-hairline) !important;
+}
+.nerv-gantt-dhx ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.nerv-gantt-dhx ::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--foreground), transparent 80%);
+  border-radius: 6px;
+}
+.nerv-gantt-dhx ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--foreground), transparent 68%);
+}
+.nerv-gantt-dhx ::-webkit-scrollbar-track,
+.nerv-gantt-dhx ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* 时间区竖向网格:发丝 */
 .nerv-gantt-dhx .gantt_task_cell {
   border-right: 1px solid color-mix(in oklch, var(--border), transparent 65%) !important;
