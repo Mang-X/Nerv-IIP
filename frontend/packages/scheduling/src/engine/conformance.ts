@@ -5,7 +5,7 @@ import type { ScheduleModel } from '../model/types'
 import type { SchedulingEngine, SchedulingEngineOptions } from './engine'
 
 // 可复用的引擎契约套件。任意 SchedulingEngine 实现传入工厂即可断言「可替换性」契约。
-// DhtmlxEngine 与 NativeEngine 共同通过 ⇒ 换引擎时组件层零改动有保障。
+// DhtmlxEngine 与内联 FakeEngine(见 conformance.selfcheck.test.ts)共同通过 ⇒ 换引擎时组件层零改动有保障。
 
 const baseOptions = (): SchedulingEngineOptions => ({
   view: 'order',

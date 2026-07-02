@@ -14,7 +14,7 @@ async function settle() {
 describe('SchedulingWorkbench', () => {
   it('renders the order gantt view', async () => {
     const wrapper = mount(SchedulingWorkbench, {
-      props: { model: toModel(samplePlan), engineKind: 'native', defaultView: 'order' },
+      props: { model: toModel(samplePlan), defaultView: 'order' },
       attachTo: document.body,
     })
     await settle()
@@ -28,7 +28,7 @@ describe('SchedulingWorkbench', () => {
 
   it('renders the resource board view', async () => {
     const wrapper = mount(SchedulingWorkbench, {
-      props: { model: toModel(samplePlan), engineKind: 'native', defaultView: 'resource' },
+      props: { model: toModel(samplePlan), defaultView: 'resource' },
       attachTo: document.body,
     })
     await settle()
@@ -38,7 +38,7 @@ describe('SchedulingWorkbench', () => {
 
   it('surfaces conflicts in business language in the side panel', async () => {
     const wrapper = mount(SchedulingWorkbench, {
-      props: { model: toModel(samplePlan), engineKind: 'native' },
+      props: { model: toModel(samplePlan) },
       attachTo: document.body,
     })
     await settle()

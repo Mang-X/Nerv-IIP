@@ -17,7 +17,7 @@ const props = defineProps<{
   scale?: TimeScale
   readOnly?: boolean
   loading?: boolean
-  engineKind?: 'auto' | 'native' | 'dhtmlx'
+  engineKind?: 'auto' | 'dhtmlx'
 }>()
 
 defineEmits<{

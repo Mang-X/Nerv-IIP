@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Skeleton } from '@nerv-iip/ui'
+import { CalendarClockIcon } from 'lucide-vue-next'
 import { ref, toRef } from 'vue'
 import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
 import type { ScheduleModel } from '../model/types'
@@ -15,7 +16,7 @@ const props = withDefaults(
     readOnly?: boolean
     loading?: boolean
     groupBy?: string
-    engineKind?: 'auto' | 'native' | 'dhtmlx'
+    engineKind?: 'auto' | 'dhtmlx'
   }>(),
   { scale: 'auto', readOnly: false, loading: false, engineKind: 'auto' },
 )
@@ -59,6 +60,20 @@ defineExpose({ command, engineName })
     >
       <Skeleton v-for="i in 6" :key="i" class="h-7 w-full" />
     </div>
-    <div v-else ref="container" :data-view="view" :data-engine="engineName" class="h-full w-full" />
+    <template v-else>
+      <div ref="container" :data-view="view" :data-engine="engineName" class="h-full w-full" />
+      <!-- 无可用引擎时的优雅占位:容器仍在 DOM 中,引擎一旦可用即可挂载。 -->
+      <div
+        v-if="engineName === 'unavailable'"
+        data-testid="engine-unavailable"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-md border border-dashed bg-card text-center text-muted-foreground"
+      >
+        <CalendarClockIcon class="h-8 w-8" />
+        <div class="space-y-1">
+          <p class="text-sm font-medium">排程引擎未加载</p>
+          <p class="text-xs">DHTMLX 引擎在生产部署时手动分发;开发环境请配置本地 vendor。</p>
+        </div>
+      </div>
+    </template>
   </div>
 </template>

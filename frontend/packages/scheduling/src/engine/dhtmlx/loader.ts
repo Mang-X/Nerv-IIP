@@ -1,5 +1,5 @@
-// 动态加载 DHTMLX Gantt 试用核心。未安装时优雅缺失 → 回落 NativeEngine,
-// 使包在无商业许可环境仍可构建/测试/运行。试用版评估许可禁止分发,库文件不入 git。
+// 动态加载 DHTMLX Gantt 试用核心。未安装时优雅缺失 → 组件显示占位(不再回落 NativeEngine;
+// 正式自研引擎见后续 PR),使包在无商业许可环境仍可构建/测试/运行。试用版评估许可禁止分发,库文件不入 git。
 
 export interface GanttEnterprise {
   getGanttInstance: (settings?: unknown) => unknown

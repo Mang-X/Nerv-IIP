@@ -8,10 +8,9 @@ import type {
 } from '../engine/engine'
 import { DhtmlxEngine } from '../engine/dhtmlx/DhtmlxEngine'
 import { isDhtmlxAvailable, preloadGantt } from '../engine/dhtmlx/loader'
-import { NativeEngine } from '../engine/native/NativeEngine'
 import type { ScheduleModel } from '../model/types'
 
-export type EngineKind = 'auto' | 'native' | 'dhtmlx'
+export type EngineKind = 'auto' | 'dhtmlx'
 
 const TOKEN_NAMES = [
   '--brand',
@@ -49,23 +48,19 @@ export interface UseEngineOptions {
 
 export function useEngine(opts: UseEngineOptions) {
   const engine = ref<SchedulingEngine>()
-  const engineName = ref<'native' | 'dhtmlx'>('native')
+  const engineName = ref<'dhtmlx' | 'unavailable'>('unavailable')
   const { isDark } = useColorMode()
 
-  async function build(): Promise<SchedulingEngine> {
-    const kind = opts.engineKind ?? 'auto'
-    if (kind === 'native') {
-      engineName.value = 'native'
-      return new NativeEngine()
-    }
+  async function build(): Promise<SchedulingEngine | undefined> {
     await preloadGantt()
     const ok = await isDhtmlxAvailable()
     if (ok) {
       engineName.value = 'dhtmlx'
       return new DhtmlxEngine()
     }
-    engineName.value = 'native'
-    return new NativeEngine()
+    // 无 DHTMLX vendor(CI/文档构建/未配置本地试用包):不挂载任何引擎,组件显示占位。
+    engineName.value = 'unavailable'
+    return undefined
   }
 
   // 拖拽引起的 model 变更:引擎(DHTMLX)已就地移好条,不应再 setData 重建(否则条被收成线)。
@@ -74,6 +69,8 @@ export function useEngine(opts: UseEngineOptions) {
   async function init() {
     if (!opts.container.value || engine.value) return
     const e = await build()
+    // 无可用引擎(DHTMLX vendor 缺失):不挂载,保持 engineName='unavailable',组件显示占位。
+    if (!e) return
     // 容器可能在 await 期间被卸载。
     if (!opts.container.value) return
     const options: SchedulingEngineOptions = {

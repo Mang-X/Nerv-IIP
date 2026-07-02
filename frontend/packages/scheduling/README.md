@@ -9,14 +9,15 @@
 Vue 组件层      GanttChart · ResourceSchedulerBoard · SchedulingWorkbench(稳定 props/emits/slots)
    │ provide/inject 选引擎
 SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/engine.ts)
-   ├─ DhtmlxEngine   封装 DHTMLX 9.x 试用版 vanilla 核心
-   └─ NativeEngine   轻量 SVG;CI/视觉/性能基线 + 自研对接位 + 降级兜底
+   └─ DhtmlxEngine   封装 DHTMLX 9.x 试用版 vanilla 核心(唯一产品引擎)
 数据契约层      ScheduleModel + aps-mapper(model/) —— 引擎只消费它,不碰 APS 契约细节
 ```
 
-**可替换性由 `engine/conformance.ts` 背书**:任何 `SchedulingEngine` 实现传入 `runEngineConformance(makeEngine)` 必须通过同一套契约测试。NativeEngine 始终跑;DhtmlxEngine 在试用包存在时跑(见下)。
+DHTMLX vendor 缺失时(CI / 文档构建 / 未配置本地试用包),**不挂载任何引擎,组件显示优雅占位**(「排程引擎未加载」),而非空容器。正式自研引擎为独立后续 PR。
 
-## 安装 DHTMLX 试用专业版(可选,默认不装也能跑 NativeEngine)
+**可替换性由 `engine/conformance.ts` 背书**:任何 `SchedulingEngine` 实现传入 `runEngineConformance(makeEngine)` 必须通过同一套契约测试。单测里用一个内联 `FakeEngine` 测试替身(仅存在于 `engine/conformance.selfcheck.test.ts`,不入产品 src、不导出)自校验;DhtmlxEngine 在试用包存在时也跑(见下)。
+
+## 安装 DHTMLX 试用专业版(生产渲染必需;缺失则显示占位)
 
 试用版**评估许可禁止分发**,库文件**不入 git**。两种方式任选:
 
@@ -34,16 +35,16 @@ SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/
    预览入口 side-effect 导入。**css 子路径 alias 必须排在 `@dhx/trial-gantt` 之前**(Vite 字符串 alias 是前缀匹配)。
 
 无论哪种,适配器都通过 `engine/dhtmlx/loader.ts` 动态加载;`engine-kind="auto"` 在检测到 DHTMLX 时用之,
-否则**优雅回落 NativeEngine**(NativeEngine 仅作无许可/CI/性能基线兜底,不是默认产品渲染)。
+否则**不挂载引擎、显示占位**(不再回落 NativeEngine;正式自研引擎见后续 PR)。
 条件 alias 让 `@dhx/trial-gantt` 始终可解析(vendor 或 stub),保证无许可时 `vite build` 也不失败。
 
-> e2e/视觉 spec 默认断言 `data-engine="native"`(CI 无 vendor 时成立);本地接入 vendor 后预览/页面用真实 DHTMLX。
+> CI 无 vendor 时组件渲染占位(`data-engine="unavailable"`);本地接入 vendor 后预览/页面用真实 DHTMLX(`data-engine="dhtmlx"`)。
 
 ## 换成自研引擎
 
 1. 新建 `engine/<your>/YourEngine.ts`,实现 `SchedulingEngine` 接口(`engine/engine.ts`)。
 2. 写 `YourEngine.test.ts`:`describe('YourEngine conformance', () => runEngineConformance(() => new YourEngine()))`。
-3. 在 `components/useEngine.ts` 的 `EngineKind` 与选择逻辑里加入它。
+3. 在 `components/useEngine.ts` 的 `build()` 选择逻辑里加入它(必要时扩展 `EngineKind`)。
 4. 组件层、composable、业务页面**无需改动**。
 
 ## 公开导出
@@ -60,6 +61,6 @@ SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/
 ## 命令
 
 ```bash
-pnpm -C frontend/packages/scheduling test       # vitest(NativeEngine 全跑,DHTMLX skip 除非装了试用包)
+pnpm -C frontend/packages/scheduling test       # vitest(内联 FakeEngine 跑契约,DHTMLX skip 除非装了试用包)
 pnpm -C frontend/packages/scheduling typecheck   # vue-tsc
 ```

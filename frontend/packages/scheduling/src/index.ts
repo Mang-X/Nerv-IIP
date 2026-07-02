@@ -28,6 +28,5 @@ export type {
   EngineSnapshot,
 } from './engine/engine'
 export { runEngineConformance } from './engine/conformance'
-export { NativeEngine } from './engine/native/NativeEngine'
 export { DhtmlxEngine } from './engine/dhtmlx/DhtmlxEngine'
 export { isDhtmlxAvailable, preloadGantt } from './engine/dhtmlx/loader'

@@ -1687,16 +1687,8 @@ export type BusinessConsoleRunMrpEnvelope =
   NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRunMrpResponse
 
 // --- Scheduling / APS lite (#206) -----------------------------------------
-// 手工接出 #206 BusinessScheduling facade 的 SDK 与契约类型(generated 勿手改)。
-export {
-  previewBusinessConsoleSchedulingPlan,
-  listBusinessConsoleSchedulingPlans,
-  createBusinessConsoleSchedulingPlan,
-  getBusinessConsoleSchedulingPlan,
-  getBusinessConsoleSchedulingPlanGantt,
-  releaseBusinessConsoleSchedulingPlan,
-} from './generated/business-console/sdk.gen'
-
+// 引擎无关的 `*Contract` 契约类型别名,供 @nerv-iip/scheduling 包消费(generated 勿手改)。
+// SDK 函数(preview/list/create/get/gantt/release)已由上方 #206 区块统一导出,勿重复。
 import type {
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse,
   NervIipContractsSchedulingSchedulePlanContract,

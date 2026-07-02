@@ -281,7 +281,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     // DHTMLX 自身布局/网格样式由应用层(business-console main.ts / 预览入口)导入,
     // 经 vite alias 指向 vendor 或空 stub,避免污染包测试面。
     const inst = this.createInstance() as DhxGantt | null
-    if (!inst) return // 不可用:由 useEngine 回落 NativeEngine。
+    if (!inst) return // 不可用:useEngine 不会挂载本引擎,组件显示占位。
     this.gantt = inst
 
     this.configure(inst, options)

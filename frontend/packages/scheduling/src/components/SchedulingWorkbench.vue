@@ -23,7 +23,7 @@ const props = withDefaults(
     model?: ScheduleModel
     loading?: boolean
     readOnly?: boolean
-    engineKind?: 'auto' | 'native' | 'dhtmlx'
+    engineKind?: 'auto' | 'dhtmlx'
     defaultView?: 'order' | 'resource'
     preview?: (locked: ScheduleAssignmentContract[]) => Promise<ScheduleModel>
     release?: (planId: string) => Promise<void>
