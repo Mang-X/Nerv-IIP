@@ -81,7 +81,8 @@ describe('business ERP composable', () => {
     })
 
     const { filters, purchaseOrders, purchaseOrdersTotal, purchaseRequisitions, purchaseRequisitionsTotal } = useBusinessErp()
-    filters.status = 'Released'
+    filters.purchaseOrderStatus = 'Released'
+    filters.purchaseRequisitionStatus = 'Open'
     filters.keyword = 'SUP-001'
     filters.skip = 20
     filters.take = 10
@@ -103,7 +104,7 @@ describe('business ERP composable', () => {
       query: {
         organizationId: 'org-002',
         environmentId: 'prod',
-        status: 'Released',
+        status: 'Open',
         keyword: 'SUP-001',
         skip: 20,
         take: 10,

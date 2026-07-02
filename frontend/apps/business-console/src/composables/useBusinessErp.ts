@@ -49,6 +49,8 @@ const DEFAULT_TAKE = 10
 
 export interface BusinessErpListFilters {
   status?: string
+  purchaseOrderStatus?: string
+  purchaseRequisitionStatus?: string
   keyword?: string
   skip: number
   take: number
@@ -130,7 +132,7 @@ export function useBusinessErp() {
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
-        status: filters.status,
+        status: filters.purchaseOrderStatus,
         keyword: filters.keyword,
         skip: filters.skip,
         take: filters.take,
@@ -142,7 +144,7 @@ export function useBusinessErp() {
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
-        status: filters.status,
+        status: filters.purchaseRequisitionStatus,
         keyword: filters.keyword,
         skip: filters.skip,
         take: filters.take,

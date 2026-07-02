@@ -61,7 +61,9 @@ const {
   purchaseOrdersTotal,
   refreshProcurementDocuments,
 } = useBusinessErp()
-const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status, () => filters.keyword] })
+const { page, pageSize } = usePagedList(filters, {
+  resetOn: [() => filters.purchaseRequisitionStatus, () => filters.purchaseOrderStatus, () => filters.keyword],
+})
 
 function firstQueryParam(value: unknown) {
   if (Array.isArray(value)) return value[0] ? String(value[0]) : undefined
@@ -77,9 +79,14 @@ watch(
 )
 
 // reka-ui SelectItem 不接受空字符串 value，用 'all' 作「全部」哨兵并映射回 undefined。
-const statusFilter = computed({
-  get: () => filters.status || 'all',
-  set: (value: string) => { filters.status = value === 'all' ? undefined : value },
+const requisitionStatusFilter = computed({
+  get: () => filters.purchaseRequisitionStatus || 'all',
+  set: (value: string) => { filters.purchaseRequisitionStatus = value === 'all' ? undefined : value },
+})
+
+const orderStatusFilter = computed({
+  get: () => filters.purchaseOrderStatus || 'all',
+  set: (value: string) => { filters.purchaseOrderStatus = value === 'all' ? undefined : value },
 })
 
 const rows = computed<ProcurementRow[]>(() =>
@@ -202,11 +209,19 @@ function requisitionRowKey(row: PurchaseRequisitionRow) {
     <Toolbar :show-search="false">
       <template #filters>
         <InputPro v-model="filters.keyword" class="h-9 w-64" placeholder="采购申请 / 采购单 / 供应商 / 物料 / 工厂" aria-label="采购关键字" />
-        <SelectPro v-model="statusFilter">
-          <SelectProTrigger class="h-9 w-32" aria-label="订单状态"><SelectProValue placeholder="全部状态" /></SelectProTrigger>
+        <SelectPro v-model="requisitionStatusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="申请状态"><SelectProValue placeholder="申请状态" /></SelectProTrigger>
           <SelectProContent>
-            <SelectProItem value="all">全部状态</SelectProItem>
+            <SelectProItem value="all">全部申请</SelectProItem>
             <SelectProItem value="Open">待转单</SelectProItem>
+            <SelectProItem value="Converted">已转单</SelectProItem>
+            <SelectProItem value="Cancelled">已取消</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
+        <SelectPro v-model="orderStatusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="订单状态"><SelectProValue placeholder="订单状态" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部订单</SelectProItem>
             <SelectProItem value="Released">已下达</SelectProItem>
             <SelectProItem value="Closed">已关闭</SelectProItem>
             <SelectProItem value="Cancelled">已取消</SelectProItem>

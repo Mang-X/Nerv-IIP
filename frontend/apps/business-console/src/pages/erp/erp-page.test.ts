@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import ErpPage from './index.vue'
 
-const erpFilters = reactive<{ status?: string, keyword?: string, skip: number, take: number }>({ status: undefined, keyword: undefined, skip: 0, take: 10 })
+const erpFilters = reactive<{
+  purchaseOrderStatus?: string
+  purchaseRequisitionStatus?: string
+  keyword?: string
+  skip: number
+  take: number
+}>({ purchaseOrderStatus: undefined, purchaseRequisitionStatus: undefined, keyword: undefined, skip: 0, take: 10 })
 
 vi.mock('@/composables/usePagedList', () => ({
   usePagedList: () => ({
@@ -96,5 +102,13 @@ describe('ERP procurement page server-paged semantics', () => {
     const buttonTexts = wrapper.findAll('button').map((b) => b.text())
     expect(buttonTexts).toContain('刷新')
     expect(wrapper.text()).toContain('SKU-001')
+  })
+
+  it('renders independent status filters for requisitions and purchase orders', async () => {
+    const wrapper = mount(ErpPage, { global: { stubs: { ...layoutStub } } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('全部申请')
+    expect(wrapper.text()).toContain('全部订单')
   })
 })
