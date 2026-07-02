@@ -4,11 +4,11 @@ pageClass: ds-wide
 ---
 
 <script setup>
-import { ResourceSchedulerBoard, SchedulingWorkbench } from '@nerv-iip/scheduling'
-import { toast } from '@nerv-iip/ui'
+import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
+import { ButtonPro, FieldPro, FieldProGroup, FieldProLabel, InputPro, SelectPro, SelectProContent, SelectProItem, SelectProTrigger, SelectProValue } from '@nerv-iip/ui'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
 import { computed, ref } from 'vue'
-import { makeModel, makeCalendarModel } from '../../.vitepress/schedulingDemo'
+import { makeModel, makeCalendarModel, makeBlockDemoModel } from '../../.vitepress/schedulingDemo'
 
 const model = ref(makeModel())
 
@@ -71,25 +71,73 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { month: 'nume
 const readOnlyModel = ref(makeModel())
 const emptyModel = ref({ ...makeModel(), tasks: [], links: [], resources: [] })
 
-// 编辑闭环 demo:独立 model + mock preview/release/@fix,喂给组合件 SchedulingWorkbench。
-const wbModel = ref(makeModel())
+// 资源时间块(底纹)专用:紧凑模型,4 泳道各一类块,一屏看全四类斜纹。
+const blockModel = ref(makeBlockDemoModel())
+const blockLegend = [
+  { swatch: 'block-maintenance', label: '维护块(灰)', desc: '设备维护(折弯-02「定期保养」),不可拖拽。' },
+  { swatch: 'block-downtime', label: '停机块(红)', desc: '计划停机(焊接-01「计划停机」),资源不可用。' },
+  { swatch: 'block-linechange', label: '换线块(蓝)', desc: '换线窗口(激光切割-01「换线窗口」),产线切换准备占用资源。' },
+  { swatch: 'block-changeover', label: '换型块(橙)', desc: '换型窗口(加工中心-03「产品换型」),工装/模具换型占用资源。' },
+]
+
+// 编辑工序 demo:独立 model + 页面内简易编辑面板。@task-select 选中工序后可改开始时间 / 资源泳道 / 锁定,
+// 回写 model 触发排产板实时更新。本 demo 里 resourceId === workCenterId === 泳道 id。
 const H = 3_600_000
-const wbShift = (iso, h) => new Date(Date.parse(iso) + h * H).toISOString()
-async function wbPreview(locked) {
-  const lockedIds = new Set(locked.map((l) => l.assignmentId))
-  const cur = wbModel.value
-  const changes = []
-  const tasks = cur.tasks.map((t) => {
-    if (t.type !== 'operation' || t.isMilestone || t.blockKind) return t
-    if (lockedIds.has(t.id)) { changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'preserved', message: '锁定,保持不动', taskId: t.id }); return t }
-    changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'moved', message: '重排后移 2 小时', taskId: t.id })
-    return { ...t, startUtc: wbShift(t.startUtc, 2), endUtc: wbShift(t.endUtc, 2) }
-  })
-  await new Promise((r) => setTimeout(r, 350))
-  return { ...cur, tasks, changes, meta: { ...cur.meta, status: 'preview' } }
+const editModel = ref(makeModel())
+const editId = ref(null)
+// 只允许选中真实工序(排除工单分组父节点、里程碑、资源时间块)。
+const editTask = computed(() => {
+  const t = editModel.value.tasks.find((x) => x.id === editId.value)
+  return t && t.type === 'operation' && !t.isMilestone && !t.blockKind ? t : null
+})
+const RES_OPTIONS = [
+  ['激光切割-01', '激光切割-01 · 钣金线'],
+  ['折弯-02', '折弯-02 · 钣金线'],
+  ['焊接-01', '焊接-01 · 焊装线'],
+  ['加工中心-03', '加工中心-03 · 机加线'],
+]
+function onEditSelect(id) {
+  const t = editModel.value.tasks.find((x) => x.id === id)
+  editId.value = t && t.type === 'operation' && !t.isMilestone && !t.blockKind ? id : null
 }
-async function wbRelease() { await new Promise((r) => setTimeout(r, 250)); toast.success('计划已发布', { description: '排程已下发到执行' }) }
-function wbFix(orderId, operationId) { toast.info(`去处理未排项:${orderId} / ${operationId}`, { description: '跳转补料 / 改派(示例)' }) }
+// <input type="datetime-local"> 用本地无时区串;与 UTC ISO 互转(仅演示,按浏览器本地时区)。
+const toLocalInput = (iso) => {
+  const d = new Date(iso)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+const editStart = computed({
+  get: () => (editTask.value ? toLocalInput(editTask.value.startUtc) : ''),
+  set: (v) => {
+    if (!editTask.value || !v) return
+    const next = new Date(v).toISOString()
+    patch(editTask.value.id, (t) => {
+      const dur = Date.parse(t.endUtc) - Date.parse(t.startUtc) // 保持原时长,顺移 endUtc
+      return { ...t, startUtc: next, endUtc: new Date(Date.parse(next) + dur).toISOString() }
+    })
+  },
+})
+const editResource = computed({
+  get: () => editTask.value?.resourceId ?? '',
+  set: (rid) => {
+    if (!editTask.value || !rid) return
+    patch(editTask.value.id, (t) => ({
+      ...t,
+      resourceId: rid,
+      workCenterId: rid,
+      dimensions: { ...t.dimensions, workCenter: { id: rid, label: rid } },
+    }))
+  },
+})
+function toggleLock() {
+  if (!editTask.value) return
+  patch(editTask.value.id, (t) => ({ ...t, locked: !t.locked }))
+}
+// 统一回写:替换整棵 tasks(不可变更新)触发引擎重绘。
+function patch(id, fn) {
+  editModel.value = { ...editModel.value, tasks: editModel.value.tasks.map((t) => (t.id === id ? fn(t) : t)) }
+}
+const fmtDur = (t) => Math.round((Date.parse(t.endUtc) - Date.parse(t.startUtc)) / H * 10) / 10
 </script>
 
 # ResourceSchedulerBoard 资源排产板
@@ -103,7 +151,7 @@ function wbFix(orderId, operationId) { toast.info(`去处理未排项:${orderId}
 模型带 `groupDimensions` 时,左上角出现维度切换。样例数据在**折弯-02**泳道有一段「定期保养」维护块、在**加工中心-03**有一段「产品换型」块(斜纹、不可拖拽);焊接-01 利用率 1.25 呈**过载瓶颈**。
 
 <Demo block>
-  <div style="height: 460px; width: 100%">
+  <div style="height: 500px; width: 100%">
     <ResourceSchedulerBoard :model="model" @task-drag-end="onDrag" @task-select="selectedId = $event" />
   </div>
 </Demo>
@@ -116,7 +164,7 @@ import { ref } from 'vue'
 const model = ref(toModel(plan)) // 含 groupDimensions 时左轴维度可切换
 
 function onDrag(p) {
-  // 改时间 / 改派;接后端时改为「锁定 → 重预览」(见 SchedulingWorkbench)
+  // 改时间 / 改派;接后端时改为「锁定 → 重预览」的编辑闭环
   model.value = { ...model.value, tasks: model.value.tasks.map((t) =>
     t.id === p.taskId ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc, resourceId: p.resourceId ?? t.resourceId } : t) }
 }
@@ -138,7 +186,7 @@ function onDrag(p) {
 同一张排产板(即上例数据),对着右侧清单在板上逐一指认卡片与泳道的视觉语言——「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="resource"`)嵌在图底作为速查条。
 
 <Demo block>
-  <div style="height: 400px; width: 100%">
+  <div style="height: 460px; width: 100%">
     <ResourceSchedulerBoard :model="galleryModel" :read-only="true" />
   </div>
   <div style="border:1px solid var(--border); border-top:0; border-radius:0 0 8px 8px; overflow:hidden; margin-top:-1px">
@@ -206,6 +254,30 @@ function onDrag(p) {
   <div v-else style="color:var(--muted-foreground); font-size:.8125rem; padding:.5rem 0">在上方排产板点选卡片或斜纹时间块查看详情。</div>
 </Demo>
 
+### 资源时间块(底纹)
+
+四类资源时间块以**斜纹底纹**落在对应泳道、不可拖拽:**维护**(灰)/ **停机**(红)/ **换线**(蓝)/ **换型**(橙)。下例用一份紧凑模型——4 条工序分落 4 个资源泳道,每条泳道在同一个 6 小时窗内各放一类块,`scale="hour"` 初始视口一屏即可看全四类底纹,对照下方图例逐一指认。
+
+<Demo block>
+  <div style="height: 400px; width: 100%">
+    <ResourceSchedulerBoard :model="blockModel" scale="hour" :read-only="true" />
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:.5rem; margin-top:1rem">
+    <div v-for="item in blockLegend" :key="item.label" style="display:flex; gap:.625rem; align-items:flex-start; border:1px solid var(--border); border-radius:8px; padding:.625rem .75rem">
+      <span style="flex:none; display:inline-flex; align-items:center; justify-content:center; width:28px; height:18px; margin-top:.1rem">
+        <span v-if="item.swatch === 'block-maintenance'" class="ds-hatch" style="--h: var(--sched-block-maintenance)"></span>
+        <span v-else-if="item.swatch === 'block-downtime'" class="ds-hatch" style="--h: var(--sched-block-downtime)"></span>
+        <span v-else-if="item.swatch === 'block-linechange'" class="ds-hatch" style="--h: var(--sched-block-linechange)"></span>
+        <span v-else-if="item.swatch === 'block-changeover'" class="ds-hatch" style="--h: var(--sched-block-changeover)"></span>
+      </span>
+      <div style="font-size:.8125rem; line-height:1.35">
+        <div style="font-weight:600; margin-bottom:.15rem">{{ item.label }}</div>
+        <div style="color:var(--muted-foreground)">{{ item.desc }}</div>
+      </div>
+    </div>
+  </div>
+</Demo>
+
 ### 齐套 / 过载分级
 
 样例数据已制造分级差异:WO-2026-001 下料 **齐套 100%(绿/足)**、WO-2026-003 装配 **齐套 60%(红/危)且载荷 125% 过载瓶颈**、WO-2026-002 机加工 **换型 45 分钟**。卡片齐套 chip 按阈值变色,泳道负载带随利用率加深,>1 显著提示。对照上方图例即可在板上一一找到。
@@ -244,32 +316,81 @@ function onDrag(p) {
 
 左轴按所选维度铺泳道(工作中心 / 设备 / 班组 / 产线),泳道头显示资源名与产能指标(利用率 / OEE)。工单卡片显示工序色、产品、数量、齐套 chip 与进度;资源负载带随利用率加深,>1 过载显著提示。资源时间块(维护/停机/换线/换型)以斜纹块落在对应泳道,不可拖拽。
 
-## 业务操作 · 编辑闭环
+## 业务操作 · 编辑工序
 
-单独用 `ResourceSchedulerBoard` 可拖拽改时间 / 跨泳道改派;若要「锁定 → 重新排程 → 发布」的完整业务闭环,用组合件 `SchedulingWorkbench`(工具栏 + 视图切换 + 右侧详情/冲突/未排/变更面板)。本 demo 注入 mock `preview`/`release`,可完整走通:
+排产板本身负责「拖拽改期 / 跨泳道改派」;若要在板外**编辑工序信息**,监听 `@task-select` 拿到工序、在页面里放一个简易编辑面板,回写 `model` 即让板子实时更新。下例点选任一工序卡片后可:改**开始时间**(按原时长顺移结束)、改**资源泳道**(换道)、**锁定/解锁**。资源时间块(斜纹)与工单分组节点不可编辑,点选无效。
 
-- **拖** 一条工序改期(横向)或改派资源(跨泳道);
-- 右侧详情面板 **锁定** 要保留的工序(再点 **解锁**);
-- 工具栏 **重新排程** → 携锁定项调 mock preview(锁定不动、其余后移 2h)→ 右侧 **变更** tab 显示 moved/preserved diff;
-- **发布计划** → mock release(toast);未排 tab 点 **去处理** → `@fix`(toast);
-- **撤销/重做** 回退前端快照,可切 **只读**。
+编辑面板放在画布容器**之外**,不占画布高度;回写用不可变更新 `model.value = { ...model.value, tasks: model.value.tasks.map(...) }` 触发引擎重绘。
 
 <Demo block>
-  <div style="height: 560px; width: 100%">
-    <SchedulingWorkbench :model="wbModel" default-view="resource" :preview="wbPreview" :release="wbRelease" @fix="wbFix" />
+  <div style="height: 460px; width: 100%">
+    <ResourceSchedulerBoard :model="editModel" @task-select="onEditSelect" @task-drag-end="patch($event.taskId, (t) => ({ ...t, startUtc: $event.startUtc, endUtc: $event.endUtc, resourceId: $event.resourceId ?? t.resourceId, workCenterId: $event.resourceId ?? t.workCenterId, dimensions: $event.resourceId ? { ...t.dimensions, workCenter: { id: $event.resourceId, label: $event.resourceId } } : t.dimensions }))" />
+  </div>
+  <div style="border:1px solid var(--border); border-radius:8px; padding:1rem; margin-top:1rem">
+    <div v-if="editTask">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.875rem">
+        <div style="font-weight:600; font-size:.875rem">编辑工序 · {{ editTask.text }} · {{ editTask.orderId }}</div>
+        <ButtonPro :variant="editTask.locked ? 'brand' : 'outline'" size="sm" @click="toggleLock">{{ editTask.locked ? '已锁定 · 点击解锁' : '锁定' }}</ButtonPro>
+      </div>
+      <FieldProGroup>
+        <FieldPro>
+          <FieldProLabel for="edit-start">开始时间</FieldProLabel>
+          <InputPro id="edit-start" type="datetime-local" v-model="editStart" />
+        </FieldPro>
+        <FieldPro>
+          <FieldProLabel for="edit-res">资源 / 泳道</FieldProLabel>
+          <SelectPro v-model="editResource">
+            <SelectProTrigger id="edit-res"><SelectProValue placeholder="选择资源泳道" /></SelectProTrigger>
+            <SelectProContent>
+              <SelectProItem v-for="[val, label] in RES_OPTIONS" :key="val" :value="val">{{ label }}</SelectProItem>
+            </SelectProContent>
+          </SelectPro>
+        </FieldPro>
+      </FieldProGroup>
+      <div style="color:var(--muted-foreground); font-size:.75rem; margin-top:.75rem">
+        时长 {{ fmtDur(editTask) }}h · 改开始时间按原时长顺移结束 · 改资源即跨泳道换道 · 锁定后重排不被算法挪动。
+      </div>
+    </div>
+    <div v-else style="color:var(--muted-foreground); font-size:.8125rem">在上方排产板点选一条工序卡片,这里出现可编辑字段。</div>
   </div>
 </Demo>
 
 ```vue
 <script setup lang="ts">
-import { SchedulingWorkbench, toModel } from '@nerv-iip/scheduling'
-const model = toModel(plan)
-async function preview(locked) { return toModel(await previewSchedulingPlan(locked)) }
-async function release(planId: string) { await releaseSchedulingPlan(planId) }
+import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
+import { computed, ref } from 'vue'
+
+const model = ref(toModel(plan))
+const editId = ref<string | null>(null)
+const editTask = computed(() => model.value.tasks.find((t) =>
+  t.id === editId.value && t.type === 'operation' && !t.isMilestone && !t.blockKind) ?? null)
+
+function patch(id: string, fn: (t) => typeof t) {
+  model.value = { ...model.value, tasks: model.value.tasks.map((t) => (t.id === id ? fn(t) : t)) }
+}
+function onSelect(id: string) {
+  const t = model.value.tasks.find((x) => x.id === id)
+  editId.value = t?.type === 'operation' && !t.blockKind ? id : null
+}
+// 改开始时间:保持原时长,顺移 endUtc
+function setStart(iso: string) {
+  patch(editTask.value.id, (t) => {
+    const dur = Date.parse(t.endUtc) - Date.parse(t.startUtc)
+    return { ...t, startUtc: iso, endUtc: new Date(Date.parse(iso) + dur).toISOString() }
+  })
+}
+// 改资源:同步 resourceId / workCenterId / dimensions.workCenter,让卡片换道
+function setResource(rid: string) {
+  patch(editTask.value.id, (t) => ({
+    ...t, resourceId: rid, workCenterId: rid,
+    dimensions: { ...t.dimensions, workCenter: { id: rid, label: rid } },
+  }))
+}
 </script>
 
 <template>
-  <SchedulingWorkbench :model="model" default-view="resource" :preview="preview" :release="release" @fix="goFix" />
+  <ResourceSchedulerBoard :model="model" @task-select="onSelect" />
+  <!-- 板外编辑面板:setStart / setResource / 切 locked 回写 model -->
 </template>
 ```
 
@@ -291,4 +412,4 @@ async function release(planId: string) { await releaseSchedulingPlan(planId) }
 ## 相关
 
 - [GanttChart 工单甘特](./gantt-chart) — 同一模型的工单/工序时间线视角。
-- [业务操作 · 编辑闭环](#业务操作-编辑闭环) — 用组合件 `SchedulingWorkbench`(工具栏 + 视图切换 + 面板)走通锁定—重预览—发布闭环。
+- [业务操作 · 编辑工序](#业务操作-编辑工序) — 独立排产板 + 板外编辑面板,改开始时间 / 资源泳道 / 锁定并实时回写。

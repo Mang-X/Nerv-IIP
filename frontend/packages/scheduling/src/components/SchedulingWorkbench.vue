@@ -196,44 +196,58 @@ async function onRelease() {
         />
       </div>
 
-      <!-- 折叠态:细条 + 展开按钮 -->
-      <button
-        v-if="!sidebarOpen"
-        type="button"
-        class="flex w-9 shrink-0 items-center justify-center border-l border-border/60 bg-card/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        aria-label="展开侧栏"
-        @click="sidebarOpen = true"
+      <!-- 单元素侧栏:宽度在 展开(320) ↔ 折叠(细条 w-9) 间过渡,内容随 sidebarOpen 淡入淡出。
+           overflow-hidden 防止收窄时内容溢出;prefers-reduced-motion 下过渡降级为无。 -->
+      <aside
+        class="relative shrink-0 overflow-hidden border-l border-border/60 bg-card/60 transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        :class="sidebarOpen ? 'w-[320px]' : 'w-9'"
       >
-        <PanelRightOpenIcon class="size-4" aria-hidden="true" />
-      </button>
+        <!-- 折叠态:细条上的展开按钮(淡入,收起时不可交互) -->
+        <button
+          type="button"
+          class="absolute inset-0 flex items-center justify-center text-muted-foreground transition-[opacity,color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-reduce:transition-none"
+          :class="sidebarOpen ? 'pointer-events-none opacity-0' : 'opacity-100'"
+          :tabindex="sidebarOpen ? -1 : 0"
+          :aria-hidden="sidebarOpen"
+          aria-label="展开侧栏"
+          @click="sidebarOpen = true"
+        >
+          <PanelRightOpenIcon class="size-4" aria-hidden="true" />
+        </button>
 
-      <aside v-else class="flex w-[320px] shrink-0 flex-col border-l border-border/60 bg-card/60">
-        <div class="flex items-center justify-between px-3 pt-2.5">
-          <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
-          <ButtonPro size="icon" variant="ghost" class="size-7 text-muted-foreground" aria-label="收起侧栏" @click="sidebarOpen = false">
-            <PanelRightCloseIcon class="size-4" aria-hidden="true" />
-          </ButtonPro>
+        <!-- 展开态:详情 + 面板(固定 320 宽,收窄时被 overflow-hidden 裁掉并淡出) -->
+        <div
+          class="flex h-full w-[320px] flex-col transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          :class="sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'"
+          :aria-hidden="!sidebarOpen"
+        >
+          <div class="flex items-center justify-between px-3 pt-2.5">
+            <span class="text-xs font-semibold tracking-wide text-muted-foreground">详情与排程</span>
+            <ButtonPro size="icon" variant="ghost" class="size-7 text-muted-foreground" :tabindex="sidebarOpen ? 0 : -1" aria-label="收起侧栏" @click="sidebarOpen = false">
+              <PanelRightCloseIcon class="size-4" aria-hidden="true" />
+            </ButtonPro>
+          </div>
+
+          <!-- 选中详情(常驻,取代弹出抽屉) -->
+          <TaskDetailPanel :task="selectedTask" @toggle-lock="onToggleLock" />
+
+          <TabsPro default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
+            <TabsProList class="mx-3 mt-3">
+              <TabsProTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsProTrigger>
+              <TabsProTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsProTrigger>
+              <TabsProTrigger value="changes">变更 {{ changes.length }}</TabsProTrigger>
+            </TabsProList>
+            <TabsProContent value="conflicts" class="min-h-0 flex-1">
+              <ConflictPanel :conflicts="conflicts" @select="focusTask" />
+            </TabsProContent>
+            <TabsProContent value="unscheduled" class="min-h-0 flex-1">
+              <UnscheduledPanel :items="unscheduled" @fix="(o, op) => emit('fix', o, op)" />
+            </TabsProContent>
+            <TabsProContent value="changes" class="min-h-0 flex-1">
+              <ChangeSummaryPanel :changes="changes" @select="focusTask" />
+            </TabsProContent>
+          </TabsPro>
         </div>
-
-        <!-- 选中详情(常驻,取代弹出抽屉) -->
-        <TaskDetailPanel :task="selectedTask" @toggle-lock="onToggleLock" />
-
-        <TabsPro default-value="conflicts" class="flex min-h-0 flex-1 flex-col">
-          <TabsProList class="mx-3 mt-3">
-            <TabsProTrigger value="conflicts">冲突 {{ conflicts.length }}</TabsProTrigger>
-            <TabsProTrigger value="unscheduled">未排 {{ unscheduled.length }}</TabsProTrigger>
-            <TabsProTrigger value="changes">变更 {{ changes.length }}</TabsProTrigger>
-          </TabsProList>
-          <TabsProContent value="conflicts" class="min-h-0 flex-1">
-            <ConflictPanel :conflicts="conflicts" @select="focusTask" />
-          </TabsProContent>
-          <TabsProContent value="unscheduled" class="min-h-0 flex-1">
-            <UnscheduledPanel :items="unscheduled" @fix="(o, op) => emit('fix', o, op)" />
-          </TabsProContent>
-          <TabsProContent value="changes" class="min-h-0 flex-1">
-            <ChangeSummaryPanel :changes="changes" @select="focusTask" />
-          </TabsProContent>
-        </TabsPro>
       </aside>
     </div>
 

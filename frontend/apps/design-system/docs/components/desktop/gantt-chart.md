@@ -91,7 +91,7 @@ import { ref } from 'vue'
 const model = ref(toModel(plan as SchedulePlanContract)) // plan 来自 APS facade
 
 function onDrag(p) {
-  // 改期后回写模型;接后端时改为「锁定 → 重预览」(见 SchedulingWorkbench)
+  // 改期后回写模型;接后端时改为「锁定 → 重预览」的编辑闭环
   model.value = { ...model.value, tasks: model.value.tasks.map((t) =>
     t.id === p.taskId ? { ...t, startUtc: p.startUtc, endUtc: p.endUtc } : t) }
 }
@@ -103,6 +103,10 @@ function onDrag(p) {
 ```
 
 ## 用例演示
+
+### 改期(拖拽)
+
+可编辑时(非 `read-only`),**横向拖动**工序条即改期——在上方基础用法 demo 里拖任一条即可。落点经 `@task-drag-end` 归一化回传(`startUtc` / `endUtc`),回写 `model` 后引擎按新位置重绘(不回写则条会弹回原位)。甘特聚焦时间线改期本身;若要**编辑工序字段**(开始时间 / 资源泳道 / 锁定),见 [ResourceSchedulerBoard 的「业务操作 · 编辑工序」](./resource-scheduler#业务操作-编辑工序)。
 
 ### 刻度切换
 
@@ -128,7 +132,7 @@ function onDrag(p) {
 同一张甘特(即上例数据),对着右侧清单在图里逐一指认视觉语言——不是只看图例条,而是「图例 ↔ 图上真身」并排讲清。`SchedulingLegend`(`view="order"`)嵌在图底作为速查条。
 
 <Demo block>
-  <div style="height: 380px; width: 100%">
+  <div style="height: 420px; width: 100%">
     <GanttChart :model="galleryModel" scale="hour" :read-only="true" />
   </div>
   <div style="border:1px solid var(--border); border-top:0; border-radius:0 0 8px 8px; overflow:hidden; margin-top:-1px">
@@ -250,4 +254,4 @@ function onDrag(p) {
 
 ## 相关
 
-- [ResourceSchedulerBoard 资源排产板](./resource-scheduler) — 同一模型的资源泳道视角;页内「业务操作 · 编辑闭环」用组合件 `SchedulingWorkbench` 演示锁定—重预览—发布闭环。
+- [ResourceSchedulerBoard 资源排产板](./resource-scheduler) — 同一模型的资源泳道视角;页内「业务操作 · 编辑工序」演示板外编辑面板改开始时间 / 资源泳道 / 锁定。

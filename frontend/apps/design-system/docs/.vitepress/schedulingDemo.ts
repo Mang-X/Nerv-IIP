@@ -181,6 +181,115 @@ export function makeModel(): ScheduleModel {
   return m
 }
 
+// ── 资源时间块(底纹)专用演示 ──────────────────────────────────────────
+// makeModel() 的四类块散落在 20h horizon 的不同时段,默认视口一屏看不全。这里造一份紧凑模型:
+// 4 条工序分落 4 个资源泳道,并在同一个较窄时间窗(08:00–14:00,共 6h)内给每条泳道各放一类块,
+// 让四类斜纹底纹(维护/停机/换线/换型)在 scale="hour" 初始视口一屏内全部可见。
+// 用与 makeModel() 一致的 assignment→toModel 路径,再后置补 blockKind / dimensions / 卡片字段。
+const blkBase = Date.parse('2026-06-10T08:00:00.000Z')
+const blkIso = (h: number) => new Date(blkBase + h * H).toISOString()
+
+const blockDemoPlan = {
+  planId: 'APS-2026-0610-BLK',
+  status: 'generated',
+  algorithmVersion: 'heuristic-1',
+  generatedAtUtc: blkIso(0),
+  // 每条泳道一条工序,占窗口前半(0–3h),把后半(3–5.5h)让给资源时间块,块与工序不重叠、都在视口内。
+  assignments: [
+    { assignmentId: 'BD-1', orderId: 'WO-2026-051', operationId: '下料', operationSequence: 10, resourceId: '激光切割-01', workCenterId: '激光切割-01', startUtc: blkIso(0), endUtc: blkIso(2), isLocked: false },
+    { assignmentId: 'BD-2', orderId: 'WO-2026-052', operationId: '折弯', operationSequence: 10, resourceId: '折弯-02', workCenterId: '折弯-02', startUtc: blkIso(0), endUtc: blkIso(2.5), isLocked: false },
+    { assignmentId: 'BD-3', orderId: 'WO-2026-053', operationId: '焊接', operationSequence: 10, resourceId: '焊接-01', workCenterId: '焊接-01', startUtc: blkIso(0), endUtc: blkIso(3), isLocked: false },
+    { assignmentId: 'BD-4', orderId: 'WO-2026-054', operationId: '机加工', operationSequence: 10, resourceId: '加工中心-03', workCenterId: '加工中心-03', startUtc: blkIso(0), endUtc: blkIso(2), isLocked: false },
+  ],
+  resourceLoads: [
+    { resourceId: '激光切割-01', windowStartUtc: blkIso(0), windowEndUtc: blkIso(6), assignedMinutes: 120, availableMinutes: 360, utilization: 0.33 },
+    { resourceId: '折弯-02', windowStartUtc: blkIso(0), windowEndUtc: blkIso(6), assignedMinutes: 150, availableMinutes: 360, utilization: 0.42 },
+    { resourceId: '焊接-01', windowStartUtc: blkIso(0), windowEndUtc: blkIso(6), assignedMinutes: 180, availableMinutes: 360, utilization: 0.5 },
+    { resourceId: '加工中心-03', windowStartUtc: blkIso(0), windowEndUtc: blkIso(6), assignedMinutes: 120, availableMinutes: 360, utilization: 0.33 },
+  ],
+  conflicts: [],
+  unscheduledOperations: [],
+  changeSummary: [],
+  ganttItems: [],
+}
+
+const BLK_PRODUCT: Record<string, string> = {
+  'WO-2026-051': '横梁支架',
+  'WO-2026-052': '悬架臂',
+  'WO-2026-053': '车架总成',
+  'WO-2026-054': '齿轮箱体',
+}
+
+/**
+ * 资源时间块(底纹)专用示例:4 条工序分落 4 个资源泳道,并在同一个较窄时间窗(6h)内给每条泳道各
+ * 放一类块——维护(灰,折弯-02)/ 停机(红,焊接-01)/ 换线(蓝,激光切割-01)/ 换型(橙,加工中心-03),
+ * 让四类斜纹底纹在 scale="hour" 初始视口一屏内全部可见。返回全新 ScheduleModel。
+ */
+export function makeBlockDemoModel(): ScheduleModel {
+  const m = toModel(blockDemoPlan as never)
+  for (const t of m.tasks) {
+    if (t.type !== 'operation') continue
+    const wc = WC[t.workCenterId ?? ''] ?? WC['激光切割-01']
+    t.product = BLK_PRODUCT[t.orderId] ?? '通用件'
+    t.quantity = 80
+    t.colorKey = wc.color
+    t.dimensions = {
+      workCenter: t.dimensions?.workCenter ?? { id: t.workCenterId ?? '', label: t.workCenterId ?? '' },
+      device: { id: wc.device[0], label: wc.device[1] },
+      team: { id: wc.team[0], label: wc.team[1] },
+      line: { id: wc.line[0], label: wc.line[1] },
+    }
+  }
+
+  // 四类资源时间块,各落一条泳道、都在窗口后半(3–5.5h),与工序不重叠、同屏可见。
+  const blockDims = (rid: string): ScheduleTask['dimensions'] => {
+    const wc = WC[rid]
+    return wc
+      ? {
+          workCenter: { id: rid, label: rid },
+          device: { id: wc.device[0], label: wc.device[1] },
+          team: { id: wc.team[0], label: wc.team[1] },
+          line: { id: wc.line[0], label: wc.line[1] },
+        }
+      : { workCenter: { id: rid, label: rid } }
+  }
+  const mkBlock = (
+    id: string,
+    text: string,
+    rid: string,
+    blockKind: NonNullable<ScheduleTask['blockKind']>,
+    start: number,
+    end: number,
+  ): ScheduleTask => ({
+    id,
+    orderId: '',
+    operationId: '',
+    operationSequence: 0,
+    type: 'operation',
+    text,
+    resourceId: rid,
+    workCenterId: rid,
+    dimensions: blockDims(rid),
+    startUtc: blkIso(start),
+    endUtc: blkIso(end),
+    blockKind,
+    locked: true,
+    hasConflict: false,
+    conflictReason: null,
+  })
+
+  m.tasks.push(
+    mkBlock('BD-BLK-LC', '换线窗口', '激光切割-01', 'lineChange', 3, 5),
+    mkBlock('BD-BLK-MNT', '定期保养', '折弯-02', 'maintenance', 3, 5),
+    mkBlock('BD-BLK-DT', '计划停机', '焊接-01', 'downtime', 3.5, 5.5),
+    mkBlock('BD-BLK-CO', '产品换型', '加工中心-03', 'changeover', 3, 5),
+  )
+  // horizon 由 toModel 仅按工序(0–3h)派生,但块延到 5.5h;显式把窗口拉到 0–6h,
+  // 让声明范围完整覆盖工序 + 四类块,scale="hour" 初始视口一屏内全部可见。
+  m.horizon = { startUtc: blkIso(0), endUtc: blkIso(6) }
+  return m
+}
+
 // ── 工作日历 / 班次演示 ────────────────────────────────────────────────
 // 引擎按「本地时间」着色:周末(周六/周日)= 周末底纹;每天 08:00 前或 20:00 后 = 非工作/夜班底纹;
 // 资源板小时刻度还会插入三班制刻度(夜 00–08 / 早 08–16 / 中 16–24)。这里造一份跨周末、跨昼夜的
