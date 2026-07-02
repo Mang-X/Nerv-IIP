@@ -53,24 +53,44 @@ const selectedTemplateCode = shallowRef('')
 const activeTemplates = computed(() =>
   approval.templates.value.filter((template) => template.isActive !== false),
 )
+const boundChainId = computed(() => props.modelValue?.trim() ?? '')
+const hasDurableDocumentId = computed(() => !!props.documentId?.trim())
+const autoMatchedChain = computed(() =>
+  hasDurableDocumentId.value && approval.chains.value.length === 1
+    ? approval.chains.value[0]
+    : undefined,
+)
 const selectedChain = computed(() => {
-  const chainId = props.modelValue?.trim()
+  const chainId = boundChainId.value
   if (chainId) {
     return approval.chains.value.find((chain) => chain.chainId === chainId) ?? chainFromDetail(chainId)
   }
-  return approval.chains.value[0]
+  return autoMatchedChain.value
 })
 const displayedChainId = computed(() =>
-  props.modelValue?.trim() || selectedChain.value?.chainId || '',
+  boundChainId.value || autoMatchedChain.value?.chainId || '',
 )
+const displayedDetail = computed(() => {
+  const detail = approval.chainDetail.value
+  return detail?.chainId === displayedChainId.value ? detail : undefined
+})
 const displayedSteps = computed(() =>
-  approval.chainDetail.value?.steps ?? [],
+  displayedDetail.value?.steps ?? [],
 )
 const displayedDecisions = computed(() => {
-  const detailDecisions = approval.chainDetail.value?.decisions ?? []
+  if (!displayedChainId.value) return []
+  const detailDecisions = displayedDetail.value?.decisions ?? []
   if (detailDecisions.length) return detailDecisions
   return approval.decisions.value
 })
+const legacyReferenceLabel = computed(() =>
+  boundChainId.value && !selectedChain.value && !approval.chainDetailPending.value
+    ? boundChainId.value
+    : '',
+)
+const canAttachDisplayedChain = computed(() =>
+  !!autoMatchedChain.value?.chainId && autoMatchedChain.value.chainId !== boundChainId.value,
+)
 const startDisabled = computed(() =>
   !props.documentId?.trim()
   || !selectedTemplateCode.value
@@ -144,8 +164,10 @@ async function startApprovalChain() {
     if (chainId) {
       emit('update:modelValue', chainId)
       approval.chainDetailSelection.chainId = chainId
+      notifySuccess('审批链已发起')
+      return
     }
-    notifySuccess('审批链已发起')
+    notifyError(result, '审批链发起未成功，请确认模板与单据状态。')
   }
   catch (error) {
     notifyError(error, '审批链发起失败，请确认模板、权限和单据状态后重试。')
@@ -158,8 +180,9 @@ function chooseChain(value: unknown) {
 }
 
 function attachDisplayedChain() {
-  if (!displayedChainId.value) return
-  emit('update:modelValue', displayedChainId.value)
+  const chainId = autoMatchedChain.value?.chainId
+  if (!chainId) return
+  emit('update:modelValue', chainId)
 }
 
 function stepTitle(step: BusinessConsoleApprovalStepItem) {
@@ -203,11 +226,14 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
         <div class="grid gap-1">
           <span class="text-xs text-muted-foreground">当前链路</span>
           <span class="text-sm font-medium break-all">{{ displayedChainId || '尚未关联审批链' }}</span>
+          <span v-if="legacyReferenceLabel" class="text-xs text-muted-foreground">
+            历史登记：<span class="font-medium break-all text-foreground">{{ legacyReferenceLabel }}</span>
+          </span>
         </div>
         <StatusBadgePro v-if="selectedChain?.status" :value="selectedChain.status" />
       </div>
 
-      <FieldPro v-if="approval.chains.value.length">
+      <FieldPro v-if="hasDurableDocumentId && approval.chains.value.length">
         <FieldProLabel>关联已有审批链</FieldProLabel>
         <SelectPro :model-value="displayedChainId" @update:model-value="chooseChain">
           <SelectProTrigger><SelectProValue placeholder="选择审批链" /></SelectProTrigger>
@@ -218,7 +244,7 @@ function templateLabel(template: BusinessConsoleApprovalTemplateItem) {
           </SelectProContent>
         </SelectPro>
       </FieldPro>
-      <div v-if="displayedChainId && displayedChainId !== modelValue" class="flex justify-end">
+      <div v-if="canAttachDisplayedChain" class="flex justify-end">
         <ButtonPro size="sm" type="button" variant="outline" @click="attachDisplayedChain">关联此审批链</ButtonPro>
       </div>
 
