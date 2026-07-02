@@ -165,8 +165,19 @@ export function makeModel(): ScheduleModel {
     hasConflict: false,
     conflictReason: null,
   }
+  const downtime: ScheduleTask = {
+    id: 'BLK-DT-1', orderId: '', operationId: '', operationSequence: 0, type: 'operation',
+    text: '计划停机', resourceId: '焊接-01', workCenterId: '焊接-01', dimensions: blockDims('焊接-01'),
+    startUtc: iso(16), endUtc: iso(19), blockKind: 'downtime', locked: true, hasConflict: false, conflictReason: null,
+  }
+  const lineChange: ScheduleTask = {
+    id: 'BLK-LC-1', orderId: '', operationId: '', operationSequence: 0, type: 'operation',
+    text: '换线窗口', resourceId: '激光切割-01', workCenterId: '激光切割-01', dimensions: blockDims('激光切割-01'),
+    startUtc: iso(7), endUtc: iso(9), blockKind: 'lineChange', locked: true, hasConflict: false, conflictReason: null,
+  }
 
-  m.tasks.push(milestone, maintenance, changeover)
+  // 四类资源时间块全出,演示完整底纹:维护(灰)/换型(橙)/停机(红)/换线(蓝)。
+  m.tasks.push(milestone, maintenance, changeover, downtime, lineChange)
   return m
 }
 
