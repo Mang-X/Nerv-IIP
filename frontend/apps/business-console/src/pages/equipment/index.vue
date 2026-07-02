@@ -135,6 +135,12 @@ function formatError(error: unknown) {
               <WrenchIcon aria-hidden="true" />
               记录停机
             </DropdownMenuProItem>
+            <DropdownMenuProItem as-child>
+              <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: row.deviceAssetId } }">
+                <WrenchIcon aria-hidden="true" />
+                创建维修工单
+              </RouterLink>
+            </DropdownMenuProItem>
           </RowActions>
         </template>
       </DataTablePro>
@@ -163,6 +169,12 @@ function formatError(error: unknown) {
             <ButtonPro size="sm" type="button" variant="outline" class="justify-self-start" @click="recordDowntime(block.deviceAssetId)">
               <WrenchIcon aria-hidden="true" />
               记录停机
+            </ButtonPro>
+            <ButtonPro size="sm" type="button" variant="outline" class="justify-self-start" as-child>
+              <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: block.deviceAssetId } }">
+                <WrenchIcon aria-hidden="true" />
+                创建维修工单
+              </RouterLink>
             </ButtonPro>
           </div>
           <div v-if="!activeBlocks.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
