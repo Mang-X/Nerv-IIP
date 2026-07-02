@@ -1815,6 +1815,22 @@ public sealed record BusinessConsoleErpRequestForQuotationLineItem(
     string SiteCode,
     DateOnly RequiredDate);
 
+public sealed record BusinessConsoleErpPurchaseRequisitionListResponse(
+    IReadOnlyCollection<BusinessConsoleErpPurchaseRequisitionItem> Items,
+    int Total);
+
+public sealed record BusinessConsoleErpPurchaseRequisitionItem(
+    string PurchaseRequisitionId,
+    string RequisitionNo,
+    string SuggestionId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    decimal Quantity,
+    DateOnly RequiredDate,
+    string Status,
+    DateTime CreatedAtUtc);
+
 public sealed record BusinessConsoleErpPurchaseOrderListResponse(
     IReadOnlyCollection<BusinessConsoleErpPurchaseOrderItem> Items,
     int Total);

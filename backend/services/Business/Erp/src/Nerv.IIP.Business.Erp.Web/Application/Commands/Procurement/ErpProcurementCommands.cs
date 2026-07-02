@@ -52,6 +52,16 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(Applic
 
     public async Task<CreatePurchaseRequisitionFromSuggestionResult> Handle(CreatePurchaseRequisitionFromSuggestionCommand request, CancellationToken cancellationToken)
     {
+        var existingForSuggestion = await dbContext.PurchaseRequisitions.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.SuggestionId == request.SuggestionId,
+            cancellationToken);
+        if (existingForSuggestion is not null)
+        {
+            return new CreatePurchaseRequisitionFromSuggestionResult(existingForSuggestion.Id, existingForSuggestion.RequisitionNo);
+        }
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "purchase-requisition",
@@ -62,7 +72,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionCommandHandler(Applic
         var existing = await dbContext.PurchaseRequisitions.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId
             && x.EnvironmentId == request.EnvironmentId
-            && (x.SuggestionId == request.SuggestionId || x.RequisitionNo == allocation.Code),
+            && x.RequisitionNo == allocation.Code,
             cancellationToken);
         if (existing is not null)
         {

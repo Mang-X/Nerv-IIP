@@ -1014,6 +1014,31 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_procurement_purchase_requisition_list_uses_internal_service_token_for_downstream_business_service()
+    {
+        var erp = new RecordingErpClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/erp/procurement/purchase-requisitions?organizationId=org-001&environmentId=env-dev&status=Open&keyword=PR-001&skip=2&take=15");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal(new BusinessConsoleErpListRequest("org-001", "env-dev", "Open", "PR-001", 2, 15), erp.LastPurchaseRequisitionListRequest);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("PR-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("requisitionNo").GetString());
+        Assert.Equal("suggestion-001", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("suggestionId").GetString());
+        Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
+    }
+
+    [Fact]
     public async Task Erp_sales_and_finance_facades_use_domain_specific_downstream_clients()
     {
         var erp = new RecordingErpClient();
@@ -5550,6 +5575,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient
 
     public BusinessConsoleErpListRequest? LastPurchaseOrderListRequest { get; private set; }
 
+    public BusinessConsoleErpListRequest? LastPurchaseRequisitionListRequest { get; private set; }
+
     public BusinessConsoleErpListRequest? LastRequestForQuotationListRequest { get; private set; }
 
     public BusinessConsoleErpListRequest? LastSalesOrderListRequest { get; private set; }
@@ -5613,6 +5640,30 @@ internal sealed class RecordingErpClient : IBusinessErpClient
                     [
                         new BusinessConsoleErpRequestForQuotationLineItem("10", "SKU-RM-001", "EA", 5m, "SITE-01", DateOnly.Parse("2026-06-10")),
                     ],
+                    DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
+            ],
+            1));
+    }
+
+    public Task<BusinessConsoleErpPurchaseRequisitionListResponse> ListPurchaseRequisitionsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastPurchaseRequisitionListRequest = request;
+        return Task.FromResult(new BusinessConsoleErpPurchaseRequisitionListResponse(
+            [
+                new BusinessConsoleErpPurchaseRequisitionItem(
+                    "purchase-requisition-001",
+                    "PR-001",
+                    "suggestion-001",
+                    "SKU-RM-001",
+                    "EA",
+                    "SITE-01",
+                    5m,
+                    DateOnly.Parse("2026-06-10"),
+                    "Open",
                     DateTime.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture)),
             ],
             1));

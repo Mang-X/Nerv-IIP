@@ -12,6 +12,7 @@ import {
   listBusinessConsoleErpOpportunitiesQueryOptions,
   listBusinessConsoleErpPayablesQueryOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleErpReceivablesQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
@@ -31,6 +32,8 @@ import {
   type BusinessConsoleErpPayableListEnvelope,
   type BusinessConsoleErpPurchaseOrderItem,
   type BusinessConsoleErpPurchaseOrderListEnvelope,
+  type BusinessConsoleErpPurchaseRequisitionItem,
+  type BusinessConsoleErpPurchaseRequisitionListEnvelope,
   type BusinessConsoleErpQuotationItem,
   type BusinessConsoleErpQuotationListEnvelope,
   type BusinessConsoleErpReceivableItem,
@@ -134,9 +137,30 @@ export function useBusinessErp() {
       },
     }),
   )
+  const purchaseRequisitionsQuery = useQuery(() =>
+    listBusinessConsoleErpPurchaseRequisitionsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        status: filters.status,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
 
   return {
     filters,
+    purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
+      unwrapItems(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsTotal: computed(() =>
+      unwrapTotal(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsError: purchaseRequisitionsQuery.error,
+    purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
+    refreshPurchaseRequisitions: purchaseRequisitionsQuery.refetch,
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
       unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
     ),
@@ -146,6 +170,10 @@ export function useBusinessErp() {
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
     refreshPurchaseOrders: purchaseOrdersQuery.refetch,
+    refreshProcurementDocuments: () => {
+      void purchaseRequisitionsQuery.refetch()
+      void purchaseOrdersQuery.refetch()
+    },
   }
 }
 
