@@ -1695,7 +1695,9 @@ public sealed record BusinessConsoleMrpPeggingItem(
     decimal Quantity,
     string? ProductionVersionReference,
     string? ManufacturingBomReference,
-    string? RoutingReference);
+    string? RoutingReference,
+    string SourceType = "unknown",
+    decimal GrossDemandQuantity = 0m);
 
 public sealed record BusinessConsoleMrpPeggingListResponse(IReadOnlyCollection<BusinessConsoleMrpPeggingItem> Items);
 
@@ -1715,9 +1717,26 @@ public sealed record BusinessConsolePlanningSuggestionItem(
     DateOnly RequiredDate,
     string Status,
     string ReasonCode,
+    BusinessConsoleNetRequirementExplanation? NetRequirementExplanation = null,
     string? DownstreamService = null,
     string? DownstreamDocumentType = null,
     string? DownstreamDocumentId = null);
+
+public sealed record BusinessConsoleNetRequirementExplanation(
+    decimal GrossDemandQuantity,
+    decimal OnHandQuantity,
+    decimal ReservedQuantity,
+    decimal AvailableToNetQuantity,
+    decimal ScheduledReceiptQuantity,
+    decimal SafetyStockQuantity,
+    decimal NetRequirementQuantity,
+    decimal PlannedQuantity,
+    decimal ScrapRate,
+    decimal YieldRate,
+    string PrimarySourceType,
+    string Formula,
+    IReadOnlyCollection<string> UomConversions,
+    IReadOnlyCollection<string> DegradationSources);
 
 public sealed record BusinessConsolePlanningSuggestionListResponse(IReadOnlyCollection<BusinessConsolePlanningSuggestionItem> Items);
 

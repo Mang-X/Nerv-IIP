@@ -414,7 +414,14 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Status == MasterProductionScheduleStatus.Released
                 && x.BucketDate >= horizonStart
                 && x.BucketDate <= horizonEnd)
-            .Select(x => new DemandSnapshot($"MPS:{x.Id}", x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.BucketDate, "mps"))
+            .Select(x => new DemandSnapshot(
+                $"MPS:{x.Id}",
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                x.BucketDate,
+                "mps"))
             .ToListAsync(cancellationToken);
 
         return demandSources
@@ -498,7 +505,9 @@ public sealed class HttpPlanningProductEngineeringSnapshotClient(HttpClient http
                 selectedBom.SkuCode,
                 line.SkuCode,
                 line.UnitOfMeasureCode,
-                line.Quantity * (1 + line.ScrapRate)))
+                line.Quantity,
+                Math.Max(0m, line.ScrapRate),
+                1m))
                 .ToArray();
 
         return new ProductEngineeringSkuSnapshot(version, components);
@@ -1024,7 +1033,13 @@ public sealed class HttpPlanningInventorySnapshotClient(HttpClient httpClient) :
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<InventoryAvailabilityResponse>>(cancellationToken);
         var body = envelope?.Data ?? throw new InvalidOperationException("Inventory returned an empty response envelope.");
-        return new InventoryAvailabilitySnapshot(body.SkuCode, body.UomCode, body.SiteCode, body.AvailableQuantity);
+        return new InventoryAvailabilitySnapshot(
+            body.SkuCode,
+            body.UomCode,
+            body.SiteCode,
+            body.AvailableQuantity,
+            body.OnHandQuantity,
+            body.ReservedQuantity);
     }
 }
 

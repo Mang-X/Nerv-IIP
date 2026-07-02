@@ -18,5 +18,7 @@ public sealed class PeggingLinkEntityTypeConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.ProductionVersionReference).HasColumnName("production_version_reference").HasMaxLength(128).HasComment("ProductEngineering production version snapshot reference.");
         builder.Property(x => x.ManufacturingBomReference).HasColumnName("manufacturing_bom_reference").HasMaxLength(128).HasComment("ProductEngineering manufacturing BOM snapshot reference.");
         builder.Property(x => x.RoutingReference).HasColumnName("routing_reference").HasMaxLength(128).HasComment("ProductEngineering routing snapshot reference.");
+        builder.Property(x => x.SourceType).HasColumnName("source_type").HasMaxLength(32).IsRequired().HasComment("Requirement source type such as sales, forecast, safety-stock, mps, component, or scheduled-receipt.");
+        builder.Property(x => x.GrossDemandQuantity).HasColumnName("gross_demand_quantity").HasPrecision(18, 6).HasComment("Gross requirement quantity represented by this pegging link.");
     }
 }

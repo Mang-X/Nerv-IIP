@@ -64,6 +64,19 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public DateOnly RequiredDate { get; private set; }
     public DateOnly ReleaseDate { get; private set; }
     public string ReasonCode { get; private set; } = string.Empty;
+    public decimal GrossDemandQuantity { get; private set; }
+    public decimal OnHandQuantity { get; private set; }
+    public decimal ReservedQuantity { get; private set; }
+    public decimal AvailableToNetQuantity { get; private set; }
+    public decimal ScheduledReceiptQuantity { get; private set; }
+    public decimal SafetyStockQuantity { get; private set; }
+    public decimal NetRequirementQuantity { get; private set; }
+    public decimal PlannedQuantity { get; private set; }
+    public decimal ScrapRate { get; private set; }
+    public decimal YieldRate { get; private set; } = 1m;
+    public string PrimarySourceType { get; private set; } = string.Empty;
+    public string Formula { get; private set; } = string.Empty;
+    public string UomConversionSummary { get; private set; } = string.Empty;
     public PlanningSuggestionStatus Status { get; private set; }
     public string? AcceptedDownstreamService { get; private set; }
     public string? AcceptedDownstreamDocumentType { get; private set; }
@@ -88,6 +101,36 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         return new PlanningSuggestion(organizationId, environmentId, mrpRunId, suggestionType, skuCode, uomCode, siteCode, quantity, requiredDate, releaseDate, reasonCode);
     }
 
+    public void SetNetRequirementExplanation(
+        decimal grossDemandQuantity,
+        decimal onHandQuantity,
+        decimal reservedQuantity,
+        decimal availableToNetQuantity,
+        decimal scheduledReceiptQuantity,
+        decimal safetyStockQuantity,
+        decimal netRequirementQuantity,
+        decimal plannedQuantity,
+        decimal scrapRate,
+        decimal yieldRate,
+        string primarySourceType,
+        string formula,
+        string? uomConversionSummary)
+    {
+        GrossDemandQuantity = Math.Max(0m, grossDemandQuantity);
+        OnHandQuantity = Math.Max(0m, onHandQuantity);
+        ReservedQuantity = Math.Max(0m, reservedQuantity);
+        AvailableToNetQuantity = Math.Max(0m, availableToNetQuantity);
+        ScheduledReceiptQuantity = Math.Max(0m, scheduledReceiptQuantity);
+        SafetyStockQuantity = Math.Max(0m, safetyStockQuantity);
+        NetRequirementQuantity = Math.Max(0m, netRequirementQuantity);
+        PlannedQuantity = Math.Max(0m, plannedQuantity);
+        ScrapRate = Math.Max(0m, scrapRate);
+        YieldRate = yieldRate <= 0m ? 1m : yieldRate;
+        PrimarySourceType = DemandPlanningText.Required(primarySourceType, nameof(primarySourceType));
+        Formula = DemandPlanningText.Required(formula, nameof(formula));
+        UomConversionSummary = DemandPlanningText.Optional(uomConversionSummary) ?? string.Empty;
+    }
+
     public void AddPeggingLink(
         string peggingType,
         string demandSourceReference,
@@ -96,7 +139,9 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         decimal quantity,
         string? productionVersionReference,
         string? manufacturingBomReference,
-        string? routingReference)
+        string? routingReference,
+        string? sourceType = null,
+        decimal grossDemandQuantity = 0m)
     {
         peggingLinks.Add(new PeggingLink(
             peggingType,
@@ -106,7 +151,9 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             quantity,
             productionVersionReference,
             manufacturingBomReference,
-            routingReference));
+            routingReference,
+            sourceType,
+            grossDemandQuantity));
     }
 
     public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
@@ -163,7 +210,9 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         decimal quantity,
         string? productionVersionReference,
         string? manufacturingBomReference,
-        string? routingReference)
+        string? routingReference,
+        string? sourceType = null,
+        decimal grossDemandQuantity = 0m)
     {
         PeggingType = DemandPlanningText.Required(peggingType, nameof(peggingType));
         DemandSourceReference = DemandPlanningText.Required(demandSourceReference, nameof(demandSourceReference));
@@ -173,6 +222,8 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         ProductionVersionReference = DemandPlanningText.Optional(productionVersionReference);
         ManufacturingBomReference = DemandPlanningText.Optional(manufacturingBomReference);
         RoutingReference = DemandPlanningText.Optional(routingReference);
+        SourceType = DemandPlanningText.Optional(sourceType) ?? "unknown";
+        GrossDemandQuantity = Math.Max(0m, grossDemandQuantity);
     }
 
     public PlanningSuggestionId PlanningSuggestionId { get; private set; } = default!;
@@ -184,4 +235,6 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
     public string? ProductionVersionReference { get; private set; }
     public string? ManufacturingBomReference { get; private set; }
     public string? RoutingReference { get; private set; }
+    public string SourceType { get; private set; } = string.Empty;
+    public decimal GrossDemandQuantity { get; private set; }
 }

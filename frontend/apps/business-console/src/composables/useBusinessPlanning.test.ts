@@ -155,7 +155,14 @@ describe('business planning composable', () => {
     })
     coladaState.queryDataById.set('getBusinessConsolePlanningMrpPegging', {
       success: true,
-      data: { items: [{ suggestionId: 'suggestion-1', demandSourceReference: 'SO-1001' }] },
+      data: {
+        items: [{
+          suggestionId: 'suggestion-1',
+          demandSourceReference: 'SO-1001',
+          sourceType: 'sales',
+          grossDemandQuantity: 10,
+        }],
+      },
     })
 
     const { demands, mpsBuckets, mrpRuns, pegging, runSelection, suggestions } = useBusinessPlanning()
@@ -188,6 +195,8 @@ describe('business planning composable', () => {
     expect(mrpRuns.value[0]?.inputCoverageEnd).toBe('2026-06-30')
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
+    expect(pegging.value[0]?.sourceType).toBe('sales')
+    expect(pegging.value[0]?.grossDemandQuantity).toBe(10)
   })
 
   it('creates, updates, reviews, and releases MPS buckets through generated mutations', async () => {

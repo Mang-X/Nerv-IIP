@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Http;
@@ -12,6 +13,8 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Tests;
 
 public sealed class PlanningInputAdapterTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     [Fact]
     public async Task Fixture_adapter_returns_snapshots_without_cross_service_table_access()
     {
@@ -69,6 +72,50 @@ public sealed class PlanningInputAdapterTests
         Assert.Empty(snapshot.ScheduledReceipts);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], engineering.RequestedParentSkuCodes);
         Assert.Equal(["SKU-FG-1000", "SKU-RM-1000"], inventory.RequestedSkuCodes);
+    }
+
+    [Fact]
+    public async Task Inventory_snapshot_client_preserves_on_hand_and_reserved_quantities_for_explanations()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse("""
+            {
+              "success": true,
+              "message": "ok",
+              "code": 0,
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "skuCode": "SKU-FG-1000",
+                "uomCode": "pcs",
+                "siteCode": "SITE-01",
+                "locationCode": null,
+                "lotNo": null,
+                "serialNo": null,
+                "qualityStatus": null,
+                "ownerType": null,
+                "ownerId": null,
+                "onHandQuantity": 10,
+                "reservedQuantity": 3,
+                "availableQuantity": 7
+              }
+            }
+            """));
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.test") };
+        var client = new HttpPlanningInventorySnapshotClient(httpClient);
+
+        var snapshot = await client.GetAvailabilitySnapshotAsync(
+            "token",
+            new PlanningInventorySnapshotRequest(
+                "org-001",
+                "env-dev",
+                [new PlanningInventorySnapshotItem("SKU-FG-1000", "pcs", "SITE-01")]),
+            CancellationToken.None);
+
+        var item = Assert.Single(snapshot.Availability);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(item, JsonOptions));
+        Assert.Equal(10m, document.RootElement.GetProperty("onHandQuantity").GetDecimal());
+        Assert.Equal(3m, document.RootElement.GetProperty("reservedQuantity").GetDecimal());
+        Assert.Equal(7m, document.RootElement.GetProperty("availableQuantity").GetDecimal());
     }
 
     [Fact]

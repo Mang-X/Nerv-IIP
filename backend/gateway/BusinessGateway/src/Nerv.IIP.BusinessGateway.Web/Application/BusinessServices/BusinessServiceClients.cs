@@ -3298,6 +3298,23 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.RequiredDate,
             PlanningSuggestionStatusName(x.Status),
             x.ReasonCode,
+            x.NetRequirementExplanation is null
+                ? null
+                : new BusinessConsoleNetRequirementExplanation(
+                    x.NetRequirementExplanation.GrossDemandQuantity,
+                    x.NetRequirementExplanation.OnHandQuantity,
+                    x.NetRequirementExplanation.ReservedQuantity,
+                    x.NetRequirementExplanation.AvailableToNetQuantity,
+                    x.NetRequirementExplanation.ScheduledReceiptQuantity,
+                    x.NetRequirementExplanation.SafetyStockQuantity,
+                    x.NetRequirementExplanation.NetRequirementQuantity,
+                    x.NetRequirementExplanation.PlannedQuantity,
+                    x.NetRequirementExplanation.ScrapRate,
+                    x.NetRequirementExplanation.YieldRate,
+                    x.NetRequirementExplanation.PrimarySourceType,
+                    x.NetRequirementExplanation.Formula,
+                    x.NetRequirementExplanation.UomConversions ?? [],
+                    x.NetRequirementExplanation.DegradationSources ?? []),
             x.AcceptedDownstreamService,
             x.AcceptedDownstreamDocumentType,
             x.AcceptedDownstreamDocumentId)).ToArray());
@@ -3426,7 +3443,24 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         string ReasonCode,
         string? AcceptedDownstreamService,
         string? AcceptedDownstreamDocumentType,
-        string? AcceptedDownstreamDocumentId);
+        string? AcceptedDownstreamDocumentId,
+        DownstreamNetRequirementExplanation? NetRequirementExplanation);
+
+    private sealed record DownstreamNetRequirementExplanation(
+        decimal GrossDemandQuantity,
+        decimal OnHandQuantity,
+        decimal ReservedQuantity,
+        decimal AvailableToNetQuantity,
+        decimal ScheduledReceiptQuantity,
+        decimal SafetyStockQuantity,
+        decimal NetRequirementQuantity,
+        decimal PlannedQuantity,
+        decimal ScrapRate,
+        decimal YieldRate,
+        string PrimarySourceType,
+        string Formula,
+        IReadOnlyCollection<string>? UomConversions,
+        IReadOnlyCollection<string>? DegradationSources);
 }
 
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260702093625_AddMrpNetRequirementExplanation")]
+    partial class AddMrpNetRequirementExplanation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -123,11 +126,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("bucket_date")
                         .HasComment("Daily MPS bucket date.");
 
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at_utc")
-                        .HasComment("UTC timestamp when the MPS bucket was created.");
-
                     b.Property<string>("EnvironmentId")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -148,28 +146,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("quantity")
                         .HasComment("Positive scheduled quantity.");
 
-                    b.Property<DateTimeOffset?>("ReleasedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("released_at_utc")
-                        .HasComment("UTC timestamp when the MPS bucket was released.");
-
-                    b.Property<string>("ReleasedBy")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("released_by")
-                        .HasComment("Planner or manager that released the MPS bucket.");
-
-                    b.Property<DateTimeOffset?>("ReviewedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("reviewed_at_utc")
-                        .HasComment("UTC timestamp when the MPS bucket was reviewed.");
-
-                    b.Property<string>("ReviewedBy")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("reviewed_by")
-                        .HasComment("Planner that reviewed the MPS bucket.");
-
                     b.Property<string>("SiteCode")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -184,24 +160,12 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("sku_code")
                         .HasComment("Scheduled SKU code snapshot.");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("status")
-                        .HasComment("MPS bucket lifecycle status.");
-
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("uom_code")
                         .HasComment("Scheduled quantity unit of measure snapshot.");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at_utc")
-                        .HasComment("UTC timestamp when the MPS bucket was last updated.");
 
                     b.HasKey("Id");
 
@@ -257,23 +221,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("horizon_start")
                         .HasComment("MRP calculation horizon start date.");
-
-                    b.Property<DateOnly?>("InputCoverageEnd")
-                        .HasColumnType("date")
-                        .HasColumnName("input_coverage_end")
-                        .HasComment("Latest input demand date included in this run.");
-
-                    b.Property<DateOnly?>("InputCoverageStart")
-                        .HasColumnType("date")
-                        .HasColumnName("input_coverage_start")
-                        .HasComment("Earliest input demand date included in this run.");
-
-                    b.Property<string>("InputSourceSummary")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
-                        .HasColumnName("input_source_summary")
-                        .HasComment("Semicolon-separated MRP input source types included in this run.");
 
                     b.Property<string>("InventorySnapshotSource")
                         .IsRequired()
