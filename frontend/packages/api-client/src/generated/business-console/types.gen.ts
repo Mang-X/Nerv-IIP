@@ -383,6 +383,9 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAcceptedResponse = {
     accepted?: boolean;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleFailWmsWcsTaskRequest = {
@@ -1821,6 +1824,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     requiredDate?: string;
     status?: string;
     reasonCode?: string;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningSuggestionListRequest = {
@@ -3622,12 +3628,35 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     requiredDate?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseRequisitionListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseRequisitionListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseRequisitionListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseRequisitionItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseRequisitionItem = {
+    purchaseRequisitionId?: string;
+    requisitionNo?: string;
+    suggestionId?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    quantity?: number;
+    requiredDate?: string;
+    status?: string;
+    createdAtUtc?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateErpPurchaseRequisitionResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionResponse | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionResponse = {
     purchaseRequisitionId?: string;
+    requisitionNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionRequest = {
@@ -11484,6 +11513,46 @@ export type CreateBusinessConsoleErpRequestForQuotationResponses = {
 };
 
 export type CreateBusinessConsoleErpRequestForQuotationResponse = CreateBusinessConsoleErpRequestForQuotationResponses[keyof CreateBusinessConsoleErpRequestForQuotationResponses];
+
+export type ListBusinessConsoleErpPurchaseRequisitionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        status?: string | null;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/procurement/purchase-requisitions';
+};
+
+export type ListBusinessConsoleErpPurchaseRequisitionsErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpPurchaseRequisitionsError = ListBusinessConsoleErpPurchaseRequisitionsErrors[keyof ListBusinessConsoleErpPurchaseRequisitionsErrors];
+
+export type ListBusinessConsoleErpPurchaseRequisitionsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseRequisitionListResponse;
+};
+
+export type ListBusinessConsoleErpPurchaseRequisitionsResponse = ListBusinessConsoleErpPurchaseRequisitionsResponses[keyof ListBusinessConsoleErpPurchaseRequisitionsResponses];
 
 export type CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateErpPurchaseRequisitionRequest;

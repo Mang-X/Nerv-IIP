@@ -8,6 +8,7 @@ import type {
 import type { DataTableProColumn, StatusTone } from '@nerv-iip/ui'
 import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useBusinessPlanning } from '@/composables/useBusinessPlanning'
+import { notifyError, notifySuccess } from '@/utils/notify'
 import {
   ButtonPro,
   DataTablePro,
@@ -38,11 +39,14 @@ import {
   TabsProList,
   TabsProTrigger,
 } from '@nerv-iip/ui'
-import { CornerDownRightIcon, NetworkIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
+import { CheckIcon, CornerDownRightIcon, ExternalLinkIcon, NetworkIcon, PlayIcon, PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
 import { computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
 const {
+  acceptSuggestion,
+  acceptSuggestionError,
+  acceptSuggestionPending,
   createDemandError,
   createDemandPending,
   createOrUpdateDemand,
@@ -121,7 +125,7 @@ const canSubmitDemand = computed(() =>
 )
 
 const errorMessage = computed(() =>
-  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError]
+  [demandsError, mrpRunsError, suggestionsError, createDemandError, runMrpError, acceptSuggestionError]
     .map((ref) => formatError(ref.value)).find(Boolean) ?? '',
 )
 function formatError(error: unknown) {
@@ -268,7 +272,9 @@ const suggestionColumns: DataTableProColumn<BusinessConsolePlanningSuggestionIte
   { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
   { key: 'requiredDate', header: '需求日', width: 'w-28' },
   { key: 'reasonCode', header: '原因' },
+  { key: 'downstream', header: '承接单据', width: 'w-40' },
   { key: 'status', header: '状态', width: 'w-24' },
+  { key: 'actions', header: '', align: 'end', width: 'w-32' },
 ]
 
 async function submitDemand() {
@@ -278,6 +284,23 @@ async function submitDemand() {
 async function submitMrpRun() {
   await runMrp()
   mrpOpen.value = false
+}
+async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
+  if (!row.suggestionId || !row.suggestionType) return
+  try {
+    const response = await acceptSuggestion({
+      suggestionId: row.suggestionId,
+      suggestionType: row.suggestionType,
+    })
+    const reference = response.data?.downstreamDocumentId
+    notifySuccess(reference ? `计划建议已承接到 ${downstreamLabel(response.data?.downstreamService, response.data?.downstreamDocumentType)}「${reference}」。` : '计划建议已接受。')
+    if (reference) {
+      await router.push(downstreamRoute(response.data?.downstreamService, response.data?.downstreamDocumentType, reference))
+    }
+  }
+  catch (error) {
+    notifyError(error, '计划建议接受失败，请检查生产版本、供应商、库存或权限状态。')
+  }
 }
 
 function planningStatus(status?: string | null): { label: string, tone: StatusTone } {
@@ -309,6 +332,21 @@ function reasonLabel(value?: string | null) {
 }
 function isOpen(status?: string | null) {
   return status?.toLowerCase() === 'open'
+}
+function downstreamLabel(service?: string | null, type?: string | null) {
+  if (service === 'BusinessMes' && type === 'WorkOrder') return 'MES 工单'
+  if (service === 'BusinessErp' && type === 'PurchaseRequisition') return 'ERP 采购申请'
+  return '下游单据'
+}
+function downstreamRoute(service: string | null | undefined, type: string | null | undefined, documentId: string) {
+  if (service === 'BusinessMes' && type === 'WorkOrder') {
+    return { path: `/mes/work-orders/${encodeURIComponent(documentId)}` }
+  }
+
+  return {
+    path: '/erp',
+    query: { keyword: documentId },
+  }
 }
 function formatDate(value?: string | null) {
   return value ? value.slice(0, 10) : '-'
@@ -629,7 +667,34 @@ function openBomContext(row: BusinessConsoleMrpPeggingItem) {
         <template #cell-quantity="{ row }"><span class="tabular-nums">{{ formatQuantity(row.quantity, row.uomCode) }}</span></template>
         <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
         <template #cell-reasonCode="{ row }">{{ reasonLabel(row.reasonCode) }}</template>
+        <template #cell-downstream="{ row }">
+          <ButtonPro
+            v-if="row.downstreamDocumentId"
+            size="sm"
+            type="button"
+            variant="ghost"
+            @click="router.push(downstreamRoute(row.downstreamService, row.downstreamDocumentType, row.downstreamDocumentId))"
+          >
+            <ExternalLinkIcon aria-hidden="true" />
+            {{ row.downstreamDocumentId }}
+          </ButtonPro>
+          <span v-else class="text-sm text-muted-foreground">未承接</span>
+        </template>
         <template #cell-status="{ row }"><StatusBadgePro :label="planningStatus(row.status).label" :tone="planningStatus(row.status).tone" /></template>
+        <template #cell-actions="{ row }">
+          <ButtonPro
+            v-if="isOpen(row.status)"
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="acceptSuggestionPending"
+            @click="acceptPlanningSuggestion(row)"
+          >
+            <Spinner v-if="acceptSuggestionPending" aria-hidden="true" />
+            <CheckIcon v-else aria-hidden="true" />
+            接受
+          </ButtonPro>
+        </template>
       </DataTablePro>
     </TabsProContent>
   </TabsPro>

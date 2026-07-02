@@ -585,6 +585,11 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleErpPurchaseRequisitionListResponse> ListPurchaseRequisitionsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleErpPurchaseOrderListResponse> ListPurchaseOrdersAsync(
         string internalBearerToken,
         BusinessConsoleErpListRequest request,
@@ -3132,7 +3137,10 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.Quantity,
             x.RequiredDate,
             PlanningSuggestionStatusName(x.Status),
-            x.ReasonCode)).ToArray());
+            x.ReasonCode,
+            x.AcceptedDownstreamService,
+            x.AcceptedDownstreamDocumentType,
+            x.AcceptedDownstreamDocumentId)).ToArray());
     }
 
     public Task<BusinessConsoleAcceptedResponse> AcceptSuggestionAsync(
@@ -3148,14 +3156,12 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         BusinessConsoleAcceptPlanningSuggestionRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await SendAsync<string>(
+        return await SendAsync<BusinessConsoleAcceptedResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/accept",
             request,
             cancellationToken);
-        return new BusinessConsoleAcceptedResponse(
-            string.Equals(result, "accepted", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string PlanningContextQuery(string organizationId, string environmentId) =>
@@ -3211,7 +3217,10 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         decimal Quantity,
         DateOnly RequiredDate,
         int Status,
-        string ReasonCode);
+        string ReasonCode,
+        string? AcceptedDownstreamService,
+        string? AcceptedDownstreamDocumentType,
+        string? AcceptedDownstreamDocumentId);
 }
 
 public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
@@ -4006,6 +4015,17 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Get,
             "/api/business/v1/erp/rfqs?" + ErpListQuery(request),
+            null,
+            cancellationToken);
+
+    public Task<BusinessConsoleErpPurchaseRequisitionListResponse> ListPurchaseRequisitionsAsync(
+        string internalBearerToken,
+        BusinessConsoleErpListRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleErpPurchaseRequisitionListResponse>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/erp/purchase-requisitions?" + ErpListQuery(request),
             null,
             cancellationToken);
 

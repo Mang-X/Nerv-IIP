@@ -20,7 +20,7 @@
 - PC Business Console：`frontend/apps/business-console/src/navigation.ts` 和 `frontend/apps/business-console/src/pages/*`
 - Business PDA：`frontend/apps/business-pda/src/pages/*`、`frontend/apps/business-pda/src/composables/*`、`frontend/packages/business-core/src/tasks/pdaTaskKinds.ts`
 - 大屏/设计系统：`frontend/apps/design-system/src/pages/board.vue`、`frontend/apps/design-system/docs/components/screen/*`、`frontend/packages/ui/src/components/screen/*`
-- 当前没有 `frontend/apps/business-board`，也没有 `frontend/apps/business-console/src/pages/barcode` 或 `frontend/apps/business-pda/src/pages/scan.vue`；Business Console 已有 `frontend/apps/business-console/src/pages/approval`。
+- 当前没有 `frontend/apps/business-board`，也没有 `frontend/apps/business-pda/src/pages/scan.vue`；Business Console 已有 `frontend/apps/business-console/src/pages/barcode` 与 `frontend/apps/business-console/src/pages/approval`。
 
 ## 总览
 
@@ -37,7 +37,7 @@
 | ERP 经营管理 | [x] | [x] | [x] 采购/销售/财务窄面 | [ ] | [ ] | 完整采购/销售/财务菜单、税务/银行/月结/报表、退货/RMA、移动审批/收货协同。 |
 | IndustrialTelemetry 设备监控 | [x] | [x] | [x] 设备看板/报警，[ ] 规则/OEE 正式页面 | [x] 报警查看 | [ ] | tag/rule/OEE 配置页、实时趋势、报警处理闭环、OEE/停机大屏。 |
 | Maintenance 设备运维 | [x] | [x] | [x] 工单/计划 | [x] 报修/点检 | [ ] | 完整 CMMS 资产视角、备件成本、移动离线点检、维修绩效分析。 |
-| BarcodeLabel 条码标签 | [x] | [x] | [ ] | [ ] | [ ] | PC 标签规则/模板/打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。 |
+| BarcodeLabel 条码标签 | [x] | [x] | [x] 规则/模板 | [ ] | [ ] | 打印批次/扫码记录页，PDA `/scan` 解析和条码业务直达。 |
 | BusinessApproval 审批中心 | [x] | [x] | [x] | [ ] | [ ] | PC 审批中心已接入模板、流程、任务、决策和委托；移动审批、工作台待办深度整合和跨域单据详情穿透仍后续。 |
 | Search / Workbench 工作台 | [x] facade | [x] | [x] 首页，[ ] Cmd/Ctrl+K 实装 | [x] 首页壳，[ ] 我的任务真实数据 | [ ] | 全局对象搜索面板、近期/星标、角色化待办、跨域指标和预警聚合。 |
 

@@ -12,6 +12,7 @@ import {
   listBusinessConsoleErpOpportunitiesQueryOptions,
   listBusinessConsoleErpPayablesQueryOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleErpReceivablesQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
@@ -31,6 +32,8 @@ import {
   type BusinessConsoleErpPayableListEnvelope,
   type BusinessConsoleErpPurchaseOrderItem,
   type BusinessConsoleErpPurchaseOrderListEnvelope,
+  type BusinessConsoleErpPurchaseRequisitionItem,
+  type BusinessConsoleErpPurchaseRequisitionListEnvelope,
   type BusinessConsoleErpQuotationItem,
   type BusinessConsoleErpQuotationListEnvelope,
   type BusinessConsoleErpReceivableItem,
@@ -46,6 +49,8 @@ const DEFAULT_TAKE = 10
 
 export interface BusinessErpListFilters {
   status?: string
+  purchaseOrderStatus?: string
+  purchaseRequisitionStatus?: string
   keyword?: string
   skip: number
   take: number
@@ -127,7 +132,19 @@ export function useBusinessErp() {
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
-        status: filters.status,
+        status: filters.purchaseOrderStatus,
+        keyword: filters.keyword,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+  )
+  const purchaseRequisitionsQuery = useQuery(() =>
+    listBusinessConsoleErpPurchaseRequisitionsQueryOptions({
+      query: {
+        organizationId: businessContext.organizationId,
+        environmentId: businessContext.environmentId,
+        status: filters.purchaseRequisitionStatus,
         keyword: filters.keyword,
         skip: filters.skip,
         take: filters.take,
@@ -137,6 +154,15 @@ export function useBusinessErp() {
 
   return {
     filters,
+    purchaseRequisitions: computed<BusinessConsoleErpPurchaseRequisitionItem[]>(() =>
+      unwrapItems(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsTotal: computed(() =>
+      unwrapTotal(purchaseRequisitionsQuery.data.value as BusinessConsoleErpPurchaseRequisitionListEnvelope | undefined),
+    ),
+    purchaseRequisitionsError: purchaseRequisitionsQuery.error,
+    purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
+    refreshPurchaseRequisitions: purchaseRequisitionsQuery.refetch,
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
       unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
     ),
@@ -146,6 +172,10 @@ export function useBusinessErp() {
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
     refreshPurchaseOrders: purchaseOrdersQuery.refetch,
+    refreshProcurementDocuments: () => {
+      void purchaseRequisitionsQuery.refetch()
+      void purchaseOrdersQuery.refetch()
+    },
   }
 }
 

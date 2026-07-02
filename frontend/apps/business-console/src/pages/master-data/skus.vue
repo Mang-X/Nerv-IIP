@@ -530,6 +530,11 @@ function isNonEmpty(value: string) {
                       <SelectProItem v-for="option in barcodeRuleOptions" :key="option.value" :value="option.value">{{ option.label }}</SelectProItem>
                     </SelectProContent>
                   </SelectPro>
+                  <FieldProDescription>
+                    <RouterLink class="text-primary underline-offset-4 hover:underline" :to="{ path: '/barcode/rules', query: { ruleCode: createForm.defaultBarcodeRuleCode } }">
+                      去条码规则维护
+                    </RouterLink>
+                  </FieldProDescription>
                 </FieldPro>
                 <FieldPro class="sm:col-span-2">
                   <FieldProLabel>质量/合规标签</FieldProLabel>

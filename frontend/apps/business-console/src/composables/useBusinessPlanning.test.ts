@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
+  acceptBusinessConsolePlanningSuggestionMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
@@ -20,6 +21,17 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  acceptBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: {
+        accepted: true,
+        downstreamService: vars.body.downstreamService,
+        downstreamDocumentType: vars.body.downstreamDocumentType,
+        downstreamDocumentId: 'WO-20260701-001',
+      },
+    })),
+  })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
   })),
@@ -175,6 +187,34 @@ describe('business planning composable', () => {
           horizonEnd: '2026-06-30',
         }),
       })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('accepts a planning suggestion through generated mutation and refreshes planning queries', async () => {
+    const { acceptSuggestion } = useBusinessPlanning()
+
+    const result = await acceptSuggestion({
+      suggestionId: 'suggestion-1',
+      suggestionType: 'planned-work-order',
+    })
+
+    expect(acceptBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { suggestionId: 'suggestion-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+      body: expect.objectContaining({
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+        downstreamDocumentId: null,
+      }),
+    })
+    expect(result.data?.downstreamDocumentId).toBe('WO-20260701-001')
     expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 })

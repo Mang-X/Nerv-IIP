@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
+  listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessErp } from './useBusinessErp'
@@ -16,6 +17,10 @@ const coladaState = vi.hoisted(() => ({
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleErpPurchaseOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleErpPurchaseOrders' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleErpPurchaseRequisitionsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpPurchaseRequisitions' }],
     query: vi.fn(),
   })),
 }))
@@ -60,14 +65,30 @@ describe('business ERP composable', () => {
         total: 42,
       },
     })
+    coladaState.queryDataById.set('listBusinessConsoleErpPurchaseRequisitions', {
+      success: true,
+      data: {
+        items: [
+          {
+            requisitionNo: 'PR-001',
+            suggestionId: 'suggestion-001',
+            skuCode: 'SKU-RM-001',
+            status: 'Open',
+          },
+        ],
+        total: 7,
+      },
+    })
 
-    const { filters, purchaseOrders, purchaseOrdersTotal } = useBusinessErp()
-    filters.status = 'Released'
+    const { filters, purchaseOrders, purchaseOrdersTotal, purchaseRequisitions, purchaseRequisitionsTotal } = useBusinessErp()
+    filters.purchaseOrderStatus = 'Released'
+    filters.purchaseRequisitionStatus = 'Open'
     filters.keyword = 'SUP-001'
     filters.skip = 20
     filters.take = 10
 
     coladaState.queryFactoriesById.get('listBusinessConsoleErpPurchaseOrders')?.()
+    coladaState.queryFactoriesById.get('listBusinessConsoleErpPurchaseRequisitions')?.()
 
     expect(listBusinessConsoleErpPurchaseOrdersQueryOptions).toHaveBeenLastCalledWith({
       query: {
@@ -79,9 +100,22 @@ describe('business ERP composable', () => {
         take: 10,
       },
     })
+    expect(listBusinessConsoleErpPurchaseRequisitionsQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        status: 'Open',
+        keyword: 'SUP-001',
+        skip: 20,
+        take: 10,
+      },
+    })
     expect(purchaseOrders.value).toHaveLength(1)
     expect(purchaseOrders.value[0]?.supplierCode).toBe('SUP-001')
     expect(purchaseOrders.value[0]?.receiptReadiness).toBe('partially-received')
     expect(purchaseOrdersTotal.value).toBe(42)
+    expect(purchaseRequisitions.value).toHaveLength(1)
+    expect(purchaseRequisitions.value[0]?.requisitionNo).toBe('PR-001')
+    expect(purchaseRequisitionsTotal.value).toBe(7)
   })
 })

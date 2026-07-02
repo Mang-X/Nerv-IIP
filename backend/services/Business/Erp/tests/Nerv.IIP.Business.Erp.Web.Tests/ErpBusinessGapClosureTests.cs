@@ -77,8 +77,8 @@ public sealed class ErpBusinessGapClosureTests
             "env-dev",
             "QT-001",
             "CUST-001",
-            new DateOnly(2026, 7, 1),
-            [new QuotationLineDraft("LINE-001", "SKU-FG-1000", "ea", 3m, 20m, new DateOnly(2026, 7, 15))]);
+            FutureDate(30),
+            [new QuotationLineDraft("LINE-001", "SKU-FG-1000", "ea", 3m, 20m, FutureDate(45))]);
         quotation.Approve();
         var salesOrder = SalesOrder.CreateFromQuotation("SO-001", quotation);
         var delivery = DeliveryOrder.Release(
@@ -744,8 +744,8 @@ public sealed class ErpBusinessGapClosureTests
                 "env-dev",
                 "QT-001",
                 "CUST-001",
-                new DateOnly(2026, 12, 31),
-                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 2m, 20m, new DateOnly(2026, 7, 1))]),
+                FutureDate(30),
+                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 2m, 20m, FutureDate(45))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ApproveQuotationCommandHandler(dbContext).Handle(
@@ -840,8 +840,8 @@ public sealed class ErpBusinessGapClosureTests
                 "env-dev",
                 "QT-001",
                 "CUST-001",
-                new DateOnly(2026, 12, 31),
-                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 2m, 20m, new DateOnly(2026, 7, 1))]),
+                FutureDate(30),
+                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 2m, 20m, FutureDate(45))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ApproveQuotationCommandHandler(dbContext).Handle(
@@ -867,8 +867,8 @@ public sealed class ErpBusinessGapClosureTests
                 "env-dev",
                 "QT-002",
                 "CUST-001",
-                new DateOnly(2026, 12, 31),
-                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 1m, 40m, new DateOnly(2026, 7, 1))]),
+                FutureDate(30),
+                [new QuotationCommandLine("LINE-001", "SKU-FG", "EA", 1m, 40m, FutureDate(45))]),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new ApproveQuotationCommandHandler(dbContext).Handle(
@@ -882,5 +882,10 @@ public sealed class ErpBusinessGapClosureTests
             CancellationToken.None);
 
         Assert.NotNull(salesOrderId);
+    }
+
+    private static DateOnly FutureDate(int days)
+    {
+        return DateOnly.FromDateTime(DateTime.UtcNow.AddDays(days));
     }
 }

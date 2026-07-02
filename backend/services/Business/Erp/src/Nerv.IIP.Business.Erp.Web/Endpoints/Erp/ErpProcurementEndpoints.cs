@@ -47,7 +47,9 @@ public sealed record CreatePurchaseRequisitionFromSuggestionRequest(
     DateOnly RequiredDate,
     string? IdempotencyKey = null);
 
-public sealed record CreatePurchaseRequisitionFromSuggestionResponse(PurchaseRequisitionId PurchaseRequisitionId);
+public sealed record CreatePurchaseRequisitionFromSuggestionResponse(
+    PurchaseRequisitionId PurchaseRequisitionId,
+    string RequisitionNo);
 
 public sealed record CreateRequestForQuotationRequest(
     string OrganizationId,
@@ -149,6 +151,14 @@ public sealed record ListRequestsForQuotationRequest(
     int Skip = 0,
     int Take = 100);
 
+public sealed record ListPurchaseRequisitionsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender sender)
     : ErpEndpoint<CreatePurchaseRequisitionFromSuggestionRequest, ResponseData<CreatePurchaseRequisitionFromSuggestionResponse>>
 {
@@ -159,7 +169,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
 
     public override async Task HandleAsync(CreatePurchaseRequisitionFromSuggestionRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
+        var result = await sender.Send(new CreatePurchaseRequisitionFromSuggestionCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.RequisitionNo,
@@ -170,7 +180,7 @@ public sealed class CreatePurchaseRequisitionFromSuggestionEndpoint(ISender send
             req.Quantity,
             req.RequiredDate,
             req.IdempotencyKey), ct);
-        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(id).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new CreatePurchaseRequisitionFromSuggestionResponse(result.PurchaseRequisitionId, result.RequisitionNo).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -215,6 +225,21 @@ public sealed class ListRequestsForQuotationEndpoint(ISender sender)
     public override async Task HandleAsync(ListRequestsForQuotationRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new ListRequestsForQuotationQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListPurchaseRequisitionsEndpoint(ISender sender)
+    : ErpEndpoint<ListPurchaseRequisitionsRequest, ResponseData<ListPurchaseRequisitionsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ListPurchaseRequisitionsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListPurchaseRequisitionsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListPurchaseRequisitionsQuery(req.OrganizationId, req.EnvironmentId, req.Status, req.Keyword, req.Skip, req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -365,6 +390,7 @@ public static class ErpProcurementEndpointContracts
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
         new(typeof(CreatePurchaseRequisitionFromSuggestionEndpoint), "POST", "/api/business/v1/erp/purchase-requisitions/from-suggestion", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpPurchaseRequisitionFromSuggestion"),
+        new(typeof(ListPurchaseRequisitionsEndpoint), "GET", "/api/business/v1/erp/purchase-requisitions", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseRequisitions"),
         new(typeof(CreateRequestForQuotationEndpoint), "POST", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "createErpRequestForQuotation"),
         new(typeof(ReceiveSupplierQuotationEndpoint), "POST", "/api/business/v1/erp/supplier-quotations", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "receiveErpSupplierQuotation"),
         new(typeof(ListRequestsForQuotationEndpoint), "GET", "/api/business/v1/erp/rfqs", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpRequestsForQuotation"),
