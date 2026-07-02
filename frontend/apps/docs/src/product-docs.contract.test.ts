@@ -15,10 +15,27 @@ const requiredGuideSections = [
   '操作步骤',
   '业务对象/单据流',
   '状态变化',
-  '成功结果',
+  '结果校验',
   '常见失败/空态',
   '当前限制',
 ]
+
+const requiredGapSections = [
+  '能力缺失',
+  '操作不连贯',
+  '手填 ID',
+  '术语不清',
+  '反馈不足',
+]
+
+const developmentOnlyWordingPatterns = [
+  /\bdemo\w*\b/i,
+  /\bseed\w*\b/i,
+  /\bmock\w*\b/i,
+]
+
+const docsAppRoutePrefixes = ['/getting-started', '/internal', '/processes']
+const nonBusinessConsoleRoutePrefixes = ['/api']
 
 function readDocsFile(relativePath: string) {
   return readFileSync(join(docsRoot, relativePath), 'utf8')
@@ -71,9 +88,50 @@ function listBusinessConsoleRoutes() {
   return new Set(pageFiles)
 }
 
+function shouldValidateBusinessConsoleRoute(route: string) {
+  if (docsAppRoutePrefixes.some((prefix) => route === prefix || route.startsWith(`${prefix}/`))) {
+    return false
+  }
+
+  if (nonBusinessConsoleRoutePrefixes.some((prefix) => route === prefix || route.startsWith(`${prefix}/`))) {
+    return false
+  }
+
+  return true
+}
+
+function extractBusinessConsoleRouteTokens(content: string) {
+  return Array.from(content.matchAll(/`(\/[^`\s]*)`/g), (match) => match[1])
+    .filter(shouldValidateBusinessConsoleRoute)
+}
+
 const businessConsoleRoutes = listBusinessConsoleRoutes()
 
 describe('product docs app contract', () => {
+  test('blocks common development-only wording variants in public docs', () => {
+    const forbiddenVariants = [
+      'demo',
+      'demos',
+      'demoed',
+      'seed',
+      'seeds',
+      'seeded',
+      'seeding',
+      'mock',
+      'mocks',
+      'mocked',
+      'mocking',
+      'mockup',
+    ]
+
+    for (const variant of forbiddenVariants) {
+      expect(
+        developmentOnlyWordingPatterns.some((pattern) => pattern.test(variant)),
+        `${variant} should be blocked from public docs`,
+      ).toBe(true)
+    }
+  })
+
   test('publishes at least three complete end-to-end getting-started paths', () => {
     const guideFiles = listMarkdownFiles('getting-started')
 
@@ -121,6 +179,10 @@ describe('product docs app contract', () => {
 
       expect(content).toContain('## 证据页面')
       expect(content).toContain('## 建议 issue 标题')
+
+      for (const section of requiredGapSections) {
+        expect(content, `${file} should include ${section}`).toContain(`### ${section}`)
+      }
     }
 
     const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
@@ -129,7 +191,20 @@ describe('product docs app contract', () => {
       const content = readFileSync(file, 'utf8')
 
       expect(content, `${file} should not expose internal gap wording`).not.toContain('建议 issue 标题')
+
+      for (const pattern of developmentOnlyWordingPatterns) {
+        expect(content, `${file} should avoid development-only wording ${pattern}`).not.toMatch(pattern)
+      }
     }
+  })
+
+  test('validates future business-console route prefixes without manual whitelist updates', () => {
+    const publicRouteTokens = '`/planning` `/future-domain/workbench` `/getting-started/example` `/api/mobile/v1/**`'
+    const routes = extractBusinessConsoleRouteTokens(publicRouteTokens)
+
+    expect(routes).toContain('/future-domain/workbench')
+    expect(routes).not.toContain('/getting-started/example')
+    expect(routes).not.toContain('/api/mobile/v1/**')
   })
 
   test('references only real business-console routes in public guide copy', () => {
@@ -137,9 +212,7 @@ describe('product docs app contract', () => {
 
     for (const file of publicFiles) {
       const content = readFileSync(file, 'utf8')
-      const routes = Array.from(content.matchAll(/`(\/[a-z0-9][a-z0-9/:?-]*)`/g), (match) => match[1])
-        .filter((route) => route.startsWith('/mes') || route.startsWith('/wms') || route.startsWith('/engineering') || route.startsWith('/inventory') || route.startsWith('/planning') || route.startsWith('/quality') || route.startsWith('/master-data'))
-        .filter((route) => !route.includes(':'))
+      const routes = extractBusinessConsoleRouteTokens(content)
 
       for (const route of routes) {
         expect(
