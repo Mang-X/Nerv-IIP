@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Button, ThemePicker } from '@nerv-iip/ui'
+import { Button, ThemePicker, useColorMode } from '@nerv-iip/ui'
 import { Moon, Search, Sun } from 'lucide-vue-next'
 import { useData } from 'vitepress'
 import DefaultTheme from 'vitepress/theme'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 
 // Wrap the default layout and swap VitePress's built-in nav controls for our own
 // @nerv-iip/ui components, so the docs chrome matches the system it documents:
@@ -15,6 +15,12 @@ import { onMounted, ref } from 'vue'
 // its modal + key listeners keep working — only its button is hidden).
 const { Layout } = DefaultTheme
 const { isDark } = useData()
+
+// 文档用 VitePress 外观(.dark 类)驱动 CSS token;而 @nerv-iip 组件内部(如排产
+// DHTMLX 引擎)按 useColorMode 自有状态解析并重发主题。两者默认不同步,导致切换
+// 明暗时组件不跟随。桥接:VitePress isDark 变化时同步 useColorMode。
+const { setMode } = useColorMode()
+watch(isDark, (d) => setMode(d ? 'dark' : 'light'), { immediate: true })
 
 const isMac = ref(false)
 onMounted(() => {

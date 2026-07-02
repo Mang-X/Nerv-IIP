@@ -172,8 +172,12 @@ export default defineConfig({
           items: [{ text: 'Chart 图表', link: '/components/desktop/chart' }],
         },
         {
-          text: '业务区块',
-          items: [{ text: 'Scheduling 排产工作台', link: '/components/desktop/scheduling' }],
+          text: '排产 Scheduling',
+          items: [
+            { text: 'GanttChart 工单甘特', link: '/components/desktop/gantt-chart' },
+            { text: 'ResourceSchedulerBoard 资源排产板', link: '/components/desktop/resource-scheduler' },
+            { text: 'SchedulingWorkbench 排产工作台', link: '/components/desktop/scheduling-workbench' },
+          ],
         },
       ],
       // PDA 移动 —— 组件库式：每个组件一页，按分类分组
