@@ -105,6 +105,12 @@ function formatError(error: unknown) {
             <WrenchIcon aria-hidden="true" />
             记录停机
           </DropdownMenuProItem>
+          <DropdownMenuProItem as-child>
+            <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: row.deviceAssetId, sourceAlarmId: row.alarmEventId } }">
+              <WrenchIcon aria-hidden="true" />
+              创建维修工单
+            </RouterLink>
+          </DropdownMenuProItem>
         </RowActions>
       </template>
     </DataTablePro>
