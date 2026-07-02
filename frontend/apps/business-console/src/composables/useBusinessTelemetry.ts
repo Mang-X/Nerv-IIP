@@ -204,6 +204,7 @@ export function useBusinessTelemetryHistory(initialFilters: Partial<TelemetryWin
   const visibleHistoryItems = computed(() => {
     const tagKey = filters.tagKey.trim()
     if (!tagKey) return historyItems.value
+    // History facade currently accepts device/time only; tag filtering stays local until tag/paging query params exist.
     return historyItems.value.filter((item) => item.tagKey === tagKey)
   })
 

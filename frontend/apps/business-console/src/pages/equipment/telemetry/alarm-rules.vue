@@ -131,8 +131,16 @@ function openEdit(row: BusinessConsoleTelemetryAlarmRuleItem) {
   formOpen.value = true
 }
 async function submitRule() {
-  if (!form.deviceAssetId.trim() || !form.ruleCode.trim() || !form.alarmCode.trim() || !form.tagKey.trim() || !form.unitCode.trim()) {
-    formError.value = '请填写设备、规则、报警、采集标签和单位。'
+  const thresholdValue = parseThresholdValue(form.thresholdValue)
+  if (
+    !form.deviceAssetId.trim()
+    || !form.ruleCode.trim()
+    || !form.alarmCode.trim()
+    || !form.tagKey.trim()
+    || thresholdValue === undefined
+    || !form.unitCode.trim()
+  ) {
+    formError.value = '请填写设备、规则、报警、采集标签、阈值和单位。'
     return
   }
 
@@ -144,7 +152,7 @@ async function submitRule() {
       alarmCode: form.alarmCode.trim(),
       tagKey: form.tagKey.trim(),
       unitCode: form.unitCode.trim(),
-      thresholdValue: Number.isFinite(Number(form.thresholdValue)) ? Number(form.thresholdValue) : undefined,
+      thresholdValue,
     })
     formOpen.value = false
     toast.success('报警规则已保存')
@@ -163,6 +171,13 @@ function severityVariant(value?: string | null) {
 }
 function conditionLabel(row: BusinessConsoleTelemetryAlarmRuleItem) {
   return `${row.comparisonOperator ?? '?'} ${row.thresholdValue ?? '无阈值'} ${row.unitCode ?? ''}`.trim()
+}
+function parseThresholdValue(value: SaveTelemetryAlarmRuleInput['thresholdValue'] | string) {
+  if (value === null || value === undefined) return undefined
+  const raw = typeof value === 'string' ? value.trim() : value
+  if (raw === '') return undefined
+  const numericValue = Number(raw)
+  return Number.isFinite(numericValue) ? numericValue : undefined
 }
 function formatDateTime(value?: string | null) {
   if (!value) return '无'

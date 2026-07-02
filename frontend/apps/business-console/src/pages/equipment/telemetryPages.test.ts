@@ -1,11 +1,15 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, shallowRef } from 'vue'
 
 import TelemetryAlarmRulesPage from './telemetry/alarm-rules.vue'
 import TelemetryHistoryPage from './telemetry/history.vue'
 import TelemetryOeePage from './telemetry/oee.vue'
 import TelemetryTagsPage from './telemetry/tags.vue'
+
+const telemetryPageMocks = vi.hoisted(() => ({
+  saveAlarmRule: vi.fn(),
+}))
 
 vi.mock('@nerv-iip/ui', () => ({
   BadgePro: { template: '<span><slot /></span>' },
@@ -88,7 +92,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     alarmRulesTotal: computed(() => 1),
     filters: { deviceAssetId: '', isEnabled: 'all', skip: 0, take: 100 },
     refreshAlarmRules: vi.fn(),
-    saveAlarmRule: vi.fn(),
+    saveAlarmRule: telemetryPageMocks.saveAlarmRule,
     saveAlarmRuleError: shallowRef(),
     saveAlarmRulePending: shallowRef(false),
   }),
@@ -122,6 +126,14 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
         severity: 'critical',
         startUtc: '2026-07-02T07:00:00.000Z',
         endUtc: '2026-07-02T08:00:00.000Z',
+      },
+      {
+        deviceAssetId: 'DEV-CNC-01',
+        availabilityStatus: 'unknown',
+        reasonCode: 'equipment.stateUnknown',
+        severity: 'warning',
+        startUtc: '2026-07-02T08:00:00.000Z',
+        endUtc: '2026-07-02T09:00:00.000Z',
       },
     ]),
     filters: {
@@ -210,6 +222,10 @@ const stubs = {
 }
 
 describe('equipment telemetry pages', () => {
+  beforeEach(() => {
+    telemetryPageMocks.saveAlarmRule.mockClear()
+  })
+
   it('does not expose organization or environment context on telemetry pages', () => {
     for (const page of [TelemetryTagsPage, TelemetryAlarmRulesPage, TelemetryHistoryPage, TelemetryOeePage]) {
       const wrapper = mount(page, { global: { stubs } })
@@ -229,5 +245,41 @@ describe('equipment telemetry pages', () => {
     const oeeText = mount(TelemetryOeePage, { global: { stubs } }).text()
     expect(oeeText).toContain('82.0%')
     expect(oeeText).toContain('性能与质量不作为真实测量值')
+  })
+
+  it('counts only unavailable runtime windows as unavailable windows', () => {
+    const wrapper = mount(TelemetryOeePage, { global: { stubs } })
+
+    expect(wrapper.text()).toMatch(/不可用窗口\s*1/)
+  })
+
+  it('requires a numeric threshold before saving an alarm rule', async () => {
+    const wrapper = mount(TelemetryAlarmRulesPage, { global: { stubs } })
+    const vm = wrapper.vm as unknown as {
+      form: {
+        alarmCode: string
+        comparisonOperator: string
+        deviceAssetId: string
+        ruleCode: string
+        tagKey: string
+        thresholdValue?: string | number
+        unitCode: string
+      }
+      submitRule: () => Promise<void>
+    }
+
+    Object.assign(vm.form, {
+      alarmCode: 'ALM-TEMP-HIGH',
+      comparisonOperator: '>',
+      deviceAssetId: 'DEV-CNC-01',
+      ruleCode: 'TEMP_HIGH',
+      tagKey: 'temperature',
+      thresholdValue: '',
+      unitCode: 'CEL',
+    })
+    await vm.submitRule()
+
+    expect(telemetryPageMocks.saveAlarmRule).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请填写设备、规则、报警、采集标签、阈值和单位。')
   })
 })

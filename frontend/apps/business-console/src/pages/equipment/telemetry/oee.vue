@@ -31,7 +31,9 @@ const { availabilityWindows, filters, oee, oeeError, oeePending, refreshOee, run
 
 const errorMessage = computed(() => formatError(oeeError.value || runtimeAvailabilityError.value))
 const limitation = describeTelemetryOeeLimitations()
-const blockedWindowCount = computed(() => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length)
+const blockedWindowCount = computed(() =>
+  availabilityWindows.value.filter((w) => w.availabilityStatus?.toLowerCase() === 'unavailable').length,
+)
 
 const columns: DataTableProColumn<EquipmentRuntimeAvailabilityWindow>[] = [
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
