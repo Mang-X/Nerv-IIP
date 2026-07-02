@@ -49,6 +49,8 @@ export interface EngineEvents {
   scaleChanged: { scale: TimeScale }
   conflictClicked: { taskId: string }
   viewportChanged: { startUtc: string; endUtc: string }
+  /** 用户尝试拖拽已锁定的工序(被拦截)。上层据此提示「先解锁」并聚焦该块。 */
+  lockedDragAttempt: { taskId: string }
 }
 export type EngineEventName = keyof EngineEvents
 export type Unsubscribe = () => void

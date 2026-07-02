@@ -235,6 +235,67 @@ const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unkn
   ],
 }
 
+/** 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。 */
+function tooltipHtml(t: ScheduleTask): string {
+  const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
+  const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
+  const chip = (txt: string, tone: string) =>
+    `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
+  const badges = [
+    prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
+    t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
+    t.locked ? chip('已锁定', 'var(--brand)') : '',
+    t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
+  ]
+    .filter(Boolean)
+    .join('')
+  const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${t.orderId}</span>${badges}</div>`
+  const rows: Array<[string, string]> = [
+    ['工序', t.text || '—'],
+    ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
+    ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
+    ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
+    ['起止', `${fmt(t.startUtc)} → ${fmt(t.endUtc)}`],
+    ...(t.quantity != null ? ([['数量', String(t.quantity)]] as Array<[string, string]>) : []),
+    ...(t.dueUtc ? ([['交期', fmt(t.dueUtc)]] as Array<[string, string]>) : []),
+    ...(t.kitting != null ? ([['齐套', pct(t.kitting)]] as Array<[string, string]>) : []),
+    ...(t.changeoverMin ? ([['换型', `${t.changeoverMin} 分钟`]] as Array<[string, string]>) : []),
+    ...(t.load != null ? ([['占用', pct(t.load)]] as Array<[string, string]>) : []),
+    ...(t.status ? ([['状态', t.status.label]] as Array<[string, string]>) : []),
+    ...(t.hasConflict && t.conflictReason
+      ? ([['冲突', conflictReasonLabel[t.conflictReason]]] as Array<[string, string]>)
+      : []),
+  ]
+  const body = rows
+    .map(
+      ([k, v]) =>
+        `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${k}</span><span>${v}</span></div>`,
+    )
+    .join('')
+  return head + body
+}
+
+/** 用户是否偏好减少动效(所有 JS 动效在此守卫下降级为直接生效、无过渡)。 */
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+/** 一次性动画类:加类前强制回流以重启动画,animationend 后自动移除(可重复触发)。 */
+function playOnceClass(el: HTMLElement, cls: string): void {
+  el.classList.remove(cls)
+  void el.offsetWidth // 强制回流,确保下次加类能重新触发关键帧
+  el.classList.add(cls)
+  const done = () => {
+    el.classList.remove(cls)
+    el.removeEventListener('animationend', done)
+  }
+  el.addEventListener('animationend', done)
+}
+
 export interface DhtmlxEngineDeps {
   /** 注入实例工厂(测试用);默认从已预加载的试用版模块同步创建。 */
   createInstance?: () => unknown | null
@@ -254,6 +315,10 @@ export class DhtmlxEngine implements SchedulingEngine {
   private pointerMove?: (e: MouseEvent) => void
   private pointerDown?: (e: MouseEvent) => void
   private pointerUp?: (e: MouseEvent) => void
+  private keyDown?: (e: KeyboardEvent) => void
+  private tipEl?: HTMLElement
+  private tipTaskId?: string
+  private settleRaf = 0
   private dropHint?: HTMLElement
   private dragging = false
   private dragTaskId?: string
@@ -325,6 +390,21 @@ export class DhtmlxEngine implements SchedulingEngine {
       container.appendChild(cancel)
       this.cancelZone = cancel
 
+      // 自绘轻量 tooltip:跟指针平滑移动(DHTMLX 插件跟单元格、内容重、在超大卡片上滞后)。
+      // 内容一次构建、移动时只改 transform,拖拽进行时隐藏。
+      const tip = document.createElement('div')
+      tip.className = 'nerv-tip'
+      tip.style.position = 'fixed'
+      tip.style.left = '0'
+      tip.style.top = '0'
+      tip.style.zIndex = '60'
+      tip.style.pointerEvents = 'none'
+      tip.style.opacity = '0'
+      tip.style.display = 'none'
+      if (!prefersReducedMotion()) tip.style.transition = 'opacity 120ms var(--nerv-ease, ease)'
+      document.body.appendChild(tip)
+      this.tipEl = tip
+
       // 自定义拖拽:DHTMLX 原生 move 已关(见 configure)。原块静止,虚影随指针(横向=改时间、
       // 纵向=改泳道),松手于泳道提交、松手于取消区撤销。彻底解决"原块漂"与"横向失效"。
       let downX = 0
@@ -336,7 +416,11 @@ export class DhtmlxEngine implements SchedulingEngine {
         const id = bar.getAttribute('task_id')
         const t = id ? inst.getTask(id) : undefined
         if (!id || !t) return
-        if (t.nerv?.locked) return // 已锁定:不可拖拽(需先在详情解锁)
+        if (t.nerv?.locked) {
+          // 已锁定:不可拖拽。给出抖动反馈并上报(上层提示「先解锁」并聚焦该块)。
+          this.signalLockedDrag(id, bar)
+          return
+        }
         this.dragTaskId = id
         this.dragGrabOffX = e.clientX - bar.getBoundingClientRect().left
         downX = e.clientX
@@ -349,11 +433,14 @@ export class DhtmlxEngine implements SchedulingEngine {
       this.pointerMove = (e: MouseEvent) => {
         this.lastPointerY = e.clientY
         this.lastPointerX = e.clientX
+        // 自绘 tooltip 跟指针(拖拽进行中不显,交给落点虚影)。
+        this.updateTip(inst, e)
         if (!this.dragTaskId) return
         if (!this.dragging) {
           if (Math.abs(e.clientX - downX) < 5 && Math.abs(e.clientY - downY) < 5) return
           this.dragging = true
           this.suppressNextClick = true // 拖拽一旦开始,抑制随后的点击(避免弹详情)
+          this.hideTip() // 拖拽进行中不显 tooltip(落点虚影已给足反馈)
           if (this.cancelZone) this.cancelZone.style.display = 'flex'
           this.barEl(this.dragTaskId)?.classList.add('nerv-drag-source')
         }
@@ -372,9 +459,16 @@ export class DhtmlxEngine implements SchedulingEngine {
         this.hideDropHint()
         this.dragTaskId = undefined
       }
+      // Esc 中止拖拽:走取消分支(恢复原块、隐藏虚影、不上报 dragEnd)。
+      this.keyDown = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape' || !this.dragging || !this.dragTaskId) return
+        e.preventDefault()
+        this.cancelCustomDrag()
+      }
       container.addEventListener('mousedown', this.pointerDown)
       document.addEventListener('mousemove', this.pointerMove)
       document.addEventListener('mouseup', this.pointerUp)
+      document.addEventListener('keydown', this.keyDown)
     }
     if (this.model) this.setData(this.model)
   }
@@ -473,14 +567,20 @@ export class DhtmlxEngine implements SchedulingEngine {
     if (this.pointerMove) document.removeEventListener('mousemove', this.pointerMove)
     if (this.pointerUp) document.removeEventListener('mouseup', this.pointerUp)
     if (this.pointerDown && this.container) this.container.removeEventListener('mousedown', this.pointerDown)
+    if (this.keyDown) document.removeEventListener('keydown', this.keyDown)
     this.pointerMove = undefined
     this.pointerUp = undefined
     this.pointerDown = undefined
+    this.keyDown = undefined
     this.dropHint?.remove()
     this.dropHint = undefined
     this.cancelZone?.remove()
     this.cancelZone = undefined
+    this.tipEl?.remove()
+    this.tipEl = undefined
+    this.tipTaskId = undefined
     this.dragging = false
+    cancelAnimationFrame(this.settleRaf)
     cancelAnimationFrame(this.resizeRaf)
     this.resizeObserver?.disconnect()
     this.resizeObserver = undefined
@@ -581,11 +681,16 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 资源排产板小时刻度有 3 行(日期/班次/小时),抬高刻度区。
     c.scale_height = options.view === 'resource' && this.resolveScale() === 'hour' ? 70 : 50
     c.min_column_width = 36
-    c.tooltip_timeout = 20
+    // tooltip 每帧跟指针而非停在进入点:超小 timeout 让重定位近乎实时,并给指针留出偏移。
+    c.tooltip_timeout = 1
+    c.tooltip_offset_x = 14
+    c.tooltip_offset_y = 18
 
+    // 资源排产板改用自绘轻量 tooltip(跟指针、内容不重排);工单甘特仍用 DHTMLX 插件。
+    const useDhxTooltip = options.view !== 'resource'
     try {
       inst.plugins?.({
-        tooltip: true,
+        tooltip: useDhxTooltip,
         marker: true,
         undo: !options.readOnly,
         critical_path: options.view === 'order',
@@ -607,46 +712,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     }
     inst.templates.grid_row_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) =>
       task.nerv?.hasConflict ? 'nerv-row-conflict' : ''
-    inst.templates.tooltip_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) => {
-      const t = task.nerv
-      if (!t) return task.text ?? ''
-      const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
-      const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
-      const chip = (txt: string, tone: string) =>
-        `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
-      const badges = [
-        prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
-        t.isRush ? chip('插单', 'oklch(0.7 0.17 60)') : '',
-        t.locked ? chip('已锁定', 'var(--brand)') : '',
-        t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
-      ]
-        .filter(Boolean)
-        .join('')
-      const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${t.orderId}</span>${badges}</div>`
-      const rows: Array<[string, string]> = [
-        ['工序', t.text || '—'],
-        ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
-        ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
-        ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
-        ['起止', `${fmt(t.startUtc)} → ${fmt(t.endUtc)}`],
-        ...(t.quantity != null ? ([['数量', String(t.quantity)]] as Array<[string, string]>) : []),
-        ...(t.dueUtc ? ([['交期', fmt(t.dueUtc)]] as Array<[string, string]>) : []),
-        ...(t.kitting != null ? ([['齐套', pct(t.kitting)]] as Array<[string, string]>) : []),
-        ...(t.changeoverMin ? ([['换型', `${t.changeoverMin} 分钟`]] as Array<[string, string]>) : []),
-        ...(t.load != null ? ([['占用', pct(t.load)]] as Array<[string, string]>) : []),
-        ...(t.status ? ([['状态', t.status.label]] as Array<[string, string]>) : []),
-        ...(t.hasConflict && t.conflictReason
-          ? ([['冲突', conflictReasonLabel[t.conflictReason]]] as Array<[string, string]>)
-          : []),
-      ]
-      const body = rows
-        .map(
-          ([k, v]) =>
-            `<div style="display:flex;gap:10px;justify-content:space-between"><span style="opacity:.7">${k}</span><span>${v}</span></div>`,
-        )
-        .join('')
-      return head + body
-    }
+    inst.templates.tooltip_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask; text?: string }) =>
+      task.nerv ? tooltipHtml(task.nerv) : task.text ?? ''
     const isResource = options.view === 'resource'
     // 资源排产板:条内渲染工单卡片;工单甘特:条内不渲染,工序名放右侧。
     inst.templates.task_text = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
@@ -816,6 +883,78 @@ export class DhtmlxEngine implements SchedulingEngine {
       }
     }
     this.emitDrag(inst, id, 'move')
+    this.scheduleSettle(id)
+  }
+
+  /**
+   * 落定回弹:提交后上层会 setData 重建卡片。等下一帧新条(按 task_id)出现,加一次性
+   * .nerv-card-settle 入场类,animationend 后移除。reduced-motion 跳过。
+   */
+  private scheduleSettle(id: string): void {
+    if (prefersReducedMotion()) return
+    cancelAnimationFrame(this.settleRaf)
+    // 双 rAF:第一帧让 emit→setData 的重建落地,第二帧新条已在 DOM,再加类触发入场。
+    this.settleRaf = requestAnimationFrame(() => {
+      this.settleRaf = requestAnimationFrame(() => {
+        const bar = this.barEl(id)
+        if (bar) playOnceClass(bar, 'nerv-card-settle')
+      })
+    })
+  }
+
+  /** 锁定块拖拽反馈:抖动该 bar(reduced-motion 跳过)并上报 lockedDragAttempt。 */
+  private signalLockedDrag(taskId: string, bar: HTMLElement): void {
+    if (!prefersReducedMotion()) playOnceClass(bar, 'nerv-lock-deny')
+    this.emit('lockedDragAttempt', { taskId })
+  }
+
+  /** Esc 中止自定义拖拽:恢复原块与原时间、隐藏虚影/取消区,不上报 dragEnd。 */
+  private cancelCustomDrag(): void {
+    const id = this.dragTaskId
+    if (id) {
+      this.barEl(id)?.classList.remove('nerv-drag-source')
+      const t = this.gantt?.getTask(id)
+      if (t) {
+        if (this.dragOrigStart) t.start_date = new Date(this.dragOrigStart)
+        if (this.dragOrigEnd) t.end_date = new Date(this.dragOrigEnd)
+      }
+    }
+    this.suppressNextClick = true // 中止后紧随的 mouseup 会被当点击,抑制之
+    this.hideDropHint()
+  }
+
+  /** 自绘 tooltip:悬停任务块时跟指针平滑移动;不在块上或拖拽中则隐藏。 */
+  private updateTip(inst: DhxGantt, e: MouseEvent): void {
+    const tip = this.tipEl
+    if (!tip) return
+    if (this.dragging) {
+      this.hideTip()
+      return
+    }
+    const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
+    const id = bar?.getAttribute('task_id') ?? undefined
+    const t = id ? inst.getTask(id) : undefined
+    if (!bar || !id || !t?.nerv || t.nerv.type !== 'operation' || t.nerv.blockKind) {
+      this.hideTip()
+      return
+    }
+    // 内容一次构建(切换任务时才重建),移动时只改 transform,避免重排。
+    if (this.tipTaskId !== id) {
+      tip.innerHTML = tooltipHtml(t.nerv)
+      this.tipTaskId = id
+    }
+    tip.style.display = 'block'
+    tip.style.transform = `translate(${Math.round(e.clientX + 14)}px, ${Math.round(e.clientY + 18)}px)`
+    // 下一帧淡入(display:none → block 时 transition 不生效,需分帧)。
+    if (tip.style.opacity !== '1') requestAnimationFrame(() => (tip.style.opacity = '1'))
+  }
+
+  private hideTip(): void {
+    const tip = this.tipEl
+    if (!tip || tip.style.display === 'none') return
+    tip.style.opacity = '0'
+    tip.style.display = 'none'
+    this.tipTaskId = undefined
   }
 
   private hideDropHint(): void {

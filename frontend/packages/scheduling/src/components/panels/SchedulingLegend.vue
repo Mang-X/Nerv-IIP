@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 图例:讲清当前视图的视觉语言。分色与条形共用 --nerv-cat-* 全局变量,保证图例与条形一致。
-// 视图感知:资源排产板隐藏甘特专属(计划基线/依赖/关键路径/里程碑),改讲齐套/换型/瓶颈。
+// 视图感知:资源排产板隐藏甘特专属(计划基线/依赖/里程碑),改讲齐套/换型/瓶颈。
 withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?: 'order' | 'resource' }>(), {
   view: 'order',
 })
@@ -29,9 +29,8 @@ withDefaults(defineProps<{ categories?: { key: string; label: string }[]; view?:
         </svg>
         依赖
       </span>
-      <span class="inline-flex items-center gap-1.5">
-        <span class="h-0 w-6 border-t-2 border-dashed border-warning"></span>关键路径
-      </span>
+      <!-- TODO(关键路径):模型无 critical-path 字段、引擎不渲染,故图例暂不列该项;
+           后端补 APS 关键路径标记 + 引擎着色后再恢复对应图例。 -->
       <span class="inline-flex items-center gap-1.5">
         <span class="size-2.5 rotate-45 rounded-[2px] bg-brand"></span>里程碑
       </span>

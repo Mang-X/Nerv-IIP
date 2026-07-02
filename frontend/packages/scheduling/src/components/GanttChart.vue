@@ -17,6 +17,7 @@ defineEmits<{
   taskSelect: [taskId: string]
   taskDragEnd: [payload: TaskDragPayload]
   conflictClick: [taskId: string]
+  lockedDragAttempt: [taskId: string]
 }>()
 
 const canvas = ref<InstanceType<typeof SchedulingCanvas>>()
@@ -38,5 +39,6 @@ defineExpose({ command })
     @task-select="$emit('taskSelect', $event)"
     @task-drag-end="$emit('taskDragEnd', $event)"
     @conflict-click="$emit('conflictClick', $event)"
+    @locked-drag-attempt="$emit('lockedDragAttempt', $event)"
   />
 </template>

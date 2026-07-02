@@ -93,6 +93,16 @@ function focusTask(taskId: string) {
   sendCommand({ kind: 'selectTask', taskId })
   onTaskSelect(taskId)
 }
+// 锁定块拖拽尝试:节流提示(拖动会连发)并把详情面板聚焦到该块,让「解锁」送到眼前。
+let lastLockedToastAt = 0
+function onLockedDragAttempt(taskId: string) {
+  selectedTask.value = workingModel.value.tasks.find((t) => t.id === taskId)
+  sidebarOpen.value = true
+  const now = Date.now()
+  if (now - lastLockedToastAt < 1500) return
+  lastLockedToastAt = now
+  toast.info('该工序已锁定,先解锁再拖拽')
+}
 function onDrag(p: TaskDragPayload) {
   edits.onTaskDragEnd(p)
 }
@@ -169,6 +179,7 @@ async function onRelease() {
           @task-select="onTaskSelect"
           @task-drag-end="onDrag"
           @conflict-click="focusTask"
+          @locked-drag-attempt="onLockedDragAttempt"
         />
         <ResourceSchedulerBoard
           v-else
@@ -181,6 +192,7 @@ async function onRelease() {
           @task-select="onTaskSelect"
           @task-drag-end="onDrag"
           @conflict-click="focusTask"
+          @locked-drag-attempt="onLockedDragAttempt"
         />
       </div>
 

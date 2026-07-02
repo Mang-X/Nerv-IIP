@@ -6,7 +6,8 @@ aside: false
 
 <script setup>
 import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
-import { ref } from 'vue'
+import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
+import { computed, ref } from 'vue'
 import { makeModel } from '../../.vitepress/schedulingDemo'
 
 const model = ref(makeModel())
@@ -30,6 +31,24 @@ function onDrag(p) {
     }),
   }
 }
+
+// 图例分色:取模型里出现的工序色。
+const cats = computed(() => {
+  const seen = new Map()
+  for (const t of model.value.tasks) {
+    if (t.colorKey && !t.blockKind && !seen.has(t.colorKey)) seen.set(t.colorKey, { key: t.colorKey, label: t.text || t.colorKey })
+  }
+  return [...seen.values()]
+})
+
+// 选中 → 详情(含资源时间块的专有信息)。
+const selectedId = ref(null)
+const selected = computed(() => model.value.tasks.find((t) => t.id === selectedId.value) ?? null)
+const BLOCK = { maintenance: '设备维护', downtime: '计划停机', lineChange: '换线窗口', changeover: '换型窗口' }
+const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—')
+
+const readOnlyModel = ref(makeModel())
+const emptyModel = ref({ ...makeModel(), tasks: [], links: [], resources: [] })
 </script>
 
 # ResourceSchedulerBoard 资源排产板
@@ -40,11 +59,11 @@ function onDrag(p) {
 
 ## 基础用法
 
-模型带 `groupDimensions` 时,左上角出现维度切换。
+模型带 `groupDimensions` 时,左上角出现维度切换。样例数据在**折弯-02**泳道有一段「定期保养」维护块、在**加工中心-03**有一段「产品换型」块(斜纹、不可拖拽);焊接-01 利用率 1.25 呈**过载瓶颈**。
 
 <Demo block>
   <div style="height: 460px; width: 100%">
-    <ResourceSchedulerBoard :model="model" @task-drag-end="onDrag" />
+    <ResourceSchedulerBoard :model="model" @task-drag-end="onDrag" @task-select="selectedId = $event" />
   </div>
 </Demo>
 
@@ -67,9 +86,70 @@ function onDrag(p) {
 </template>
 ```
 
+## 用例演示
+
+### 维度切换
+
+组件左上角自带维度切换(工作中心 / 设备 / 班组 / 产线),由模型 `groupDimensions` 驱动;切换后泳道按所选维度重铺、卡片落到对应资源行。上方基础用法 demo 即可直接点选切换。
+
+### 图例:排产板视觉语言
+
+`SchedulingLegend`(`view="resource"`)讲清优先级 / 插单 / 齐套分级 / 换型 / 瓶颈 / 冲突 / 锁定,以及四类资源时间块斜纹配色。
+
+<Demo block>
+  <div style="border:1px solid var(--border); border-radius:8px; overflow:hidden">
+    <SchedulingLegend view="resource" :categories="cats" />
+  </div>
+</Demo>
+
+### 选中资源时间块 → 详情
+
+点选卡片或斜纹时间块拿 `taskId`,查回详情。资源时间块(`blockKind`)有专属类型与说明。在上方排产板点选「定期保养」或「产品换型」斜纹块试试。
+
+<Demo block>
+  <div v-if="selected" style="border:1px solid var(--border); border-radius:8px; padding:.875rem 1rem; font-size:.8125rem">
+    <div v-if="selected.blockKind" style="font-weight:600; margin-bottom:.5rem">资源时间块 · {{ BLOCK[selected.blockKind] }}</div>
+    <div v-else style="font-weight:600; margin-bottom:.5rem">{{ selected.text }} · {{ selected.orderId }}</div>
+    <div style="display:grid; grid-template-columns:auto 1fr; gap:.25rem .75rem; color:var(--muted-foreground)">
+      <span>资源</span><span>{{ selected.resourceId ?? '—' }}</span>
+      <span>时间</span><span>{{ fmt(selected.startUtc) }} → {{ fmt(selected.endUtc) }}</span>
+      <template v-if="!selected.blockKind">
+        <span>齐套 / 载荷</span><span>{{ selected.kitting != null ? Math.round(selected.kitting * 100) + '%' : '—' }} / {{ selected.load != null ? Math.round(selected.load * 100) + '%' : '—' }}</span>
+        <span v-if="selected.changeoverMin">换型</span><span v-if="selected.changeoverMin">{{ selected.changeoverMin }} 分钟</span>
+      </template>
+      <span v-else>类型</span><span v-if="selected.blockKind">非工单占用,不可拖拽</span>
+    </div>
+  </div>
+  <div v-else style="color:var(--muted-foreground); font-size:.8125rem; padding:.5rem 0">在上方排产板点选卡片或斜纹时间块查看详情。</div>
+</Demo>
+
+### 齐套 / 过载分级
+
+样例数据已制造分级差异:WO-2026-001 下料 **齐套 100%(绿/足)**、WO-2026-003 装配 **齐套 60%(红/危)且载荷 125% 过载瓶颈**、WO-2026-002 机加工 **换型 45 分钟**。卡片齐套 chip 按阈值变色,泳道负载带随利用率加深,>1 显著提示。对照上方图例即可在板上一一找到。
+
+### 只读 / 加载 / 空态
+
+<Demo block>
+  <div style="height: 400px; width: 100%">
+    <ResourceSchedulerBoard :model="readOnlyModel" :read-only="true" />
+  </div>
+</Demo>
+
+<Demo block>
+  <div style="height: 200px; width: 100%">
+    <ResourceSchedulerBoard :model="emptyModel" :loading="true" />
+  </div>
+</Demo>
+
+<Demo block>
+  <div style="height: 200px; width: 100%">
+    <ResourceSchedulerBoard :model="emptyModel" />
+  </div>
+</Demo>
+
 ## 泳道与维度
 
-左轴按所选维度铺泳道(工作中心 / 设备 / 班组 / 产线),泳道头显示资源名与产能指标(利用率 / OEE)。工单卡片显示工序色、产品、数量、齐套 chip 与进度;资源负载带随利用率加深,>1 过载显著提示。
+左轴按所选维度铺泳道(工作中心 / 设备 / 班组 / 产线),泳道头显示资源名与产能指标(利用率 / OEE)。工单卡片显示工序色、产品、数量、齐套 chip 与进度;资源负载带随利用率加深,>1 过载显著提示。资源时间块(维护/停机/换线/换型)以斜纹块落在对应泳道,不可拖拽。
 
 ## 属性
 

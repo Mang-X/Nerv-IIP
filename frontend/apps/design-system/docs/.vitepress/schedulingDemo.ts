@@ -1,7 +1,13 @@
 // 排产组件文档页共享的样例数据(仅供 design-system demo)。
 // 贴合 APS SchedulePlanContract 形状,经 toModel 归一化;缺口卡片字段(负责人/优先级/
 // 齐套/维度归属等)补样例值以便展示。每次 makeModel() 返回全新模型,页面各持一份、互不影响。
+//
+// toModel 只映射契约真实字段(时间/资源/依赖/冲突/未排…),不涉及 plannedStart/End、
+// isMilestone/milestoneLabel、blockKind、kitting/load/changeoverMin —— 这些在 makeModel()
+// 里按 ScheduleTask 模型(见 packages/scheduling/src/model/types.ts)后置补齐,以便一处数据
+// 就把图例讲的能力(计划 vs 实际基线 / 里程碑 / 资源时间块 / 齐套分级 / 换型 / 瓶颈)全演出来。
 import { toModel } from '@nerv-iip/scheduling'
+import type { ScheduleModel, ScheduleTask } from '@nerv-iip/scheduling'
 
 const H = 3_600_000
 const base = Date.parse('2026-06-10T08:00:00.000Z')
@@ -46,8 +52,20 @@ const WC: Record<string, { color: string; device: [string, string]; team: [strin
 }
 const PRODUCT: Record<string, string> = { 'WO-2026-001': '前减振器总成', 'WO-2026-002': '后桥壳体', 'WO-2026-003': '转向节' }
 
+// 计划基线(plannedStart/End)与实际错开:让甘特画出「计划 vs 实际」双层条。
+// key = assignmentId(即 ScheduleTask.id)。WO-2026-003 两道工序实际较计划晚 3h(资源过载连带顺延)。
+const PLANNED: Record<string, [number, number]> = {
+  'WO1-30': [6, 10], // 焊接:计划 4h,实际 5h(略超,进度偏差)
+  'WO3-10': [8, 13], // 装配:计划 08:00 起,实际晚 3h 起(前序占用焊接-01)
+  'WO3-20': [10, 17], // 总装:计划 10:00 起,实际晚 3h 起(顺延至超交期)
+}
+// 齐套 / 换型 / 载荷分级:让图例每格都能在图上找到对应。key = assignmentId。
+const KITTING: Record<string, number> = { 'WO1-10': 1, 'WO3-10': 0.6 } // 足(绿) / 危(红)
+const CHANGEOVER: Record<string, number> = { 'WO2-20': 45 } // 换型 chip 出现
+const LOAD: Record<string, number> = { 'WO3-10': 1.25 } // 过载瓶颈(焊接-01)
+
 /** 返回一份全新的、可拖拽编辑的示例排程模型。 */
-export function makeModel() {
+export function makeModel(): ScheduleModel {
   const m = toModel(demoPlan as never)
   for (const t of m.tasks) {
     if (t.type !== 'operation') continue
@@ -56,11 +74,19 @@ export function makeModel() {
     t.quantity = 120
     t.dueUtc = iso(20)
     t.priority = t.orderId === 'WO-2026-003' ? 'high' : 'medium'
-    t.kitting = 0.95
-    t.load = 0.8
+    // 齐套/载荷/换型:默认中性值,再按 key 覆盖出分级差异。
+    t.kitting = KITTING[t.id] ?? 0.85
+    t.load = LOAD[t.id] ?? 0.8
+    if (CHANGEOVER[t.id] != null) t.changeoverMin = CHANGEOVER[t.id]
     t.colorKey = wc.color
     t.isRush = t.orderId === 'WO-2026-002'
     t.status = { label: t.locked ? '进行中' : '未开始', tone: t.locked ? 'info' : 'neutral' }
+    // 计划基线:仅部分工序设,演示「计划 vs 实际」偏差。
+    const planned = PLANNED[t.id]
+    if (planned) {
+      t.plannedStartUtc = iso(planned[0])
+      t.plannedEndUtc = iso(planned[1])
+    }
     t.dimensions = {
       workCenter: t.dimensions?.workCenter ?? { id: t.workCenterId ?? '', label: t.workCenterId ?? '' },
       device: { id: wc.device[0], label: wc.device[1] },
@@ -68,11 +94,78 @@ export function makeModel() {
       line: { id: wc.line[0], label: wc.line[1] },
     }
   }
-  m.groupDimensions = [
-    { key: 'workCenter', label: '工作中心' },
-    { key: 'device', label: '设备' },
-    { key: 'team', label: '班组' },
-    { key: 'line', label: '产线' },
-  ]
+
+  // 阶段里程碑:贴在 WO-2026-001 焊接条尾的菱形 + 标签(不独占一行)。
+  const weld = m.tasks.find((t) => t.id === 'WO1-30')
+  if (weld) weld.milestoneLabel = '冲焊完成'
+
+  // 独立里程碑节点(type 用模型允许的 'operation' + isMilestone,渲染为菱形、无时长)。
+  // 挂到 WO-2026-001 分组下,与其工序同组显示。
+  const milestone: ScheduleTask = {
+    id: 'WO1-MS',
+    orderId: 'WO-2026-001',
+    operationId: '',
+    operationSequence: 40,
+    parentId: 'order:WO-2026-001',
+    type: 'operation',
+    text: '冲焊下线',
+    startUtc: iso(11),
+    endUtc: iso(11),
+    isMilestone: true,
+    colorKey: 'weld',
+    locked: false,
+    hasConflict: false,
+    conflictReason: null,
+  }
+
+  // 资源时间块(非工单):渲染为斜纹块、不可拖拽,仅进资源排产板对应泳道。
+  // 用 dimensions 让其在各维度都落到正确泳道;blockKind 决定斜纹配色与详情文案。
+  const blockDims = (rid: string): ScheduleTask['dimensions'] => {
+    const wc = WC[rid]
+    return wc
+      ? {
+          workCenter: { id: rid, label: rid },
+          device: { id: wc.device[0], label: wc.device[1] },
+          team: { id: wc.team[0], label: wc.team[1] },
+          line: { id: wc.line[0], label: wc.line[1] },
+        }
+      : { workCenter: { id: rid, label: rid } }
+  }
+  const maintenance: ScheduleTask = {
+    id: 'BLK-MNT-1',
+    orderId: '',
+    operationId: '',
+    operationSequence: 0,
+    type: 'operation',
+    text: '定期保养',
+    resourceId: '折弯-02',
+    workCenterId: '折弯-02',
+    dimensions: blockDims('折弯-02'),
+    startUtc: iso(1),
+    endUtc: iso(4),
+    blockKind: 'maintenance',
+    locked: true,
+    hasConflict: false,
+    conflictReason: null,
+  }
+  const changeover: ScheduleTask = {
+    id: 'BLK-CO-1',
+    orderId: '',
+    operationId: '',
+    operationSequence: 0,
+    type: 'operation',
+    text: '产品换型',
+    resourceId: '加工中心-03',
+    workCenterId: '加工中心-03',
+    dimensions: blockDims('加工中心-03'),
+    startUtc: iso(13),
+    endUtc: iso(14),
+    blockKind: 'changeover',
+    locked: true,
+    hasConflict: false,
+    conflictReason: null,
+  }
+
+  m.tasks.push(milestone, maintenance, changeover)
   return m
 }

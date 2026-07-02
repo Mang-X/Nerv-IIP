@@ -25,6 +25,7 @@ const emit = defineEmits<{
   taskSelect: [taskId: string]
   taskDragEnd: [payload: TaskDragPayload]
   conflictClick: [taskId: string]
+  lockedDragAttempt: [taskId: string]
 }>()
 
 const container = ref<HTMLElement>()
@@ -41,6 +42,7 @@ const { engine, engineName } = useEngine({
     taskSelected: (p) => emit('taskSelect', p.taskId),
     taskDragEnd: (p) => emit('taskDragEnd', p),
     conflictClicked: (p) => emit('conflictClick', p.taskId),
+    lockedDragAttempt: (p) => emit('lockedDragAttempt', p.taskId),
   },
 })
 

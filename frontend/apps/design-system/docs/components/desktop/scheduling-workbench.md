@@ -6,10 +6,45 @@ aside: false
 
 <script setup>
 import { SchedulingWorkbench } from '@nerv-iip/scheduling'
+import { toast } from '@nerv-iip/ui'
 import { ref } from 'vue'
 import { makeModel } from '../../.vitepress/schedulingDemo'
 
 const model = ref(makeModel())
+
+const H = 3_600_000
+const shift = (iso, hours) => new Date(Date.parse(iso) + hours * H).toISOString()
+
+// mock preview:携锁定项调用「后端」重排。演示语义 —— 保留锁定 + 已排里程碑/时间块,
+// 其余工序整体后移 2h,并回填 changes[](变更 tab 可见)。基于当前 model 计算,返回新 ScheduleModel。
+async function preview(locked) {
+  const lockedIds = new Set(locked.map((l) => l.assignmentId))
+  const cur = model.value
+  const changes = []
+  const tasks = cur.tasks.map((t) => {
+    // order 分组父节点、里程碑、资源时间块、以及锁定项都保留不动。
+    if (t.type !== 'operation' || t.isMilestone || t.blockKind) return t
+    if (lockedIds.has(t.id)) {
+      changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'preserved', message: '锁定,保持不动', taskId: t.id })
+      return t
+    }
+    changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'moved', message: '重排后移 2 小时', taskId: t.id })
+    return { ...t, startUtc: shift(t.startUtc, 2), endUtc: shift(t.endUtc, 2) }
+  })
+  await new Promise((r) => setTimeout(r, 350)) // 模拟后端往返
+  return { ...cur, tasks, changes, meta: { ...cur.meta, status: 'preview' } }
+}
+
+// mock release:提交当前计划。
+async function release() {
+  await new Promise((r) => setTimeout(r, 250))
+  toast.success('计划已发布', { description: '排程已下发到执行' })
+}
+
+// @fix:未排产项点「去处理」。真实页面跳转补料/改派;这里给提示。
+function onFix(orderId, operationId) {
+  toast.info(`去处理未排项:${orderId} / ${operationId}`, { description: '跳转补料 / 改派(示例)' })
+}
 </script>
 
 # SchedulingWorkbench 排产工作台
@@ -20,9 +55,18 @@ const model = ref(makeModel())
 
 `preview` / `release` 由业务层注入(对接后端);未注入时工具栏隐藏对应动作。工作台内部维护编辑快照栈,拖拽/锁定即时生效、可撤销重做。
 
+本 demo 注入了 **mock** `preview` / `release` / `@fix`,可完整走通编辑闭环:
+
+- **拖** 一条工序改期(横向)或改派资源(跨泳道);
+- 在右侧详情面板 **锁定** 要保留的工序(再点可 **解锁**);
+- 工具栏 **重新排程** → 携锁定项调用 mock preview(锁定项不动,其余整体后移 2h)→ 右侧 **变更** tab 显示 moved / preserved diff;
+- **发布计划** → 触发 mock release(toast 提示);
+- 右侧 **未排** tab 里点 **去处理** → 触发 `@fix`(toast 提示);
+- 工具栏 **撤销 / 重做** 回退前端快照;可切 **只读** 关闭编辑。
+
 <Demo block>
   <div style="height: 560px; width: 100%">
-    <SchedulingWorkbench :model="model" default-view="order" />
+    <SchedulingWorkbench :model="model" default-view="order" :preview="preview" :release="release" @fix="onFix" />
   </div>
 </Demo>
 
