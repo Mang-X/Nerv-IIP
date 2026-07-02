@@ -8,6 +8,7 @@ definePage({
     title: '需求与计划',
     requiredPermissions: [
       'business.planning.demands.read',
+      'business.planning.mps.read',
       'business.planning.mrp.read',
       'business.planning.suggestions.manage',
     ],

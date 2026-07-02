@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -398,16 +399,30 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         DateOnly horizonEnd,
         CancellationToken cancellationToken)
     {
-        return await dbContext.DemandSources
+        var demandSources = await dbContext.DemandSources
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .OrderBy(x => x.DueDate)
-            .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
+        var mpsBuckets = await dbContext.MasterProductionSchedules
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.Status == MasterProductionScheduleStatus.Released
+                && x.BucketDate >= horizonStart
+                && x.BucketDate <= horizonEnd)
+            .Select(x => new DemandSnapshot($"MPS:{x.Id}", x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.BucketDate, "mps"))
+            .ToListAsync(cancellationToken);
+
+        return demandSources
+            .Concat(mpsBuckets)
+            .OrderBy(x => x.DueDate)
+            .ThenBy(x => x.SourceType)
+            .ThenBy(x => x.DemandSourceReference)
+            .ToArray();
     }
 }
 
@@ -1224,7 +1239,7 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
 
         return new PlanningInputSnapshotResult(

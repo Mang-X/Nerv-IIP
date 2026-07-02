@@ -939,6 +939,69 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Planning_mps_facades_use_internal_service_token_for_downstream_business_service()
+    {
+        var planning = new RecordingPlanningClient();
+        await using var factory = CreateFactory(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(planning);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var list = await client.GetAsync("/api/business-console/v1/planning/mps?organizationId=org-001&environmentId=env-dev&skuCode=SKU-FG-1000&status=Released");
+        var create = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 120m,
+        });
+        var update = await client.PutAsJsonAsync("/api/business-console/v1/planning/mps/mps-001", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 132m,
+        });
+        var review = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps/mps-001/review?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reviewedBy = "planner.li",
+        });
+        var release = await client.PostAsJsonAsync("/api/business-console/v1/planning/mps/mps-001/release?organizationId=org-001&environmentId=env-dev", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            releasedBy = "planning.manager",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, create.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, update.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, review.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, release.StatusCode);
+        Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(new BusinessConsoleMpsListRequest("org-001", "env-dev", "SKU-FG-1000", Status: "Released"), planning.LastMpsListRequest);
+        Assert.Equal("mps-001", planning.LastUpdateMpsId);
+        Assert.Equal(132m, planning.LastUpdateMpsRequest!.Quantity);
+        Assert.Equal("mps-001", planning.LastReviewMpsId);
+        Assert.Equal("planner.li", planning.LastReviewMpsRequest!.ReviewedBy);
+        Assert.Equal("mps-001", planning.LastReleaseMpsId);
+        Assert.Equal("planning.manager", planning.LastReleaseMpsRequest!.ReleasedBy);
+    }
+
+    [Fact]
     public async Task Planning_mrp_run_list_exposes_input_degradation_sources()
     {
         var planning = new RecordingPlanningClient();
@@ -5457,6 +5520,22 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleRunMrpRequest? LastRunMrpRequest { get; private set; }
 
+    public BusinessConsoleMpsListRequest? LastMpsListRequest { get; private set; }
+
+    public BusinessConsoleCreateMpsBucketRequest? LastCreateMpsRequest { get; private set; }
+
+    public string? LastUpdateMpsId { get; private set; }
+
+    public BusinessConsoleUpdateMpsBucketRequest? LastUpdateMpsRequest { get; private set; }
+
+    public string? LastReviewMpsId { get; private set; }
+
+    public BusinessConsoleReviewMpsBucketRequest? LastReviewMpsRequest { get; private set; }
+
+    public string? LastReleaseMpsId { get; private set; }
+
+    public BusinessConsoleReleaseMpsBucketRequest? LastReleaseMpsRequest { get; private set; }
+
     public string? LastCancelledDemandSourceId { get; private set; }
 
     public string? LastAcceptedSuggestionId { get; private set; }
@@ -5465,6 +5544,109 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
     public BusinessConsoleAcceptedResponse AcceptedSuggestionResponse { get; init; } =
         new(true, "BusinessMes", "WorkOrder", "WO-001");
+
+    public Task<BusinessConsoleMpsBucketListResponse> ListMpsBucketsAsync(
+        string internalBearerToken,
+        BusinessConsoleMpsListRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastMpsListRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketListResponse([
+            new BusinessConsoleMpsBucketItem(
+                "mps-001",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                120m,
+                "Released",
+                "planner.li",
+                DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+                "planning.manager",
+                DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)),
+        ]));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> CreateMpsBucketAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            "mps-created",
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.BucketDate,
+            request.Quantity,
+            "Draft"));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> UpdateMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleUpdateMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateMpsId = mpsId;
+        LastUpdateMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.BucketDate,
+            request.Quantity,
+            "Draft"));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> ReviewMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReviewMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReviewMpsId = mpsId;
+        LastReviewMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m,
+            "Reviewed",
+            request.ReviewedBy,
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture)));
+    }
+
+    public Task<BusinessConsoleMpsBucketItem> ReleaseMpsBucketAsync(
+        string internalBearerToken,
+        string mpsId,
+        BusinessConsoleReleaseMpsBucketRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastReleaseMpsId = mpsId;
+        LastReleaseMpsRequest = request;
+        return Task.FromResult(new BusinessConsoleMpsBucketItem(
+            mpsId,
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m,
+            "Released",
+            "planner.li",
+            DateTimeOffset.Parse("2026-06-01T08:00:00Z", CultureInfo.InvariantCulture),
+            request.ReleasedBy,
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z", CultureInfo.InvariantCulture)));
+    }
 
     public Task<BusinessConsoleDemandSourceListResponse> ListDemandSourcesAsync(
         string internalBearerToken,
@@ -5511,7 +5693,14 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
     {
         LastInternalToken = internalBearerToken;
         LastRunMrpRequest = request;
-        return Task.FromResult(new BusinessConsoleRunMrpResponse("mrp-run-001", 2, false, []));
+        return Task.FromResult(new BusinessConsoleRunMrpResponse(
+            "mrp-run-001",
+            2,
+            false,
+            [],
+            ["mps", "sales-order"],
+            new DateOnly(2026, 6, 1),
+            new DateOnly(2026, 6, 30)));
     }
 
     public Task<BusinessConsoleMrpRunListResponse> ListMrpRunsAsync(
@@ -5532,7 +5721,10 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
                 "product-engineering-http:1",
                 "inventory-http:2;scheduled-receipts:error",
                 true,
-                ["scheduled-receipts"]),
+                ["scheduled-receipts"],
+                ["mps", "sales-order"],
+                new DateOnly(2026, 6, 1),
+                new DateOnly(2026, 6, 30)),
         ]));
     }
 

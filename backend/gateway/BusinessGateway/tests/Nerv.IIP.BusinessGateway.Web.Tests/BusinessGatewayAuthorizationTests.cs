@@ -369,6 +369,28 @@ public sealed class BusinessGatewayAuthorizationTests
             quantity = 10,
             dueDate = "2026-06-01",
         },
+        "/api/business-console/v1/planning/mps" or "/api/business-console/v1/planning/mps/mps-001" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "SKU-FG-1000",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            bucketDate = "2026-06-15",
+            quantity = 120m,
+        },
+        "/api/business-console/v1/planning/mps/mps-001/review" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reviewedBy = "planner.li",
+        },
+        "/api/business-console/v1/planning/mps/mps-001/release" => new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            releasedBy = "planning.manager",
+        },
         "/api/business-console/v1/planning/mrp-runs" => new
         {
             organizationId = "org-001",
@@ -820,6 +842,11 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions/resolve", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/demands", BusinessGatewayPermissions.PlanningDemandsManage);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsRead);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Put, "/api/business-console/v1/planning/mps/mps-001", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/review", BusinessGatewayPermissions.PlanningMpsManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mps/mps-001/release", BusinessGatewayPermissions.PlanningMpsRelease);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRun);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs", BusinessGatewayPermissions.PlanningMrpRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/planning/mrp-runs/mrp-run-001/pegging", BusinessGatewayPermissions.PlanningMrpRead);

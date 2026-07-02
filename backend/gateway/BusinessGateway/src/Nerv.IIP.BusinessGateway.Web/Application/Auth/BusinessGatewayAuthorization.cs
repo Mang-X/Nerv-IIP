@@ -70,6 +70,9 @@ public static class BusinessGatewayPermissions
     public const string EngineeringProductionVersionsManage = "business.engineering.production-versions.manage";
     public const string PlanningDemandsRead = "business.planning.demands.read";
     public const string PlanningDemandsManage = "business.planning.demands.manage";
+    public const string PlanningMpsRead = "business.planning.mps.read";
+    public const string PlanningMpsManage = "business.planning.mps.manage";
+    public const string PlanningMpsRelease = "business.planning.mps.release";
     public const string PlanningMrpRead = "business.planning.mrp.read";
     public const string PlanningMrpRun = "business.planning.mrp.run";
     public const string PlanningSuggestionsManage = "business.planning.suggestions.manage";
