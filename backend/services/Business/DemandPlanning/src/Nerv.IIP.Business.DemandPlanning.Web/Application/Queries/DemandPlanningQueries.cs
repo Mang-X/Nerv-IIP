@@ -1,9 +1,86 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 
 namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Queries;
+
+public sealed record ListMasterProductionScheduleBucketsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? SiteCode,
+    DateOnly? FromDate,
+    DateOnly? ToDate,
+    MasterProductionScheduleStatus? Status = null) : IQuery<IReadOnlyCollection<MasterProductionScheduleBucketResponse>>;
+
+public sealed record MasterProductionScheduleBucketResponse(
+    MasterProductionScheduleId MpsId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity,
+    MasterProductionScheduleStatus Status,
+    string? ReviewedBy,
+    DateTimeOffset? ReviewedAtUtc,
+    string? ReleasedBy,
+    DateTimeOffset? ReleasedAtUtc);
+
+public sealed class ListMasterProductionScheduleBucketsQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<ListMasterProductionScheduleBucketsQuery, IReadOnlyCollection<MasterProductionScheduleBucketResponse>>
+{
+    public async Task<IReadOnlyCollection<MasterProductionScheduleBucketResponse>> Handle(
+        ListMasterProductionScheduleBucketsQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.MasterProductionSchedules.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+        if (!string.IsNullOrWhiteSpace(request.SkuCode))
+        {
+            query = query.Where(x => x.SkuCode == request.SkuCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SiteCode))
+        {
+            query = query.Where(x => x.SiteCode == request.SiteCode);
+        }
+
+        if (request.FromDate is not null)
+        {
+            query = query.Where(x => x.BucketDate >= request.FromDate);
+        }
+
+        if (request.ToDate is not null)
+        {
+            query = query.Where(x => x.BucketDate <= request.ToDate);
+        }
+
+        if (request.Status is not null)
+        {
+            query = query.Where(x => x.Status == request.Status.Value);
+        }
+
+        return await query
+            .OrderBy(x => x.BucketDate)
+            .ThenBy(x => x.SkuCode)
+            .ThenBy(x => x.SiteCode)
+            .Select(x => new MasterProductionScheduleBucketResponse(
+                x.Id,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.BucketDate,
+                x.Quantity,
+                x.Status,
+                x.ReviewedBy,
+                x.ReviewedAtUtc,
+                x.ReleasedBy,
+                x.ReleasedAtUtc))
+            .ToListAsync(cancellationToken);
+    }
+}
 
 public sealed record ListDemandSourcesQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
 
@@ -52,7 +129,10 @@ public sealed record MrpRunResponse(
     string ProductionEngineeringSnapshotSource,
     string InventorySnapshotSource,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
@@ -75,7 +155,10 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             x.ProductionEngineeringSnapshotSource,
             x.InventorySnapshotSource,
             x.HasInputDegradation,
-            x.InputDegradationSources)).ToList();
+            x.InputDegradationSources,
+            x.InputSources,
+            x.InputCoverageStart,
+            x.InputCoverageEnd)).ToList();
     }
 }
 

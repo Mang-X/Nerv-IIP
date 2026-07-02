@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -404,20 +405,17 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.EnvironmentId == environmentId
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .OrderBy(x => x.DueDate)
-            .ThenBy(x => x.SourceReference)
             .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
             .ToListAsync(cancellationToken);
-        var mpsSources = await dbContext.MasterProductionSchedules
+        var mpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId
+                && x.Status == MasterProductionScheduleStatus.Released
                 && x.BucketDate >= horizonStart
                 && x.BucketDate <= horizonEnd)
-            .OrderBy(x => x.BucketDate)
-            .ThenBy(x => x.SkuCode)
             .Select(x => new DemandSnapshot(
-                $"MPS:{x.SkuCode}:{x.BucketDate:O}",
+                $"MPS:{x.Id}",
                 x.SkuCode,
                 x.UomCode,
                 x.SiteCode,
@@ -426,9 +424,11 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 "mps"))
             .ToListAsync(cancellationToken);
 
-        return demandSources.Concat(mpsSources)
+        return demandSources
+            .Concat(mpsBuckets)
             .OrderBy(x => x.DueDate)
-            .ThenBy(x => x.DemandSourceReference, StringComparer.Ordinal)
+            .ThenBy(x => x.SourceType)
+            .ThenBy(x => x.DemandSourceReference)
             .ToArray();
     }
 }

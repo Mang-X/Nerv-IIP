@@ -120,6 +120,11 @@ const uiStubs = {
   AlertDialogTitle: { template: '<h2><slot /></h2>' },
   AlertDialogTrigger: { template: '<div><slot /></div>' },
   BusinessLayout: { template: '<main><slot /></main>' },
+  BusinessDocumentApprovalPanel: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<section data-testid="approval-panel" />',
+  },
   Button: { template: '<button><slot /></button>' },
   DataTable: {
     props: ['rows'],

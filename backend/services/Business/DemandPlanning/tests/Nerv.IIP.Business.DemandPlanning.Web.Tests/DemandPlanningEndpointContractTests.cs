@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Business.DemandPlanning.Web.Application.Auth;
@@ -32,7 +33,12 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var contracts = DemandPlanningEndpointContracts.All.ToArray();
 
-        Assert.Equal(8, contracts.Length);
+        Assert.Equal(13, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningMpsBuckets");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createPlanningMpsBucket");
+        Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/planning/mps/{mpsId}" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "updatePlanningMpsBucket");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps/{mpsId}/review" && x.PermissionCode == DemandPlanningPermissionCodes.MpsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "reviewPlanningMpsBucket");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/mps/{mpsId}/release" && x.PermissionCode == DemandPlanningPermissionCodes.MpsRelease && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "releasePlanningMpsBucket");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/demands" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createOrUpdatePlanningDemand");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/planning/demands" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listPlanningDemands");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/planning/demands/{demandSourceId}/cancel" && x.PermissionCode == DemandPlanningPermissionCodes.DemandsManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "cancelPlanningDemand");
@@ -45,6 +51,11 @@ public sealed class DemandPlanningEndpointContractTests
 
     [Theory]
     [InlineData(typeof(CreateOrUpdateDemandSourceEndpoint))]
+    [InlineData(typeof(ListMasterProductionScheduleBucketsEndpoint))]
+    [InlineData(typeof(CreateMasterProductionScheduleBucketEndpoint))]
+    [InlineData(typeof(UpdateMasterProductionScheduleBucketEndpoint))]
+    [InlineData(typeof(ReviewMasterProductionScheduleBucketEndpoint))]
+    [InlineData(typeof(ReleaseMasterProductionScheduleBucketEndpoint))]
     [InlineData(typeof(ListDemandSourcesEndpoint))]
     [InlineData(typeof(CancelDemandSourceEndpoint))]
     [InlineData(typeof(RunMrpEndpoint))]
@@ -94,6 +105,131 @@ public sealed class DemandPlanningEndpointContractTests
         var demands = await new ListDemandSourcesQueryHandler(dbContext)
             .Handle(new ListDemandSourcesQuery("org-001", "env-dev"), CancellationToken.None);
         Assert.Empty(demands);
+    }
+
+    [Fact]
+    public async Task Mps_bucket_commands_create_update_review_release_and_list_real_status()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var updateHandler = new UpdateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var reviewHandler = new ReviewMasterProductionScheduleBucketCommandHandler(dbContext);
+        var releaseHandler = new ReleaseMasterProductionScheduleBucketCommandHandler(dbContext);
+
+        var mpsId = await createHandler.Handle(
+            new CreateMasterProductionScheduleBucketCommand(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                120m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await updateHandler.Handle(
+            new UpdateMasterProductionScheduleBucketCommand(
+                "org-001",
+                "env-dev",
+                mpsId,
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                132m),
+            CancellationToken.None);
+        await reviewHandler.Handle(
+            new ReviewMasterProductionScheduleBucketCommand("org-001", "env-dev", mpsId, "planner.li"),
+            CancellationToken.None);
+        await releaseHandler.Handle(
+            new ReleaseMasterProductionScheduleBucketCommand("org-001", "env-dev", mpsId, "planning.manager"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var buckets = await new ListMasterProductionScheduleBucketsQueryHandler(dbContext)
+            .Handle(new ListMasterProductionScheduleBucketsQuery("org-001", "env-dev", null, null, null, null), CancellationToken.None);
+
+        var bucket = Assert.Single(buckets);
+        Assert.Equal(mpsId, bucket.MpsId);
+        Assert.Equal("SKU-FG-1000", bucket.SkuCode);
+        Assert.Equal(132m, bucket.Quantity);
+        Assert.Equal(MasterProductionScheduleStatus.Released, bucket.Status);
+        Assert.Equal("planner.li", bucket.ReviewedBy);
+        Assert.Equal("planning.manager", bucket.ReleasedBy);
+    }
+
+    [Fact]
+    public async Task Mps_create_rejects_existing_natural_key_instead_of_upserting_lifecycle_state()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var command = new CreateMasterProductionScheduleBucketCommand(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "pcs",
+            "SITE-01",
+            new DateOnly(2026, 6, 15),
+            120m);
+
+        await createHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            createHandler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("already exists", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Mps_invalid_lifecycle_transitions_are_business_errors()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var createHandler = new CreateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var updateHandler = new UpdateMasterProductionScheduleBucketCommandHandler(dbContext);
+        var releaseHandler = new ReleaseMasterProductionScheduleBucketCommandHandler(dbContext);
+        var mpsId = await createHandler.Handle(
+            new CreateMasterProductionScheduleBucketCommand(
+                "org-001",
+                "env-dev",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 6, 15),
+                120m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var directRelease = await Assert.ThrowsAsync<KnownException>(() =>
+            releaseHandler.Handle(
+                new ReleaseMasterProductionScheduleBucketCommand("org-001", "env-dev", mpsId, "planning.manager"),
+                CancellationToken.None));
+
+        Assert.Contains("reviewed", directRelease.Message, StringComparison.OrdinalIgnoreCase);
+        var bucket = await dbContext.MasterProductionSchedules.SingleAsync(x => x.Id == mpsId);
+        bucket.MarkReviewed("planner.li");
+        bucket.Release("planning.manager");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var updateAfterRelease = await Assert.ThrowsAsync<KnownException>(() =>
+            updateHandler.Handle(
+                new UpdateMasterProductionScheduleBucketCommand(
+                    "org-001",
+                    "env-dev",
+                    mpsId,
+                    "SKU-FG-1000",
+                    "pcs",
+                    "SITE-01",
+                    new DateOnly(2026, 6, 15),
+                    132m),
+                CancellationToken.None));
+
+        Assert.Contains("cannot be updated", updateAfterRelease.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -205,6 +341,38 @@ public sealed class DemandPlanningEndpointContractTests
             .Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None);
         var run = Assert.Single(runs);
         Assert.Equal(expectedSources, run.InputDegradationSources);
+    }
+
+    [Fact]
+    public async Task Mrp_run_command_persists_input_sources_and_coverage_period()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var handler = new RunMrpCommandHandler(
+            dbContext,
+            new FixedPlanningInputSnapshotProvider(
+                "inventory-http:1",
+                [
+                    new DemandSnapshot("mps:mps-001", "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 10), "mps"),
+                    new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 12), "sales-order"),
+                    new DemandSnapshot("FC-2026-W24", "SKU-FG-2000", "pcs", "SITE-01", 8m, new DateOnly(2026, 6, 14), "forecast"),
+                    new DemandSnapshot("SS-SKU-RM-1000-SITE-01", "SKU-RM-1000", "pcs", "SITE-01", 3m, new DateOnly(2026, 6, 20), "safety-stock"),
+                ]));
+
+        var result = await handler.Handle(
+            new RunMrpCommand("org-001", "env-dev", new DateOnly(2026, 6, 1), new DateOnly(2026, 6, 30)),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(["mps", "sales-order", "forecast", "safety-stock"], result.InputSources);
+        Assert.Equal(new DateOnly(2026, 6, 10), result.InputCoverageStart);
+        Assert.Equal(new DateOnly(2026, 6, 20), result.InputCoverageEnd);
+        var run = Assert.Single(await new ListMrpRunsQueryHandler(dbContext)
+            .Handle(new ListMrpRunsQuery("org-001", "env-dev"), CancellationToken.None));
+        Assert.Equal(["mps", "sales-order", "forecast", "safety-stock"], run.InputSources);
+        Assert.Equal(new DateOnly(2026, 6, 10), run.InputCoverageStart);
+        Assert.Equal(new DateOnly(2026, 6, 20), run.InputCoverageEnd);
     }
 
     [Fact]
@@ -470,7 +638,9 @@ public sealed class DemandPlanningEndpointContractTests
         }
     }
 
-    private sealed class FixedPlanningInputSnapshotProvider(string inventorySnapshotSource) : IPlanningInputSnapshotProvider
+    private sealed class FixedPlanningInputSnapshotProvider(
+        string inventorySnapshotSource,
+        IReadOnlyCollection<DemandSnapshot>? demands = null) : IPlanningInputSnapshotProvider
     {
         public Task<PlanningInputSnapshotResult> GetSnapshotAsync(
             string organizationId,
@@ -482,7 +652,7 @@ public sealed class DemandPlanningEndpointContractTests
             return Task.FromResult(new PlanningInputSnapshotResult(
                 "product-engineering-http:0",
                 inventorySnapshotSource,
-                [],
+                demands ?? [],
                 [],
                 [],
                 [],

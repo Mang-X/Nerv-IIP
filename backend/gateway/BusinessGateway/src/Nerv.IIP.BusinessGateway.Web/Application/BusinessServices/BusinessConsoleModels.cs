@@ -1142,6 +1142,48 @@ public sealed record BusinessConsoleBomWhereUsedResponse(
     string ComponentCode,
     IReadOnlyCollection<BusinessConsoleBomWhereUsedItem> Items);
 
+public sealed record BusinessConsoleBomDiffRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BomKind,
+    string FromBomCode,
+    string FromRevision,
+    string ToBomCode,
+    string ToRevision);
+
+public sealed record BusinessConsoleBomDiffFieldChange(
+    string FieldName,
+    string? OldValue,
+    string? NewValue);
+
+public sealed record BusinessConsoleBomDiffLineItem(
+    string ChangeType,
+    string? OldItemCode,
+    string? NewItemCode,
+    decimal? OldQuantity,
+    decimal? NewQuantity,
+    string? OldUnitOfMeasureCode,
+    string? NewUnitOfMeasureCode,
+    decimal? OldScrapRate,
+    decimal? NewScrapRate,
+    decimal? OldYieldRate,
+    decimal? NewYieldRate,
+    string? OldAlternateGroup,
+    string? NewAlternateGroup,
+    string? OldSubstituteSkuCodes,
+    string? NewSubstituteSkuCodes,
+    IReadOnlyCollection<BusinessConsoleBomDiffFieldChange> FieldChanges);
+
+public sealed record BusinessConsoleBomDiffSummary(int Added, int Removed, int Replaced, int Changed);
+
+public sealed record BusinessConsoleBomDiffResponse(
+    string BomKind,
+    string FromVersionId,
+    string ToVersionId,
+    string RootItemCode,
+    IReadOnlyCollection<BusinessConsoleBomDiffLineItem> Lines,
+    BusinessConsoleBomDiffSummary Summary);
+
 public sealed record BusinessConsoleRegisterEngineeringDocumentRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1388,6 +1430,36 @@ public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionId,
     string? SupersededByVersionId = null);
 
+public sealed record BusinessConsoleEngineeringChangeImpactPreviewRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactAffectedVersionRequest> AffectedVersions);
+
+public sealed record BusinessConsoleEngineeringChangeImpactAffectedVersionRequest(
+    string VersionKind,
+    string VersionId);
+
+public sealed record BusinessConsoleEngineeringChangeImpactNode(
+    string NodeType,
+    string VersionId,
+    string DisplayName,
+    string ImpactLevel,
+    string? RelatedVersionId,
+    string? SkuCode,
+    string? ConsoleRoute);
+
+public sealed record BusinessConsoleEngineeringChangeImpactRisk(
+    string Code,
+    string Severity,
+    string Message,
+    string? RelatedVersionId);
+
+public sealed record BusinessConsoleEngineeringChangeImpactPreviewResponse(
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactNode> Nodes,
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactRisk> Risks);
+
 public sealed record BusinessConsoleListEngineeringChangesRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1497,6 +1569,61 @@ public sealed record BusinessConsolePlanningContextRequest(
     string OrganizationId,
     string EnvironmentId);
 
+public sealed record BusinessConsoleMpsListRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode = null,
+    string? SiteCode = null,
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    string? Status = null);
+
+public sealed record BusinessConsoleCreateMpsBucketRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity);
+
+public sealed record BusinessConsoleUpdateMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    string OrganizationId,
+    string EnvironmentId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity);
+
+public sealed record BusinessConsoleReviewMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReviewedBy);
+
+public sealed record BusinessConsoleReleaseMpsBucketRequest(
+    [property: RouteParam] string MpsId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ReleasedBy);
+
+public sealed record BusinessConsoleMpsBucketItem(
+    string MpsId,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly BucketDate,
+    decimal Quantity,
+    string Status,
+    string? ReviewedBy = null,
+    DateTimeOffset? ReviewedAtUtc = null,
+    string? ReleasedBy = null,
+    DateTimeOffset? ReleasedAtUtc = null);
+
+public sealed record BusinessConsoleMpsBucketListResponse(IReadOnlyCollection<BusinessConsoleMpsBucketItem> Items);
+
 public sealed record BusinessConsoleCreateOrUpdateDemandSourceRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -1536,7 +1663,10 @@ public sealed record BusinessConsoleRunMrpResponse(
     string RunId,
     int SuggestionCount,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed record BusinessConsoleMrpRunItem(
     string RunId,
@@ -1549,7 +1679,10 @@ public sealed record BusinessConsoleMrpRunItem(
     string ProductionEngineeringSnapshotSource,
     string InventorySnapshotSource,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed record BusinessConsoleMrpRunListResponse(IReadOnlyCollection<BusinessConsoleMrpRunItem> Items);
 

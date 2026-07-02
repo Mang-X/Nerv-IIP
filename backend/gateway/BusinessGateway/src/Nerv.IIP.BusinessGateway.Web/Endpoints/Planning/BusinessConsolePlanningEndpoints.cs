@@ -8,6 +8,137 @@ using Nerv.IIP.ServiceAuth;
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Planning;
 
 [Tags("Business Console Planning")]
+[HttpGet("/api/business-console/v1/planning/mps")]
+[BusinessGatewayOperationId("listBusinessConsolePlanningMpsBuckets")]
+public sealed class ListBusinessConsolePlanningMpsBucketsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMpsListRequest, BusinessConsoleMpsBucketListResponse>(
+        auth,
+        BusinessGatewayPermissions.PlanningMpsRead)
+{
+    protected override string OrganizationId(BusinessConsoleMpsListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMpsListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMpsBucketListResponse> ForwardAsync(
+        BusinessConsoleMpsListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        planning.ListMpsBucketsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/mps")]
+[BusinessGatewayOperationId("createBusinessConsolePlanningMpsBucket")]
+public sealed class CreateBusinessConsolePlanningMpsBucketEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateMpsBucketRequest, BusinessConsoleMpsBucketItem>(
+        auth,
+        BusinessGatewayPermissions.PlanningMpsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateMpsBucketRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateMpsBucketRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMpsBucketItem> ForwardAsync(
+        BusinessConsoleCreateMpsBucketRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        planning.CreateMpsBucketAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Planning")]
+[HttpPut("/api/business-console/v1/planning/mps/{mpsId}")]
+[BusinessGatewayOperationId("updateBusinessConsolePlanningMpsBucket")]
+public sealed class UpdateBusinessConsolePlanningMpsBucketEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUpdateMpsBucketRequest, BusinessConsoleMpsBucketItem>(
+        auth,
+        BusinessGatewayPermissions.PlanningMpsManage)
+{
+    protected override string OrganizationId(BusinessConsoleUpdateMpsBucketRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUpdateMpsBucketRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleUpdateMpsBucketRequest request) => "planning-mps";
+
+    protected override string? ResourceId(BusinessConsoleUpdateMpsBucketRequest request) => Route<string>("mpsId") ?? request.MpsId;
+
+    protected override Task<BusinessConsoleMpsBucketItem> ForwardAsync(
+        BusinessConsoleUpdateMpsBucketRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var mpsId = Route<string>("mpsId") ?? request.MpsId;
+        return planning.UpdateMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+    }
+}
+
+[Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/mps/{mpsId}/review")]
+[BusinessGatewayOperationId("reviewBusinessConsolePlanningMpsBucket")]
+public sealed class ReviewBusinessConsolePlanningMpsBucketEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReviewMpsBucketRequest, BusinessConsoleMpsBucketItem>(
+        auth,
+        BusinessGatewayPermissions.PlanningMpsManage)
+{
+    protected override string OrganizationId(BusinessConsoleReviewMpsBucketRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReviewMpsBucketRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleReviewMpsBucketRequest request) => "planning-mps";
+
+    protected override string? ResourceId(BusinessConsoleReviewMpsBucketRequest request) => Route<string>("mpsId") ?? request.MpsId;
+
+    protected override Task<BusinessConsoleMpsBucketItem> ForwardAsync(
+        BusinessConsoleReviewMpsBucketRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var mpsId = Route<string>("mpsId") ?? request.MpsId;
+        return planning.ReviewMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+    }
+}
+
+[Tags("Business Console Planning")]
+[HttpPost("/api/business-console/v1/planning/mps/{mpsId}/release")]
+[BusinessGatewayOperationId("releaseBusinessConsolePlanningMpsBucket")]
+public sealed class ReleaseBusinessConsolePlanningMpsBucketEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessPlanningClient planning,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReleaseMpsBucketRequest, BusinessConsoleMpsBucketItem>(
+        auth,
+        BusinessGatewayPermissions.PlanningMpsRelease)
+{
+    protected override string OrganizationId(BusinessConsoleReleaseMpsBucketRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReleaseMpsBucketRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleReleaseMpsBucketRequest request) => "planning-mps";
+
+    protected override string? ResourceId(BusinessConsoleReleaseMpsBucketRequest request) => Route<string>("mpsId") ?? request.MpsId;
+
+    protected override Task<BusinessConsoleMpsBucketItem> ForwardAsync(
+        BusinessConsoleReleaseMpsBucketRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var mpsId = Route<string>("mpsId") ?? request.MpsId;
+        return planning.ReleaseMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+    }
+}
+
+[Tags("Business Console Planning")]
 [HttpGet("/api/business-console/v1/planning/demands")]
 [BusinessGatewayOperationId("listBusinessConsolePlanningDemands")]
 public sealed class ListBusinessConsolePlanningDemandsEndpoint(
@@ -222,6 +353,67 @@ public sealed class BusinessConsoleCreateOrUpdateDemandSourceRequestValidator
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleMpsListRequestValidator : Validator<BusinessConsoleMpsListRequest>
+{
+    public BusinessConsoleMpsListRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).MaximumLength(100);
+        RuleFor(x => x.SiteCode).MaximumLength(100);
+        RuleFor(x => x.Status).MaximumLength(32);
+    }
+}
+
+public sealed class BusinessConsoleCreateMpsBucketRequestValidator : Validator<BusinessConsoleCreateMpsBucketRequest>
+{
+    public BusinessConsoleCreateMpsBucketRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleUpdateMpsBucketRequestValidator : Validator<BusinessConsoleUpdateMpsBucketRequest>
+{
+    public BusinessConsoleUpdateMpsBucketRequestValidator()
+    {
+        RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Quantity).GreaterThan(0);
+    }
+}
+
+public sealed class BusinessConsoleReviewMpsBucketRequestValidator : Validator<BusinessConsoleReviewMpsBucketRequest>
+{
+    public BusinessConsoleReviewMpsBucketRequestValidator()
+    {
+        RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReviewedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleReleaseMpsBucketRequestValidator : Validator<BusinessConsoleReleaseMpsBucketRequest>
+{
+    public BusinessConsoleReleaseMpsBucketRequestValidator()
+    {
+        RuleFor(x => x.MpsId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReleasedBy).NotEmpty().MaximumLength(150);
     }
 }
 

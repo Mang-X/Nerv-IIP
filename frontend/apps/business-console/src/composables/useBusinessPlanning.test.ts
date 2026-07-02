@@ -4,13 +4,19 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
+  listBusinessConsolePlanningMpsBucketsQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
   listBusinessConsolePlanningMrpRunsQueryOptions,
   listBusinessConsolePlanningSuggestionsQueryOptions,
+  releaseBusinessConsolePlanningMpsBucketMutationOptions,
+  reviewBusinessConsolePlanningMpsBucketMutationOptions,
   runBusinessConsolePlanningMrpMutationOptions,
+  updateBusinessConsolePlanningMpsBucketMutationOptions,
 } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessPlanning } from './useBusinessPlanning'
 
@@ -32,6 +38,9 @@ vi.mock('@nerv-iip/api-client', () => ({
       },
     })),
   })),
+  createBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: 'mps-created', ...vars.body, status: 'Draft' } })),
+  })),
   createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
   })),
@@ -41,6 +50,10 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsolePlanningDemandsQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsolePlanningDemands' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsolePlanningMpsBucketsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsolePlanningMpsBuckets' }],
     query: vi.fn(),
   })),
   listBusinessConsolePlanningMrpRunsQueryOptions: vi.fn(() => ({
@@ -53,6 +66,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   runBusinessConsolePlanningMrpMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({ success: true, data: { runId: 'run-1', suggestionCount: 2, vars } })),
+  })),
+  updateBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, ...vars.body } })),
+  })),
+  reviewBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: vars.body.reviewedBy } })),
+  })),
+  releaseBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: vars.body.releasedBy } })),
   })),
 }))
 
@@ -109,6 +131,21 @@ describe('business planning composable', () => {
           inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
           hasInputDegradation: true,
           inputDegradationSources: ['scheduled-receipts'],
+          inputSources: ['mps', 'sales-order', 'forecast', 'safety-stock'],
+          inputCoverageStart: '2026-06-01',
+          inputCoverageEnd: '2026-06-30',
+        }],
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsolePlanningMpsBuckets', {
+      success: true,
+      data: {
+        items: [{
+          mpsId: 'mps-1',
+          skuCode: 'FG-SHOCK',
+          quantity: 120,
+          status: 'Released',
+          bucketDate: '2026-06-15',
         }],
       },
     })
@@ -128,8 +165,11 @@ describe('business planning composable', () => {
       },
     })
 
-    const { demands, mrpRuns, pegging, runSelection, suggestions } = useBusinessPlanning()
+    const { demands, mpsBuckets, mrpRuns, pegging, runSelection, suggestions } = useBusinessPlanning()
 
+    expect(listBusinessConsolePlanningMpsBucketsQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-002', environmentId: 'prod', skuCode: undefined, siteCode: undefined, status: undefined },
+    })
     expect(listBusinessConsolePlanningDemandsQueryOptions).toHaveBeenCalledWith({
       query: { organizationId: 'org-002', environmentId: 'prod' },
     })
@@ -146,13 +186,80 @@ describe('business planning composable', () => {
     expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(false)
     expect(runSelection.runId).toBe('')
     expect(demands.value).toHaveLength(1)
+    expect(mpsBuckets.value[0]?.status).toBe('Released')
     expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe('inventory-http:2;scheduled-receipts:error')
     expect(mrpRuns.value[0]?.hasInputDegradation).toBe(true)
     expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
+    expect(mrpRuns.value[0]?.inputSources).toEqual(['mps', 'sales-order', 'forecast', 'safety-stock'])
+    expect(mrpRuns.value[0]?.inputCoverageStart).toBe('2026-06-01')
+    expect(mrpRuns.value[0]?.inputCoverageEnd).toBe('2026-06-30')
     expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
     expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
     expect(pegging.value[0]?.sourceType).toBe('sales')
     expect(pegging.value[0]?.grossDemandQuantity).toBe(10)
+  })
+
+  it('creates, updates, reviews, and releases MPS buckets through generated mutations', async () => {
+    const auth = useAuthStore()
+    auth.$patch({
+      principal: {
+        principalId: 'user-planner-001',
+        principalType: 'user',
+        loginName: 'planner.li',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [],
+      },
+    })
+    const {
+      createMpsBucket,
+      mpsForm,
+      releaseMpsBucket,
+      reviewMpsBucket,
+      updateMpsBucket,
+    } = useBusinessPlanning()
+
+    mpsForm.skuCode = 'FG-SHOCK'
+    mpsForm.uomCode = 'pcs'
+    mpsForm.siteCode = 'SITE-01'
+    mpsForm.bucketDate = '2026-06-15'
+    mpsForm.quantity = 120
+    await createMpsBucket()
+    mpsForm.quantity = 132
+    await updateMpsBucket('mps-1')
+    await reviewMpsBucket('mps-1')
+    await releaseMpsBucket('mps-1')
+
+    expect(createBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(vi.mocked(createBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          skuCode: 'FG-SHOCK',
+          bucketDate: '2026-06-15',
+          quantity: 120,
+        }),
+      })
+    expect(updateBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(vi.mocked(updateBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith({
+        path: { mpsId: 'mps-1' },
+        body: expect.objectContaining({ quantity: 132 }),
+      })
+    expect(reviewBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(vi.mocked(reviewBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith({
+        path: { mpsId: 'mps-1' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
+        body: { reviewedBy: 'planner.li' },
+      })
+    expect(releaseBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(vi.mocked(releaseBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value.mutation)
+      .toHaveBeenCalledWith({
+        path: { mpsId: 'mps-1' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
+        body: { releasedBy: 'planner.li' },
+      })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
   })
 
   it('starts with a blank demand form instead of demo production values', () => {

@@ -20,7 +20,7 @@ public sealed record DemandSnapshot(
     string SiteCode,
     decimal Quantity,
     DateOnly DueDate,
-    string DemandType = "sales-order");
+    string SourceType = "demand-source");
 
 public sealed record InventoryAvailabilitySnapshot(
     string SkuCode,
@@ -340,7 +340,7 @@ public static class MrpCalculator
             demand.SiteCode,
             conversion.Quantity,
             demand.DueDate,
-            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, SourceTypeFromDemandType(demand.DemandType), conversion.Quantity)],
+            [new DemandPegging(demand.DemandSourceReference, demand.SkuCode, null, SourceTypeFromDemandType(demand.SourceType), conversion.Quantity)],
             [Normalize(demand.SkuCode)],
             "demand",
             0m,

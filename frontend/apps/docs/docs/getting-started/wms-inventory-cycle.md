@@ -17,18 +17,18 @@
 
 ## 页面入口
 
-| 目标 | Business Console 路由 |
-| --- | --- |
-| WMS 总览 | `/wms` |
-| 收货 | `/wms/inbound` |
-| 上架 | `/wms/putaway` |
-| 拣货 | `/wms/picking` |
-| 出库 | `/wms/outbound` |
-| 盘点 | `/wms/counts` |
-| WCS 任务 | `/wms/wcs` |
-| 库存可用量 | `/inventory/availability` |
-| 库存移动 | `/inventory/movements` |
-| 库存盘点 | `/inventory/counts` |
+| 环节 | Business Console 路由 | 当前事实或缺口 |
+| --- | --- | --- |
+| WMS 总览 | `/wms` | 已有 route-ready 汇总页；侧栏主要入口是具体作业页。 |
+| 收货 | `/wms/inbound` | 已在仓储作业域暴露，支持收货单列表和完成入库动作。 |
+| 上架 | `/wms/putaway` | 已在仓储作业域暴露。 |
+| 拣货 | `/wms/picking` | 已在仓储作业域暴露。 |
+| 出库 | `/wms/outbound` | 已在仓储作业域暴露，支持复核发货相关动作。 |
+| 盘点 | `/wms/counts` | 已在仓储作业域暴露。 |
+| WCS 任务 | `/wms/wcs` | 已在仓储作业域暴露为任务状态和基础动作读写面。 |
+| 库存可用量 | `/inventory/availability` | 已在库存管理域暴露。 |
+| 库存移动 | `/inventory/movements` | 已在库存管理域暴露。 |
+| 库存盘点 | `/inventory/counts` | 已在库存管理域暴露。 |
 
 ## 操作步骤
 
@@ -50,15 +50,17 @@ Inbound Order -> Receiving -> Putaway -> Stock Balance -> Reservation -> Picking
 - 出库单从待拣货、已预留、拣货中到出库完成；过账失败时进入 InventoryPostingFailed。
 - 库存移动从 requested 到 posted 或 failed；失败单据可在允许状态下重试。
 
-## 成功结果
+## 结果校验
 
-- 收货后库存可用量可查询，上架结果能解释库位变化。
-- 出库前库存预留被记录，出库完成后库存移动过账。
-- 盘点差异有可追踪的任务和调整事实。
+- 在 `/wms/inbound` 和 `/wms/putaway` 能看到收货与上架状态推进。
+- 在 `/inventory/availability` 能按 SKU、仓库或库位解释现有量、预留量和可用量。
+- 在 `/wms/picking` 和 `/wms/outbound` 能看到拣货、复核和出库状态。
+- 在 `/inventory/movements` 能看到出入库对应的库存移动结果，状态为 posted 或 failed。
+- 如果无法形成闭环，当前卡点通常是 SKU/库位范围不一致、库存不足、库存过账失败，或高级拣货/承载单元能力尚未交付。
 
 ## 常见失败/空态
 
-- 可用量为空：确认 SKU、仓库、组织和环境范围，不使用未 seeded 的演示编号。
+- 可用量为空：确认 SKU、仓库、组织和环境范围，不使用未经当前业务确认的编号。
 - 出库预留失败：库存不足或 SKU/库位范围不匹配。
 - 库存过账失败：查看 `inventory.StockMovementPostingFailed` 对应诊断。
 - WCS 页面无任务：当前 WCS 仍是任务状态读面和基础 dispatch/fail/retry/complete 事实，不代表设备已在线。

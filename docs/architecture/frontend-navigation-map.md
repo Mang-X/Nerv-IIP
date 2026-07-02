@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates、BusinessApproval 审批中心、IndustrialTelemetry tags/alarm-rules/history/OEE）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates/print-batches/scans、BusinessApproval 审批中心、IndustrialTelemetry tags/alarm-rules/history/OEE）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -252,7 +252,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | `/master-data/process` | 已收敛/退出导航（FE-6） | 旧"工艺与版本"本地演示页；工程版本已收敛到产品工程 `/engineering`，该路由已从导航移除，不再扩展（路由保留待后续清理）。 |
 | 基础数据（门禁） | 编码规则 / 标签条码 | 后端 facade 已落地/前端待建 | 编码规则后端已通过 BusinessGateway 暴露 list/detail/version/preview facade，并由 MasterData 版本审计表保留配置生效边界；前端配置页仍需后续 issue 建设。标签条码依赖 BarcodeLabel facade 和前端页面分期。 |
 | 产品工程 | `/engineering` | 已落地（FE-6 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + 生产版本解析卡 + Toolbar + Tabs[MBOM/工艺路线/生产版本] DataTable），消费 ProductEngineering MBOM/工艺路线/生产版本/resolve facade；已去除 BusinessContextBar 的 org/env 暴露。工程文档、工程物料、ECO/ECN 维护页（后端 facade 未覆盖前）待建。 |
-| 需求与计划 | `/planning`、`/scheduling` | 已落地（FE-7 金标准 + APS 第一版） | `/planning` 按 FE-4 原型重做（PageHeader + 新建需求/运行 MRP Dialog + SectionCards + Tabs[需求池/MRP 运行+追溯/计划建议]）；消费 DemandPlanning 需求/MRP run/pegging/建议 facade，接受建议下达 MES/ERP；已去除 BusinessContextBar 的 org/env 暴露。`/scheduling` 是 BusinessScheduling/APS lite 正式排产工作台第一版，展示真实方案列表、明细、冲突/不可排原因和发布动作；甘特图仅保留明确占位，不伪造排程块。MPS 与计划执行分析待建。 |
+| 需求与计划 | `/planning`、`/scheduling` | 已落地（FE-7 金标准 + APS 第一版） | `/planning` 按 FE-4 原型重做（PageHeader + 新建需求/新建 MPS/运行 MRP Dialog + SectionCards + Tabs[需求池/MPS 主计划/MRP 运行+追溯/计划建议]）；消费 DemandPlanning 需求、MPS、MRP run/pegging/建议 facade，MPS 评审发布后进入 MRP 输入，MRP run 展示输入来源和覆盖周期，接受建议下达 MES/ERP；已去除 BusinessContextBar 的 org/env 暴露。`/scheduling` 是 BusinessScheduling/APS lite 正式排产工作台第一版，展示真实方案列表、明细、冲突/不可排原因和发布动作；甘特图仅保留明确占位，不伪造排程块。计划执行分析待建。 |
 | 经营管理 | `/erp` | 已落地/窄化 | 当前是采购与供应页，消费 BusinessGateway ERP Procurement 采购订单 facade，展示供应商编码、预计到货、未到数量和部分收货状态；ERP 销售、财务和完整采购申请/RFQ/报价操作页仍按后续分期推进。 |
 | 库存管理 | `/inventory/availability` | 已落地（FE-9 金标准） | 库存可用量按 FE-4 原型重做（PageHeader + SectionCards[现存/可用/预留/冻结] + Toolbar[SKU/工厂/库位/批次/质量/货主] + DataTable 明细 + RowActions[发起移动/创建盘点]）；上下文穿透：从 MES 齐套/领料/入库带入 SKU/批次/库位查询，行动作把上下文带去移动/盘点，含返回工单链接。 |
 | 库存管理 | `/inventory/movements` | 已落地（FE-9 金标准） | 库存移动过账按 FE-4 原型重做（PageHeader + 受理队列 DataTable + 新建移动 Dialog）；上下文穿透：从来源单据带入 SKU/库位/批次预填。 |
@@ -293,13 +293,13 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | 物料列表、物料分类、UOM、单位换算、供应商、客户、承运商、工厂/产线、工作中心、设备资产、班次与日历、部门与团队、参考数据 | MasterData 后端和部分 facade 已有；前端先补齐真实维护页，再扩展二级菜单。物料详情不作为菜单项。 |
 | 产品工程（PLM） | 工程文档、工程物料、EBOM、MBOM、BOM 对比/有效性、工艺路线、工程变更、生产版本 | ProductEngineering 后端和 `/engineering` 读视图已有；细分维护页和详情页待建。仅面向工艺路线/MBOM 的页面可使用“工艺工程”标签。 |
 | 经营管理（ERP） | 采购申请、询价、采购订单、采购收货、采购退货、报价、销售订单、发货、RMA、应付、应收、财务凭证、成本核算、财务报表 | ERP 后端已落地；采购与供应 `/erp`、销售管理 `/erp/sales`、财务 `/erp/finance` 已通过 BusinessGateway 窄化 facade 和页面落地。完整 ERP 菜单、月结、税务、银行和完整报表仍按后续分期暴露。 |
-| 需求与计划 | 需求管理、MPS、MRP 运行、计划建议、需求溯源、计划执行跟踪、正式排产工作台、需求预测 | DemandPlanning facade 和 `/planning` 已有窄化工作台；`/scheduling` 消费 BusinessScheduling/APS lite facade 作为正式排产入口；预测和高级分析后置。 |
+| 需求与计划 | 需求管理、MPS、MRP 运行、计划建议、需求溯源、计划执行跟踪、正式排产工作台、需求预测 | DemandPlanning facade 和 `/planning` 已有窄化工作台，包含 MPS 主计划维护/评审/发布和 MRP 输入来源展示；`/scheduling` 消费 BusinessScheduling/APS lite facade 作为正式排产入口；预测和高级分析后置。 |
 | 高级排程（APS） | 排程设置、排程执行、排程甘特图、资源负载、冲突管理、排程版本、排程发布 | BusinessScheduling / APS lite 后端契约、内核和 BusinessGateway facade 已落地；Business Console 第一版入口为 `/scheduling`，甘特暂为明确占位。不得把 APS 算法写入 MES 页面或前端甘特。 |
 | 制造执行（MES） | 生产驾驶舱、生产计划、工单与派工、工序执行、在制跟踪、齐套与物料、报工与完工、质量与不良、设备与停机、班次交接、追溯、产能影响、规则排程过渡页 | 当前 PC 工作台已覆盖主线；PDA v1 已独立落地工序执行、报工、领料和完工入库，扫码解析、个人任务与离线 outbox/sync 仍后置。工单详情等对象页通过列表进入。 |
 | 质量管理 | 检验计划、检验记录、NCR、质量分析、CAPA | 检验/NCR 已有；质量分析 P2，CAPA P3。 |
 | 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库、出库、上架任务、拣货任务、盘点执行和 WCS 任务读面 facade，并支持服务端分页与状态过滤；#374 后上架/拣货/盘点 list 还支持库位过滤，操作员过滤参数存在但因 WMS 暂无 assigned operator 字段时返回空集。Business Console 已接入 `/wms/inbound`、`/wms/outbound`、`/wms/putaway`、`/wms/picking`、`/wms/counts` 和 `/wms/wcs`；后续仓储作业深化应继续内嵌 Inventory 可用量、批次、冻结和预留视图。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、移动、盘点已落地；批次/序列号/预留/冻结/分析后置。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
-| 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | 条码规则 `/barcode/rules` 与标签模板 `/barcode/templates` 已接入 BusinessGateway BarcodeLabel facade 和 `@nerv-iip/api-client` 稳定导出；打印管理和扫码记录仍只保留后端 facade，业务扫码动作嵌入 MES/WMS/盘点流程，不在 PC 页伪造扫码闭环。 |
+| 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates`、打印批次 `/barcode/print-batches` 与扫码记录 `/barcode/scans` 已接入 BusinessGateway BarcodeLabel facade 和 `@nerv-iip/api-client` 稳定导出；PC 端只展示打印批次、标签值/文件引用和扫码审计事实，不实现 PDA 扫码界面、离线能力、打印机驱动或完整标签预览渲染器。 |
 | 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警规则、报警、设备时间线、P0 OEE 聚合和 runtime availability 服务读面；P0 OEE 的 availability 按状态持续时间计算，performance/quality 为估算占位，响应标志在 P0 期间保持 true（无状态数据窗口下数值为 0 但仍非真实测量值）。#207 已提供设备运行看板、设备详情和报警 route-ready 页面；#638 已接入 tags、alarm-rules、history、OEE/runtime availability 正式 PC 页面。设备接入配置、凭据、PLC/DCS/SCADA 控制命令和完整报警处置闭环仍在外部/Connector 或后续边界。 |
 | 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检、备件需求、可靠性指标和事件消费；BusinessGateway 已提供工单列表/详情、保养计划、点检列表/记录、备件列表/创建、availability-windows 和 reliability facade。Business Console 已接入 `/maintenance/work-orders`、`/maintenance/plans`、`/maintenance/inspections`、`/maintenance/spare-parts`、`/maintenance/reliability` 和 `/maintenance/availability`；设备资产主数据仍归 MasterData，完整维修费用视图仍待后续。 |
 | 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端与 BusinessGateway facade 已落地，Business Console `/approval` 已提供审批模板、流程实例、我的任务、决策记录和委托设置页面；业务待办入口仍放数字化工作台，审批中心只承载处理、配置、审计和委托维护。Ops 运维审批仍归平台 Ops。 |
@@ -321,7 +321,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、上架任务 `/wms/putaway`、出库发货 `/wms/outbound`、拣货任务 `/wms/picking`、WCS 任务 `/wms/wcs`、盘点执行 `/wms/counts` |
 | 经营管理（“更多”内） | 采购与供应 `/erp`、销售管理 `/erp/sales`、财务 `/erp/finance` |
 | 设备监控（“更多”内） | 运行监控：设备运行看板 `/equipment`、设备报警 `/equipment/alarms`、采集标签 `/equipment/telemetry/tags`、报警规则 `/equipment/telemetry/alarm-rules`、历史趋势 `/equipment/telemetry/history`、OEE 与可用性 `/equipment/telemetry/oee`；维护保养：维护工单 `/maintenance/work-orders`、保养计划 `/maintenance/plans`、点检记录 `/maintenance/inspections`、备件需求 `/maintenance/spare-parts`、可靠性指标 `/maintenance/reliability`、可用窗口 `/maintenance/availability` |
-| 条码标签（“更多”内） | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates` |
+| 条码标签（“更多”内） | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates`、打印批次 `/barcode/print-batches`、扫码记录 `/barcode/scans` |
 | 审批中心（“更多”内） | 审批中心 `/approval`（模板配置 / 流程实例 / 我的任务 / 决策记录 / 委托设置） |
 
 > **仓储作业（FE-11 #286，2026-07-01 复核）：** 后端 WMS facade（#264/#374）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 列表已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤，前端用 `usePagedList` + `DataTablePagination`，无假分页；#374 的上架任务、拣货任务和盘点执行 list facade 已接入 Business Console 页面与 PDA WMS 页面。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。

@@ -12,6 +12,8 @@ const routerReplace = vi.fn(async (location: { query?: Record<string, unknown> }
 const api = vi.hoisted(() => ({
   getBusinessConsoleEngineeringBomExplosion: vi.fn(),
   getBusinessConsoleEngineeringBomExplosionQueryOptions: vi.fn(),
+  getBusinessConsoleEngineeringBomDiff: vi.fn(),
+  getBusinessConsoleEngineeringBomDiffQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomExplosion: vi.fn(),
   getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions: vi.fn(),
   getBusinessConsoleEngineeringBomWhereUsed: vi.fn(),
@@ -33,6 +35,8 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   getBusinessConsoleEngineeringBomExplosion: api.getBusinessConsoleEngineeringBomExplosion,
   getBusinessConsoleEngineeringBomExplosionQueryOptions: api.getBusinessConsoleEngineeringBomExplosionQueryOptions,
+  getBusinessConsoleEngineeringBomDiff: api.getBusinessConsoleEngineeringBomDiff,
+  getBusinessConsoleEngineeringBomDiffQueryOptions: api.getBusinessConsoleEngineeringBomDiffQueryOptions,
   getBusinessConsoleEngineeringManufacturingBomExplosion: api.getBusinessConsoleEngineeringManufacturingBomExplosion,
   getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions: api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions,
   getBusinessConsoleEngineeringBomWhereUsed: api.getBusinessConsoleEngineeringBomWhereUsed,
@@ -94,6 +98,10 @@ beforeEach(() => {
   api.getBusinessConsoleEngineeringBomExplosion.mockReset()
   api.getBusinessConsoleEngineeringBomExplosionQueryOptions.mockImplementation((options) => ({
     query: async () => (await api.getBusinessConsoleEngineeringBomExplosion(options)).data,
+  }))
+  api.getBusinessConsoleEngineeringBomDiff.mockReset()
+  api.getBusinessConsoleEngineeringBomDiffQueryOptions.mockImplementation((options) => ({
+    query: async () => (await api.getBusinessConsoleEngineeringBomDiff(options)).data,
   }))
   api.getBusinessConsoleEngineeringManufacturingBomExplosion.mockReset()
   api.getBusinessConsoleEngineeringManufacturingBomExplosionQueryOptions.mockImplementation((options) => ({
@@ -237,5 +245,70 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('FG-100')
     expect(wrapper.text()).toContain('EBOM-FG / A')
     expect(wrapper.text()).toContain('倒冲')
+  })
+
+  it('对比视图展示新增、删除、替换和数量单位损耗得率变化', async () => {
+    api.getBusinessConsoleEngineeringBomDiff.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          bomKind: 'engineering',
+          fromVersionId: 'EBOM-FG:A',
+          toVersionId: 'EBOM-FG:B',
+          rootItemCode: 'FG-100',
+          lines: [
+            { changeType: 'added', newItemCode: 'RM-NEW', newQuantity: 1, newUnitOfMeasureCode: 'PCS' },
+            { changeType: 'removed', oldItemCode: 'RM-OLD', oldQuantity: 2, oldUnitOfMeasureCode: 'PCS' },
+            { changeType: 'replaced', oldItemCode: 'RM-A', newItemCode: 'RM-B', oldQuantity: 1, newQuantity: 1 },
+            {
+              changeType: 'changed',
+              oldItemCode: 'RM-1',
+              newItemCode: 'RM-1',
+              oldQuantity: 1,
+              newQuantity: 1.5,
+              oldUnitOfMeasureCode: 'PCS',
+              newUnitOfMeasureCode: 'KG',
+              oldScrapRate: 0.02,
+              newScrapRate: 0.05,
+              oldYieldRate: 0.98,
+              newYieldRate: 0.95,
+              fieldChanges: [
+                { fieldName: 'quantity', oldValue: '1', newValue: '1.5' },
+                { fieldName: 'unitOfMeasureCode', oldValue: 'PCS', newValue: 'KG' },
+                { fieldName: 'scrapRate', oldValue: '0.02', newValue: '0.05' },
+                { fieldName: 'yieldRate', oldValue: '0.98', newValue: '0.95' },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().trim() === '对比')!.trigger('click')
+    await wrapper.find('#bom-from-code').setValue('EBOM-FG')
+    await wrapper.find('#bom-from-revision').setValue('A')
+    await wrapper.find('#bom-to-code').setValue('EBOM-FG')
+    await wrapper.find('#bom-to-revision').setValue('B')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(api.getBusinessConsoleEngineeringBomDiff).toHaveBeenCalledWith(expect.objectContaining({
+      query: expect.objectContaining({
+        bomKind: 'engineering',
+        fromBomCode: 'EBOM-FG',
+        fromRevision: 'A',
+        toBomCode: 'EBOM-FG',
+        toRevision: 'B',
+      }),
+    }))
+    expect(wrapper.text()).toContain('新增')
+    expect(wrapper.text()).toContain('删除')
+    expect(wrapper.text()).toContain('替换')
+    expect(wrapper.text()).toContain('数量: 1 -> 1.5')
+    expect(wrapper.text()).toContain('单位: PCS -> KG')
+    expect(wrapper.text()).toContain('损耗')
+    expect(wrapper.text()).toContain('得率')
   })
 })

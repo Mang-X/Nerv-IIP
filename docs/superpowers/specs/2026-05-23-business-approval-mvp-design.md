@@ -49,6 +49,10 @@ BusinessApproval does not own:
 7. Business services consume approval result events and update their own document state.
 8. ApprovalTemplate may reference IAM user IDs, groups or permission codes, but BusinessApproval does not copy IAM roles or memberships.
 
+## Business Console Consumption
+
+2026-07-02 frontend integration: business document pages consume BusinessApproval through the BusinessGateway facade and the `@nerv-iip/api-client` business-console stable barrel. ECO/ECN and NCR pages link to real approval chains, show chain status, current step, approver role/ref and decision history, and deep-link back to the approval center with document filters. Pages must not expose free-text approval reference fields or fabricate static approval states. When a domain does not yet have a durable draft document reference, it may associate an existing real approval chain but must not invent a fake document id.
+
 ## Events
 
 BusinessApproval publishes ADR 0011 envelope events:

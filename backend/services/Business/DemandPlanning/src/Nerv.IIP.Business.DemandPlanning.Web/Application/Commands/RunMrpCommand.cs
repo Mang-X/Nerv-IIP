@@ -15,7 +15,10 @@ public sealed record RunMrpCommandResult(
     MrpRunId RunId,
     int SuggestionCount,
     bool HasInputDegradation,
-    IReadOnlyCollection<string> InputDegradationSources);
+    IReadOnlyCollection<string> InputDegradationSources,
+    IReadOnlyCollection<string> InputSources,
+    DateOnly? InputCoverageStart,
+    DateOnly? InputCoverageEnd);
 
 public sealed class RunMrpCommandValidator : AbstractValidator<RunMrpCommand>
 {
@@ -40,11 +43,22 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
             cancellationToken);
         var run = MrpRun.Create(request.OrganizationId, request.EnvironmentId, request.HorizonStart, request.HorizonEnd);
         dbContext.MrpRuns.Add(run);
+        var inputSources = snapshot.Demands
+            .Select(x => x.SourceType)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var inputCoverageStart = snapshot.Demands.Count == 0 ? null : (DateOnly?)snapshot.Demands.Min(x => x.DueDate);
+        var inputCoverageEnd = snapshot.Demands.Count == 0 ? null : (DateOnly?)snapshot.Demands.Max(x => x.DueDate);
         run.Start(new PlanningInputSnapshot(
             snapshot.ProductionEngineeringSnapshotSource,
             snapshot.InventorySnapshotSource,
             snapshot.Demands.Count,
-            snapshot.Availability.Count));
+            snapshot.Availability.Count,
+            inputSources,
+            inputCoverageStart,
+            inputCoverageEnd));
         var calculated = MrpCalculator.Calculate(new MrpCalculationInput(
             request.OrganizationId,
             request.EnvironmentId,
@@ -105,6 +119,13 @@ public sealed class RunMrpCommandHandler(ApplicationDbContext dbContext, IPlanni
         }
 
         run.Complete(calculated.Count);
-        return new RunMrpCommandResult(run.Id, calculated.Count, run.HasInputDegradation, run.InputDegradationSources);
+        return new RunMrpCommandResult(
+            run.Id,
+            calculated.Count,
+            run.HasInputDegradation,
+            run.InputDegradationSources,
+            run.InputSources,
+            run.InputCoverageStart,
+            run.InputCoverageEnd);
     }
 }

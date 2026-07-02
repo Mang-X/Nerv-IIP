@@ -1,13 +1,20 @@
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
+  createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
   getBusinessConsolePlanningMrpPeggingQueryOptions,
   listBusinessConsolePlanningDemandsQueryOptions,
+  listBusinessConsolePlanningMpsBucketsQueryOptions,
   listBusinessConsolePlanningMrpRunsQueryOptions,
   listBusinessConsolePlanningSuggestionsQueryOptions,
+  releaseBusinessConsolePlanningMpsBucketMutationOptions,
+  reviewBusinessConsolePlanningMpsBucketMutationOptions,
   runBusinessConsolePlanningMrpMutationOptions,
+  updateBusinessConsolePlanningMpsBucketMutationOptions,
   type BusinessConsoleDemandSourceItem,
   type BusinessConsoleDemandSourceListEnvelope,
+  type BusinessConsoleMpsBucketItem,
+  type BusinessConsoleMpsBucketListEnvelope,
   type BusinessConsoleMrpPeggingItem,
   type BusinessConsoleMrpPeggingListEnvelope,
   type BusinessConsoleMrpRunItem,
@@ -16,6 +23,7 @@ import {
   type BusinessConsolePlanningSuggestionListEnvelope,
   type BusinessConsoleRunMrpRequest,
 } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
@@ -27,6 +35,12 @@ export interface PlanningContextFilters {
 
 export interface PlanningSuggestionFilters extends PlanningContextFilters {
   status: string
+}
+
+export interface PlanningMpsFilters extends PlanningContextFilters {
+  skuCode?: string
+  siteCode?: string
+  status?: string
 }
 
 export interface PlanningRunSelection {
@@ -51,6 +65,16 @@ export interface PlanningDemandForm {
   idempotencyKey: string
 }
 
+export interface PlanningMpsForm {
+  organizationId: string
+  environmentId: string
+  skuCode: string
+  uomCode: string
+  siteCode: string
+  bucketDate: string
+  quantity: number
+}
+
 export interface PlanningSuggestionAcceptInput {
   suggestionId: string
   suggestionType: string
@@ -58,6 +82,7 @@ export interface PlanningSuggestionAcceptInput {
 
 const PLANNING_QUERY_IDS = [
   'listBusinessConsolePlanningDemands',
+  'listBusinessConsolePlanningMpsBuckets',
   'listBusinessConsolePlanningMrpRuns',
   'getBusinessConsolePlanningMrpPegging',
   'listBusinessConsolePlanningSuggestions',
@@ -78,6 +103,16 @@ function defaultSuggestionFilters(organizationId: string, environmentId: string)
   })
 }
 
+function defaultMpsFilters(organizationId: string, environmentId: string): PlanningMpsFilters {
+  return reactive({
+    organizationId,
+    environmentId,
+    skuCode: undefined,
+    siteCode: undefined,
+    status: undefined,
+  })
+}
+
 function defaultDemandForm(organizationId: string, environmentId: string): PlanningDemandForm {
   return reactive({
     organizationId,
@@ -90,6 +125,18 @@ function defaultDemandForm(organizationId: string, environmentId: string): Plann
     quantity: 0,
     dueDate: new Date().toISOString().slice(0, 10),
     idempotencyKey: '',
+  })
+}
+
+function defaultMpsForm(organizationId: string, environmentId: string): PlanningMpsForm {
+  return reactive({
+    organizationId,
+    environmentId,
+    skuCode: '',
+    uomCode: '',
+    siteCode: '',
+    bucketDate: new Date().toISOString().slice(0, 10),
+    quantity: 0,
   })
 }
 
@@ -129,10 +176,13 @@ function isBusinessQuery(ids: string[]) {
 function ignoreBackgroundError(_error: unknown) {}
 
 export function useBusinessPlanning() {
+  const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
   const filters = defaultContextFilters(businessContext.organizationId, businessContext.environmentId)
+  const mpsFilters = defaultMpsFilters(businessContext.organizationId, businessContext.environmentId)
   const suggestionFilters = defaultSuggestionFilters(businessContext.organizationId, businessContext.environmentId)
   const demandForm = defaultDemandForm(businessContext.organizationId, businessContext.environmentId)
+  const mpsForm = defaultMpsForm(businessContext.organizationId, businessContext.environmentId)
   const runRequest = defaultRunRequest(businessContext.organizationId, businessContext.environmentId)
   const runSelection = defaultRunSelection()
   // 计划建议「分型筛选」(生产/采购)，纯前端过滤，不带入后端查询。
@@ -152,6 +202,17 @@ export function useBusinessPlanning() {
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
+      },
+    }),
+  )
+  const mpsBucketsQuery = useQuery(() =>
+    listBusinessConsolePlanningMpsBucketsQueryOptions({
+      query: {
+        organizationId: mpsFilters.organizationId,
+        environmentId: mpsFilters.environmentId,
+        skuCode: mpsFilters.skuCode?.trim() || undefined,
+        siteCode: mpsFilters.siteCode?.trim() || undefined,
+        status: mpsFilters.status?.trim() || undefined,
       },
     }),
   )
@@ -192,6 +253,30 @@ export function useBusinessPlanning() {
       void invalidatePlanningQueries().catch(ignoreBackgroundError)
     },
   })
+  const createMpsMutation = useMutation({
+    ...createBusinessConsolePlanningMpsBucketMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const updateMpsMutation = useMutation({
+    ...updateBusinessConsolePlanningMpsBucketMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const reviewMpsMutation = useMutation({
+    ...reviewBusinessConsolePlanningMpsBucketMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
+  const releaseMpsMutation = useMutation({
+    ...releaseBusinessConsolePlanningMpsBucketMutationOptions(),
+    onSuccess() {
+      void invalidatePlanningQueries().catch(ignoreBackgroundError)
+    },
+  })
   const acceptSuggestionMutation = useMutation({
     ...acceptBusinessConsolePlanningSuggestionMutationOptions(),
     onSuccess() {
@@ -218,12 +303,22 @@ export function useBusinessPlanning() {
   }
 
   function syncContext() {
+    mpsFilters.organizationId = filters.organizationId
+    mpsFilters.environmentId = filters.environmentId
     suggestionFilters.organizationId = filters.organizationId
     suggestionFilters.environmentId = filters.environmentId
     demandForm.organizationId = filters.organizationId
     demandForm.environmentId = filters.environmentId
+    mpsForm.organizationId = filters.organizationId
+    mpsForm.environmentId = filters.environmentId
     runRequest.organizationId = filters.organizationId
     runRequest.environmentId = filters.environmentId
+  }
+
+  function currentPlannerIdentity() {
+    return auth.principal?.loginName?.trim()
+      || auth.principal?.principalId?.trim()
+      || 'unknown-user'
   }
 
   return {
@@ -245,6 +340,14 @@ export function useBusinessPlanning() {
     },
     acceptSuggestionError: acceptSuggestionMutation.error,
     acceptSuggestionPending: acceptSuggestionMutation.isLoading,
+    createMpsBucket: () =>
+      createMpsMutation.mutateAsync({
+        body: {
+          ...mpsForm,
+        },
+      }),
+    createMpsBucketError: createMpsMutation.error,
+    createMpsBucketPending: createMpsMutation.isLoading,
     createDemandError: createDemandMutation.error,
     createDemandPending: createDemandMutation.isLoading,
     createOrUpdateDemand: () =>
@@ -262,6 +365,13 @@ export function useBusinessPlanning() {
     demandsError: demandsQuery.error,
     demandsPending: demandsQuery.isLoading,
     filters,
+    mpsBuckets: computed<BusinessConsoleMpsBucketItem[]>(() =>
+      unwrapItems(mpsBucketsQuery.data.value as BusinessConsoleMpsBucketListEnvelope | undefined),
+    ),
+    mpsBucketsError: mpsBucketsQuery.error,
+    mpsBucketsPending: mpsBucketsQuery.isLoading,
+    mpsFilters,
+    mpsForm,
     mrpRuns: computed<BusinessConsoleMrpRunItem[]>(() =>
       unwrapItems(runsQuery.data.value as BusinessConsoleMrpRunListEnvelope | undefined),
     ),
@@ -275,6 +385,7 @@ export function useBusinessPlanning() {
     refreshPlanning: async () => {
       const queries: Array<Promise<unknown>> = [
         demandsQuery.refetch(),
+        mpsBucketsQuery.refetch(),
         runsQuery.refetch(),
         suggestionsQuery.refetch(),
       ]
@@ -290,6 +401,28 @@ export function useBusinessPlanning() {
     runMrpPending: runMrpMutation.isLoading,
     runRequest,
     runSelection,
+    releaseMpsBucket: (mpsId: string) =>
+      releaseMpsMutation.mutateAsync({
+        path: { mpsId },
+        query: {
+          organizationId: mpsFilters.organizationId,
+          environmentId: mpsFilters.environmentId,
+        },
+        body: { releasedBy: currentPlannerIdentity() },
+      }),
+    releaseMpsBucketError: releaseMpsMutation.error,
+    releaseMpsBucketPending: releaseMpsMutation.isLoading,
+    reviewMpsBucket: (mpsId: string) =>
+      reviewMpsMutation.mutateAsync({
+        path: { mpsId },
+        query: {
+          organizationId: mpsFilters.organizationId,
+          environmentId: mpsFilters.environmentId,
+        },
+        body: { reviewedBy: currentPlannerIdentity() },
+      }),
+    reviewMpsBucketError: reviewMpsMutation.error,
+    reviewMpsBucketPending: reviewMpsMutation.isLoading,
     suggestionFilters,
     suggestionTypeFilter,
     suggestions: computed<BusinessConsolePlanningSuggestionItem[]>(() =>
@@ -300,5 +433,20 @@ export function useBusinessPlanning() {
     suggestionsError: suggestionsQuery.error,
     suggestionsPending: suggestionsQuery.isLoading,
     syncContext,
+    updateMpsBucket: (mpsId: string) =>
+      updateMpsMutation.mutateAsync({
+        path: { mpsId },
+        body: {
+          organizationId: mpsForm.organizationId,
+          environmentId: mpsForm.environmentId,
+          skuCode: mpsForm.skuCode,
+          uomCode: mpsForm.uomCode,
+          siteCode: mpsForm.siteCode,
+          bucketDate: mpsForm.bucketDate,
+          quantity: mpsForm.quantity,
+        },
+      }),
+    updateMpsBucketError: updateMpsMutation.error,
+    updateMpsBucketPending: updateMpsMutation.isLoading,
   }
 }

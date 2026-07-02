@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260702063924_AddMpsLifecycleAndMrpInputSources")]
+    partial class AddMpsLifecycleAndMrpInputSources
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -341,12 +344,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("demand_source_reference")
                         .HasComment("Demand source reference that caused the suggestion.");
 
-                    b.Property<decimal>("GrossDemandQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("gross_demand_quantity")
-                        .HasComment("Gross requirement quantity represented by this pegging link.");
-
                     b.Property<string>("ManufacturingBomReference")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
@@ -390,13 +387,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("routing_reference")
                         .HasComment("ProductEngineering routing snapshot reference.");
 
-                    b.Property<string>("SourceType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("source_type")
-                        .HasComment("Requirement source type such as sales, forecast, safety-stock, mps, component, or scheduled-receipt.");
-
                     b.HasKey("Id");
 
                     b.HasIndex("PlanningSuggestionId");
@@ -437,12 +427,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("accepted_downstream_service")
                         .HasComment("Downstream service that accepted the suggestion.");
 
-                    b.Property<decimal>("AvailableToNetQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("available_to_net_quantity")
-                        .HasComment("Inventory quantity actually available for netting after reserved and safety stock protection.");
-
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc")
@@ -455,35 +439,10 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Planning environment id.");
 
-                    b.Property<string>("Formula")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasColumnName("formula")
-                        .HasComment("Human-readable net requirement formula from persisted MRP inputs.");
-
-                    b.Property<decimal>("GrossDemandQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("gross_demand_quantity")
-                        .HasComment("Gross requirement quantity before MRP netting.");
-
                     b.Property<Guid>("MrpRunId")
                         .HasColumnType("uuid")
                         .HasColumnName("mrp_run_id")
                         .HasComment("Owning MRP run id; no cross-service foreign key.");
-
-                    b.Property<decimal>("NetRequirementQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("net_requirement_quantity")
-                        .HasComment("Calculated net requirement quantity before lot sizing.");
-
-                    b.Property<decimal>("OnHandQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("on_hand_quantity")
-                        .HasComment("On-hand inventory quantity snapshot used by MRP netting.");
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -491,19 +450,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("organization_id")
                         .HasComment("Tenant organization id that owns the suggestion.");
-
-                    b.Property<decimal>("PlannedQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("planned_quantity")
-                        .HasComment("Planned suggestion quantity after lot sizing.");
-
-                    b.Property<string>("PrimarySourceType")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("primary_source_type")
-                        .HasComment("Primary requirement source type such as sales, forecast, safety-stock, mps, or component.");
 
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 6)
@@ -527,30 +473,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("required_date")
                         .HasComment("Required date for downstream procurement or production.");
-
-                    b.Property<decimal>("ReservedQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("reserved_quantity")
-                        .HasComment("Reserved inventory quantity snapshot used by MRP netting.");
-
-                    b.Property<decimal>("SafetyStockQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("safety_stock_quantity")
-                        .HasComment("Safety stock quantity protected during MRP netting.");
-
-                    b.Property<decimal>("ScheduledReceiptQuantity")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("scheduled_receipt_quantity")
-                        .HasComment("Scheduled receipt quantity consumed by MRP netting.");
-
-                    b.Property<decimal>("ScrapRate")
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasColumnName("scrap_rate")
-                        .HasComment("BOM scrap rate applied to this requirement explanation.");
 
                     b.Property<string>("SiteCode")
                         .IsRequired()
@@ -586,21 +508,6 @@ namespace Nerv.IIP.Business.DemandPlanning.Infrastructure.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("uom_code")
                         .HasComment("Suggested quantity unit of measure snapshot.");
-
-                    b.Property<string>("UomConversionSummary")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasColumnName("uom_conversion_summary")
-                        .HasComment("UOM conversion summary used while calculating this suggestion.");
-
-                    b.Property<decimal>("YieldRate")
-                        .ValueGeneratedOnAdd()
-                        .HasPrecision(18, 6)
-                        .HasColumnType("numeric(18,6)")
-                        .HasDefaultValue(1m)
-                        .HasColumnName("yield_rate")
-                        .HasComment("Yield rate applied to this requirement explanation.");
 
                     b.HasKey("Id");
 

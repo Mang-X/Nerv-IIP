@@ -9,6 +9,7 @@ import {
   listBusinessConsoleApprovalTemplatesQueryOptions,
   resolveBusinessConsoleApprovalStepMutationOptions,
   revokeBusinessConsoleApprovalDelegationMutationOptions,
+  startBusinessConsoleApprovalChainMutationOptions,
   type BusinessConsoleApprovalChainEnvelope,
   type BusinessConsoleApprovalChainItem,
   type BusinessConsoleApprovalChainListEnvelope,
@@ -21,6 +22,7 @@ import {
   type BusinessConsoleApprovalTemplateItem,
   type BusinessConsoleApprovalTemplateListEnvelope,
   type BusinessConsoleApprovalTemplateStepItem,
+  type BusinessConsoleStartApprovalChainEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
@@ -100,6 +102,14 @@ export interface ApprovalDelegationPayload {
   effectiveFromUtc?: string
   effectiveToUtc?: string
   reason?: string
+}
+
+export interface ApprovalStartChainPayload {
+  templateCode: string
+  sourceService: string
+  documentType: string
+  documentId: string
+  documentLineId?: string
 }
 
 function defaultPaged<T extends ApprovalPagedFilters>(input: Omit<T, 'skip' | 'take'> = {} as Omit<T, 'skip' | 'take'>): T {
@@ -265,6 +275,12 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
       void invalidateApprovalQueries().catch(ignoreBackgroundError)
     },
   })
+  const startChainMutation = useMutation({
+    ...startBusinessConsoleApprovalChainMutationOptions(),
+    onSuccess() {
+      void invalidateApprovalQueries().catch(ignoreBackgroundError)
+    },
+  })
 
   return {
     chainDetail: computed(() =>
@@ -352,6 +368,23 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
       }),
     revokeDelegationError: revokeDelegationMutation.error,
     revokeDelegationPending: revokeDelegationMutation.isLoading,
+    startChain: async (payload: ApprovalStartChainPayload) => {
+      const result = await startChainMutation.mutateAsync({
+        body: {
+          organizationId: businessContext.organizationId,
+          environmentId: businessContext.environmentId,
+          templateCode: payload.templateCode.trim(),
+          sourceService: payload.sourceService.trim(),
+          documentType: payload.documentType.trim(),
+          documentId: payload.documentId.trim(),
+          documentLineId: optionalNullableText(payload.documentLineId),
+          startedBy: actor.value.actorRef,
+        },
+      })
+      return result as BusinessConsoleStartApprovalChainEnvelope
+    },
+    startChainError: startChainMutation.error,
+    startChainPending: startChainMutation.isLoading,
     saveTemplate: (payload: ApprovalTemplatePayload) =>
       templateMutation.mutateAsync({
         body: {

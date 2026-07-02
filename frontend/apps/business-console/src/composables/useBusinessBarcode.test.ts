@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
 import {
+  createBusinessConsoleBarcodePrintBatchMutationOptions,
   createOrUpdateBusinessConsoleBarcodeRuleMutationOptions,
   createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions,
+  getBusinessConsoleBarcodePrintBatchQueryOptions,
+  listBusinessConsoleBarcodePrintBatchesQueryOptions,
   listBusinessConsoleBarcodeRulesQueryOptions,
+  listBusinessConsoleBarcodeScansQueryOptions,
   listBusinessConsoleBarcodeTemplatesQueryOptions,
+  recordBusinessConsoleBarcodeScanMutationOptions,
 } from '@nerv-iip/api-client'
-import { useBarcodeRules, useBarcodeTemplates } from './useBusinessBarcode'
+import { useBarcodePrintBatches, useBarcodeRules, useBarcodeScans, useBarcodeTemplates } from './useBusinessBarcode'
 
 const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
@@ -32,8 +37,22 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleBarcodeTemplates' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleBarcodePrintBatchesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleBarcodePrintBatches' }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleBarcodePrintBatchQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleBarcodePrintBatch' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleBarcodeScansQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleBarcodeScans' }],
+    query: vi.fn(),
+  })),
   createOrUpdateBusinessConsoleBarcodeRuleMutationOptions: vi.fn(() => ({})),
   createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions: vi.fn(() => ({})),
+  createBusinessConsoleBarcodePrintBatchMutationOptions: vi.fn(() => ({})),
+  recordBusinessConsoleBarcodeScanMutationOptions: vi.fn(() => ({})),
 }))
 
 vi.mock('@pinia/colada', () => ({
@@ -160,6 +179,147 @@ describe('business barcode composables', () => {
     expect(createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions).toHaveBeenCalled()
     expect(coladaState.mutations[0]).toHaveBeenCalledWith({
       body: expect.objectContaining({ templateCode: 'SKU_BOX', templateFileId: 'file-label-box' }),
+    })
+  })
+
+  it('lists print batches, loads selected details, and creates a batch through the facade', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleBarcodePrintBatches', {
+      success: true,
+      data: {
+        total: 1,
+        printBatches: [
+          {
+            printBatchId: 'pb-1',
+            labelTemplateId: 'tpl-1',
+            sourceDocumentType: 'production.report',
+            sourceDocumentId: 'WO-001',
+            requestedQuantity: 2,
+            status: 'completed',
+          },
+        ],
+      },
+    })
+    coladaState.queryDataById.set('getBusinessConsoleBarcodePrintBatch', {
+      success: true,
+      data: {
+        printBatch: {
+          printBatchId: 'pb-1',
+          labelTemplateId: 'tpl-1',
+          sourceDocumentType: 'production.report',
+          sourceDocumentId: 'WO-001',
+          requestedQuantity: 2,
+          status: 'completed',
+          items: [{ sequenceNo: 1, labelValue: '(01)06912345678901(10)L2407', fileId: 'file-label-1' }],
+        },
+      },
+    })
+
+    const result = useBarcodePrintBatches({
+      sourceDocumentType: 'production.report',
+      sourceDocumentId: 'WO-001',
+      status: 'completed',
+      selectedPrintBatchId: 'pb-1',
+      skip: 0,
+      take: 20,
+    })
+
+    expect(listBusinessConsoleBarcodePrintBatchesQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 20,
+        sourceDocumentType: 'production.report',
+        sourceDocumentId: 'WO-001',
+        status: 'completed',
+      },
+    })
+    expect(getBusinessConsoleBarcodePrintBatchQueryOptions).toHaveBeenCalledWith({
+      path: { printBatchId: 'pb-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(result.printBatches.value).toHaveLength(1)
+    expect(result.printBatchDetail.value?.items?.[0]?.labelValue).toContain('(01)')
+
+    await result.createPrintBatch({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      labelTemplateId: 'tpl-1',
+      sourceDocumentType: 'production.report',
+      sourceDocumentId: 'WO-001',
+      idempotencyKey: 'print-WO-001-1',
+      requestedQuantity: 2,
+    })
+
+    expect(createBusinessConsoleBarcodePrintBatchMutationOptions).toHaveBeenCalled()
+    expect(coladaState.mutations[0]).toHaveBeenCalledWith({
+      body: expect.objectContaining({ labelTemplateId: 'tpl-1', requestedQuantity: 2 }),
+    })
+  })
+
+  it('lists scan records with workflow and object filters and records scan audit actions', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleBarcodeScans', {
+      success: true,
+      data: {
+        total: 1,
+        scans: [
+          {
+            scanRecordId: 'scan-1',
+            deviceCode: 'PC-01',
+            scannedValue: '(01)06912345678901(10)L2407',
+            sourceWorkflow: 'inventory.count',
+            sourceDocumentId: 'COUNT-001',
+            result: 'rejected',
+            rejectionReason: 'unsupported-workflow',
+            scannedAtUtc: '2026-07-02T01:00:00Z',
+          },
+        ],
+      },
+    })
+
+    const result = useBarcodeScans({
+      sourceWorkflow: 'inventory.count',
+      sourceDocumentId: 'COUNT-001',
+      scannedValue: '(01)',
+      deviceCode: 'PC-01',
+      skip: 40,
+      take: 20,
+    })
+
+    expect(listBusinessConsoleBarcodeScansQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 40,
+        take: 20,
+        deviceCode: 'PC-01',
+        scannedValue: '(01)',
+        sourceWorkflow: 'inventory.count',
+        sourceDocumentId: 'COUNT-001',
+      },
+    })
+    expect(result.scans.value[0]?.rejectionReason).toBe('unsupported-workflow')
+    expect(result.scansTotal.value).toBe(1)
+
+    await result.recordScan({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      deviceCode: 'PC-01',
+      scannedValue: '(01)06912345678901(10)L2407',
+      sourceWorkflow: 'inventory.count',
+      sourceDocumentId: 'COUNT-001',
+      idempotencyKey: 'scan-COUNT-001-1',
+      result: 'rejected',
+      rejectionReason: 'unsupported-workflow',
+    })
+
+    expect(recordBusinessConsoleBarcodeScanMutationOptions).toHaveBeenCalled()
+    expect(coladaState.mutations[0]).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        sourceWorkflow: 'inventory.count',
+        sourceDocumentId: 'COUNT-001',
+        rejectionReason: 'unsupported-workflow',
+      }),
     })
   })
 })
