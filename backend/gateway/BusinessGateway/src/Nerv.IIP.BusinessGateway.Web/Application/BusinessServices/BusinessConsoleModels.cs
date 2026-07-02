@@ -1434,7 +1434,11 @@ public sealed record BusinessConsoleEngineeringChangeImpactPreviewRequest(
     string OrganizationId,
     string EnvironmentId,
     DateOnly EffectiveDate,
-    IReadOnlyCollection<BusinessConsoleAffectedVersionRequest> AffectedVersions);
+    IReadOnlyCollection<BusinessConsoleEngineeringChangeImpactAffectedVersionRequest> AffectedVersions);
+
+public sealed record BusinessConsoleEngineeringChangeImpactAffectedVersionRequest(
+    string VersionKind,
+    string VersionId);
 
 public sealed record BusinessConsoleEngineeringChangeImpactNode(
     string NodeType,

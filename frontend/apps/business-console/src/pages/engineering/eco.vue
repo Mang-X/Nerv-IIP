@@ -44,6 +44,7 @@ import {
 } from '@nerv-iip/ui'
 import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from 'lucide-vue-next'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
@@ -259,9 +260,13 @@ function formatError(error: unknown) {
 
 function impactNodeTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
-    direct: '直接影响',
-    derived: '派生对象',
-    downstream: '下游候选',
+    'engineering-bom': 'EBOM',
+    'manufacturing-bom': 'MBOM',
+    routing: '工艺路线',
+    'production-version': '生产版本',
+    'mrp-candidate': 'MRP 候选',
+    'mes-work-order-candidate': 'MES 工单',
+    'aps-plan-candidate': 'APS 排程',
   }
   return labels[(type ?? '').toLowerCase()] ?? (type || '影响节点')
 }
@@ -411,7 +416,7 @@ function riskTone(severity?: string | null): StatusTone {
                   </template>
                   <template #cell-skuCode="{ row }">{{ row.skuCode || '—' }}</template>
                   <template #cell-route="{ row }">
-                    <a v-if="row.consoleRoute" class="text-primary underline-offset-4 hover:underline" :href="row.consoleRoute">打开</a>
+                    <RouterLink v-if="row.consoleRoute" class="text-primary underline-offset-4 hover:underline" :to="row.consoleRoute">打开</RouterLink>
                     <span v-else class="text-muted-foreground">暂无入口</span>
                   </template>
                 </DataTablePro>

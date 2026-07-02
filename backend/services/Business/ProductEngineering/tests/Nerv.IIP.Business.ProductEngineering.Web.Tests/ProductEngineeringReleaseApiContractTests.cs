@@ -437,7 +437,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
                 "org-001",
                 "env-dev",
                 new DateOnly(2026, 6, 1),
-                [new EngineeringChangeImpactAffectedVersionInput("engineering-bom", "EBOM-IMPACT:A", "EBOM-IMPACT:B")]),
+                [new EngineeringChangeImpactAffectedVersionInput("engineering-bom", "EBOM-IMPACT:A")]),
             CancellationToken.None);
 
         var productionVersionId = productionVersion.Id.Id.ToString("D");
@@ -447,8 +447,49 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains(response.Nodes, node => node.NodeType == "production-version" && node.VersionId == productionVersionId && node.ImpactLevel == "downstream");
         Assert.Contains(response.Nodes, node => node.NodeType == "mrp-candidate" && node.RelatedVersionId == productionVersionId);
         Assert.Contains(response.Nodes, node => node.NodeType == "mes-work-order-candidate" && node.RelatedVersionId == productionVersionId);
-        Assert.Contains(response.Nodes, node => node.NodeType == "aps-plan-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Nodes, node => node.NodeType == "aps-plan-candidate" && node.RelatedVersionId == productionVersionId && node.ConsoleRoute == "/scheduling");
         Assert.Contains(response.Risks, risk => risk.Code == "downstream-execution-impact" && risk.Severity == "warning");
+    }
+
+    [Fact]
+    public async Task Engineering_change_impact_preview_normalizes_production_version_guid_before_adding_candidates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var productionVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-4000",
+            "MBOM-PV:A",
+            "ROUTE-PV:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.ProductionVersions.Add(productionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var productionVersionId = productionVersion.Id.Id.ToString("D");
+        var response = await new GetEngineeringChangeImpactPreviewQueryHandler(dbContext).Handle(
+            new GetEngineeringChangeImpactPreviewQuery(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 6, 1),
+                [new EngineeringChangeImpactAffectedVersionInput("production-version", productionVersion.Id.Id.ToString("B").ToUpperInvariant())]),
+            CancellationToken.None);
+
+        var productionVersionNodes = response.Nodes
+            .Where(node => node.NodeType == "production-version")
+            .ToArray();
+        var node = Assert.Single(productionVersionNodes);
+        Assert.Equal(productionVersionId, node.VersionId);
+        Assert.Equal("direct", node.ImpactLevel);
+        Assert.Contains(response.Nodes, candidate => candidate.NodeType == "mrp-candidate" && candidate.RelatedVersionId == productionVersionId);
     }
 
     [Fact]

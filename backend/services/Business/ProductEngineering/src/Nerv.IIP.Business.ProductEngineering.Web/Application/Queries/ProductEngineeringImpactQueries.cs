@@ -48,8 +48,7 @@ public sealed record GetBomDiffQuery(
 
 public sealed record EngineeringChangeImpactAffectedVersionInput(
     string VersionKind,
-    string VersionId,
-    string? SupersededByVersionId = null);
+    string VersionId);
 
 public sealed record EngineeringChangeImpactNode(
     string NodeType,
@@ -379,7 +378,7 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
         foreach (var affected in request.AffectedVersions)
         {
             var kind = NormalizeVersionKind(affected.VersionKind);
-            var versionId = NormalizeVersionId(affected.VersionId);
+            var versionId = NormalizeVersionId(kind, affected.VersionId);
             AddNode(nodes, kind, versionId, DisplayName(kind, versionId), "direct", null, null, ConsoleRoute(kind, versionId));
 
             switch (kind)
@@ -505,7 +504,7 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
             return;
         }
 
-        await AddProductionVersionImpactAsync(request, version, productionVersionId, nodes, risks, cancellationToken);
+        await AddProductionVersionImpactAsync(request, version, parsedId.ToString("D"), nodes, risks, cancellationToken);
     }
 
     private async Task AddProductionVersionImpactAsync(
@@ -520,7 +519,7 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
         AddNode(nodes, "production-version", productionVersionId, $"生产版本 {version.SkuCode}", "downstream", relatedVersionId, version.SkuCode, $"/engineering/production-versions?skuCode={Uri.EscapeDataString(version.SkuCode)}");
         AddNode(nodes, "mrp-candidate", $"mrp:{productionVersionId}", "MRP 需求重算候选", "candidate", productionVersionId, version.SkuCode, "/planning");
         AddNode(nodes, "mes-work-order-candidate", $"mes:{productionVersionId}", "MES 工单/WIP 候选", "candidate", productionVersionId, version.SkuCode, "/mes/work-orders");
-        AddNode(nodes, "aps-plan-candidate", $"aps:{productionVersionId}", "APS 排程候选", "candidate", productionVersionId, version.SkuCode, "/scheduling/plans");
+        AddNode(nodes, "aps-plan-candidate", $"aps:{productionVersionId}", "APS 排程候选", "candidate", productionVersionId, version.SkuCode, "/scheduling");
         AddRisk(risks, "downstream-execution-impact", "warning", "工程变更影响生产版本，发布前需要评估 MRP、MES 工单/WIP 与 APS 已发布计划。", productionVersionId);
 
         var routing = await FindRoutingAsync(request.OrganizationId, request.EnvironmentId, version.RoutingVersionId, cancellationToken);
@@ -584,7 +583,13 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
         };
     }
 
-    private static string NormalizeVersionId(string versionId) => versionId.Trim();
+    private static string NormalizeVersionId(string kind, string versionId)
+    {
+        var normalized = versionId.Trim();
+        return kind == "production-version" && Guid.TryParse(normalized, out var parsedId)
+            ? parsedId.ToString("D")
+            : normalized;
+    }
 
     private static string DisplayName(string kind, string versionId) =>
         kind switch

@@ -24382,8 +24382,20 @@
             "minLength": 1,
             "nullable": false,
             "items": {
-              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest"
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest"
             }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "versionKind": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
           }
         }
       },

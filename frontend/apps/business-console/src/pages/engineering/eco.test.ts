@@ -86,8 +86,11 @@ const formSelectStubs = {
   SelectProContent: { template: '<slot />' },
   SelectProItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
+const routerLinkStubs = {
+  RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+}
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs }
+const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...datePickerStub, ...formSelectStubs, ...routerLinkStubs }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -101,7 +104,7 @@ beforeEach(() => {
       effectiveDate: '2026-03-01',
       nodes: [
         {
-          nodeType: 'derived',
+          nodeType: 'manufacturing-bom',
           versionId: 'MBOM-1:B',
           displayName: 'MBOM MBOM-1 / B',
           impactLevel: 'derived',
@@ -109,12 +112,20 @@ beforeEach(() => {
           consoleRoute: '/engineering/mbom?bomCode=MBOM-1&revision=B',
         },
         {
-          nodeType: 'downstream',
-          versionId: 'MRP:SKU-FG',
+          nodeType: 'mrp-candidate',
+          versionId: 'mrp:pv-1',
           displayName: 'MRP 候选',
           impactLevel: 'candidate',
           skuCode: 'SKU-FG',
           consoleRoute: null,
+        },
+        {
+          nodeType: 'aps-plan-candidate',
+          versionId: 'aps:pv-1',
+          displayName: '已发布计划候选',
+          impactLevel: 'candidate',
+          skuCode: 'SKU-FG',
+          consoleRoute: '/scheduling',
         },
       ],
       risks: [
@@ -209,7 +220,9 @@ describe('engineering eco page', () => {
     expect(stub.releaseChange).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('MBOM MBOM-1 / B')
     expect(wrapper.text()).toContain('MRP 候选')
+    expect(wrapper.text()).toContain('APS 排程')
     expect(wrapper.text()).toContain('暂无入口')
+    expect(wrapper.find('[data-router-link]').exists()).toBe(true)
     expect(wrapper.text()).toContain('变更会影响 MRP、MES、APS 和在制执行候选')
   })
 

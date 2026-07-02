@@ -1067,7 +1067,6 @@ public sealed class BusinessConsoleEngineeringChangeImpactPreviewRequestValidato
         {
             version.RuleFor(x => x.VersionKind).NotEmpty().MaximumLength(100);
             version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
-            version.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
         });
     }
 }

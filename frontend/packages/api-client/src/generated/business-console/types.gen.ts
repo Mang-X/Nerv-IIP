@@ -1653,7 +1653,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     organizationId: string;
     environmentId: string;
     effectiveDate?: string;
-    affectedVersions: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAffectedVersionRequest>;
+    affectedVersions: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactAffectedVersionRequest = {
+    versionKind?: string;
+    versionId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeListResponse = NetCorePalExtensionsDtoResponseData & {
