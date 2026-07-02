@@ -176,7 +176,6 @@ export default defineConfig({
           items: [
             { text: 'GanttChart 工单甘特', link: '/components/desktop/gantt-chart' },
             { text: 'ResourceSchedulerBoard 资源排产板', link: '/components/desktop/resource-scheduler' },
-            { text: 'SchedulingWorkbench 排产工作台', link: '/components/desktop/scheduling-workbench' },
           ],
         },
       ],

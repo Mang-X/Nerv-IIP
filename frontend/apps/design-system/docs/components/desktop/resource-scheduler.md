@@ -4,7 +4,8 @@ pageClass: ds-wide
 ---
 
 <script setup>
-import { ResourceSchedulerBoard } from '@nerv-iip/scheduling'
+import { ResourceSchedulerBoard, SchedulingWorkbench } from '@nerv-iip/scheduling'
+import { toast } from '@nerv-iip/ui'
 import SchedulingLegend from '../../../../../packages/scheduling/src/components/panels/SchedulingLegend.vue'
 import { computed, ref } from 'vue'
 import { makeModel, makeCalendarModel } from '../../.vitepress/schedulingDemo'
@@ -69,6 +70,26 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { month: 'nume
 
 const readOnlyModel = ref(makeModel())
 const emptyModel = ref({ ...makeModel(), tasks: [], links: [], resources: [] })
+
+// 编辑闭环 demo:独立 model + mock preview/release/@fix,喂给组合件 SchedulingWorkbench。
+const wbModel = ref(makeModel())
+const H = 3_600_000
+const wbShift = (iso, h) => new Date(Date.parse(iso) + h * H).toISOString()
+async function wbPreview(locked) {
+  const lockedIds = new Set(locked.map((l) => l.assignmentId))
+  const cur = wbModel.value
+  const changes = []
+  const tasks = cur.tasks.map((t) => {
+    if (t.type !== 'operation' || t.isMilestone || t.blockKind) return t
+    if (lockedIds.has(t.id)) { changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'preserved', message: '锁定,保持不动', taskId: t.id }); return t }
+    changes.push({ orderId: t.orderId, operationId: t.operationId, changeType: 'moved', message: '重排后移 2 小时', taskId: t.id })
+    return { ...t, startUtc: wbShift(t.startUtc, 2), endUtc: wbShift(t.endUtc, 2) }
+  })
+  await new Promise((r) => setTimeout(r, 350))
+  return { ...cur, tasks, changes, meta: { ...cur.meta, status: 'preview' } }
+}
+async function wbRelease() { await new Promise((r) => setTimeout(r, 250)); toast.success('计划已发布', { description: '排程已下发到执行' }) }
+function wbFix(orderId, operationId) { toast.info(`去处理未排项:${orderId} / ${operationId}`, { description: '跳转补料 / 改派(示例)' }) }
 </script>
 
 # ResourceSchedulerBoard 资源排产板
@@ -223,6 +244,35 @@ function onDrag(p) {
 
 左轴按所选维度铺泳道(工作中心 / 设备 / 班组 / 产线),泳道头显示资源名与产能指标(利用率 / OEE)。工单卡片显示工序色、产品、数量、齐套 chip 与进度;资源负载带随利用率加深,>1 过载显著提示。资源时间块(维护/停机/换线/换型)以斜纹块落在对应泳道,不可拖拽。
 
+## 业务操作 · 编辑闭环
+
+单独用 `ResourceSchedulerBoard` 可拖拽改时间 / 跨泳道改派;若要「锁定 → 重新排程 → 发布」的完整业务闭环,用组合件 `SchedulingWorkbench`(工具栏 + 视图切换 + 右侧详情/冲突/未排/变更面板)。本 demo 注入 mock `preview`/`release`,可完整走通:
+
+- **拖** 一条工序改期(横向)或改派资源(跨泳道);
+- 右侧详情面板 **锁定** 要保留的工序(再点 **解锁**);
+- 工具栏 **重新排程** → 携锁定项调 mock preview(锁定不动、其余后移 2h)→ 右侧 **变更** tab 显示 moved/preserved diff;
+- **发布计划** → mock release(toast);未排 tab 点 **去处理** → `@fix`(toast);
+- **撤销/重做** 回退前端快照,可切 **只读**。
+
+<Demo block>
+  <div style="height: 560px; width: 100%">
+    <SchedulingWorkbench :model="wbModel" default-view="resource" :preview="wbPreview" :release="wbRelease" @fix="wbFix" />
+  </div>
+</Demo>
+
+```vue
+<script setup lang="ts">
+import { SchedulingWorkbench, toModel } from '@nerv-iip/scheduling'
+const model = toModel(plan)
+async function preview(locked) { return toModel(await previewSchedulingPlan(locked)) }
+async function release(planId: string) { await releaseSchedulingPlan(planId) }
+</script>
+
+<template>
+  <SchedulingWorkbench :model="model" default-view="resource" :preview="preview" :release="release" @fix="goFix" />
+</template>
+```
+
 ## 属性
 
 与 `GanttChart` 一致(差异仅在视角:排产板按资源泳道)。
@@ -241,4 +291,4 @@ function onDrag(p) {
 ## 相关
 
 - [GanttChart 工单甘特](./gantt-chart) — 同一模型的工单/工序时间线视角。
-- [SchedulingWorkbench 排产工作台](./scheduling-workbench) — 组合两视图 + 工具栏 + 面板 + 锁定—重预览编辑闭环。
+- [业务操作 · 编辑闭环](#业务操作-编辑闭环) — 用组合件 `SchedulingWorkbench`(工具栏 + 视图切换 + 面板)走通锁定—重预览—发布闭环。

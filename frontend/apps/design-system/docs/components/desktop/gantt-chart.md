@@ -250,5 +250,4 @@ function onDrag(p) {
 
 ## 相关
 
-- [ResourceSchedulerBoard 资源排产板](./resource-scheduler) — 同一模型的资源泳道视角。
-- [SchedulingWorkbench 排产工作台](./scheduling-workbench) — 组合两视图 + 工具栏 + 面板 + 锁定—重预览编辑闭环。
+- [ResourceSchedulerBoard 资源排产板](./resource-scheduler) — 同一模型的资源泳道视角;页内「业务操作 · 编辑闭环」用组合件 `SchedulingWorkbench` 演示锁定—重预览—发布闭环。
