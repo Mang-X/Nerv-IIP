@@ -1,7 +1,33 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitepress'
 import wasm from 'vite-plugin-wasm'
+
+// DHTMLX 试用包为可选依赖(评估许可禁分发,不入库)。未安装私有源包且无本地 vendor 拷贝时,
+// 把 `@dhx/trial-gantt` 别名到 stub,保证 docs build 在无许可环境不失败;此时排程组件显示优雅占位。
+const dhxInstalled = existsSync(
+  fileURLToPath(new URL('../../../../node_modules/@dhx/trial-gantt/package.json', import.meta.url)),
+)
+const dhxVendor = fileURLToPath(
+  new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url),
+)
+const dhxCssVendor = fileURLToPath(
+  new URL('../../../../packages/scheduling/vendor/dhtmlx/dhtmlxgantt.css', import.meta.url),
+)
+const dhxStub = fileURLToPath(
+  new URL('../../../../packages/scheduling/src/engine/dhtmlx/stub.ts', import.meta.url),
+)
+const dhxCssStub = fileURLToPath(
+  new URL('../../../../packages/scheduling/src/engine/dhtmlx/empty.css', import.meta.url),
+)
+const dhxAlias: Record<string, string> = dhxInstalled
+  ? {}
+  : {
+      // 更具体的 css 子路径必须排在前面:Vite 字符串 alias 是前缀匹配。
+      '@dhx/trial-gantt/codebase/dhtmlxgantt.css': existsSync(dhxCssVendor) ? dhxCssVendor : dhxCssStub,
+      '@dhx/trial-gantt': existsSync(dhxVendor) ? dhxVendor : dhxStub,
+    }
 
 // Nerv-IIP 设计系统文档 (VitePress).
 // Runs under the workspace's `vite → @voidzero-dev/vite-plus-core` override; the
@@ -144,6 +170,10 @@ export default defineConfig({
         {
           text: '图表',
           items: [{ text: 'Chart 图表', link: '/components/desktop/chart' }],
+        },
+        {
+          text: '业务区块',
+          items: [{ text: 'Scheduling 排产工作台', link: '/components/desktop/scheduling' }],
         },
       ],
       // PDA 移动 —— 组件库式：每个组件一页，按分类分组
@@ -323,6 +353,13 @@ export default defineConfig({
         '@nerv-iip/ui-mobile': fileURLToPath(
           new URL('../../../../packages/ui-mobile/src/index.ts', import.meta.url),
         ),
+        '@nerv-iip/scheduling': fileURLToPath(
+          new URL('../../../../packages/scheduling/src/index.ts', import.meta.url),
+        ),
+        '@nerv-iip/api-client': fileURLToPath(
+          new URL('../../../../packages/api-client/src/index.ts', import.meta.url),
+        ),
+        ...dhxAlias,
       },
     },
   },

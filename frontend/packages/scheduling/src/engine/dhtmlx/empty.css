@@ -1,0 +1,2 @@
+/* DHTMLX 试用包缺失时,@dhx/trial-gantt/codebase/dhtmlxgantt.css 别名到此空文件,
+   使 import 可解析(无 DHTMLX 时用 NativeEngine,无需其样式)。 */
