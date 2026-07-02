@@ -36,7 +36,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     {
         var contracts = ProductEngineeringEndpointContracts.All;
 
-        Assert.Equal(22, contracts.Count);
+        Assert.Equal(24, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents/{documentNumber}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
@@ -51,6 +51,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/where-used" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/boms/diff" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/impact-preview" && x.PermissionCode == EngineeringPermissionCodes.ChangesRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/manufacturing-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
@@ -103,6 +105,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(GetEngineeringBomEndpoint))]
     [InlineData(typeof(GetEngineeringBomExplosionEndpoint))]
     [InlineData(typeof(GetEngineeringBomWhereUsedEndpoint))]
+    [InlineData(typeof(GetBomDiffEndpoint))]
+    [InlineData(typeof(GetEngineeringChangeImpactPreviewEndpoint))]
     [InlineData(typeof(ReleaseManufacturingBomEndpoint))]
     [InlineData(typeof(GetManufacturingBomEndpoint))]
     [InlineData(typeof(GetManufacturingBomExplosionEndpoint))]
@@ -352,6 +356,99 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal("MBOM-1000", detail.BomCode);
         Assert.Equal("SKU-RM-1000", Assert.Single(detail.MaterialLines).SkuCode);
         Assert.Equal("mix-temperature", Assert.Single(detail.RecipeLines).ParameterCode);
+    }
+
+    [Fact]
+    public async Task Bom_diff_returns_structured_added_removed_replaced_and_field_changes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var source = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DIFF", "A", "SKU-FG-1000")
+            .AddLine("SKU-RM-KEEP", 2m, "EA", scrapRate: 0.01m, yieldRate: 0.98m)
+            .AddLine("SKU-RM-REPLACE-OLD", 1m, "EA", alternateGroup: "main")
+            .AddLine("SKU-RM-REMOVE", 1m, "EA");
+        source.Release(new DateOnly(2026, 1, 1));
+        var target = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DIFF", "B", "SKU-FG-1000")
+            .AddLine("SKU-RM-KEEP", 2.5m, "KG", scrapRate: 0.03m, yieldRate: 0.95m)
+            .AddLine("SKU-RM-REPLACE-NEW", 1m, "EA", alternateGroup: "main")
+            .AddLine("SKU-RM-ADD", 4m, "EA");
+        target.Release(new DateOnly(2026, 4, 1));
+        dbContext.EngineeringBoms.AddRange(source, target);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetBomDiffQueryHandler(dbContext).Handle(
+            new GetBomDiffQuery("org-001", "env-dev", "EngineeringBom", "EBOM-DIFF", "A", "EBOM-DIFF", "B"),
+            CancellationToken.None);
+
+        Assert.Equal("EngineeringBom", response.BomKind);
+        Assert.Contains(response.Lines, line => line.ChangeType == "added" && line.NewItemCode == "SKU-RM-ADD");
+        Assert.Contains(response.Lines, line => line.ChangeType == "removed" && line.OldItemCode == "SKU-RM-REMOVE");
+        Assert.Contains(response.Lines, line =>
+            line.ChangeType == "replaced" &&
+            line.OldItemCode == "SKU-RM-REPLACE-OLD" &&
+            line.NewItemCode == "SKU-RM-REPLACE-NEW");
+        var changed = Assert.Single(response.Lines, line => line.ChangeType == "changed");
+        Assert.Equal("SKU-RM-KEEP", changed.OldItemCode);
+        Assert.Equal("SKU-RM-KEEP", changed.NewItemCode);
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "quantity" && change.OldValue == "2" && change.NewValue == "2.5");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "unitOfMeasureCode" && change.OldValue == "EA" && change.NewValue == "KG");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "scrapRate" && change.OldValue == "0.01" && change.NewValue == "0.03");
+        Assert.Contains(changed.FieldChanges, change => change.FieldName == "yieldRate" && change.OldValue == "0.98" && change.NewValue == "0.95");
+    }
+
+    [Fact]
+    public async Task Engineering_change_impact_preview_expands_affected_versions_to_downstream_candidates()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-IMPACT", "A", "SKU-FG-3000")
+            .AddLine("SKU-RM-3000", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 1, 1));
+        var mbom = ManufacturingBom.CreateDraft("org-001", "env-dev", "MBOM-IMPACT", "A", "SKU-FG-3000")
+            .AddMaterialLine("SKU-RM-3000", 1m, "EA", 0m);
+        mbom.ReleaseFromEngineeringBom("EBOM-IMPACT:A", EngineeringVersionStatus.Published, new DateOnly(2026, 1, 1));
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-IMPACT", "A", "SKU-FG-3000")
+            .AddOperation(10, "WC-FINAL", "assembly", "Assembly", 30);
+        routing.Release(new DateOnly(2026, 1, 1));
+        var productionVersion = ProductionVersion.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-3000",
+            "MBOM-IMPACT:A",
+            "ROUTE-IMPACT:A",
+            new DateOnly(2026, 1, 1),
+            null,
+            null,
+            null,
+            10,
+            true,
+            EngineeringVersionStatus.Published,
+            EngineeringVersionStatus.Published);
+        dbContext.EngineeringBoms.Add(ebom);
+        dbContext.ManufacturingBoms.Add(mbom);
+        dbContext.Routings.Add(routing);
+        dbContext.ProductionVersions.Add(productionVersion);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetEngineeringChangeImpactPreviewQueryHandler(dbContext).Handle(
+            new GetEngineeringChangeImpactPreviewQuery(
+                "org-001",
+                "env-dev",
+                new DateOnly(2026, 6, 1),
+                [new EngineeringChangeImpactAffectedVersionInput("engineering-bom", "EBOM-IMPACT:A", "EBOM-IMPACT:B")]),
+            CancellationToken.None);
+
+        var productionVersionId = productionVersion.Id.Id.ToString("D");
+        Assert.Contains(response.Nodes, node => node.NodeType == "engineering-bom" && node.VersionId == "EBOM-IMPACT:A" && node.ImpactLevel == "direct");
+        Assert.Contains(response.Nodes, node => node.NodeType == "manufacturing-bom" && node.VersionId == "MBOM-IMPACT:A" && node.ImpactLevel == "derived");
+        Assert.Contains(response.Nodes, node => node.NodeType == "routing" && node.VersionId == "ROUTE-IMPACT:A" && node.ImpactLevel == "derived");
+        Assert.Contains(response.Nodes, node => node.NodeType == "production-version" && node.VersionId == productionVersionId && node.ImpactLevel == "downstream");
+        Assert.Contains(response.Nodes, node => node.NodeType == "mrp-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Nodes, node => node.NodeType == "mes-work-order-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Nodes, node => node.NodeType == "aps-plan-candidate" && node.RelatedVersionId == productionVersionId);
+        Assert.Contains(response.Risks, risk => risk.Code == "downstream-execution-impact" && risk.Severity == "warning");
     }
 
     [Fact]

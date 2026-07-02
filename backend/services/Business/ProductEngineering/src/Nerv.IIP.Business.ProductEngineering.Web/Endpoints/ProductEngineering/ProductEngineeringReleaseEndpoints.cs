@@ -206,6 +206,27 @@ public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
     }
 }
 
+public sealed record GetEngineeringChangeImpactPreviewRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateOnly EffectiveDate,
+    IReadOnlyCollection<EngineeringChangeImpactAffectedVersionInput> AffectedVersions);
+
+public sealed class GetEngineeringChangeImpactPreviewEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetEngineeringChangeImpactPreviewRequest, ResponseData<EngineeringChangeImpactPreviewResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetEngineeringChangeImpactPreviewEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetEngineeringChangeImpactPreviewRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetEngineeringChangeImpactPreviewQuery(req.OrganizationId, req.EnvironmentId, req.EffectiveDate, req.AffectedVersions), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record ListEngineeringBomsRequest(string OrganizationId, string EnvironmentId, string? ParentItemCode, string? Status, int Skip = 0, int Take = 100);
 
 public sealed class ListEngineeringBomsEndpoint(ISender sender)
@@ -387,6 +408,30 @@ public sealed class GetEngineeringBomWhereUsedEndpoint(ISender sender)
     }
 }
 
+public sealed record GetBomDiffRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string BomKind,
+    string FromBomCode,
+    string FromRevision,
+    string ToBomCode,
+    string ToRevision);
+
+public sealed class GetBomDiffEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<GetBomDiffRequest, ResponseData<BomDiffResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<GetBomDiffEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetBomDiffRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetBomDiffQuery(req.OrganizationId, req.EnvironmentId, req.BomKind, req.FromBomCode, req.FromRevision, req.ToBomCode, req.ToRevision), ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
 public sealed record GetManufacturingBomRequest(string OrganizationId, string EnvironmentId, string BomCode, string Revision);
 
 public sealed class GetManufacturingBomEndpoint(ISender sender)
@@ -542,6 +587,7 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(GetEngineeringBomEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBom"),
         new(typeof(GetEngineeringBomExplosionEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomExplosion"),
         new(typeof(GetEngineeringBomWhereUsedEndpoint), "GET", "/api/business/v1/engineering/engineering-boms/where-used", EngineeringPermissionCodes.BomsRead, "getBusinessEngineeringBomWhereUsed"),
+        new(typeof(GetBomDiffEndpoint), "GET", "/api/business/v1/engineering/boms/diff", EngineeringPermissionCodes.BomsRead, "getBusinessBomDiff"),
         new(typeof(ReleaseManufacturingBomEndpoint), "POST", "/api/business/v1/engineering/manufacturing-boms/release", EngineeringPermissionCodes.BomsManage, "releaseBusinessManufacturingBom"),
         new(typeof(GetManufacturingBomEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/{bomCode}/{revision}", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBom"),
         new(typeof(GetManufacturingBomExplosionEndpoint), "GET", "/api/business/v1/engineering/manufacturing-boms/explosion", EngineeringPermissionCodes.BomsRead, "getBusinessManufacturingBomExplosion"),
@@ -549,6 +595,7 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(GetRoutingEndpoint), "GET", "/api/business/v1/engineering/routings/{routingCode}/{revision}", EngineeringPermissionCodes.RoutingsRead, "getBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),
+        new(typeof(GetEngineeringChangeImpactPreviewEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/impact-preview", EngineeringPermissionCodes.ChangesRead, "previewBusinessEngineeringChangeImpact"),
         new(typeof(ListEngineeringChangesEndpoint), "GET", "/api/business/v1/engineering/engineering-changes", EngineeringPermissionCodes.ChangesRead, "listBusinessEngineeringChanges"),
         new(typeof(GetEngineeringChangeEndpoint), "GET", "/api/business/v1/engineering/engineering-changes/{changeNumber}", EngineeringPermissionCodes.ChangesRead, "getBusinessEngineeringChange"),
         new(typeof(ListEngineeringBomsEndpoint), "GET", "/api/business/v1/engineering/engineering-boms", EngineeringPermissionCodes.BomsRead, "listBusinessEngineeringBoms"),
