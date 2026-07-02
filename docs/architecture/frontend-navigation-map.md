@@ -1,6 +1,6 @@
 # 前端导航地图与分期
 
-本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
+本文档是 Nerv-IIP 前端导航的长期约束，覆盖主平台 Console、Business Console 与 Business PDA。代码事实复核日期为 2026-07-02（PDA 三域一线闭环已落地：WMS 收货入库/复核发货/拣货/上架/盘点、MES 工序执行/报工/领料/完工入库、设备运维报修/点检/报警查看；Business Console 已挂 ERP sales/finance、WMS putaway/picking/counts、Maintenance work-orders/plans/inspections/spare-parts/reliability/availability、BarcodeLabel rules/templates、BusinessApproval 审批中心）；当前服务状态仍以 `docs/architecture/implementation-readiness.md` 为入口。任何修改“已落地/过渡/后端已落地/前端待建/规划”状态的 PR，必须同步更新本日期并在 PR 中列出校验命令。
 
 ## 状态标签
 
@@ -295,10 +295,10 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 质量管理 | 检验计划、检验记录、NCR、质量分析、CAPA | 检验/NCR 已有；质量分析 P2，CAPA P3。 |
 | 仓储作业（WMS） | 仓库结构、收货、入库、出库、拣货、复核与发货、退货入库、盘点执行、库内调拨、WCS 任务监控、仓储分析 | WMS 后端已落地，BusinessGateway 已提供收货入库、出库、上架任务、拣货任务、盘点执行和 WCS 任务读面 facade，并支持服务端分页与状态过滤；#374 后上架/拣货/盘点 list 还支持库位过滤，操作员过滤参数存在但因 WMS 暂无 assigned operator 字段时返回空集。Business Console 已接入 `/wms/inbound`、`/wms/outbound`、`/wms/putaway`、`/wms/picking`、`/wms/counts` 和 `/wms/wcs`；后续仓储作业深化应继续内嵌 Inventory 可用量、批次、冻结和预留视图。 |
 | 库存台账/库存管理 | 库存可用量、库存台账、库存移动记录、批次、序列号、库存预留、库存冻结、库存调拨、盘点调整、库存分析 | 可用量、移动、盘点已落地；批次/序列号/预留/冻结/分析后置。库存事实仍归 Inventory，但用户作业入口可在 WMS/MES/ERP 页面内嵌使用。 |
-| 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | BarcodeLabel 后端与 BusinessGateway 规则/模板/打印批次/扫码记录分页 facade 已落地；正式页面待建，业务扫码动作嵌入 MES/WMS/盘点流程。 |
+| 条码标签 | 条码规则、标签模板、打印管理、扫码记录 | 条码规则 `/barcode/rules` 与标签模板 `/barcode/templates` 已接入 BusinessGateway BarcodeLabel facade 和 `@nerv-iip/api-client` 稳定导出；打印管理和扫码记录仍只保留后端 facade，业务扫码动作嵌入 MES/WMS/盘点流程，不在 PC 页伪造扫码闭环。 |
 | 设备监控（IoT） | 标签管理、报警规则、报警列表、报警处理、设备状态、实时监控、历史数据、OEE 分析 | IndustrialTelemetry 后端已有 tag、报警规则、报警、设备时间线、P0 OEE 聚合和 runtime availability 服务读面；P0 OEE 的 availability 按状态持续时间计算，performance/quality 为估算占位，响应标志在 P0 期间保持 true（无状态数据窗口下数值为 0 但仍非真实测量值）。#207 已提供设备运行看板、设备详情和报警 route-ready 页面。BusinessGateway 已提供 tags、alarm-rules、alarms、device history、OEE、runtime availability 和 equipment alarms 分页 facade；正式 rule/OEE 页面仍待接入，设备接入配置、凭据和控制命令仍在外部/Connector 边界。 |
 | 设备运维（CMMS） | 设备台账、备件管理、故障报修、维修工单、保养计划、保养任务、点检管理、停机管理、维修费用 | Maintenance 后端已有维修工单、保养计划、点检、备件需求、可靠性指标和事件消费；BusinessGateway 已提供工单列表/详情、保养计划、点检列表/记录、备件列表/创建、availability-windows 和 reliability facade。Business Console 已接入 `/maintenance/work-orders`、`/maintenance/plans`、`/maintenance/inspections`、`/maintenance/spare-parts`、`/maintenance/reliability` 和 `/maintenance/availability`；设备资产主数据仍归 MasterData，完整维修费用视图仍待后续。 |
-| 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端与 BusinessGateway facade 已落地，页面待建；业务待办入口放数字化工作台，不在审批中心重复。Ops 运维审批仍归平台 Ops。 |
+| 审批中心 | 审批模板、审批流配置、审批记录、委托设置 | BusinessApproval 后端与 BusinessGateway facade 已落地，Business Console `/approval` 已提供审批模板、流程实例、我的任务、决策记录和委托设置页面；业务待办入口仍放数字化工作台，审批中心只承载处理、配置、审计和委托维护。Ops 运维审批仍归平台 Ops。 |
 | 外协加工（P2 候选） | 外协订单、外协发料、外协收货、外协结算 | 不作为当前默认一级域。首选挂在 ERP Procurement + MES/WMS 流程下；只有出现独立事实源、BusinessGateway facade 和高频角色工作台需求时，才升级为独立能力区或服务。 |
 
 ## Business Console T 型菜单划分（FE-3 落地）
@@ -317,6 +317,8 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、上架任务 `/wms/putaway`、出库发货 `/wms/outbound`、拣货任务 `/wms/picking`、WCS 任务 `/wms/wcs`、盘点执行 `/wms/counts` |
 | 经营管理（“更多”内） | 采购与供应 `/erp`、销售管理 `/erp/sales`、财务 `/erp/finance` |
 | 设备监控（“更多”内） | 设备运行看板 `/equipment`、设备报警 `/equipment/alarms`、维护工单 `/maintenance/work-orders`、保养计划 `/maintenance/plans`、点检记录 `/maintenance/inspections`、备件需求 `/maintenance/spare-parts`、可靠性指标 `/maintenance/reliability`、可用窗口 `/maintenance/availability` |
+| 条码标签（“更多”内） | 条码规则 `/barcode/rules`、标签模板 `/barcode/templates` |
+| 审批中心（“更多”内） | 审批中心 `/approval`（模板配置 / 流程实例 / 我的任务 / 决策记录 / 委托设置） |
 
 > **仓储作业（FE-11 #286，2026-07-01 复核）：** 后端 WMS facade（#264/#374）已接入 `@nerv-iip/api-client` 稳定导出。入库/出库/WCS 列表已随 #329/#331 落地服务端分页 `skip/take/total` + 状态/关键字过滤，前端用 `usePagedList` + `DataTablePagination`，无假分页；#374 的上架任务、拣货任务和盘点执行 list facade 已接入 Business Console 页面与 PDA WMS 页面。写操作已接入：完成入库（幂等键）、出库复核（packReviewNo/passed）、WCS 派发/标记失败/完成（行内操作 + 确认/表单）、新建入库单 / 新建出库单（动态行明细表单）。
 
