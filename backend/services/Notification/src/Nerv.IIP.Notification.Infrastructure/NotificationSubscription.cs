@@ -51,6 +51,12 @@ public sealed class NotificationSubscription : Entity<NotificationSubscriptionId
         return new NotificationSubscription(organizationId, environmentId, recipientRef, notificationType, channel, now);
     }
 
+    public void Update(bool enabled, DateTimeOffset now)
+    {
+        Enabled = enabled;
+        UpdatedAtUtc = now;
+    }
+
     private static string Required(string? value, string message)
     {
         if (string.IsNullOrWhiteSpace(value))

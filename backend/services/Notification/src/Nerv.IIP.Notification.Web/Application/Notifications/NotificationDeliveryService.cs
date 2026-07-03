@@ -48,16 +48,67 @@ public interface INotificationDeliveryProvider
     Task<NotificationDeliveryProviderResult> SendAsync(NotificationDeliveryRequest request, CancellationToken cancellationToken);
 }
 
+public sealed class NotificationChannelRateLimiter
+{
+    private readonly object gate = new();
+    private readonly Dictionary<(string Channel, DateTimeOffset WindowStart), int> deliveryCounts = [];
+
+    public bool TryAcquire(string channel, DateTimeOffset now, IReadOnlyDictionary<string, int> channelRateLimits)
+    {
+        var maxPerMinute = 0;
+        foreach (var rateLimit in channelRateLimits)
+        {
+            if (string.Equals(rateLimit.Key, channel, StringComparison.OrdinalIgnoreCase))
+            {
+                maxPerMinute = rateLimit.Value;
+                break;
+            }
+        }
+
+        if (maxPerMinute <= 0)
+        {
+            return true;
+        }
+
+        var windowStart = new DateTimeOffset(
+            now.Year,
+            now.Month,
+            now.Day,
+            now.Hour,
+            now.Minute,
+            0,
+            now.Offset);
+
+        lock (gate)
+        {
+            foreach (var expiredKey in deliveryCounts.Keys.Where(x => x.WindowStart < windowStart.AddMinutes(-1)).ToArray())
+            {
+                deliveryCounts.Remove(expiredKey);
+            }
+
+            var key = (channel, windowStart);
+            deliveryCounts.TryGetValue(key, out var current);
+            if (current >= maxPerMinute)
+            {
+                return false;
+            }
+
+            deliveryCounts[key] = current + 1;
+            return true;
+        }
+    }
+}
+
 public sealed class NotificationDeliveryService(
     ApplicationDbContext dbContext,
     IEnumerable<INotificationDeliveryProvider> providers,
-    IOptions<NotificationDeliveryOptions> deliveryOptions)
+    IOptions<NotificationDeliveryOptions> deliveryOptions,
+    NotificationChannelRateLimiter rateLimiter)
 {
     private readonly IReadOnlyDictionary<string, INotificationDeliveryProvider> providerByChannel = providers
-        .GroupBy(x => x.Channel, StringComparer.Ordinal)
-        .ToDictionary(x => x.Key, x => x.First(), StringComparer.Ordinal);
+        .GroupBy(x => x.Channel, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
     private readonly NotificationDeliveryOptions options = deliveryOptions.Value;
-    private readonly Dictionary<(string Channel, DateTimeOffset WindowStart), int> deliveryCounts = [];
 
     public async Task StageSubmittedIntentAsync(NotificationIntent intent, DateTimeOffset now, CancellationToken cancellationToken)
     {
@@ -86,24 +137,31 @@ public sealed class NotificationDeliveryService(
                     continue;
                 }
 
-                await DispatchExternalAttemptAsync(intent, message, binding, now, cancellationToken);
+                DispatchExternalAttempt(intent, message, binding, now);
             }
         }
     }
 
-    public async Task DispatchStartedAttemptsAsync(NotificationIntent intent, DateTimeOffset now, CancellationToken cancellationToken)
+    public async Task<int> DispatchDueAttemptsAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var messageIds = intent.Messages.Select(x => x.Id).ToHashSet();
-        var attempts = dbContext.DeliveryAttempts.Local
-            .Where(x =>
-                messageIds.Contains(x.NotificationMessageId)
-                && x.Status == NotificationDeliveryAttemptStatuses.Started
-                && x.Channel != NotificationDeliveryChannels.InApp)
-            .ToList();
-
+        var startedAttempts = await LoadStartedAttemptsAsync(100, cancellationToken);
+        var remaining = Math.Max(0, 100 - startedAttempts.Count);
+        var duePendingAttempts = remaining == 0
+            ? new List<DeliveryAttempt>()
+            : await LoadDuePendingAttemptsAsync(now, remaining, cancellationToken);
+        var attempts = startedAttempts.Concat(duePendingAttempts).ToList();
         foreach (var attempt in attempts)
         {
-            var message = intent.Messages.Single(x => x.Id == attempt.NotificationMessageId);
+            var message = await dbContext.NotificationMessages
+                .SingleAsync(x => x.Id == attempt.NotificationMessageId, cancellationToken);
+            var intent = await dbContext.NotificationIntents
+                .SingleAsync(x => x.Id == message.NotificationIntentId, cancellationToken);
+
+            if (string.Equals(attempt.Status, NotificationDeliveryAttemptStatuses.PendingRetry, StringComparison.Ordinal))
+            {
+                attempt.StartRetry(now);
+            }
+
             await SendAttemptAsync(intent, message, attempt, now, cancellationToken);
         }
 
@@ -111,34 +169,8 @@ public sealed class NotificationDeliveryService(
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
-    }
 
-    public async Task<int> RetryDueAttemptsAsync(DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        var pendingAttempts = await dbContext.DeliveryAttempts
-            .Where(x =>
-                x.Status == NotificationDeliveryAttemptStatuses.PendingRetry
-                && x.RecipientAddress != null)
-            .ToListAsync(cancellationToken);
-        var dueAttempts = pendingAttempts
-            .Where(x => x.NextRetryAtUtc <= now)
-            .OrderBy(x => x.NextRetryAtUtc)
-            .Take(100)
-            .ToList();
-
-        foreach (var attempt in dueAttempts)
-        {
-            var message = await dbContext.NotificationMessages
-                .SingleAsync(x => x.Id == attempt.NotificationMessageId, cancellationToken);
-            var intent = await dbContext.NotificationIntents
-                .SingleAsync(x => x.Id == message.NotificationIntentId, cancellationToken);
-
-            attempt.StartRetry(now);
-            await SendAttemptAsync(intent, message, attempt, now, cancellationToken);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return dueAttempts.Count;
+        return attempts.Count;
     }
 
     private async Task<IReadOnlyCollection<NotificationRecipientChannelBinding>> LoadBindingsAsync(
@@ -210,12 +242,11 @@ public sealed class NotificationDeliveryService(
         return forced || preference is null || preference.Enabled;
     }
 
-    private Task DispatchExternalAttemptAsync(
+    private void DispatchExternalAttempt(
         NotificationIntent intent,
         NotificationMessage message,
         NotificationRecipientChannelBinding binding,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
+        DateTimeOffset now)
     {
         var attempt = DeliveryAttempt.StartExternal(
             message.Id,
@@ -224,7 +255,6 @@ public sealed class NotificationDeliveryService(
             providerName: binding.Channel,
             now);
         dbContext.DeliveryAttempts.Add(attempt);
-        return Task.CompletedTask;
     }
 
     private async Task SendAttemptAsync(
@@ -278,27 +308,54 @@ public sealed class NotificationDeliveryService(
 
     private bool TryAcquireRateLimit(string channel, DateTimeOffset now)
     {
-        if (!options.ChannelRateLimits.TryGetValue(channel, out var maxPerMinute) || maxPerMinute <= 0)
+        return rateLimiter.TryAcquire(channel, now, options.ChannelRateLimits);
+    }
+
+    private async Task<List<DeliveryAttempt>> LoadDuePendingAttemptsAsync(
+        DateTimeOffset now,
+        int take,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.DeliveryAttempts.Where(x =>
+            x.Status == NotificationDeliveryAttemptStatuses.PendingRetry
+            && x.RecipientAddress != null);
+
+        if (string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return true;
+            return await query
+                .Where(x => x.NextRetryAtUtc <= now)
+                .OrderBy(x => x.NextRetryAtUtc)
+                .Take(take)
+                .ToListAsync(cancellationToken);
         }
 
-        var windowStart = new DateTimeOffset(
-            now.Year,
-            now.Month,
-            now.Day,
-            now.Hour,
-            now.Minute,
-            0,
-            now.Offset);
-        var key = (channel, windowStart);
-        deliveryCounts.TryGetValue(key, out var current);
-        if (current >= maxPerMinute)
+        // SQLite cannot translate DateTimeOffset ordering/comparison reliably; production PostgreSQL keeps this due filter in SQL.
+        return (await query.ToListAsync(cancellationToken))
+            .Where(x => x.NextRetryAtUtc <= now)
+            .OrderBy(x => x.NextRetryAtUtc)
+            .Take(take)
+            .ToList();
+    }
+
+    private async Task<List<DeliveryAttempt>> LoadStartedAttemptsAsync(int take, CancellationToken cancellationToken)
+    {
+        var query = dbContext.DeliveryAttempts.Where(x =>
+            x.Status == NotificationDeliveryAttemptStatuses.Started
+            && x.Channel != NotificationDeliveryChannels.InApp
+            && x.RecipientAddress != null);
+
+        if (string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
         {
-            return false;
+            return await query
+                .OrderBy(x => x.AttemptedAtUtc)
+                .Take(take)
+                .ToListAsync(cancellationToken);
         }
 
-        deliveryCounts[key] = current + 1;
-        return true;
+        // SQLite cannot translate DateTimeOffset ordering; production PostgreSQL keeps this ordering and limit in SQL.
+        return (await query.ToListAsync(cancellationToken))
+            .OrderBy(x => x.AttemptedAtUtc)
+            .Take(take)
+            .ToList();
     }
 }

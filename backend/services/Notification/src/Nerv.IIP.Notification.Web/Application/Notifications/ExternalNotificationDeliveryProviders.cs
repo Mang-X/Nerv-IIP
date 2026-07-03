@@ -36,7 +36,7 @@ internal sealed class WeComDeliveryProvider(IHttpClientFactory httpClientFactory
             },
             cancellationToken);
 
-        return await ProviderResponseReader.ReadJsonProviderResultAsync(response, "errcode", "errmsg", cancellationToken);
+        return await ProviderResponseReader.ReadJsonProviderResultAsync(response, "errcode", "errmsg", "msgid", cancellationToken);
     }
 }
 
@@ -73,7 +73,7 @@ internal sealed class DingTalkDeliveryProvider(IHttpClientFactory httpClientFact
             },
             cancellationToken);
 
-        return await ProviderResponseReader.ReadJsonProviderResultAsync(response, "errcode", "errmsg", cancellationToken);
+        return await ProviderResponseReader.ReadJsonProviderResultAsync(response, "errcode", "errmsg", "task_id", cancellationToken);
     }
 }
 
@@ -155,6 +155,7 @@ file static class ProviderResponseReader
         HttpResponseMessage response,
         string codeProperty,
         string messageProperty,
+        string messageIdProperty,
         CancellationToken cancellationToken)
     {
         if (!response.IsSuccessStatusCode)
@@ -168,7 +169,7 @@ file static class ProviderResponseReader
         var code = root.TryGetProperty(codeProperty, out var codeElement) ? codeElement.GetInt32() : 0;
         if (code == 0)
         {
-            var messageId = root.TryGetProperty("task_id", out var taskId) ? taskId.ToString() : null;
+            var messageId = root.TryGetProperty(messageIdProperty, out var messageIdElement) ? messageIdElement.ToString() : null;
             return NotificationDeliveryProviderResult.Succeeded(messageId);
         }
 

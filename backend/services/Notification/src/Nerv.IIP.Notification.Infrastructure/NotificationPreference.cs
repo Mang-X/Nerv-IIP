@@ -53,6 +53,12 @@ public sealed class NotificationPreference : Entity<NotificationPreferenceId>
         return new NotificationPreference(organizationId, environmentId, recipientRef, notificationType, channel, enabled, now);
     }
 
+    public void Update(bool enabled, DateTimeOffset now)
+    {
+        Enabled = enabled;
+        UpdatedAtUtc = now;
+    }
+
     private static string Required(string? value, string message)
     {
         if (string.IsNullOrWhiteSpace(value))

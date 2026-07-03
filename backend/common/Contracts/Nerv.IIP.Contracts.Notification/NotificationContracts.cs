@@ -48,6 +48,45 @@ public sealed record MarkNotificationMessagesReadRequest(IReadOnlyCollection<str
 
 public sealed record MarkNotificationMessageReadResponse(string MessageId, string Status, DateTimeOffset ReadAtUtc);
 
+public sealed record UpsertNotificationRecipientChannelBindingRequest(
+    string RecipientRef,
+    string Channel,
+    string RecipientAddress,
+    bool Enabled);
+
+public sealed record NotificationRecipientChannelBindingResponse(
+    string RecipientRef,
+    string Channel,
+    string RecipientAddress,
+    bool Enabled,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record UpsertNotificationPreferenceRequest(
+    string RecipientRef,
+    string NotificationType,
+    string Channel,
+    bool Enabled);
+
+public sealed record NotificationPreferenceResponse(
+    string RecipientRef,
+    string NotificationType,
+    string Channel,
+    bool Enabled,
+    DateTimeOffset UpdatedAtUtc);
+
+public sealed record UpsertNotificationSubscriptionRequest(
+    string RecipientRef,
+    string NotificationType,
+    string Channel,
+    bool Enabled);
+
+public sealed record NotificationSubscriptionResponse(
+    string RecipientRef,
+    string NotificationType,
+    string Channel,
+    bool Enabled,
+    DateTimeOffset UpdatedAtUtc);
+
 public static class NotificationContractConstants
 {
     public const string IntentTypeMessage = "message";

@@ -74,8 +74,6 @@ public sealed class SubmitNotificationIntentCommandHandler(
             {
                 await transaction.ReleaseSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
             }
-
-            await deliveryService.DispatchStartedAttemptsAsync(intent, command.Now, cancellationToken);
         }
         catch (DbUpdateException exception)
         {

@@ -56,6 +56,28 @@ public sealed class NotificationIntentTests
         Assert.Empty(intent.Tasks);
     }
 
+    [Theory]
+    [InlineData("Critical", "critical")]
+    [InlineData("WARNING", "warning")]
+    [InlineData(" info ", "info")]
+    public void Create_normalizes_supported_severity_values(string inputSeverity, string expectedSeverity)
+    {
+        var intent = CreateIntent(NotificationIntentTypes.Message, ["user:admin"], severity: inputSeverity);
+
+        Assert.Equal(expectedSeverity, intent.Severity);
+        Assert.All(intent.Messages, message => Assert.Equal(expectedSeverity, message.Severity));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("urgent")]
+    public void Create_rejects_unsupported_severity_values(string severity)
+    {
+        var create = () => CreateIntent(NotificationIntentTypes.Message, ["user:admin"], severity: severity);
+
+        Assert.Throws<KnownException>(create);
+    }
+
     [Fact]
     public void MarkRead_unread_message_sets_status_and_read_time()
     {
@@ -131,7 +153,8 @@ public sealed class NotificationIntentTests
         string summary = "Instance restart failed.",
         string organizationId = "org-001",
         string environmentId = "env-dev",
-        string sourceService = "ops")
+        string sourceService = "ops",
+        string severity = "critical")
     {
         return new NotificationIntent(
             organizationId,
@@ -140,7 +163,7 @@ public sealed class NotificationIntentTests
             "ops.OperationTaskFailed",
             "event-001",
             intentType,
-            "critical",
+            severity,
             "ops.OperationTaskFailed:task-001",
             "operation-task",
             "task-001",

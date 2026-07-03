@@ -34,13 +34,17 @@ public sealed class NotificationDeliveryAttemptTests
         await fixture.Db.SaveChangesAsync();
 
         var emailProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
-        var handler = fixture.CreateSubmitHandler(emailProvider);
+        var deliveryService = fixture.CreateDeliveryService(emailProvider);
+        var handler = fixture.CreateSubmitHandler(deliveryService);
 
         await handler.Handle(new SubmitNotificationIntentCommand(
             "org-001",
             "env-dev",
             CreateIntent("dedupe-email-dispatch", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
+
+        Assert.Empty(emailProvider.Sent);
+        await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
 
         var attempts = await fixture.Db.DeliveryAttempts.OrderBy(x => x.Channel).ToListAsync();
         Assert.Collection(
@@ -125,7 +129,8 @@ public sealed class NotificationDeliveryAttemptTests
         await fixture.Db.SaveChangesAsync();
 
         var weComProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.WeCom);
-        var handler = fixture.CreateSubmitHandler(weComProvider);
+        var deliveryService = fixture.CreateDeliveryService(weComProvider);
+        var handler = fixture.CreateSubmitHandler(deliveryService);
 
         await handler.Handle(new SubmitNotificationIntentCommand(
             "org-001",
@@ -134,8 +139,10 @@ public sealed class NotificationDeliveryAttemptTests
                 "dedupe-critical-wecom",
                 ["user:admin"],
                 sourceEventType: "industrialTelemetry.AlarmRaised",
-                severity: NotificationContractConstants.SeverityCritical),
+                severity: "Critical"),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
+
+        await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
 
         Assert.Single(weComProvider.Sent);
         Assert.Contains(await fixture.Db.DeliveryAttempts.ToListAsync(), attempt =>
@@ -176,13 +183,15 @@ public sealed class NotificationDeliveryAttemptTests
             CreateIntent("dedupe-webhook-retry", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
+        await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
+
         var failedAttempt = await fixture.Db.DeliveryAttempts.SingleAsync(x => x.Channel == NotificationDeliveryChannels.Webhook);
         Assert.Equal(NotificationDeliveryAttemptStatuses.PendingRetry, failedAttempt.Status);
         Assert.Equal("provider-timeout", failedAttempt.FailureReason);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-03T00:03:00Z"), failedAttempt.NextRetryAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-03T00:03:01Z"), failedAttempt.NextRetryAtUtc);
 
         webhookProvider.NextResult = NotificationDeliveryProviderResult.Succeeded("remote-001");
-        await deliveryService.RetryDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:03:01Z"), CancellationToken.None);
+        await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:03:01Z"), CancellationToken.None);
 
         Assert.Equal(NotificationDeliveryAttemptStatuses.Succeeded, failedAttempt.Status);
         Assert.Equal(2, failedAttempt.AttemptNo);
@@ -222,12 +231,60 @@ public sealed class NotificationDeliveryAttemptTests
             CreateIntent("dedupe-email-rate-limit", ["user:admin", "user:operator"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
+        await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
+
         Assert.Single(emailProvider.Sent);
         var limited = Assert.Single(await fixture.Db.DeliveryAttempts
             .Where(x => x.Channel == NotificationDeliveryChannels.Email && x.Status == NotificationDeliveryAttemptStatuses.PendingRetry)
             .ToListAsync());
         Assert.Equal("rate-limit", limited.FailureReason);
-        Assert.Equal(DateTimeOffset.Parse("2026-07-03T00:03:00Z"), limited.NextRetryAtUtc);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-03T00:03:01Z"), limited.NextRetryAtUtc);
+    }
+
+    [Fact]
+    public async Task External_delivery_rate_limit_is_shared_across_delivery_service_instances()
+    {
+        await using var fixture = await NotificationSqliteFixture.CreateAsync();
+        fixture.Db.RecipientChannelBindings.Add(NotificationRecipientChannelBinding.Create(
+            "org-001",
+            "env-dev",
+            "user:admin",
+            NotificationDeliveryChannels.Email,
+            "admin@example.test",
+            DateTimeOffset.Parse("2026-07-03T00:00:00Z")));
+        fixture.Db.NotificationSubscriptions.Add(NotificationSubscription.Create(
+            "org-001",
+            "env-dev",
+            "user:admin",
+            "ops.OperationTaskFailed",
+            NotificationDeliveryChannels.Email,
+            DateTimeOffset.Parse("2026-07-03T00:00:00Z")));
+        await fixture.Db.SaveChangesAsync();
+
+        var firstProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
+        var firstDeliveryService = fixture.CreateDeliveryService([firstProvider], emailMaxPerMinute: 1);
+        await fixture.CreateSubmitHandler(firstDeliveryService).Handle(new SubmitNotificationIntentCommand(
+            "org-001",
+            "env-dev",
+            CreateIntent("dedupe-email-rate-limit-first", ["user:admin"]),
+            DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
+        await firstDeliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
+
+        var secondProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
+        var secondDeliveryService = fixture.CreateDeliveryService([secondProvider], emailMaxPerMinute: 1);
+        await fixture.CreateSubmitHandler(secondDeliveryService).Handle(new SubmitNotificationIntentCommand(
+            "org-001",
+            "env-dev",
+            CreateIntent("dedupe-email-rate-limit-second", ["user:admin"]),
+            DateTimeOffset.Parse("2026-07-03T00:01:10Z")), CancellationToken.None);
+        await secondDeliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:11Z"), CancellationToken.None);
+
+        Assert.Single(firstProvider.Sent);
+        Assert.Empty(secondProvider.Sent);
+        Assert.Equal(1, await fixture.Db.DeliveryAttempts.CountAsync(x =>
+            x.Channel == NotificationDeliveryChannels.Email
+            && x.Status == NotificationDeliveryAttemptStatuses.PendingRetry
+            && x.FailureReason == "rate-limit"));
     }
 
     [Fact]
@@ -362,6 +419,7 @@ public sealed class NotificationDeliveryAttemptTests
     {
         private readonly SqliteConnection _connection;
         private readonly DbContextOptions<ApplicationDbContext> _options;
+        private readonly NotificationChannelRateLimiter _rateLimiter = new();
 
         private NotificationSqliteFixture(SqliteConnection connection, DbContextOptions<ApplicationDbContext> options)
         {
@@ -420,7 +478,8 @@ public sealed class NotificationDeliveryAttemptTests
             return new NotificationDeliveryService(
                 dbContext,
                 providers,
-                Options.Create(options));
+                Options.Create(options),
+                _rateLimiter);
         }
 
         public static async Task<NotificationSqliteFixture> CreateAsync()

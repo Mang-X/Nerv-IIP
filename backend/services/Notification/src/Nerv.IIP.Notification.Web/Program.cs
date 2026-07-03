@@ -75,6 +75,7 @@ builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>
 builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, SmtpEmailDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, WebhookDeliveryProvider>();
+builder.Services.AddSingleton<NotificationChannelRateLimiter>();
 builder.Services.AddScoped<NotificationDeliveryService>();
 builder.Services.AddHostedService<NotificationDeliveryRetryWorker>();
 builder.Services.Configure<OpsNotificationRecipientOptions>(

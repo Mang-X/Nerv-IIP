@@ -51,6 +51,13 @@ public sealed class NotificationRecipientChannelBinding : Entity<NotificationRec
         return new NotificationRecipientChannelBinding(organizationId, environmentId, recipientRef, channel, recipientAddress, now);
     }
 
+    public void Update(string recipientAddress, bool enabled, DateTimeOffset now)
+    {
+        RecipientAddress = Required(recipientAddress, "Recipient channel address is required.");
+        Enabled = enabled;
+        UpdatedAtUtc = now;
+    }
+
     private static string Required(string? value, string message)
     {
         if (string.IsNullOrWhiteSpace(value))

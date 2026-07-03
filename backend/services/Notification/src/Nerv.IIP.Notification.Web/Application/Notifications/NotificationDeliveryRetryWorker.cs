@@ -23,10 +23,10 @@ internal sealed class NotificationDeliveryRetryWorker(
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var deliveryService = scope.ServiceProvider.GetRequiredService<NotificationDeliveryService>();
-                var retried = await deliveryService.RetryDueAttemptsAsync(timeProvider.GetUtcNow(), stoppingToken);
-                if (retried > 0)
+                var dispatched = await deliveryService.DispatchDueAttemptsAsync(timeProvider.GetUtcNow(), stoppingToken);
+                if (dispatched > 0)
                 {
-                    logger.LogInformation("Retried {DeliveryAttemptCount} notification delivery attempts.", retried);
+                    logger.LogInformation("Dispatched {DeliveryAttemptCount} notification delivery attempts.", dispatched);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
