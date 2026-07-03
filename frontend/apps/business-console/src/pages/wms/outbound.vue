@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsOutboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -230,6 +231,12 @@ function formatError(error: unknown) {
       <SectionCard description="出库单" :value="outboundOrdersTotal" hint="后端返回总数" />
       <SectionCard description="本页未完成" :value="openCount" hint="待拣货/复核/发运" />
     </SectionCards>
+
+    <WmsInventoryContextPanel
+      title="出库库存上下文"
+      source-label="来源单据"
+      gap-message="后端缺口：出库单列表暂未返回 SKU、批次/序列号、预留、冻结或来源单据字段；本页不空跳、不伪造库存余额。请从拣货任务行进入 Inventory 查看具体库存上下文。"
+    />
 
     <Toolbar :show-search="false">
       <template #filters>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -190,6 +191,7 @@ const errorMessage = computed(() => formatError(inboundOrdersError.value ?? comp
 const onHandQuantity = computed(() => inventoryContext.value?.onHandQuantity ?? 0)
 const availableQuantity = computed(() => inventoryContext.value?.availableQuantity ?? 0)
 const reservedQuantity = computed(() => inventoryContext.value?.reservedQuantity ?? 0)
+const primaryInboundOrder = computed(() => inboundOrders.value[0])
 // 库存上下文不可用时（后端未支持该维度），给出业务可读提示而非空白。
 const contextUnavailable = computed(() => {
   const status = (inventoryContext.value?.status ?? '').toLowerCase()
@@ -253,6 +255,14 @@ function formatError(error: unknown) {
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
       当前条件暂无法获取库存可用量上下文。请补充物料、工厂或库位等条件后再试。
     </p>
+
+    <WmsInventoryContextPanel
+      :context="inventoryContext"
+      source-workflow="wms.receiving"
+      source-label="扫码记录"
+      :source-document-id="primaryInboundOrder?.inboundOrderNo ?? primaryInboundOrder?.inboundOrderId"
+      gap-message="后端缺口：收货入库只有在物料、单位、工厂等库存范围足够时才返回 Inventory 可用量上下文；未返回时不在 WMS 页面伪造库存余额。"
+    />
 
     <Toolbar :show-search="false">
       <template #filters>

@@ -12,6 +12,7 @@ const wms = vi.hoisted(() => ({
   failWcs: vi.fn(),
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
+  inventoryContext: undefined as unknown,
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -29,7 +30,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     inboundOrders: computed(() => [
       { inboundOrderId: 'ib-1', inboundOrderNo: 'IB-1', status: 'created', createdAtUtc: '2026-06-01T00:00:00Z' },
     ]),
-    inventoryContext: computed(() => undefined),
+    inventoryContext: computed(() => wms.inventoryContext),
     inboundOrdersError: shallowRef(undefined),
     inboundOrdersPending: shallowRef(false),
     inboundOrdersTotal: computed(() => 1),
@@ -89,6 +90,7 @@ describe('WMS operate actions', () => {
     wms.failWcs.mockResolvedValue(undefined)
     wms.createInbound.mockResolvedValue(undefined)
     wms.createOutbound.mockResolvedValue(undefined)
+    wms.inventoryContext = undefined
   })
 
   function setInput(selector: string, value: string) {
@@ -191,6 +193,48 @@ describe('WMS operate actions', () => {
     expect(target).toContain('"path":"/barcode/scans"')
     expect(target).toContain('"sourceWorkflow":"wms.receiving"')
     expect(target).toContain('"sourceDocumentId":"IB-1"')
+  })
+
+  it('renders inbound inventory facts with lot, serial, reservation, and source links', async () => {
+    wms.inventoryContext = {
+      source: 'BusinessInventory',
+      status: 'ok',
+      skuCode: 'SKU-001',
+      uomCode: 'EA',
+      siteCode: 'S1',
+      locationCode: 'A-01',
+      lotNo: 'LOT-001',
+      serialNo: 'SN-001',
+      onHandQuantity: 10,
+      reservedQuantity: 2,
+      availableQuantity: 8,
+      items: [
+        {
+          locationCode: 'A-01',
+          lotNo: 'LOT-001',
+          serialNo: 'SN-001',
+          qualityStatus: 'blocked',
+          ownerType: 'owned',
+          onHandQuantity: 10,
+          reservedQuantity: 2,
+          availableQuantity: 8,
+        },
+      ],
+    }
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('库存上下文')
+    expect(wrapper.text()).toContain('LOT-001')
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('冻结/其他')
+    expect(wrapper.text()).toContain('2')
+
+    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
+    expect(links.some((to) => to.includes('/inventory/lots') && to.includes('LOT-001') && to.includes('SN-001'))).toBe(true)
+    expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
+    expect(links.some((to) => to.includes('/barcode/scans') && to.includes('wms.receiving') && to.includes('IB-1'))).toBe(true)
   })
 
   it('blocks inbound creation when a required line field or positive quantity is missing', async () => {
