@@ -195,7 +195,7 @@ describe('WMS operate actions', () => {
     expect(target).toContain('"sourceDocumentId":"IB-1"')
   })
 
-  it('renders inbound inventory facts with lot, serial, reservation, and source links', async () => {
+  it('renders inbound inventory facts with inventory links and row-level scan links', async () => {
     wms.inventoryContext = {
       source: 'BusinessInventory',
       status: 'ok',
