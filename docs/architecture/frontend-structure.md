@@ -212,6 +212,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |
 | `/quality/ncrs` | NCR 列表、处置和关闭。 | BusinessGateway Quality facade。 |
+| `/quality/analysis` | 基于当前 NCR 返回窗口的缺陷 Pareto、物料/工位/设备/来源维度摘要和 Quality 分析/CAPA 能力对照；不宣称全量趋势，后端聚合与 CAPA facade 缺口见 #677。 | BusinessGateway Quality NCR facade。 |
 | `/mes` | 生产驾驶舱，展示工单、工序、在制、阻塞和角色待办。 | BusinessGateway MES facade。 |
 | `/mes/foundation` | 基础准备，展示 MasterData、ProductEngineering、Supply、Quality、Equipment、Barcode/Numbering 等开工前就绪结果。 | BusinessGateway MES facade。 |
 | `/mes/plans` | 生产计划，展示可转入 MES 执行的计划和计划就绪状态。 | BusinessGateway MES facade。 |
