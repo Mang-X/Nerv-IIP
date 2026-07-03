@@ -150,21 +150,24 @@ describe('product docs app contract', () => {
     }
   })
 
-  test('documents the five required core process diagrams', () => {
+  test('documents the six required core process diagrams', () => {
     const processContent = readDocsFile('processes/index.md')
     const requiredDiagrams = [
       '工程资料：EBOM -> MBOM -> 工艺路线 -> 生产版本',
       '计划生产：需求 -> MRP -> APS -> 生产计划 -> 工单 -> 报工 -> 入库',
       '仓储库存：收货 -> 上架 -> 库存 -> 拣货 -> 出库',
       '质量审批：检验 -> NCR -> 审批 -> 处置 -> 放行/返工/报废',
-      '设备维护：报警 -> 维修工单 -> 备件 -> 恢复 -> 可靠性指标',
+      '设备维护：报警 -> 维修工单 -> 备件出库 -> 恢复 -> 可靠性指标',
+      '条码追溯：条码规则 -> 标签打印 -> 扫码 -> 追溯',
     ]
 
     for (const diagram of requiredDiagrams) {
       expect(processContent).toContain(diagram)
     }
 
-    expect(processContent.match(/```mermaid/g)?.length ?? 0).toBeGreaterThanOrEqual(5)
+    expect(processContent.match(/```mermaid/g)?.length ?? 0).toBeGreaterThanOrEqual(6)
+    expect(processContent).toContain('BusinessGateway facade')
+    expect(processContent).toContain('当前缺口')
   })
 
   test('keeps internal gap evidence out of public guide copy', () => {
@@ -205,6 +208,30 @@ describe('product docs app contract', () => {
     expect(routes).toContain('/future-domain/workbench')
     expect(routes).not.toContain('/getting-started/example')
     expect(routes).not.toContain('/api/mobile/v1/**')
+  })
+
+  test('validates the added core-flow page domains against real business-console routes', () => {
+    const addedFlowRoutes = [
+      '/scheduling',
+      '/approval',
+      '/equipment/telemetry/tags',
+      '/equipment/telemetry/alarm-rules',
+      '/maintenance/spare-parts',
+      '/maintenance/reliability',
+      '/maintenance/availability',
+      '/barcode/rules',
+      '/barcode/templates',
+      '/barcode/print-batches',
+      '/barcode/scans',
+    ]
+
+    for (const route of addedFlowRoutes) {
+      expect(
+        extractBusinessConsoleRouteTokens(`\`${route}\``),
+        `${route} should be treated as a business-console route token`,
+      ).toContain(route)
+      expect(businessConsoleRoutes.has(route), `${route} should exist in business-console pages`).toBe(true)
+    }
   })
 
   test('references only real business-console routes in public guide copy', () => {

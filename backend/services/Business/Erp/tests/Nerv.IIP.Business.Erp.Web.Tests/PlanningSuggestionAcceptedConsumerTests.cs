@@ -81,9 +81,11 @@ public sealed class PlanningSuggestionAcceptedConsumerTests
         using var assertionScope = provider.CreateScope();
         var assertionDbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var requisition = Assert.Single(assertionDbContext.PurchaseRequisitions);
-        Assert.Equal("PR-20260702-000001", requisition.RequisitionNo);
+        Assert.Matches("^PR-[0-9]{8}-000001$", requisition.RequisitionNo);
         var idempotencyKey = Assert.Single(assertionDbContext.CodeIdempotencyKeys);
         Assert.Equal("planning-accept:org-001:env-dev:suggestion-001", idempotencyKey.IdempotencyKey);
+        Assert.Equal(requisition.RequisitionNo, idempotencyKey.Code);
+        Assert.Equal(1, Assert.Single(assertionDbContext.CodeCounters).CurrentValue);
     }
 
     [Theory]
