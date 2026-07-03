@@ -125,7 +125,7 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
 
   return {
     filters,
-    refreshTags: () => hasBusinessContext(businessContext) ? tagsQuery.refetch() : Promise.resolve(),
+    refreshTags: () => refetchWithBusinessContext(businessContext, tagsQuery),
     tags: computed<BusinessConsoleTelemetryTagItem[]>(() =>
       listItems<BusinessConsoleTelemetryTagItem>(tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined),
     ),
@@ -169,7 +169,7 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
       listTotal(alarmRulesQuery.data.value as BusinessConsoleTelemetryAlarmRuleListEnvelope | undefined),
     ),
     filters,
-    refreshAlarmRules: () => hasBusinessContext(businessContext) ? alarmRulesQuery.refetch() : Promise.resolve(),
+    refreshAlarmRules: () => refetchWithBusinessContext(businessContext, alarmRulesQuery),
     saveAlarmRule: (input: SaveTelemetryAlarmRuleInput) =>
       saveMutation.mutateAsync({
         body: {

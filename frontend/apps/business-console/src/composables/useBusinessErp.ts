@@ -121,7 +121,7 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
     total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
     error: query.error,
     pending: query.isLoading,
-    refresh: () => hasBusinessContext(businessContext) ? query.refetch() : Promise.resolve(),
+    refresh: () => refetchWithBusinessContext(businessContext, query),
   }
 }
 
@@ -166,7 +166,7 @@ export function useBusinessErp() {
     ),
     purchaseRequisitionsError: purchaseRequisitionsQuery.error,
     purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
-    refreshPurchaseRequisitions: () => hasBusinessContext(businessContext) ? purchaseRequisitionsQuery.refetch() : Promise.resolve(),
+    refreshPurchaseRequisitions: () => refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery),
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
       unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
     ),
@@ -175,7 +175,7 @@ export function useBusinessErp() {
     ),
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
-    refreshPurchaseOrders: () => hasBusinessContext(businessContext) ? purchaseOrdersQuery.refetch() : Promise.resolve(),
+    refreshPurchaseOrders: () => refetchWithBusinessContext(businessContext, purchaseOrdersQuery),
     refreshProcurementDocuments: () => {
       void refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery)
       void refetchWithBusinessContext(businessContext, purchaseOrdersQuery)
@@ -218,7 +218,7 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     ),
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
-    refreshSalesOrders: () => hasBusinessContext(businessContext) ? salesOrdersQuery.refetch() : Promise.resolve(),
+    refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
     createSalesOrder: (payload: { quotationNo: string, salesOrderNo?: string }) =>
       createMutation.mutateAsync({
         body: {
@@ -347,7 +347,7 @@ export function useErpFinanceSummary() {
     ),
     summaryError: summaryQuery.error,
     summaryPending: summaryQuery.isLoading,
-    refreshSummary: () => hasBusinessContext(businessContext) ? summaryQuery.refetch() : Promise.resolve(),
+    refreshSummary: () => refetchWithBusinessContext(businessContext, summaryQuery),
   }
 }
 

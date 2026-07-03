@@ -11,7 +11,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from './businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const WORKBENCH_TAKE = 8
 
@@ -58,7 +58,7 @@ export function useBusinessWorkbenchSummary() {
     messageItems: computed<BusinessConsoleWorkbenchMessageItem[]>(() =>
       isAvailable(summary.value?.messages?.status) ? summary.value?.messages?.items ?? [] : [],
     ),
-    refreshWorkbenchSummary: () => hasBusinessContext(businessContext) ? summaryQuery.refetch() : Promise.resolve(),
+    refreshWorkbenchSummary: () => refetchWithBusinessContext(businessContext, summaryQuery),
     sourceStatuses: computed<BusinessConsoleWorkbenchSourceStatus[]>(() =>
       summary.value?.sourceStatuses ?? [],
     ),

@@ -35,9 +35,9 @@ export function withBusinessContextEnabled<TOptions extends object>(
   }
 }
 
-export function refetchWithBusinessContext<TQuery extends { refetch: () => unknown }>(
+export function refetchWithBusinessContext<TResult>(
   filters: BusinessContextFields,
-  query: TQuery,
-) {
-  return hasBusinessContext(filters) ? query.refetch() : Promise.resolve()
+  query: { refetch: () => Promise<TResult> },
+): Promise<TResult | undefined> {
+  return hasBusinessContext(filters) ? query.refetch() : Promise.resolve(undefined)
 }

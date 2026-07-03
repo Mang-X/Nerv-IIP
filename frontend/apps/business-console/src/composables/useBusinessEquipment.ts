@@ -16,7 +16,7 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
-import { hasBusinessContext } from './businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
 
@@ -329,6 +329,6 @@ export function useBusinessEquipmentAlarms() {
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
-    refreshAlarms: () => hasBusinessContext(businessContext) ? alarmsQuery.refetch() : Promise.resolve(),
+    refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
   }
 }
