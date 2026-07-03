@@ -81,7 +81,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, ref, shallowRef } from 'vue'
-import { bindBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 /** MBOM / 工艺路线选择器只取后端真枚举 `Published`（不是 `Released`）。 */
@@ -397,7 +397,7 @@ export function useEngineeringProductionVersions() {
     productionVersionsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createProductionVersion: (body: BusinessConsoleCreateProductionVersionRequest) =>
       createMutation.mutateAsync({ body }),
@@ -504,7 +504,7 @@ export function usePublishedMboms() {
     ),
     mbomsError: query.error,
     mbomsPending: query.isLoading,
-    refreshMboms: query.refetch,
+    refreshMboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -539,7 +539,7 @@ export function usePublishedRoutings() {
     ),
     routingsError: query.error,
     routingsPending: query.isLoading,
-    refreshRoutings: query.refetch,
+    refreshRoutings: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -594,7 +594,7 @@ export function useEngineeringEboms() {
     ebomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseEbom: (body: BusinessConsoleReleaseEngineeringBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -646,7 +646,7 @@ export function usePublishedEboms() {
     ),
     ebomsError: query.error,
     ebomsPending: query.isLoading,
-    refreshEboms: query.refetch,
+    refreshEboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -701,7 +701,7 @@ export function useEngineeringMboms() {
     mbomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseMbom: (body: BusinessConsoleReleaseManufacturingBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -771,7 +771,7 @@ export function useEngineeringRoutings() {
     routingsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseRouting: (body: BusinessConsoleReleaseRoutingRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -845,7 +845,7 @@ export function useEngineeringItems() {
     itemsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringItemListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createItemRevision: (body: BusinessConsoleCreateEngineeringItemRevisionRequest) =>
       (createRevisionMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -917,7 +917,7 @@ export function useEngineeringDocuments() {
     documentsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringDocumentListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     registerDocument: (body: BusinessConsoleRegisterEngineeringDocumentRequest) =>
       (registerMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -992,7 +992,7 @@ export function useEngineeringChanges() {
     changesTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringChangeListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseChange: (body: BusinessConsoleReleaseEngineeringChangeRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -1099,7 +1099,7 @@ export function useStandardOperations() {
     standardOperationsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleStandardOperationListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     // 创建 body 含 org/env + 用户自定义 operationCode（页面提供）。
     createStandardOperation: (body: BusinessConsoleCreateStandardOperationRequest) =>

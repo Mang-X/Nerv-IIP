@@ -49,6 +49,7 @@ const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -256,11 +257,14 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
+    const refetch = vi.fn()
+    coladaState.queryRefetchById.set(id, refetch)
+
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useQueryCache: vi.fn(() => ({
@@ -276,6 +280,7 @@ describe('business MES composables', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryRefetchById.clear()
   })
 
   it('maps backend MES readiness reason codes to shared labels and next steps', () => {
@@ -360,6 +365,41 @@ describe('business MES composables', () => {
         take: 100,
       },
     })
+  })
+
+  it('disables MES list queries until business context is selected', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: '', environmentId: '' })
+
+    useMesWorkOrders()
+    useMesOverview()
+    useMesProductionPlans()
+    useMesOperationTasks()
+    useMesWipSummary()
+    useMesCapacityImpacts()
+
+    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesWorkOrders')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesOverview')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesProductionPlans')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject({ enabled: false })
+    expect(coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.()).toMatchObject({ enabled: false })
+  })
+
+  it('does not refetch MES lists when business context is empty', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: '', environmentId: '' })
+    const workOrders = useMesWorkOrders()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleMesWorkOrders')
+
+    await workOrders.refreshWorkOrders()
+
+    expect(refetch).not.toHaveBeenCalled()
+
+    context.patchContext({ organizationId: 'org-mes', environmentId: 'env-mes' })
+    await workOrders.refreshWorkOrders()
+
+    expect(refetch).toHaveBeenCalledOnce()
   })
 
   it('submits rush work orders and production reports', async () => {

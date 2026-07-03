@@ -14,6 +14,7 @@ const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean } & Record<string, unknown>>(),
+  queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -46,11 +47,14 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryFactoriesById.set(id, optionsFactory)
     coladaState.queryOptionsById.set(id, options)
 
+    const refetch = vi.fn()
+    coladaState.queryRefetchById.set(id, refetch)
+
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
   useMutation: vi.fn(() => ({
@@ -67,6 +71,7 @@ describe('business WMS composables', () => {
     coladaState.queryDataById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.queryRefetchById.clear()
   })
 
   it('lists inbound orders with paging, filters, items, and total', () => {
@@ -156,6 +161,20 @@ describe('business WMS composables', () => {
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
     expect(coladaState.queryOptionsById.get('listBusinessConsoleWmsInboundOrders')?.enabled).toBe(false)
+  })
+
+  it('does not refetch WMS lists when business context is empty', async () => {
+    const inbound = useWmsInboundOrders()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleWmsInboundOrders')
+
+    await inbound.refreshInboundOrders()
+
+    expect(refetch).not.toHaveBeenCalled()
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-wms', environmentId: 'env-wms' })
+    await inbound.refreshInboundOrders()
+
+    expect(refetch).toHaveBeenCalledOnce()
   })
 
   it('updates WMS query scope when business context changes', () => {

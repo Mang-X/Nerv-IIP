@@ -31,7 +31,12 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, hasBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -134,13 +139,13 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
     onSuccess() {
-      void workOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, workOrdersQuery)
     },
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleMaintenanceWorkOrderMutationOptions(),
     onSuccess() {
-      void workOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, workOrdersQuery)
     },
   })
 
@@ -152,7 +157,7 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     workOrdersError: workOrdersQuery.error,
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersTotal: computed(() => listTotal(workOrdersQuery.data.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined)),
-    refreshWorkOrders: workOrdersQuery.refetch,
+    refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: (body: BusinessConsoleCreateMaintenanceWorkOrderRequest) =>
       createMutation.mutateAsync({ body }),
     createWorkOrderPending: createMutation.isLoading,
@@ -180,7 +185,7 @@ export function useMaintenanceInspections(initialFilters: Partial<MaintenanceLis
   const recordMutation = useMutation({
     ...recordBusinessConsoleMaintenanceInspectionMutationOptions(),
     onSuccess() {
-      void inspectionsQuery.refetch()
+      void refetchWithBusinessContext(filters, inspectionsQuery)
     },
   })
 
@@ -192,7 +197,7 @@ export function useMaintenanceInspections(initialFilters: Partial<MaintenanceLis
     inspectionsError: inspectionsQuery.error,
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsTotal: computed(() => listTotal(inspectionsQuery.data.value as BusinessConsoleMaintenanceInspectionListEnvelope | undefined)),
-    refreshInspections: inspectionsQuery.refetch,
+    refreshInspections: () => refetchWithBusinessContext(filters, inspectionsQuery),
     recordInspection: (body: BusinessConsoleRecordMaintenanceInspectionRequest) =>
       recordMutation.mutateAsync({ body }),
     recordInspectionPending: recordMutation.isLoading,
@@ -216,7 +221,7 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenanceSparePartMutationOptions(),
     onSuccess() {
-      void sparePartsQuery.refetch()
+      void refetchWithBusinessContext(filters, sparePartsQuery)
     },
   })
 
@@ -228,7 +233,7 @@ export function useMaintenanceSpareParts(initialFilters: Partial<MaintenanceList
     sparePartsError: sparePartsQuery.error,
     sparePartsPending: sparePartsQuery.isLoading,
     sparePartsTotal: computed(() => listTotal(sparePartsQuery.data.value as BusinessConsoleMaintenanceSparePartListEnvelope | undefined)),
-    refreshSpareParts: sparePartsQuery.refetch,
+    refreshSpareParts: () => refetchWithBusinessContext(filters, sparePartsQuery),
     createSparePart: (body: BusinessConsoleCreateMaintenanceSparePartRequest) =>
       createMutation.mutateAsync({ body }),
     createSparePartPending: createMutation.isLoading,
@@ -311,13 +316,13 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
   const createMutation = useMutation({
     ...createBusinessConsoleMaintenancePlanMutationOptions(),
     onSuccess() {
-      void plansQuery.refetch()
+      void refetchWithBusinessContext(filters, plansQuery)
     },
   })
   const generateDueMutation = useMutation({
     ...generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions(),
     onSuccess() {
-      void plansQuery.refetch()
+      void refetchWithBusinessContext(filters, plansQuery)
     },
   })
 
@@ -329,7 +334,7 @@ export function useMaintenancePlans(initialFilters: Partial<MaintenanceListFilte
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,
     plansTotal: computed(() => listTotal(plansQuery.data.value as BusinessConsoleMaintenancePlanListEnvelope | undefined)),
-    refreshPlans: plansQuery.refetch,
+    refreshPlans: () => refetchWithBusinessContext(filters, plansQuery),
     createPlan: (body: BusinessConsoleCreateMaintenancePlanRequest) =>
       createMutation.mutateAsync({ body }),
     createPlanPending: createMutation.isLoading,

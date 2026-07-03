@@ -23,6 +23,7 @@ const coladaState = vi.hoisted(() => ({
   queryDataById: new Map<string, unknown>(),
   queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -82,11 +83,14 @@ vi.mock('@pinia/colada', () => ({
     coladaState.queryFactoriesById.set(id, optionsFactory)
     coladaState.queryOptionsById.set(id, options)
 
+    const refetch = vi.fn()
+    coladaState.queryRefetchById.set(id, refetch)
+
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
 }))
@@ -99,6 +103,7 @@ describe('business maintenance composables', () => {
     coladaState.queryDataById.clear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.queryRefetchById.clear()
   })
 
   it('loads inspection rows and records a real inspection through the facade', async () => {
@@ -240,6 +245,20 @@ describe('business maintenance composables', () => {
       query: expect.objectContaining({ organizationId: '', environmentId: '' }),
     })
     expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled).toBe(false)
+  })
+
+  it('does not refetch maintenance lists when business context is empty', async () => {
+    const inspections = useMaintenanceInspections()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleMaintenanceInspections')
+
+    await inspections.refreshInspections()
+
+    expect(refetch).not.toHaveBeenCalled()
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-maint', environmentId: 'env-maint' })
+    await inspections.refreshInspections()
+
+    expect(refetch).toHaveBeenCalledOnce()
   })
 
   it('updates maintenance query scope when business context changes', () => {

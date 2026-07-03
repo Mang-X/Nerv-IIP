@@ -35,7 +35,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, type UseMutationOptions } from '@pinia/colada'
 import { computed, reactive, ref } from 'vue'
-import { bindBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -96,7 +96,7 @@ export function useProductCategories() {
       },
     }), filters),
   )
-  const refresh = () => listQuery.refetch()
+  const refresh = () => refetchWithBusinessContext(filters, listQuery)
   const createMutation = useMutation({ ...createBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh })
   const updateMutation = useMutation({ ...updateBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
   const archiveMutation = useMutation({ ...archiveBusinessConsoleProductCategoryMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
@@ -152,7 +152,7 @@ export function useQualityReasonCodes() {
       },
     }), filters),
   )
-  const refresh = () => listQuery.refetch()
+  const refresh = () => refetchWithBusinessContext(filters, listQuery)
   const createMutation = useMutation({ ...createBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh })
   const updateMutation = useMutation({ ...updateBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
   const archiveMutation = useMutation({ ...archiveBusinessConsoleQualityReasonCodeMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
@@ -207,7 +207,7 @@ export function useSkillCatalog() {
       },
     }), filters),
   )
-  const refresh = () => listQuery.refetch()
+  const refresh = () => refetchWithBusinessContext(filters, listQuery)
   const createMutation = useMutation({ ...createBusinessConsoleSkillMutationOptions(), onSuccess: refresh })
   const updateMutation = useMutation({ ...updateBusinessConsoleSkillMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)
   const archiveMutation = useMutation({ ...archiveBusinessConsoleSkillMutationOptions(), onSuccess: refresh } as unknown as UseMutationOptions)

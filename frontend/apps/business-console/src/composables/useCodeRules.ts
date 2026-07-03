@@ -23,7 +23,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 export function useCodeRules() {
   const context = useBusinessContextStore()
@@ -37,7 +37,7 @@ export function useCodeRules() {
       query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
     }), filters),
   )
-  const refresh = () => listQuery.refetch()
+  const refresh = () => refetchWithBusinessContext(filters, listQuery)
 
   const createMutation = useMutation({
     ...createBusinessConsoleCodeRuleVersionMutationOptions(),

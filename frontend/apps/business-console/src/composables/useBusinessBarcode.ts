@@ -25,7 +25,13 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, withBusinessContextEnabled, type BusinessContextFields } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -114,7 +120,7 @@ export function useBarcodeRules(initialFilters: Partial<BarcodeRuleFilters> = {}
   const saveRuleMutation = useMutation({
     ...createOrUpdateBusinessConsoleBarcodeRuleMutationOptions(),
     onSuccess() {
-      void rulesQuery.refetch()
+      void refetchWithBusinessContext(filters, rulesQuery)
     },
   })
 
@@ -124,7 +130,7 @@ export function useBarcodeRules(initialFilters: Partial<BarcodeRuleFilters> = {}
     rulesError: rulesQuery.error,
     rulesPending: rulesQuery.isLoading,
     rulesTotal: computed(() => total(rulesQuery.data.value)),
-    refreshRules: rulesQuery.refetch,
+    refreshRules: () => refetchWithBusinessContext(filters, rulesQuery),
     saveRule: (body: CreateOrUpdateBusinessConsoleBarcodeRuleData['body']) =>
       saveRuleMutation.mutateAsync({ body }),
     saveRulePending: saveRuleMutation.isLoading,
@@ -149,7 +155,7 @@ export function useBarcodeTemplates(initialFilters: Partial<BarcodeListFilters> 
   const saveTemplateMutation = useMutation({
     ...createOrUpdateBusinessConsoleBarcodeTemplateMutationOptions(),
     onSuccess() {
-      void templatesQuery.refetch()
+      void refetchWithBusinessContext(filters, templatesQuery)
     },
   })
 
@@ -159,7 +165,7 @@ export function useBarcodeTemplates(initialFilters: Partial<BarcodeListFilters> 
     templatesError: templatesQuery.error,
     templatesPending: templatesQuery.isLoading,
     templatesTotal: computed(() => total(templatesQuery.data.value)),
-    refreshTemplates: templatesQuery.refetch,
+    refreshTemplates: () => refetchWithBusinessContext(filters, templatesQuery),
     saveTemplate: (body: CreateOrUpdateBusinessConsoleBarcodeTemplateData['body']) =>
       saveTemplateMutation.mutateAsync({ body }),
     saveTemplatePending: saveTemplateMutation.isLoading,
@@ -199,8 +205,8 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
   const createPrintBatchMutation = useMutation({
     ...createBusinessConsoleBarcodePrintBatchMutationOptions(),
     onSuccess() {
-      void printBatchesQuery.refetch()
-      if (filters.selectedPrintBatchId) void printBatchDetailQuery.refetch()
+      void refetchWithBusinessContext(filters, printBatchesQuery)
+      if (filters.selectedPrintBatchId && hasBusinessContext(filters)) void printBatchDetailQuery.refetch()
     },
   })
 
@@ -213,8 +219,11 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
     printBatchDetail: computed<BusinessConsoleBarcodePrintBatchDetail | undefined>(() => printBatchDetail(printBatchDetailQuery.data.value)),
     printBatchDetailError: printBatchDetailQuery.error,
     printBatchDetailPending: printBatchDetailQuery.isLoading,
-    refreshPrintBatches: printBatchesQuery.refetch,
-    refreshPrintBatchDetail: printBatchDetailQuery.refetch,
+    refreshPrintBatches: () => refetchWithBusinessContext(filters, printBatchesQuery),
+    refreshPrintBatchDetail: () =>
+      filters.selectedPrintBatchId && hasBusinessContext(filters)
+        ? printBatchDetailQuery.refetch()
+        : Promise.resolve(),
     createPrintBatch: (body: CreateBusinessConsoleBarcodePrintBatchData['body']) =>
       createPrintBatchMutation.mutateAsync({ body }),
     createPrintBatchPending: createPrintBatchMutation.isLoading,
@@ -242,7 +251,7 @@ export function useBarcodeScans(initialFilters: Partial<BarcodeScanFilters> = {}
   const recordScanMutation = useMutation({
     ...recordBusinessConsoleBarcodeScanMutationOptions(),
     onSuccess() {
-      void scansQuery.refetch()
+      void refetchWithBusinessContext(filters, scansQuery)
     },
   })
 
@@ -252,7 +261,7 @@ export function useBarcodeScans(initialFilters: Partial<BarcodeScanFilters> = {}
     scansError: scansQuery.error,
     scansPending: scansQuery.isLoading,
     scansTotal: computed(() => total(scansQuery.data.value)),
-    refreshScans: scansQuery.refetch,
+    refreshScans: () => refetchWithBusinessContext(filters, scansQuery),
     recordScan: (body: RecordBusinessConsoleBarcodeScanData['body']) =>
       recordScanMutation.mutateAsync({ body }),
     recordScanPending: recordScanMutation.isLoading,
