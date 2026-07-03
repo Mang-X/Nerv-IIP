@@ -170,9 +170,6 @@ function formatError(error: unknown) {
           :uom-code="row.uomCode"
           :site-code="row.siteCode"
           :location-code="row.fromLocationCode"
-          source-workflow="wms.putaway"
-          source-label="来源单据"
-          :source-document-id="row.sourceOrderNo ?? row.warehouseTaskId"
           gap-message="后端缺口：上架任务列表暂未返回逐行可用量、批次/序列号、冻结与预留明细；可带当前任务上下文到 Inventory 查看。"
         />
       </template>

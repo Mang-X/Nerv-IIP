@@ -234,7 +234,6 @@ function formatError(error: unknown) {
 
     <WmsInventoryContextPanel
       title="出库库存上下文"
-      source-label="来源单据"
       gap-message="后端缺口：出库单列表暂未返回 SKU、批次/序列号、预留、冻结或来源单据字段；本页不空跳、不伪造库存余额。请从拣货任务行进入 Inventory 查看具体库存上下文。"
     />
 

@@ -222,9 +222,6 @@ function formatError(error: unknown) {
       <template #cell-inventoryContext="{ row }">
         <WmsInventoryContextPanel
           compact
-          source-workflow="wms.wcs"
-          source-label="WCS 来源"
-          :source-document-id="row.externalTaskId ?? row.warehouseTaskId"
           gap-message="后端缺口：WCS 任务列表只返回设备任务与仓库任务标识，未返回 SKU、库位、批次/序列号或库存数量；需要先进入关联的上架/拣货任务查看 Inventory 上下文。"
         />
       </template>

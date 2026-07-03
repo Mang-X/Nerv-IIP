@@ -121,7 +121,7 @@ describe('WMS picking route context', () => {
     }))
   })
 
-  it('renders picking row inventory and source-document context links', () => {
+  it('renders picking row inventory links without unsupported scan workflow links', () => {
     const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
 
     expect(wrapper.text()).toContain('库存上下文')
@@ -133,6 +133,6 @@ describe('WMS picking route context', () => {
     const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
     expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
     expect(links.some((to) => to.includes('/inventory/lots') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
-    expect(links.some((to) => to.includes('/barcode/scans') && to.includes('wms.picking') && to.includes('OB-001'))).toBe(true)
+    expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
 })
