@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
@@ -9,6 +10,8 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
 public sealed record ProductionReportCommandResult(ProductionReportId Id, string ReportNo);
+
+public sealed record ReverseProductionReportCommandResult(ProductionReportId Id, string ReportNo, string OriginalReportNo);
 
 public sealed record FinishedGoodsReceiptRequestCommandResult(FinishedGoodsReceiptRequestId Id, string RequestNo);
 
@@ -278,6 +281,163 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             (lots ?? [])
                 .Select(x => $"{x.MaterialId.Trim().ToUpperInvariant()}|{x.MaterialLotId.Trim().ToUpperInvariant()}|{x.ConsumedQuantity:0.######}|{x.MaterialIssueRequestNo.Trim().ToUpperInvariant()}")
                 .Order(StringComparer.Ordinal));
+    }
+}
+
+public sealed record ReverseProductionReportCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReportNo,
+    string Reason,
+    DateTimeOffset ReversedAtUtc,
+    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>;
+
+public sealed class ReverseProductionReportCommandValidator : AbstractValidator<ReverseProductionReportCommand>
+{
+    public ReverseProductionReportCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ReportNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+    : ICommandHandler<ReverseProductionReportCommand, ReverseProductionReportCommandResult>
+{
+    private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
+
+    public async Task<ReverseProductionReportCommandResult> Handle(ReverseProductionReportCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            "production-report",
+            null,
+            request.IdempotencyKey,
+            MesCodingService.Fingerprint(request.ReportNo, request.Reason, request.ReversedAtUtc),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            var existing = await dbContext.ProductionReports.SingleAsync(
+                x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.ReportNo == allocation.Code,
+                cancellationToken);
+            return new ReverseProductionReportCommandResult(existing.Id, existing.ReportNo, existing.ReversedReportNo ?? request.ReportNo);
+        }
+
+        var original = await dbContext.ProductionReports.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ReportNo == request.ReportNo,
+            cancellationToken)
+            ?? throw new KnownException($"未找到原报工，ReportNo = {request.ReportNo}");
+        if (original.IsReversal)
+        {
+            throw new KnownException($"冲销报工不能再次冲销，ReportNo = {request.ReportNo}");
+        }
+
+        var alreadyReversed = await dbContext.ProductionReports.AnyAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ReversedReportNo == original.ReportNo,
+            cancellationToken);
+        if (alreadyReversed)
+        {
+            throw new KnownException($"原报工已冲销，ReportNo = {request.ReportNo}");
+        }
+
+        var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderIdValue == original.WorkOrderId,
+            cancellationToken)
+            ?? throw new KnownException($"未找到生产工单，WorkOrderId = {original.WorkOrderId}");
+        if (workOrder.Status == WorkOrder.ClosedStatus)
+        {
+            throw new KnownException($"已关闭工单不允许冲销报工，WorkOrderId = {original.WorkOrderId}");
+        }
+
+        var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == original.WorkOrderId &&
+                x.OperationTaskIdValue == original.OperationTaskId,
+            cancellationToken)
+            ?? throw new KnownException($"报工工序任务不存在或不属于当前工单，WorkOrderId = {original.WorkOrderId}, OperationTaskId = {original.OperationTaskId}");
+
+        if (!string.IsNullOrWhiteSpace(original.ProducedLotNo))
+        {
+            var producedLotReceiptRequests = await dbContext.FinishedGoodsReceiptRequests
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.WorkOrderId == original.WorkOrderId &&
+                    x.ProducedLotNo == original.ProducedLotNo)
+                .ToArrayAsync(cancellationToken);
+            if (producedLotReceiptRequests.Any(x => x.Status == FinishedGoodsReceiptRequest.PostedStatus))
+            {
+                throw new KnownException($"产出批次已完成库存入库，不能冲销原报工，ProducedLotNo = {original.ProducedLotNo}");
+            }
+
+            foreach (var receiptRequest in producedLotReceiptRequests)
+            {
+                receiptRequest.Cancel();
+            }
+        }
+
+        var outputOperationSequence = await dbContext.OperationTasks
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.WorkOrderId == original.WorkOrderId)
+            .MaxAsync(x => x.OperationSequence, cancellationToken);
+        var isOutputOperation = operationTask.OperationSequence == outputOperationSequence;
+        var progressQuantity = Math.Abs(original.GoodQuantity) + Math.Abs(original.ScrapQuantity);
+        if (isOutputOperation && progressQuantity > 0m)
+        {
+            try
+            {
+                workOrder.ReverseProductionProgress(
+                    Math.Abs(original.GoodQuantity),
+                    Math.Abs(original.ScrapQuantity),
+                    request.ReversedAtUtc);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new KnownException(exception.Message);
+            }
+        }
+
+        if (original.CompletesOperation)
+        {
+            operationTask.ReopenAfterReportReversal();
+        }
+
+        var reversal = ProductionReport.Reverse(original, allocation.Code, request.ReversedAtUtc, request.Reason);
+        var originalConsumptions = await dbContext.ProductionReportMaterialConsumptions
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ReportNo == original.ReportNo)
+            .ToArrayAsync(cancellationToken);
+        var reversalConsumptions = originalConsumptions
+            .Select(x => ProductionReportMaterialConsumption.Reverse(x, reversal.ReportNo))
+            .ToArray();
+
+        var originalOutputLots = await dbContext.OutputLotGenealogies
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ReportNo == original.ReportNo)
+            .ToArrayAsync(cancellationToken);
+
+        dbContext.ProductionReports.Add(reversal);
+        dbContext.ProductionReportMaterialConsumptions.AddRange(reversalConsumptions);
+        dbContext.OutputLotGenealogies.RemoveRange(originalOutputLots);
+        return new ReverseProductionReportCommandResult(reversal.Id, reversal.ReportNo, original.ReportNo);
     }
 }
 

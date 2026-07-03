@@ -278,6 +278,39 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
     }
 
+    public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)
+    {
+        _ = reversedAtUtc;
+        DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
+        DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
+        if (goodQuantity + scrapQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one progress quantity must be positive.");
+        }
+
+        if (Status == ClosedStatus)
+        {
+            throw new InvalidOperationException("已关闭工单不允许冲销报工。");
+        }
+
+        if (Status is CancelledStatus or ScrappedStatus)
+        {
+            throw new InvalidOperationException("Work order is not executable.");
+        }
+
+        if (CompletedQuantity < goodQuantity || ScrapQuantity < scrapQuantity)
+        {
+            throw new InvalidOperationException("Production report reversal would make work order progress negative.");
+        }
+
+        CompletedQuantity -= goodQuantity;
+        ScrapQuantity -= scrapQuantity;
+        if (Status == CompletedStatus && CompletedQuantity + ScrapQuantity < Quantity)
+        {
+            Status = StartedStatus;
+        }
+    }
+
     public void Close(DateTimeOffset closedAtUtc)
     {
         if (Status != CompletedStatus)
