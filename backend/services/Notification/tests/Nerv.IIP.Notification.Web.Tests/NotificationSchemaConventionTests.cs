@@ -27,6 +27,9 @@ public sealed class NotificationSchemaConventionTests
             typeof(NotificationMessage),
             typeof(NotificationTask),
             typeof(DeliveryAttempt),
+            typeof(NotificationRecipientChannelBinding),
+            typeof(NotificationPreference),
+            typeof(NotificationSubscription),
             typeof(ProcessedIntegrationEvent),
         };
 
@@ -48,6 +51,9 @@ public sealed class NotificationSchemaConventionTests
         AssertTable(fixture.DbContext, typeof(NotificationMessage), "notification_messages");
         AssertTable(fixture.DbContext, typeof(NotificationTask), "notification_tasks");
         AssertTable(fixture.DbContext, typeof(DeliveryAttempt), "delivery_attempts");
+        AssertTable(fixture.DbContext, typeof(NotificationRecipientChannelBinding), "notification_recipient_channel_bindings");
+        AssertTable(fixture.DbContext, typeof(NotificationPreference), "notification_preferences");
+        AssertTable(fixture.DbContext, typeof(NotificationSubscription), "notification_subscriptions");
         AssertTable(fixture.DbContext, typeof(ProcessedIntegrationEvent), "processed_integration_events");
         AssertTable(fixture.DbContext, typeof(PublishedMessage), "cap_published_messages");
         AssertTable(fixture.DbContext, typeof(ReceivedMessage), "cap_received_messages");
@@ -75,6 +81,32 @@ public sealed class NotificationSchemaConventionTests
             nameof(NotificationTask.RecipientRef),
             nameof(NotificationTask.Status),
             nameof(NotificationTask.CreatedAtUtc));
+
+        AssertUniqueIndex(
+            fixture.DbContext,
+            typeof(NotificationRecipientChannelBinding),
+            nameof(NotificationRecipientChannelBinding.OrganizationId),
+            nameof(NotificationRecipientChannelBinding.EnvironmentId),
+            nameof(NotificationRecipientChannelBinding.RecipientRef),
+            nameof(NotificationRecipientChannelBinding.Channel));
+
+        AssertUniqueIndex(
+            fixture.DbContext,
+            typeof(NotificationPreference),
+            nameof(NotificationPreference.OrganizationId),
+            nameof(NotificationPreference.EnvironmentId),
+            nameof(NotificationPreference.RecipientRef),
+            nameof(NotificationPreference.NotificationType),
+            nameof(NotificationPreference.Channel));
+
+        AssertUniqueIndex(
+            fixture.DbContext,
+            typeof(NotificationSubscription),
+            nameof(NotificationSubscription.OrganizationId),
+            nameof(NotificationSubscription.EnvironmentId),
+            nameof(NotificationSubscription.RecipientRef),
+            nameof(NotificationSubscription.NotificationType),
+            nameof(NotificationSubscription.Channel));
 
         AssertUniqueIndex(
             fixture.DbContext,

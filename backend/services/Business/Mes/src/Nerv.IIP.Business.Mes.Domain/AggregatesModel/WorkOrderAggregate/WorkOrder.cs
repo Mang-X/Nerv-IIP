@@ -220,20 +220,31 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         Status = HoldStatus;
     }
 
-    public void Cancel(string reason)
+    public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)
     {
         if (Status is CompletedStatus or ClosedStatus)
         {
             throw new InvalidOperationException("Completed work orders must be closed, not cancelled.");
         }
 
-        if (Status is CancelledStatus or ScrappedStatus)
+        if (Status == ScrappedStatus)
         {
-            throw new InvalidOperationException("Cancelled or scrapped work orders cannot be cancelled again.");
+            throw new InvalidOperationException("Scrapped work orders cannot be cancelled.");
+        }
+
+        if (Status == CancelledStatus)
+        {
+            return false;
         }
 
         CancelReason = DomainGuard.Required(reason, nameof(reason));
         Status = CancelledStatus;
+        AddDomainEvent(new WorkOrderCancelledDomainEvent(
+            this,
+            cancelledAtUtc,
+            CancelReason,
+            (materialIssueRequestNos ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()));
+        return true;
     }
 
     public void RecordProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reportedAtUtc)

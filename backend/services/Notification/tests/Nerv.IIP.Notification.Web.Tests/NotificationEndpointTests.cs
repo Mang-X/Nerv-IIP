@@ -25,7 +25,10 @@ public sealed class NotificationEndpointTests
             await client.GetAsync("/api/notifications/v1/messages?recipientRef=user:admin"),
             await client.PostAsync($"/api/notifications/v1/messages/{Guid.NewGuid()}/read", null),
             await client.PostAsJsonAsync("/api/notifications/v1/messages/read-batch", new { messageIds = new[] { Guid.NewGuid().ToString() } }),
-            await client.GetAsync("/api/notifications/v1/tasks?recipientRef=user:admin")
+            await client.GetAsync("/api/notifications/v1/tasks?recipientRef=user:admin"),
+            await client.PostAsJsonAsync("/api/notifications/v1/delivery/recipient-channel-bindings", new { recipientRef = "user:admin", channel = "email", recipientAddress = "admin@example.test", enabled = true }),
+            await client.PostAsJsonAsync("/api/notifications/v1/delivery/preferences", new { recipientRef = "user:admin", notificationType = "ops.OperationTaskFailed", channel = "email", enabled = true }),
+            await client.PostAsJsonAsync("/api/notifications/v1/delivery/subscriptions", new { recipientRef = "user:admin", notificationType = "ops.OperationTaskFailed", channel = "email", enabled = true })
         };
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));
@@ -45,6 +48,42 @@ public sealed class NotificationEndpointTests
         Assert.NotEqual(string.Empty, data.IntentId);
         Assert.Equal(["user:admin", "user:operator"], data.Messages.Select(x => x.RecipientRef).Order());
         Assert.All(data.Messages, message => Assert.Equal("unread", message.Status));
+    }
+
+    [Fact]
+    public async Task Delivery_configuration_endpoints_upsert_binding_preference_and_subscription()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateNotificationClient();
+
+        var binding = await client.PostAsJsonAsync(
+            "/api/notifications/v1/delivery/recipient-channel-bindings",
+            new UpsertNotificationRecipientChannelBindingRequest(
+                "user:admin",
+                "wecom",
+                "wecom-user-001",
+                true));
+        var preference = await client.PostAsJsonAsync(
+            "/api/notifications/v1/delivery/preferences",
+            new UpsertNotificationPreferenceRequest(
+                "user:admin",
+                "industrialTelemetry.AlarmRaised",
+                "wecom",
+                false));
+        var subscription = await client.PostAsJsonAsync(
+            "/api/notifications/v1/delivery/subscriptions",
+            new UpsertNotificationSubscriptionRequest(
+                "user:admin",
+                "industrialTelemetry.AlarmRaised",
+                "wecom",
+                true));
+
+        Assert.Equal(HttpStatusCode.OK, binding.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, preference.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, subscription.StatusCode);
+        Assert.Equal("wecom-user-001", (await ReadDataAsync<NotificationRecipientChannelBindingResponse>(binding)).RecipientAddress);
+        Assert.False((await ReadDataAsync<NotificationPreferenceResponse>(preference)).Enabled);
+        Assert.True((await ReadDataAsync<NotificationSubscriptionResponse>(subscription)).Enabled);
     }
 
     [Fact]

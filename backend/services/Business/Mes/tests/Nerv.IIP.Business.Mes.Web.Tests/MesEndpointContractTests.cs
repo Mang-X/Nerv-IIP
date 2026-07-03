@@ -6,8 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Mvc.Testing;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Auth;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -269,14 +272,15 @@ public sealed class MesEndpointContractTests
         var invalidClose = await Assert.ThrowsAsync<KnownException>(() => closeHandler.Handle(
             new CloseWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", now.AddHours(2)),
             CancellationToken.None));
-        var invalidCancel = await Assert.ThrowsAsync<KnownException>(() => new CancelWorkOrderCommandHandler(dbContext).Handle(
+        var duplicateCancelResponse = await new CancelWorkOrderCommandHandler(dbContext).Handle(
             new CancelWorkOrderCommand("org-001", "env-dev", "WO-ACTIVE", "duplicate cancellation", now.AddMinutes(30)),
-            CancellationToken.None));
+            CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal("Accepted", closeResponse.Status);
         Assert.Equal("Accepted", holdResponse.Status);
         Assert.Equal("Accepted", cancelResponse.Status);
+        Assert.Equal("Accepted", duplicateCancelResponse.Status);
         Assert.Equal(WorkOrder.ClosedStatus, completed.Status);
         Assert.Equal(now.AddHours(1), completed.ClosedAtUtc);
         Assert.Equal(WorkOrder.CancelledStatus, active.Status);
@@ -285,8 +289,62 @@ public sealed class MesEndpointContractTests
         Assert.NotEqual("duplicate cancellation", active.CancelReason);
         Assert.Contains("completed", invalidClose.Message, StringComparison.OrdinalIgnoreCase);
         Assert.IsType<InvalidOperationException>(invalidClose.InnerException);
-        Assert.Contains("cancelled or scrapped", invalidCancel.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.IsType<InvalidOperationException>(invalidCancel.InnerException);
+    }
+
+    [Fact]
+    public async Task Cancel_released_work_order_cancels_open_material_receipt_and_operation_facts()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-695-LOCAL", "SKU-FG", "PV-001", 2m, 10, now.AddDays(1));
+        workOrder.MarkReleased();
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-695-LOCAL",
+            "WO-695-LOCAL",
+            "OP-10",
+            "MAT-OIL",
+            "L",
+            2m,
+            now);
+        var receipt = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-695-LOCAL",
+            "WO-695-LOCAL",
+            "SKU-FG",
+            1m,
+            "PCS",
+            now);
+        var operationTask = OperationTask.Queue(
+            "org-001",
+            "env-dev",
+            "WO-695-LOCAL",
+            "OP-10",
+            10,
+            "WC-10",
+            [],
+            now,
+            TimeSpan.FromMinutes(30));
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        dbContext.FinishedGoodsReceiptRequests.Add(receipt);
+        dbContext.OperationTasks.Add(operationTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CancelWorkOrderCommandHandler(dbContext).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-LOCAL", "plan cancelled", now.AddMinutes(30)),
+            CancellationToken.None);
+
+        Assert.Equal(WorkOrder.CancelledStatus, workOrder.Status);
+        Assert.Equal(MaterialIssueRequest.CancelledStatus, materialIssue.Status);
+        Assert.Equal(FinishedGoodsReceiptRequest.CancelledStatus, receipt.Status);
+        Assert.Equal(OperationTaskLifecycleStatus.Cancelled, operationTask.Status);
+        var cancelledEvent = Assert.IsType<WorkOrderCancelledDomainEvent>(workOrder.GetDomainEvents().Last());
+        Assert.Equal(["MIR-695-LOCAL"], cancelledEvent.MaterialIssueRequestNos);
     }
 
     [Fact]

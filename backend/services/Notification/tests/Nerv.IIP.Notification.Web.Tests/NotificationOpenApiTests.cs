@@ -27,7 +27,10 @@ public sealed class NotificationOpenApiTests
         ("/api/notifications/v1/messages", "get", "listNotificationMessages"),
         ("/api/notifications/v1/messages/{messageId}/read", "post", "markNotificationMessageRead"),
         ("/api/notifications/v1/messages/read-batch", "post", "markNotificationMessagesRead"),
-        ("/api/notifications/v1/tasks", "get", "listNotificationTasks")
+        ("/api/notifications/v1/tasks", "get", "listNotificationTasks"),
+        ("/api/notifications/v1/delivery/recipient-channel-bindings", "post", "upsertNotificationRecipientChannelBinding"),
+        ("/api/notifications/v1/delivery/preferences", "post", "upsertNotificationPreference"),
+        ("/api/notifications/v1/delivery/subscriptions", "post", "upsertNotificationSubscription")
     ];
 
     private static WebApplicationFactory<Program> CreateFactory()
