@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -27,8 +28,6 @@ import {
   FieldProLabel,
   InputPro,
   PageHeader,
-  SectionCard,
-  SectionCards,
   SelectPro,
   SelectProContent,
   SelectProItem,
@@ -187,9 +186,6 @@ async function confirmComplete() {
 }
 
 const errorMessage = computed(() => formatError(inboundOrdersError.value ?? completeInboundError.value ?? createInboundError.value))
-const onHandQuantity = computed(() => inventoryContext.value?.onHandQuantity ?? 0)
-const availableQuantity = computed(() => inventoryContext.value?.availableQuantity ?? 0)
-const reservedQuantity = computed(() => inventoryContext.value?.reservedQuantity ?? 0)
 // 库存上下文不可用时（后端未支持该维度），给出业务可读提示而非空白。
 const contextUnavailable = computed(() => {
   const status = (inventoryContext.value?.status ?? '').toLowerCase()
@@ -216,9 +212,6 @@ function scanRecordRoute(row: InboundRow) {
     },
   }
 }
-function formatQuantity(value?: number | null) {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
-}
 function formatDateTime(value?: string | null) {
   if (!value) return '—'
   const date = new Date(value)
@@ -244,15 +237,14 @@ function formatError(error: unknown) {
       </template>
     </PageHeader>
 
-    <SectionCards :columns="3">
-      <SectionCard description="现存量" :value="formatQuantity(onHandQuantity)" :hint="filters.skuCode || '按下方条件查询库存'" />
-      <SectionCard description="可用量" :value="formatQuantity(availableQuantity)" :hint="filters.siteCode || '工厂/库位可细化'" />
-      <SectionCard description="预留量" :value="formatQuantity(reservedQuantity)" hint="已被占用" />
-    </SectionCards>
-
     <p v-if="contextUnavailable" class="text-sm text-warning" role="status">
       当前条件暂无法获取库存可用量上下文。请补充物料、工厂或库位等条件后再试。
     </p>
+
+    <WmsInventoryContextPanel
+      :context="inventoryContext"
+      gap-message="后端缺口：收货入库只有在物料、单位、工厂等库存范围足够时才返回 Inventory 可用量上下文；未返回时不在 WMS 页面伪造库存余额。"
+    />
 
     <Toolbar :show-search="false">
       <template #filters>

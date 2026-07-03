@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWcsTaskItem } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsWcsTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -155,6 +156,7 @@ const columns: DataTableProColumn<WcsRow>[] = [
   { key: 'externalTaskId', header: '外部任务号', cellClass: 'font-medium', accessor: (r) => r.externalTaskId ?? '无' },
   { key: 'adapterType', header: '适配器', accessor: (r) => r.adapterType ?? '无' },
   { key: 'warehouseTaskId', header: '仓库任务', cellClass: 'text-muted-foreground', accessor: (r) => r.warehouseTaskId ?? '无' },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'attemptCount', header: '尝试次数', align: 'end', width: 'w-24', accessor: (r) => r.attemptCount ?? 0 },
   { key: 'failure', header: '失败原因' },
@@ -217,6 +219,12 @@ function formatError(error: unknown) {
       empty-message="暂无 WCS 任务。派发到设备控制系统的任务会出现在这里。"
     >
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-inventoryContext="{ row }">
+        <WmsInventoryContextPanel
+          compact
+          gap-message="后端缺口：WCS 任务列表只返回设备任务与仓库任务标识，未返回 SKU、库位、批次/序列号或库存数量；需要先进入关联的上架/拣货任务查看 Inventory 上下文。"
+        />
+      </template>
       <template #cell-failure="{ row }">
         <div v-if="row.failureCode || row.failureMessage" class="flex flex-col gap-0.5">
           <span class="text-sm text-destructive">{{ row.failureCode ?? '失败' }}</span>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -99,6 +100,7 @@ const columns: DataTableProColumn<PutawayRow>[] = [
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
   { key: 'skuCode', header: '物料', accessor: (r) => r.skuCode ?? '—' },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   { key: 'location', header: '起讫库位', accessor: (r) => `${r.fromLocationCode ?? '—'} → ${r.toLocationCode ?? '—'}` },
   { key: 'quantity', header: '数量', align: 'end', accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity) },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
@@ -161,6 +163,16 @@ function formatError(error: unknown) {
       empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"
     >
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
+      <template #cell-inventoryContext="{ row }">
+        <WmsInventoryContextPanel
+          compact
+          :sku-code="row.skuCode"
+          :uom-code="row.uomCode"
+          :site-code="row.siteCode"
+          :location-code="row.fromLocationCode"
+          gap-message="后端缺口：上架任务列表暂未返回逐行可用量、批次/序列号、冻结与预留明细；可带当前任务上下文到 Inventory 查看。"
+        />
+      </template>
     </DataTablePro>
 
 
