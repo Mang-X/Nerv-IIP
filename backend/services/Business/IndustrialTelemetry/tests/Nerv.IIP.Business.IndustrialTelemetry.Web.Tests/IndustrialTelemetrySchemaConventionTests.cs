@@ -62,7 +62,18 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(AlarmEvent.DeviceAssetId),
                 nameof(AlarmEvent.AlarmCode),
                 nameof(AlarmEvent.ExternalAlarmId),
-            ]);
+            ],
+            "status = 'raised'");
+        AssertUniqueIndex<AlarmEvent>(
+            fixture,
+            [
+                nameof(AlarmEvent.OrganizationId),
+                nameof(AlarmEvent.EnvironmentId),
+                nameof(AlarmEvent.DeviceAssetId),
+                nameof(AlarmEvent.TagKey),
+                nameof(AlarmEvent.ExternalAlarmId),
+            ],
+            "status = 'raised' AND tag_key IS NOT NULL");
         AssertUniqueIndex<DeviceStateSnapshot>(
             fixture,
             [
@@ -104,13 +115,15 @@ public sealed class IndustrialTelemetrySchemaConventionTests
 
     private static void AssertUniqueIndex<TEntity>(
         IndustrialTelemetrySchemaFixture fixture,
-        IReadOnlyCollection<string> propertyNames)
+        IReadOnlyCollection<string> propertyNames,
+        string? filter = null)
     {
         var entityType = fixture.DbContext.Model.FindEntityType(typeof(TEntity));
         Assert.NotNull(entityType);
         Assert.Contains(entityType!.GetIndexes(), index =>
             index.IsUnique &&
-            index.Properties.Select(property => property.Name).SequenceEqual(propertyNames));
+            index.Properties.Select(property => property.Name).SequenceEqual(propertyNames) &&
+            string.Equals(index.GetFilter(), filter, StringComparison.Ordinal));
     }
 
     private static IndustrialTelemetrySchemaFixture CreateFixture()
