@@ -6,6 +6,20 @@ import {
   useBusinessEquipmentDevice,
   type EquipmentTone,
 } from '@/composables/useBusinessEquipment'
+import {
+  describeTelemetryOeeLimitations,
+  formatOeeRate,
+  useBusinessTelemetryHistory,
+  useBusinessTelemetryOee,
+} from '@/composables/useBusinessTelemetry'
+import {
+  useMaintenanceAvailabilityWindows,
+  useMaintenanceInspections,
+  useMaintenancePlans,
+  useMaintenanceReliability,
+  useMaintenanceSpareParts,
+  useMaintenanceWorkOrders,
+} from '@/composables/useBusinessMaintenance'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   BadgePro,
@@ -15,7 +29,7 @@ import {
   SectionCard,
   SectionCards,
 } from '@nerv-iip/ui'
-import { ArrowLeftIcon, CalendarRangeIcon, GaugeIcon, LineChartIcon, RefreshCwIcon, Settings2Icon, TrendingUpIcon, WrenchIcon } from 'lucide-vue-next'
+import { ArrowLeftIcon, CalendarRangeIcon, ClipboardCheckIcon, GaugeIcon, LineChartIcon, PackageSearchIcon, RefreshCwIcon, Settings2Icon, TrendingUpIcon, WrenchIcon } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -30,16 +44,92 @@ const routeDeviceAssetId = computed(() => {
 })
 
 const { activeAlarms, availabilityWindows, device, deviceError, devicePending, filters, refreshDevice } = useBusinessEquipmentDevice()
+const {
+  filters: historyFilters,
+  historyError,
+  historyPending,
+  visibleHistoryItems,
+} = useBusinessTelemetryHistory()
+const {
+  filters: oeeFilters,
+  oee,
+  oeeError,
+  oeePending,
+  runtimeAvailabilityError,
+} = useBusinessTelemetryOee()
+const {
+  availabilityError: maintenanceAvailabilityError,
+  availabilityPending: maintenanceAvailabilityPending,
+  availabilityWindows: maintenanceAvailabilityWindows,
+  filters: maintenanceAvailabilityFilters,
+} = useMaintenanceAvailabilityWindows()
+const {
+  filters: reliabilityFilters,
+  reliability,
+  reliabilityError,
+  reliabilityPending,
+} = useMaintenanceReliability()
+const { workOrders, workOrdersError, workOrdersPending } = useMaintenanceWorkOrders()
+const { plans, plansError, plansPending } = useMaintenancePlans()
+const { inspections, inspectionsError, inspectionsPending } = useMaintenanceInspections()
+const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSpareParts()
 
 const currentState = computed(() => device.value?.currentState)
 const errorMessage = computed(() => formatError(deviceError.value))
+const telemetryErrorMessage = computed(() => formatError(historyError.value || oeeError.value || runtimeAvailabilityError.value))
+const maintenanceErrorMessage = computed(() => formatError(
+  maintenanceAvailabilityError.value
+  || reliabilityError.value
+  || workOrdersError.value
+  || plansError.value
+  || inspectionsError.value
+  || sparePartsError.value,
+))
 const blockCount = computed(() => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length)
+const historyPreview = computed(() => visibleHistoryItems.value.slice(0, 5))
+const currentDeviceId = computed(() => filters.deviceAssetId.trim())
+const currentDeviceWorkOrders = computed(() =>
+  workOrders.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
+)
+const currentDevicePlans = computed(() =>
+  plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
+)
+const currentDeviceSpareParts = computed(() =>
+  spareParts.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
+)
+const currentDeviceWorkOrderIds = computed(() =>
+  new Set(currentDeviceWorkOrders.value.map((row) => row.workOrderId).filter(Boolean)),
+)
+const currentDevicePlanIds = computed(() =>
+  new Set(currentDevicePlans.value.map((row) => row.planId).filter(Boolean)),
+)
+const currentDeviceInspections = computed(() =>
+  inspections.value.filter((row) => {
+    const deviceAssetId = (row as { deviceAssetId?: string }).deviceAssetId
+    return deviceAssetId === currentDeviceId.value
+      || (row.workOrderId ? currentDeviceWorkOrderIds.value.has(row.workOrderId) : false)
+      || (row.planId ? currentDevicePlanIds.value.has(row.planId) : false)
+  }).slice(0, 5),
+)
+const telemetryPending = computed(() => historyPending.value || oeePending.value)
+const maintenancePending = computed(() =>
+  maintenanceAvailabilityPending.value
+  || reliabilityPending.value
+  || workOrdersPending.value
+  || plansPending.value
+  || inspectionsPending.value
+  || sparePartsPending.value,
+)
 
 watch(
   routeDeviceAssetId,
   (deviceAssetId) => {
     if (!deviceAssetId || deviceAssetId === filters.deviceAssetId) return
     filters.deviceAssetId = deviceAssetId
+    historyFilters.deviceAssetId = deviceAssetId
+    oeeFilters.deviceAssetId = deviceAssetId
+    maintenanceAvailabilityFilters.deviceAssetIds = deviceAssetId
+    reliabilityFilters.deviceAssetId = deviceAssetId
     void refreshDevice()
   },
   { immediate: true },
@@ -83,6 +173,35 @@ function availabilityVariant(value?: string | null) {
   if (value === 'available') return 'success'
   if (value === 'unavailable') return 'danger'
   return 'neutral'
+}
+function metricLabel(value?: number | null, suffix = '') {
+  if (value === null || value === undefined) return '无样本'
+  return `${Number(value).toFixed(1)}${suffix}`
+}
+function historyTypeLabel(value?: string | null) {
+  const labels: Record<string, string> = { alarm: '报警', sample: '采样', state: '状态' }
+  return value ? (labels[value.toLowerCase()] ?? value) : '事件'
+}
+function historyType(row: { itemType?: string | null, eventType?: string | null }) {
+  return row.itemType ?? row.eventType
+}
+function historyValue(row: { value?: string | null, valueText?: string | null }) {
+  return row.value ?? row.valueText ?? '无数值'
+}
+function maintenanceStatusLabel(value?: string | null) {
+  const labels: Record<string, string> = { open: '待处理', opened: '待处理', scheduled: '已排程', inprogress: '处理中', 'in-progress': '处理中', completed: '已完成', closed: '已关闭' }
+  return value ? (labels[value.toLowerCase()] ?? value) : '未知'
+}
+function workOrderLabel(row: { workOrderId?: string, workOrderNo?: string }) {
+  return row.workOrderNo ?? row.workOrderId ?? '维护工单'
+}
+function intervalLabel(value?: string | null) {
+  const labels: Record<string, string> = { P7D: '每周', P14D: '每两周', P30D: '每月', P90D: '每季度' }
+  return value ? (labels[value] ?? value) : '未设置'
+}
+function quantityLabel(row: { quantity?: number | null, uomCode?: string | null }) {
+  if (row.quantity === null || row.quantity === undefined) return '未记录'
+  return `${row.quantity} ${row.uomCode ?? ''}`.trim()
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
@@ -136,6 +255,18 @@ function formatError(error: unknown) {
           <RouterLink :to="{ path: '/maintenance/availability', query: { deviceAssetId: filters.deviceAssetId } }">
             <CalendarRangeIcon aria-hidden="true" />
             可用窗口
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/maintenance/inspections', query: { deviceAssetId: filters.deviceAssetId } }">
+            <ClipboardCheckIcon aria-hidden="true" />
+            点检
+          </RouterLink>
+        </ButtonPro>
+        <ButtonPro size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="{ path: '/maintenance/spare-parts', query: { deviceAssetId: filters.deviceAssetId } }">
+            <PackageSearchIcon aria-hidden="true" />
+            备件
           </RouterLink>
         </ButtonPro>
         <ButtonPro size="sm" type="button" variant="outline" :disabled="devicePending" @click="refreshDevice">
@@ -222,6 +353,205 @@ function formatError(error: unknown) {
         </DataTablePro>
       </div>
     </div>
+
+    <section class="grid gap-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-foreground">遥测深层上下文</h2>
+          <p class="mt-1 text-sm text-muted-foreground">{{ describeTelemetryOeeLimitations() }}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/equipment/telemetry/history', query: { deviceAssetId: filters.deviceAssetId } }">
+              <LineChartIcon aria-hidden="true" />
+              历史趋势正式页面
+            </RouterLink>
+          </ButtonPro>
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/equipment/telemetry/oee', query: { deviceAssetId: filters.deviceAssetId } }">
+              <GaugeIcon aria-hidden="true" />
+              OEE 正式页面
+            </RouterLink>
+          </ButtonPro>
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/equipment/alarms', query: { deviceAssetId: filters.deviceAssetId } }">
+              <Settings2Icon aria-hidden="true" />
+              报警列表正式页面
+            </RouterLink>
+          </ButtonPro>
+        </div>
+      </div>
+
+      <p v-if="telemetryErrorMessage" class="text-sm text-destructive" role="alert">{{ telemetryErrorMessage }}</p>
+
+      <SectionCards :columns="4">
+        <SectionCard description="可用率" :value="formatOeeRate(oee?.availabilityRate)" hint="IndustrialTelemetry OEE facade" />
+        <SectionCard description="加载率" :value="formatOeeRate(oee?.loadingRate)" hint="排除计划停机窗口" />
+        <SectionCard description="OEE P0" :value="formatOeeRate(oee?.oeeRate)" hint="不重算性能/质量" />
+        <SectionCard description="历史事件" :value="historyPreview.length" hint="设备历史趋势 facade" />
+      </SectionCards>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">历史趋势摘录</h3>
+            <p class="mt-1 text-xs text-muted-foreground">来源：设备历史趋势 facade；详情页只展示最近事件，完整曲线进入正式页面。</p>
+          </div>
+          <div class="grid gap-3 p-4">
+            <div v-if="telemetryPending" class="text-sm text-muted-foreground">正在读取遥测历史。</div>
+            <div v-for="item in historyPreview" :key="`${item.occurredAtUtc}-${item.tagKey}-${historyValue(item)}`" class="grid gap-1 rounded-lg border p-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-medium text-foreground">{{ item.tagKey ?? '未命名采集点' }}</span>
+                <BadgePro class="rounded-sm" variant="neutral">{{ historyTypeLabel(historyType(item)) }}</BadgePro>
+              </div>
+              <p class="text-sm text-muted-foreground">{{ historyValue(item) }}</p>
+              <p class="text-xs text-muted-foreground">{{ formatDateTime(item.occurredAtUtc) }}</p>
+            </div>
+            <div v-if="!telemetryPending && !historyPreview.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              当前窗口没有历史趋势事件；这表示当前 facade 未返回样本，不等于设备未接入。
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">OEE / runtime availability 口径</h3>
+            <p class="mt-1 text-xs text-muted-foreground">来源：IndustrialTelemetry OEE 与 runtime availability facade；详情页不重新计算 OEE。</p>
+          </div>
+          <div class="grid gap-3 p-4 text-sm">
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+              <span class="text-muted-foreground">统计窗口</span>
+              <span>{{ formatDateTime(oee?.windowStartUtc ?? oeeFilters.windowStartUtc) }} - {{ formatDateTime(oee?.windowEndUtc ?? oeeFilters.windowEndUtc) }}</span>
+            </div>
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+              <span class="text-muted-foreground">状态样本</span>
+              <span>{{ oee?.stateSampleCount ?? 0 }} 条</span>
+            </div>
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+              <span class="text-muted-foreground">性能因子</span>
+              <span>{{ oee?.performanceRateEstimated ? '未测量，仅占位' : formatOeeRate(oee?.performanceRate) }}</span>
+            </div>
+            <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+              <span class="text-muted-foreground">质量因子</span>
+              <span>{{ oee?.qualityRateEstimated ? '未测量，仅占位' : formatOeeRate(oee?.qualityRate) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid gap-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-foreground">维护与可靠性上下文</h2>
+          <p class="mt-1 text-sm text-muted-foreground">来源：Maintenance 工单、保养计划、点检、备件、可用窗口和可靠性 facade。列表读面按返回设备字段收敛当前设备；缺少设备字段时不伪造完成能力。</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/maintenance/work-orders', query: { deviceAssetId: filters.deviceAssetId } }">
+              <WrenchIcon aria-hidden="true" />
+              维护工单正式页面
+            </RouterLink>
+          </ButtonPro>
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/maintenance/plans', query: { deviceAssetId: filters.deviceAssetId } }">
+              <CalendarRangeIcon aria-hidden="true" />
+              保养计划正式页面
+            </RouterLink>
+          </ButtonPro>
+          <ButtonPro size="sm" type="button" variant="outline" as-child>
+            <RouterLink :to="{ path: '/maintenance/spare-parts', query: { deviceAssetId: filters.deviceAssetId } }">
+              <PackageSearchIcon aria-hidden="true" />
+              备件正式页面
+            </RouterLink>
+          </ButtonPro>
+        </div>
+      </div>
+
+      <p v-if="maintenanceErrorMessage" class="text-sm text-destructive" role="alert">{{ maintenanceErrorMessage }}</p>
+
+      <SectionCards :columns="4">
+        <SectionCard description="MTBF" :value="metricLabel(reliability?.mtbfHours, ' 小时')" :hint="reliability?.mtbfRuntimeHasSamples ? 'Maintenance reliability facade' : '当前窗口无运行样本'" />
+        <SectionCard description="MTTR" :value="metricLabel(reliability?.mttrMinutes, ' 分钟')" hint="Maintenance 完成维修样本均值" />
+        <SectionCard description="维护故障" :value="reliability?.failureCount ?? 0" hint="窗口内故障计数" />
+        <SectionCard description="完成维修" :value="reliability?.repairCount ?? 0" hint="窗口内修复计数" />
+      </SectionCards>
+
+      <div class="grid gap-4 xl:grid-cols-2">
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">维修工单</h3>
+          </div>
+          <div class="grid gap-3 p-4">
+            <div v-if="maintenancePending" class="text-sm text-muted-foreground">正在读取维护上下文。</div>
+            <div v-for="row in currentDeviceWorkOrders" :key="row.workOrderId" class="grid gap-1 rounded-lg border p-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-medium text-foreground">{{ workOrderLabel(row) }}</span>
+                <BadgePro class="rounded-sm" variant="neutral">{{ maintenanceStatusLabel(row.status) }}</BadgePro>
+              </div>
+              <p class="text-xs text-muted-foreground">开单时间 {{ formatDateTime(row.openedAtUtc) }}</p>
+              <p v-if="row.sourceAlarmId || row.relatedAlarmId" class="text-xs text-muted-foreground">关联报警 {{ row.sourceAlarmId ?? row.relatedAlarmId }}</p>
+            </div>
+            <div v-if="!maintenancePending && !currentDeviceWorkOrders.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              当前设备没有 Maintenance 工单读面返回的记录；如需开单请进入维护工单正式页面。
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">保养计划与点检</h3>
+          </div>
+          <div class="grid gap-3 p-4">
+            <div v-for="row in currentDevicePlans" :key="row.planId ?? row.planCode" class="grid gap-1 rounded-lg border p-3">
+              <span class="text-sm font-medium text-foreground">{{ row.planCode ?? row.planId ?? '保养计划' }}</span>
+              <span class="text-xs text-muted-foreground">周期 {{ intervalLabel(row.interval) }} · 起始 {{ row.startsOn ?? '未设置' }}</span>
+            </div>
+            <div v-for="row in currentDeviceInspections" :key="row.inspectionId" class="grid gap-1 rounded-lg border p-3">
+              <span class="text-sm font-medium text-foreground">{{ row.inspectionId ?? '点检记录' }}</span>
+              <span class="text-xs text-muted-foreground">结果 {{ row.result ?? '未记录' }} · {{ formatDateTime(row.inspectedAtUtc) }}</span>
+            </div>
+            <div v-if="!maintenancePending && !currentDevicePlans.length && !currentDeviceInspections.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              当前设备没有可关联的保养计划或点检记录；列表 facade 若未返回设备字段，不在详情页冒充已关联。
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">备件需求</h3>
+          </div>
+          <div class="grid gap-3 p-4">
+            <div v-for="row in currentDeviceSpareParts" :key="row.sparePartLineId ?? `${row.workOrderId}-${row.skuCode}`" class="grid gap-1 rounded-lg border p-3">
+              <span class="text-sm font-medium text-foreground">{{ row.skuCode ?? '备件物料' }}</span>
+              <span class="text-xs text-muted-foreground">数量 {{ quantityLabel(row) }} · 工单 {{ row.workOrderId ?? '未关联' }}</span>
+            </div>
+            <div v-if="!maintenancePending && !currentDeviceSpareParts.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              当前设备没有备件需求；库存可用量以库存管理正式页面为准。
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border bg-card">
+          <div class="border-b px-4 py-3">
+            <h3 class="text-sm font-semibold text-foreground">Maintenance 可用窗口</h3>
+            <p class="mt-1 text-xs text-muted-foreground">来源：Maintenance availability-windows facade，和上方设备运行可用性窗口分开展示。</p>
+          </div>
+          <div class="grid gap-3 p-4">
+            <div v-for="row in maintenanceAvailabilityWindows" :key="`${row.deviceAssetId}-${row.reasonCode}-${row.startUtc}`" class="grid gap-1 rounded-lg border p-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-medium text-foreground">{{ describeEquipmentReason(row.reasonCode ?? '').label }}</span>
+                <BadgePro class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{ availabilityLabel(row.availabilityStatus) }}</BadgePro>
+              </div>
+              <span class="text-xs text-muted-foreground">{{ formatDateTime(row.startUtc) }} - {{ formatDateTime(row.endUtc) }}</span>
+            </div>
+            <div v-if="!maintenancePending && !maintenanceAvailabilityWindows.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              当前设备没有 Maintenance 可用窗口。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
     </template>
   </BusinessLayout>
 </template>
