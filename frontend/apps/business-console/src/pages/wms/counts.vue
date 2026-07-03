@@ -4,6 +4,7 @@ import type {
   BusinessConsoleWmsCountExecutionItem,
 } from '@nerv-iip/api-client'
 import type { DataTableProColumn } from '@nerv-iip/ui'
+import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import { useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -92,6 +93,7 @@ const columns: DataTableProColumn<CountRow>[] = [
   { key: 'countNo', header: '盘点单号', cellClass: 'font-medium', accessor: (r) => r.countNo ?? countNo(r) },
   { key: 'location', header: '库位', accessor: (r) => `${r.siteCode ?? '—'} / ${r.locationCode ?? '—'}` },
   { key: 'skuCode', header: 'SKU', accessor: (r) => r.skuCode ?? '—' },
+  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   { key: 'expectedQuantity', header: '账面', align: 'end', accessor: (r) => formatQuantity(r.expectedQuantity) },
   { key: 'countedQuantity', header: '实盘', align: 'end', accessor: (r) => formatQuantity(r.countedQuantity) },
   { key: 'varianceQuantity', header: '差异', align: 'end' },
@@ -235,6 +237,19 @@ function formatError(error: unknown) {
     >
       <template #cell-varianceQuantity="{ row }">
         <span :class="hasVariance(row) ? 'font-medium text-warning' : 'text-muted-foreground'">{{ varianceLabel(row.varianceQuantity) }}</span>
+      </template>
+      <template #cell-inventoryContext="{ row }">
+        <WmsInventoryContextPanel
+          compact
+          :sku-code="row.skuCode"
+          :uom-code="row.uomCode"
+          :site-code="row.siteCode"
+          :location-code="row.locationCode"
+          source-workflow="inventory.count"
+          source-label="扫码记录"
+          :source-document-id="row.countNo ?? row.countExecutionId"
+          gap-message="后端缺口：盘点执行列表未返回冻结、预留和批次/序列号明细；可带盘点范围到 Inventory 查看账面上下文。"
+        />
       </template>
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">

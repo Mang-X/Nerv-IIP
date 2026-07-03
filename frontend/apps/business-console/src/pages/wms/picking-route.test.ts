@@ -13,6 +13,7 @@ const wmsState = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-router', () => ({
+  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="JSON.stringify(to)"><slot /></a>' },
   useRoute: () => routeState,
 }))
 
@@ -44,7 +45,20 @@ vi.mock('@/composables/useBusinessWms', () => ({
       createPickingError: shallowRef(undefined),
       createPickingPending: shallowRef(false),
       filters,
-      pickingTasks: computed(() => []),
+      pickingTasks: computed(() => [
+        {
+          fromLocationCode: 'A-01',
+          plannedQuantity: 5,
+          siteCode: 'S1',
+          skuCode: 'SKU-001',
+          sourceOrderNo: 'OB-001',
+          status: 'created',
+          taskNo: 'PICK-001',
+          toLocationCode: 'STAGE-01',
+          uomCode: 'EA',
+          warehouseTaskId: 'pick-1',
+        },
+      ]),
       pickingTasksError: shallowRef(undefined),
       pickingTasksPending: shallowRef(false),
       pickingTasksTotal: computed(() => 0),
@@ -56,7 +70,14 @@ vi.mock('@/composables/useBusinessWms', () => ({
 const uiStubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   ButtonPro: { template: '<button v-bind="$attrs"><slot /></button>' },
-  DataTablePro: { template: '<div data-ui-table />' },
+  DataTablePro: {
+    props: ['rows', 'columns'],
+    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
+      <td v-for="column in columns" :key="column.key" :data-cell="column.key">
+        <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
+      </td>
+    </tr></tbody></table>`,
+  },
   DialogPro: { template: '<div><slot /></div>' },
   DialogProClose: { template: '<div><slot /></div>' },
   DialogProContent: { template: '<div><slot /></div>' },
@@ -98,5 +119,20 @@ describe('WMS picking route context', () => {
       keyword: 'SKU-001',
       locationCode: 'A-01',
     }))
+  })
+
+  it('renders picking row inventory links without unsupported scan workflow links', () => {
+    const wrapper = mount(PickingPage, { global: { stubs: uiStubs } })
+
+    expect(wrapper.text()).toContain('库存上下文')
+    expect(wrapper.text()).toContain('SKU-001')
+    expect(wrapper.text()).toContain('A-01')
+    expect(wrapper.text()).toContain('OB-001')
+    expect(wrapper.text()).toContain('后端缺口')
+
+    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
+    expect(links.some((to) => to.includes('/inventory/availability') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
+    expect(links.some((to) => to.includes('/inventory/lots') && to.includes('SKU-001') && to.includes('A-01'))).toBe(true)
+    expect(links.some((to) => to.includes('/barcode/scans'))).toBe(false)
   })
 })
