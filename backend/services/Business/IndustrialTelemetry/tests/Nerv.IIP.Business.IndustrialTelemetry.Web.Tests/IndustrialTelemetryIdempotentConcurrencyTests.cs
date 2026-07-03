@@ -153,6 +153,47 @@ public sealed class IndustrialTelemetryIdempotentConcurrencyTests
     }
 
     [Fact]
+    public async Task Direct_alarm_same_tag_external_id_with_different_alarm_code_returns_known_conflict()
+    {
+        await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();
+        await using var context = database.CreateContext();
+        var existingCommand = new RaiseAlarmCommand(
+            "org-001",
+            "env-dev",
+            "DEV-RACE-05",
+            "TEMP_HIGH",
+            "critical",
+            new DateTimeOffset(2026, 6, 1, 12, 30, 0, TimeSpan.Zero),
+            "race-alarm-tag-001",
+            "p1",
+            "temperature",
+            96.5m,
+            90m,
+            "celsius");
+        var conflictingCommand = existingCommand with
+        {
+            AlarmCode = "TEMP_CRITICAL"
+        };
+        var handler = new RaiseAlarmCommandHandler(context);
+        var behavior = new IndustrialTelemetryIdempotentIngestionBehavior<RaiseAlarmCommand, AlarmEventId>(context);
+
+        await handler.Handle(existingCommand, CancellationToken.None);
+        await context.SaveChangesAsync();
+        var exception = await Assert.ThrowsAsync<KnownException>(() => behavior.Handle(
+            conflictingCommand,
+            async ct =>
+            {
+                var alarmId = await handler.Handle(conflictingCommand, ct);
+                await context.SaveChangesAsync(ct);
+                return alarmId;
+            },
+            CancellationToken.None));
+
+        Assert.Contains("conflicting payload", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, await context.AlarmEvents.CountAsync());
+    }
+
+    [Fact]
     public async Task Duplicate_sample_save_conflict_with_different_payload_still_raises_known_conflict_after_retry()
     {
         await using var database = await IndustrialTelemetrySqliteDatabase.CreateAsync();

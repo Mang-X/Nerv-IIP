@@ -677,24 +677,46 @@ public sealed class RaiseAlarmCommandHandler(ApplicationDbContext dbContext)
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.AlarmCode == request.AlarmCode
-                && x.ExternalAlarmId == request.ExternalAlarmId,
+                && x.ExternalAlarmId == request.ExternalAlarmId
+                && x.Status == "raised",
             cancellationToken);
         if (existing is not null)
         {
-            try
-            {
-                existing.EnsureCompatibleDuplicate(incoming);
-            }
-            catch (InvalidOperationException ex)
-            {
-                throw new KnownException(ex.Message);
-            }
+            return EnsureCompatibleDuplicate(existing, incoming);
+        }
 
-            return existing.Id;
+        if (!string.IsNullOrWhiteSpace(incoming.TagKey))
+        {
+            existing = await dbContext.AlarmEvents.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DeviceAssetId == request.DeviceAssetId
+                    && x.TagKey == incoming.TagKey
+                    && x.ExternalAlarmId == request.ExternalAlarmId
+                    && x.Status == "raised",
+                cancellationToken);
+            if (existing is not null)
+            {
+                return EnsureCompatibleDuplicate(existing, incoming);
+            }
         }
 
         dbContext.AlarmEvents.Add(incoming);
         return incoming.Id;
+    }
+
+    private static AlarmEventId EnsureCompatibleDuplicate(AlarmEvent existing, AlarmEvent incoming)
+    {
+        try
+        {
+            existing.EnsureCompatibleDuplicate(incoming);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+
+        return existing.Id;
     }
 }
 
