@@ -17,8 +17,6 @@ export interface QualityAnalysisSummary {
   sampleNotice: string
   defectPareto: QualityAnalysisBucket[]
   bySku: QualityAnalysisBucket[]
-  byWorkCenter: QualityAnalysisBucket[]
-  byDevice: QualityAnalysisBucket[]
   bySourceType: QualityAnalysisBucket[]
 }
 
@@ -58,19 +56,34 @@ export function buildQualityAnalysisSummary(
     closedNcrCount: countByStatus(ncrs, 'closed'),
     totalDefectQuantity,
     sampleNotice: buildSampleNotice(sampledNcrCount, totalNcrCount),
-    defectPareto: summarizeBy(ncrs, (item) => item.defectReason),
+    defectPareto: summarizeBy(ncrs, (item) => item.defectReason, {
+      shareMetric: 'defectQuantity',
+      sortMetric: 'defectQuantity',
+      unknownLast: false,
+    }),
     bySku: summarizeBy(ncrs, (item) => item.skuCode),
-    byWorkCenter: summarizeBy(ncrs, (item) => item.workCenterId),
-    byDevice: summarizeBy(ncrs, (item) => item.deviceAssetId),
     bySourceType: summarizeBy(ncrs, (item) => item.sourceType),
   }
+}
+
+type BucketMetric = 'count' | 'defectQuantity'
+
+interface SummarizeByOptions {
+  shareMetric?: BucketMetric
+  sortMetric?: BucketMetric
+  unknownLast?: boolean
 }
 
 function summarizeBy(
   ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
   getLabel: (item: BusinessConsoleQualityItem) => string | null | undefined,
+  options: SummarizeByOptions = {},
 ): QualityAnalysisBucket[] {
   const buckets = new Map<string, { count: number, defectQuantity: number }>()
+  const shareMetric = options.shareMetric ?? 'count'
+  const sortMetric = options.sortMetric ?? 'count'
+  const fallbackSortMetric: BucketMetric = sortMetric === 'count' ? 'defectQuantity' : 'count'
+  const unknownOrder = options.unknownLast ?? true
 
   for (const item of ncrs) {
     const label = displayLabel(getLabel(item))
@@ -80,17 +93,19 @@ function summarizeBy(
     buckets.set(label, bucket)
   }
 
+  const shareDenominator = [...buckets.values()].reduce((total, bucket) => total + bucket[shareMetric], 0)
+
   return [...buckets.entries()]
     .map(([label, bucket]) => ({
       label,
       count: bucket.count,
       defectQuantity: bucket.defectQuantity,
-      sharePercent: ncrs.length ? Math.round((bucket.count / ncrs.length) * 100) : 0,
+      sharePercent: shareDenominator ? Math.round((bucket[shareMetric] / shareDenominator) * 100) : 0,
     }))
     .sort((left, right) =>
-      unknownRank(left.label) - unknownRank(right.label) ||
-      right.count - left.count ||
-      right.defectQuantity - left.defectQuantity ||
+      (unknownOrder ? unknownRank(left.label) - unknownRank(right.label) : 0) ||
+      right[sortMetric] - left[sortMetric] ||
+      right[fallbackSortMetric] - left[fallbackSortMetric] ||
       left.label.localeCompare(right.label, 'zh-Hans-CN'),
     )
 }

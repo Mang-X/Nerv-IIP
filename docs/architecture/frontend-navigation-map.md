@@ -259,7 +259,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 库存管理 | `/inventory/counts` | 已落地（FE-9 金标准） | 库存盘点按 FE-4 原型重做（PageHeader + 任务队列 DataTable + RowActions[确认差异] + 创建任务/确认差异双 Dialog）；上下文穿透：从可用量行带入 SKU/库位/批次预填。 |
 | 质量管理 | `/quality/inspections` | 已落地（FE-9 金标准） | 检验方案列表（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）；创建检验记录改 Dialog（动态检验特性）；上下文穿透：从工单/工序/收货带入来源单据/批次/序列号并自动开抽屉，含返回工单链接。 |
 | 质量管理 | `/quality/ncrs` | 已落地（FE-9 金标准） | NCR 列表按 FE-4 原型重做（DataTable + 服务端分页 + RowActions）；处置/关闭走 Sheet + AlertDialog；上下文穿透：从工单带入时关闭动作默认填返工工单，含返回工单链接。 |
-| 质量管理 | `/quality/analysis` | 已落地（MAN-353/#644，窗口分析） | 消费 BusinessGateway NCR 列表返回窗口，展示真实缺陷 Pareto、物料/工位/设备/来源维度摘要和 Quality 分析/CAPA 能力对照；明确不宣称全量趋势。全量质量趋势聚合和 CAPA 列表/详情/状态 facade 缺口已登记 #677。 |
+| 质量管理 | `/quality/analysis` | 已落地（MAN-353/#644，窗口分析） | 消费 BusinessGateway NCR 列表返回窗口，展示真实缺陷 Pareto、物料/来源维度摘要和 Quality 分析/CAPA 能力对照；明确不宣称全量趋势。工位/设备/班次聚合、全量质量趋势聚合和 CAPA 列表/详情/状态 facade 缺口已登记 #677。 |
 | 制造执行 | `/mes` | 已落地（FE-8 金标准） | 生产驾驶舱：按 FE-4 原型重做（PageHeader + 指挥导航卡 + SectionCards + 现场阻塞 DataTable + 角色工作台/下一步建议）；token 色替换 raw palette。 |
 | 制造执行 | `/mes/plans` | 已落地（FE-7 金标准） | 按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[来源/就绪筛选] + DataTable + 转工单 Dialog）；展示来源计划（sourceSystem/sourceDocumentId，#272 durable link 已随 #290 落地）并打通计划→工单转换（含阻塞原因提示）。前端已消费 source 字段，不再受限。 |
 | 制造执行 | `/mes/work-orders`、`/mes/work-orders/:workOrderId` | 已落地（FE-8 金标准） | 列表按 FE-4 原型重做（PageHeader + 来源条 + 派工分组卡 + SectionCards + Toolbar[状态/工作中心] + DataTable + **服务端分页**(#317 提供 total/skip)）；急单与生产报工改 Dialog（报工对象只读、上下文带入）；详情页改 PageHeader + SectionCards + 工序/用料 DataTable。详情不是常驻菜单项。 |

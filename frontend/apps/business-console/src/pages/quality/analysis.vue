@@ -36,17 +36,17 @@ const {
   ncrsPending,
   ncrsTotal,
   refreshNcrs,
-} = useQualityNcrs({ take: 100 })
+} = useQualityNcrs()
 
 const summary = computed(() => buildQualityAnalysisSummary(ncrs.value, ncrsTotal.value))
 const listErrorMessage = computed(() => formatError(ncrsError.value))
-const trendGapText = '后台尚未提供按时间、物料、工位、设备和班次的全量聚合趋势；本页只展示 NCR 返回窗口内的真实派生摘要。'
+const trendGapText = '后台尚未提供按时间、工位、设备和班次的全量聚合趋势；本页只展示 NCR 返回窗口内已返回字段的真实派生摘要。'
 
 const paretoColumns: DataTableProColumn<QualityAnalysisBucket>[] = [
   { key: 'label', header: '缺陷原因', cellClass: 'font-medium' },
   { key: 'count', header: 'NCR 数', align: 'end', width: 'w-24' },
   { key: 'defectQuantity', header: '缺陷数量', align: 'end', width: 'w-28' },
-  { key: 'sharePercent', header: '占比', align: 'end', width: 'w-24' },
+  { key: 'sharePercent', header: '缺陷占比', align: 'end', width: 'w-24' },
 ]
 const dimensionColumns: DataTableProColumn<QualityAnalysisBucket>[] = [
   { key: 'label', header: '对象', cellClass: 'font-medium' },
@@ -134,42 +134,16 @@ function statusTone(value: string) {
 
         <DataTablePro
           :columns="dimensionColumns"
-          :rows="summary.byWorkCenter"
+          :rows="summary.bySourceType"
           row-key="label"
           :loading="ncrsPending"
           :searchable="false"
           :column-settings="false"
-          empty-message="当前返回窗口没有工位维度。"
+          empty-message="当前返回窗口没有来源维度。"
         >
           <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
         </DataTablePro>
       </div>
-    </div>
-
-    <div class="grid gap-4 xl:grid-cols-2">
-      <DataTablePro
-        :columns="dimensionColumns"
-        :rows="summary.byDevice"
-        row-key="label"
-        :loading="ncrsPending"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="当前返回窗口没有设备维度。"
-      >
-        <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
-      </DataTablePro>
-
-      <DataTablePro
-        :columns="dimensionColumns"
-        :rows="summary.bySourceType"
-        row-key="label"
-        :loading="ncrsPending"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="当前返回窗口没有来源维度。"
-      >
-        <template #cell-defectQuantity="{ row }">{{ formatQuantity(row.defectQuantity) }}</template>
-      </DataTablePro>
     </div>
 
     <div class="grid gap-3">

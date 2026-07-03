@@ -14,8 +14,6 @@ describe('business quality analysis summary', () => {
           code: 'NCR-001',
           status: 'open',
           skuCode: 'SKU-A',
-          workCenterId: 'WC-10',
-          deviceAssetId: 'DEV-01',
           sourceType: 'operation',
           defectReason: '尺寸超差',
           defectQuantity: 2,
@@ -25,8 +23,6 @@ describe('business quality analysis summary', () => {
           code: 'NCR-002',
           status: 'closed',
           skuCode: 'SKU-A',
-          workCenterId: 'WC-10',
-          deviceAssetId: 'DEV-02',
           sourceType: 'operation',
           defectReason: '尺寸超差',
           defectQuantity: 3,
@@ -36,7 +32,6 @@ describe('business quality analysis summary', () => {
           code: 'NCR-003',
           status: 'dispositioned',
           skuCode: 'SKU-B',
-          workCenterId: 'WC-20',
           sourceType: 'receiving',
           defectReason: '外观划伤',
           defectQuantity: 1,
@@ -67,15 +62,13 @@ describe('business quality analysis summary', () => {
         sharePercent: 50,
       },
       {
-        label: '外观划伤',
+        label: '未填',
         count: 1,
-        defectQuantity: 1,
-        sharePercent: 25,
+        defectQuantity: 4,
+        sharePercent: 40,
       },
     ])
     expect(summary.bySku[0]).toMatchObject({ label: 'SKU-A', count: 2, defectQuantity: 5 })
-    expect(summary.byWorkCenter[0]).toMatchObject({ label: 'WC-10', count: 2, defectQuantity: 5 })
-    expect(summary.byDevice).toContainEqual(expect.objectContaining({ label: 'DEV-01', count: 1, defectQuantity: 2 }))
     expect(summary.bySourceType[0]).toMatchObject({ label: 'operation', count: 2, defectQuantity: 5 })
   })
 
