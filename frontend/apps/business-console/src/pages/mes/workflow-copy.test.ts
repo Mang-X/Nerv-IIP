@@ -367,7 +367,8 @@ describe('MES workflow copy', () => {
 
     expect(wrapper.text()).toContain('正式排产输出')
     expect(wrapper.text()).not.toContain('排程结果')
-    expect(schedulingLink?.text()).toContain('排产工作台')
+    expect(schedulingLink).toBeDefined()
+    expect(schedulingLink!.text()).toContain('排产工作台')
   })
 
   it('keeps operation tasks focused on supported row actions', () => {

@@ -102,6 +102,7 @@ const stubs = {
   SelectProTrigger: {
     template: '<button><slot /></button>',
   },
+  // SelectProValue resolves to the underlying reka SelectValue component name in VTU.
   SelectValue: {
     template: '<span />',
   },
@@ -126,6 +127,7 @@ describe('MES rule scheduling page IA copy', () => {
       .findAll('[data-router-link]')
       .find((link) => link.attributes('data-to') === '/scheduling')
 
-    expect(schedulingLink?.text()).toContain('排产工作台')
+    expect(schedulingLink).toBeDefined()
+    expect(schedulingLink!.text()).toContain('排产工作台')
   })
 })
