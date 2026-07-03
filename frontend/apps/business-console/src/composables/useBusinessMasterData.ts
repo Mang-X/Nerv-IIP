@@ -49,6 +49,7 @@ import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
+  refetchWithBusinessContext,
   withBusinessContextEnabled,
   type BusinessContextFields,
 } from './businessContextBinding'
@@ -196,7 +197,7 @@ export function useBusinessSkus() {
     createSkuError: createSkuMutation.error,
     createSkuPending: createSkuMutation.isLoading,
     filters,
-    refreshSkus: skusQuery.refetch,
+    refreshSkus: () => refetchWithBusinessContext(filters, skusQuery),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
@@ -241,7 +242,7 @@ export function useBusinessPartners() {
     createPartnerError: createPartnerMutation.error,
     createPartnerPending: createPartnerMutation.isLoading,
     filters,
-    refreshPartners: partnersQuery.refetch,
+    refreshPartners: () => refetchWithBusinessContext(filters, partnersQuery),
     partners: computed<BusinessConsoleResourceItem[]>(() => resourceItems(partnersQuery.data.value)),
     partnersError: partnersQuery.error,
     partnersPending: partnersQuery.isLoading,
@@ -286,7 +287,7 @@ export function useBusinessUoms() {
     createUomError: createUomMutation.error,
     createUomPending: createUomMutation.isLoading,
     filters,
-    refreshUoms: uomsQuery.refetch,
+    refreshUoms: () => refetchWithBusinessContext(filters, uomsQuery),
     uoms: computed<BusinessConsoleResourceItem[]>(() => resourceItems(uomsQuery.data.value)),
     uomsError: uomsQuery.error,
     uomsPending: uomsQuery.isLoading,
@@ -331,7 +332,7 @@ export function useBusinessWorkshops() {
     createWorkshopError: createWorkshopMutation.error,
     createWorkshopPending: createWorkshopMutation.isLoading,
     filters,
-    refreshWorkshops: workshopsQuery.refetch,
+    refreshWorkshops: () => refetchWithBusinessContext(filters, workshopsQuery),
     workshops: computed<BusinessConsoleResourceItem[]>(() => resourceItems(workshopsQuery.data.value)),
     workshopsError: workshopsQuery.error,
     workshopsPending: workshopsQuery.isLoading,
@@ -376,7 +377,7 @@ export function useReferenceDataCodes() {
     createCodeError: createCodeMutation.error,
     createCodePending: createCodeMutation.isLoading,
     filters,
-    refreshCodes: codesQuery.refetch,
+    refreshCodes: () => refetchWithBusinessContext(filters, codesQuery),
     codes: computed<BusinessConsoleResourceItem[]>(() => resourceItems(codesQuery.data.value)),
     codesError: codesQuery.error,
     codesPending: codesQuery.isLoading,
@@ -403,7 +404,7 @@ export function useBusinessMasterDataResources(resourceType: string, options: { 
 
   return {
     filters,
-    refreshResources: resourcesQuery.refetch,
+    refreshResources: () => refetchWithBusinessContext(filters, resourcesQuery),
     resources: computed<BusinessConsoleResourceItem[]>(() =>
       resourceItems(resourcesQuery.data.value),
     ),
@@ -445,7 +446,10 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
     groupsTotal: computed(() =>
       queries.reduce((total, query) => total + resourceTotal(query.data.value), 0),
     ),
-    refreshGroups: () => Promise.all(queries.map((query) => query.refetch())),
+    refreshGroups: () =>
+      hasBusinessContext(filters)
+        ? Promise.all(queries.map((query) => query.refetch()))
+        : Promise.resolve([]),
   }
 }
 
@@ -510,7 +514,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     total: computed(() => resourceTotal(listQuery.data.value)),
     error: listQuery.error,
     pending: listQuery.isLoading,
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
     create: (body: TBody) =>
       (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({
         body: withCreateIdempotency(resourceType, body),
@@ -611,7 +615,7 @@ export function useBusinessWorkers() {
 
   return {
     filters,
-    refresh: workersQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, workersQuery),
     workers: computed<BusinessConsoleWorkerDirectoryItem[]>(() => workerItems(workersQuery.data.value)),
     workersError: workersQuery.error,
     workersPending: workersQuery.isLoading,
@@ -665,7 +669,8 @@ export function useTeamMembers(teamCode: MaybeRefOrGetter<string | undefined>) {
     members: computed<BusinessConsoleTeamMemberItem[]>(() => teamMemberItems(membersQuery.data.value)),
     membersError: membersQuery.error,
     membersPending: membersQuery.isLoading,
-    refresh: membersQuery.refetch,
+    refresh: () =>
+      Boolean(toValue(teamCode)) && hasBusinessContext(ctx) ? membersQuery.refetch() : Promise.resolve(),
     addMember: (input: TeamMemberAddInput) =>
       (addMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({
         path: { teamCode: toValue(teamCode) ?? '' },
@@ -774,7 +779,7 @@ export function usePersonnelSkillMatrix() {
 
   return {
     filters,
-    refresh: matrixQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, matrixQuery),
     skillCodes: computed<string[]>(() => skillMatrixData(matrixQuery.data.value).skillCodes),
     rows: computed<BusinessConsolePersonnelSkillMatrixRow[]>(() => skillMatrixData(matrixQuery.data.value).rows),
     matrixError: matrixQuery.error,
@@ -822,7 +827,7 @@ export function useUomConversions() {
     createUomConversionError: createConversionMutation.error,
     createUomConversionPending: createConversionMutation.isLoading,
     filters,
-    refreshConversions: conversionsQuery.refetch,
+    refreshConversions: () => refetchWithBusinessContext(filters, conversionsQuery),
     conversions: computed<BusinessConsoleResourceItem[]>(() => resourceItems(conversionsQuery.data.value)),
     conversionsError: conversionsQuery.error,
     conversionsPending: conversionsQuery.isLoading,

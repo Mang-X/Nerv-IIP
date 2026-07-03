@@ -81,6 +81,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, ref, shallowRef } from 'vue'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 /** MBOM / 工艺路线选择器只取后端真枚举 `Published`（不是 `Released`）。 */
@@ -345,17 +346,17 @@ export function useBomAnalysis() {
 export function useEngineeringProductionVersions() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<ProductionVersionListFilters>({
+  const filters = bindBusinessContext(reactive<ProductionVersionListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringProductionVersionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringProductionVersionsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -364,7 +365,7 @@ export function useEngineeringProductionVersions() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -396,7 +397,7 @@ export function useEngineeringProductionVersions() {
     productionVersionsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createProductionVersion: (body: BusinessConsoleCreateProductionVersionRequest) =>
       createMutation.mutateAsync({ body }),
@@ -477,14 +478,14 @@ export function useProductionVersionResolve() {
  */
 export function usePublishedMboms() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -493,7 +494,7 @@ export function usePublishedMboms() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -503,7 +504,7 @@ export function usePublishedMboms() {
     ),
     mbomsError: query.error,
     mbomsPending: query.isLoading,
-    refreshMboms: query.refetch,
+    refreshMboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -512,14 +513,14 @@ export function usePublishedMboms() {
  */
 export function usePublishedRoutings() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringRoutingsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringRoutingsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -528,7 +529,7 @@ export function usePublishedRoutings() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -538,7 +539,7 @@ export function usePublishedRoutings() {
     ),
     routingsError: query.error,
     routingsPending: query.isLoading,
-    refreshRoutings: query.refetch,
+    refreshRoutings: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -550,17 +551,17 @@ export function usePublishedRoutings() {
 export function useEngineeringEboms() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringBomListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringBomListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     parentItemCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -569,7 +570,7 @@ export function useEngineeringEboms() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -593,7 +594,7 @@ export function useEngineeringEboms() {
     ebomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseEbom: (body: BusinessConsoleReleaseEngineeringBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -619,14 +620,14 @@ export function useEngineeringEboms() {
  */
 export function usePublishedEboms() {
   const context = useBusinessContextStore()
-  const filters = reactive({
+  const filters = bindBusinessContext(reactive({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     parentItemCode: undefined as string | undefined,
-  })
+  }))
 
   const query = useQuery(() =>
-    listBusinessConsoleEngineeringBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -635,7 +636,7 @@ export function usePublishedEboms() {
         skip: 0,
         take: DEFAULT_TAKE,
       },
-    }),
+    }), filters),
   )
 
   return {
@@ -645,7 +646,7 @@ export function usePublishedEboms() {
     ),
     ebomsError: query.error,
     ebomsPending: query.isLoading,
-    refreshEboms: query.refetch,
+    refreshEboms: () => refetchWithBusinessContext(filters, query),
   }
 }
 
@@ -657,17 +658,17 @@ export function usePublishedEboms() {
 export function useEngineeringMboms() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<ManufacturingBomListFilters>({
+  const filters = bindBusinessContext(reactive<ManufacturingBomListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -676,7 +677,7 @@ export function useEngineeringMboms() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -700,7 +701,7 @@ export function useEngineeringMboms() {
     mbomsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseMbom: (body: BusinessConsoleReleaseManufacturingBomRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -727,17 +728,17 @@ export function useEngineeringMboms() {
 export function useEngineeringRoutings() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<RoutingListFilters>({
+  const filters = bindBusinessContext(reactive<RoutingListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     skuCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringRoutingsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringRoutingsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -746,7 +747,7 @@ export function useEngineeringRoutings() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -770,7 +771,7 @@ export function useEngineeringRoutings() {
     routingsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleRoutingListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseRouting: (body: BusinessConsoleReleaseRoutingRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -801,17 +802,17 @@ export function useEngineeringRoutings() {
 export function useEngineeringItems() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringItemListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringItemListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     itemCode: undefined,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringItemsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringItemsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -820,7 +821,7 @@ export function useEngineeringItems() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -844,7 +845,7 @@ export function useEngineeringItems() {
     itemsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringItemListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     createItemRevision: (body: BusinessConsoleCreateEngineeringItemRevisionRequest) =>
       (createRevisionMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -873,17 +874,17 @@ export function useEngineeringItems() {
 export function useEngineeringDocuments() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringDocumentListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringDocumentListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     itemCode: undefined,
     documentType: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringDocumentsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringDocumentsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -892,7 +893,7 @@ export function useEngineeringDocuments() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -916,7 +917,7 @@ export function useEngineeringDocuments() {
     documentsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringDocumentListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     registerDocument: (body: BusinessConsoleRegisterEngineeringDocumentRequest) =>
       (registerMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -946,16 +947,16 @@ export function useEngineeringDocuments() {
 export function useEngineeringChanges() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<EngineeringChangeListFilters>({
+  const filters = bindBusinessContext(reactive<EngineeringChangeListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     status: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringChangesQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringChangesQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -963,7 +964,7 @@ export function useEngineeringChanges() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -991,7 +992,7 @@ export function useEngineeringChanges() {
     changesTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleEngineeringChangeListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     releaseChange: (body: BusinessConsoleReleaseEngineeringChangeRequest) =>
       (releaseMutation.mutateAsync as unknown as (vars: unknown) => Promise<unknown>)({ body }),
@@ -1047,17 +1048,17 @@ export interface StandardOperationListFilters {
 export function useStandardOperations() {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
-  const filters = reactive<StandardOperationListFilters>({
+  const filters = bindBusinessContext(reactive<StandardOperationListFilters>({
     organizationId: context.organizationId,
     environmentId: context.environmentId,
     enabled: undefined,
     search: undefined,
     skip: 0,
     take: DEFAULT_TAKE,
-  })
+  }))
 
   const listQuery = useQuery(() =>
-    listBusinessConsoleEngineeringStandardOperationsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleEngineeringStandardOperationsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
@@ -1066,7 +1067,7 @@ export function useStandardOperations() {
         skip: filters.skip,
         take: filters.take,
       },
-    }),
+    }), filters),
   )
 
   function invalidateList() {
@@ -1098,7 +1099,7 @@ export function useStandardOperations() {
     standardOperationsTotal: computed(() =>
       unwrapTotal(listQuery.data.value as BusinessConsoleStandardOperationListEnvelope | undefined),
     ),
-    refresh: listQuery.refetch,
+    refresh: () => refetchWithBusinessContext(filters, listQuery),
 
     // 创建 body 含 org/env + 用户自定义 operationCode（页面提供）。
     createStandardOperation: (body: BusinessConsoleCreateStandardOperationRequest) =>

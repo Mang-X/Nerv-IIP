@@ -44,6 +44,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
 
@@ -99,17 +100,18 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
 ) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
-  const query = useQuery(() =>
+  const query = useQuery(() => ({
     // 各单据 query options 仅 data 泛型不同，统一经工厂收敛，故此处收窄类型。
-    buildOptions({
+    ...(buildOptions({
       organizationId: businessContext.organizationId,
       environmentId: businessContext.environmentId,
       status: filters.status,
       keyword: filters.keyword,
       skip: filters.skip,
       take: filters.take,
-    }) as never,
-  )
+    }) as object),
+    enabled: hasBusinessContext(businessContext),
+  }) as never)
 
   return {
     filters,
@@ -119,7 +121,7 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
     total: computed(() => unwrapTotal(query.data.value as TEnvelope | undefined)),
     error: query.error,
     pending: query.isLoading,
-    refresh: query.refetch,
+    refresh: () => refetchWithBusinessContext(businessContext, query),
   }
 }
 
@@ -127,8 +129,8 @@ function useErpDocumentList<TItem, TEnvelope extends { success?: boolean, data?:
 export function useBusinessErp() {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters()
-  const purchaseOrdersQuery = useQuery(() =>
-    listBusinessConsoleErpPurchaseOrdersQueryOptions({
+  const purchaseOrdersQuery = useQuery(() => ({
+    ...listBusinessConsoleErpPurchaseOrdersQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -138,9 +140,10 @@ export function useBusinessErp() {
         take: filters.take,
       },
     }),
-  )
-  const purchaseRequisitionsQuery = useQuery(() =>
-    listBusinessConsoleErpPurchaseRequisitionsQueryOptions({
+    enabled: hasBusinessContext(businessContext),
+  }))
+  const purchaseRequisitionsQuery = useQuery(() => ({
+    ...listBusinessConsoleErpPurchaseRequisitionsQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -150,7 +153,8 @@ export function useBusinessErp() {
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   return {
     filters,
@@ -162,7 +166,7 @@ export function useBusinessErp() {
     ),
     purchaseRequisitionsError: purchaseRequisitionsQuery.error,
     purchaseRequisitionsPending: purchaseRequisitionsQuery.isLoading,
-    refreshPurchaseRequisitions: purchaseRequisitionsQuery.refetch,
+    refreshPurchaseRequisitions: () => refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery),
     purchaseOrders: computed<BusinessConsoleErpPurchaseOrderItem[]>(() =>
       unwrapItems(purchaseOrdersQuery.data.value as BusinessConsoleErpPurchaseOrderListEnvelope | undefined),
     ),
@@ -171,10 +175,10 @@ export function useBusinessErp() {
     ),
     purchaseOrdersError: purchaseOrdersQuery.error,
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
-    refreshPurchaseOrders: purchaseOrdersQuery.refetch,
+    refreshPurchaseOrders: () => refetchWithBusinessContext(businessContext, purchaseOrdersQuery),
     refreshProcurementDocuments: () => {
-      void purchaseRequisitionsQuery.refetch()
-      void purchaseOrdersQuery.refetch()
+      void refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery)
+      void refetchWithBusinessContext(businessContext, purchaseOrdersQuery)
     },
   }
 }
@@ -183,8 +187,8 @@ export function useBusinessErp() {
 export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
   const businessContext = useBusinessContextStore()
   const filters = defaultFilters(initialFilters)
-  const salesOrdersQuery = useQuery(() =>
-    listBusinessConsoleErpSalesOrdersQueryOptions({
+  const salesOrdersQuery = useQuery(() => ({
+    ...listBusinessConsoleErpSalesOrdersQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
@@ -194,12 +198,13 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   const createMutation = useMutation({
     ...createBusinessConsoleErpSalesOrderMutationOptions(),
     onSuccess() {
-      void salesOrdersQuery.refetch()
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
     },
   })
 
@@ -213,7 +218,7 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
     ),
     salesOrdersError: salesOrdersQuery.error,
     salesOrdersPending: salesOrdersQuery.isLoading,
-    refreshSalesOrders: salesOrdersQuery.refetch,
+    refreshSalesOrders: () => refetchWithBusinessContext(businessContext, salesOrdersQuery),
     createSalesOrder: (payload: { quotationNo: string, salesOrderNo?: string }) =>
       createMutation.mutateAsync({
         body: {
@@ -326,14 +331,15 @@ export function useErpDeliveryOrders(initialFilters: Partial<BusinessErpListFilt
 // 财务汇总（语义 KPI 来源）：应收/应付未结、成本候选、已过账凭证。
 export function useErpFinanceSummary() {
   const businessContext = useBusinessContextStore()
-  const summaryQuery = useQuery(() =>
-    getBusinessConsoleErpFinanceSummaryQueryOptions({
+  const summaryQuery = useQuery(() => ({
+    ...getBusinessConsoleErpFinanceSummaryQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   return {
     summary: computed<BusinessConsoleErpFinanceSummaryResponse | undefined>(() =>
@@ -341,7 +347,7 @@ export function useErpFinanceSummary() {
     ),
     summaryError: summaryQuery.error,
     summaryPending: summaryQuery.isLoading,
-    refreshSummary: summaryQuery.refetch,
+    refreshSummary: () => refetchWithBusinessContext(businessContext, summaryQuery),
   }
 }
 

@@ -20,6 +20,7 @@ import {
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -110,8 +111,8 @@ export function describeTelemetryOeeLimitations() {
 export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFilters> = {}) {
   const businessContext = useBusinessContextStore()
   const filters = defaultListFilters(initialFilters)
-  const tagsQuery = useQuery(() =>
-    listBusinessConsoleTelemetryTagsQueryOptions({
+  const tagsQuery = useQuery(() => ({
+    ...listBusinessConsoleTelemetryTagsQueryOptions({
       query: {
         ...toContextQuery(businessContext),
         deviceAssetId: trimOptional(filters.deviceAssetId),
@@ -119,11 +120,12 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
 
   return {
     filters,
-    refreshTags: tagsQuery.refetch,
+    refreshTags: () => refetchWithBusinessContext(businessContext, tagsQuery),
     tags: computed<BusinessConsoleTelemetryTagItem[]>(() =>
       listItems<BusinessConsoleTelemetryTagItem>(tagsQuery.data.value as BusinessConsoleTelemetryTagListEnvelope | undefined),
     ),
@@ -136,8 +138,8 @@ export function useBusinessTelemetryTags(initialFilters: Partial<TelemetryListFi
 export function useBusinessTelemetryAlarmRules(initialFilters: Partial<TelemetryListFilters> = {}) {
   const businessContext = useBusinessContextStore()
   const filters = defaultListFilters(initialFilters)
-  const alarmRulesQuery = useQuery(() =>
-    listBusinessConsoleTelemetryAlarmRulesQueryOptions({
+  const alarmRulesQuery = useQuery(() => ({
+    ...listBusinessConsoleTelemetryAlarmRulesQueryOptions({
       query: {
         ...toContextQuery(businessContext),
         deviceAssetId: trimOptional(filters.deviceAssetId),
@@ -146,11 +148,12 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
         take: filters.take,
       },
     }),
-  )
+    enabled: hasBusinessContext(businessContext),
+  }))
   const saveMutation = useMutation({
     ...createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions(),
     onSuccess() {
-      void alarmRulesQuery.refetch()
+      void refetchWithBusinessContext(businessContext, alarmRulesQuery)
     },
   })
 
@@ -166,7 +169,7 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
       listTotal(alarmRulesQuery.data.value as BusinessConsoleTelemetryAlarmRuleListEnvelope | undefined),
     ),
     filters,
-    refreshAlarmRules: alarmRulesQuery.refetch,
+    refreshAlarmRules: () => refetchWithBusinessContext(businessContext, alarmRulesQuery),
     saveAlarmRule: (input: SaveTelemetryAlarmRuleInput) =>
       saveMutation.mutateAsync({
         body: {
@@ -184,7 +187,7 @@ export function useBusinessTelemetryHistory(initialFilters: Partial<TelemetryWin
   const businessContext = useBusinessContextStore()
   const filters = defaultWindowFilters(initialFilters)
   const deviceAssetId = computed(() => filters.deviceAssetId.trim())
-  const historyEnabled = computed(() => deviceAssetId.value.length > 0)
+  const historyEnabled = computed(() => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0)
   const historyQuery = useQuery(() => ({
     ...queryBusinessConsoleTelemetryDeviceHistoryQueryOptions({
       path: { deviceAssetId: deviceAssetId.value },
@@ -222,7 +225,7 @@ export function useBusinessTelemetryOee(initialFilters: Partial<TelemetryWindowF
   const businessContext = useBusinessContextStore()
   const filters = defaultWindowFilters(initialFilters)
   const deviceAssetId = computed(() => filters.deviceAssetId.trim())
-  const oeeEnabled = computed(() => deviceAssetId.value.length > 0)
+  const oeeEnabled = computed(() => hasBusinessContext(businessContext) && deviceAssetId.value.length > 0)
   const oeeQuery = useQuery(() => ({
     ...queryBusinessConsoleTelemetryOeeQueryOptions({
       query: {

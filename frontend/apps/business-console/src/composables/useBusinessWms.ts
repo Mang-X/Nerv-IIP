@@ -35,6 +35,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, refetchWithBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -70,13 +71,13 @@ export interface WmsWarehouseTaskListFilters extends WmsListFilters {
 }
 
 function defaultFilters<T extends WmsListFilters>(initial: Partial<T> = {}): T {
-  return reactive({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
+  return bindBusinessContext(reactive({
+    organizationId: '',
+    environmentId: '',
     skip: 0,
     take: DEFAULT_TAKE,
     ...initial,
-  }) as T
+  }) as T)
 }
 
 function optionalQuery<TKey extends string, TValue>(key: TKey, value: TValue | undefined) {
@@ -120,7 +121,7 @@ function makeIdempotencyKey(): string {
 export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilters> = {}) {
   const filters = defaultFilters<WmsInboundListFilters>(initialFilters)
   const inboundOrdersQuery = useQuery(() =>
-    listBusinessConsoleWmsInboundOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsInboundOrdersQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('skuCode', filters.skuCode),
@@ -133,19 +134,19 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
         ...optionalQuery('ownerType', filters.ownerType),
         ...optionalQuery('ownerId', filters.ownerId),
       },
-    }),
+    }), filters),
   )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void inboundOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, inboundOrdersQuery)
     },
   })
   const createMutation = useMutation({
     ...createBusinessConsoleWmsInboundOrderMutationOptions(),
     onSuccess() {
-      void inboundOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, inboundOrdersQuery)
     },
   })
 
@@ -161,7 +162,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     inboundOrdersError: inboundOrdersQuery.error,
     inboundOrdersPending: inboundOrdersQuery.isLoading,
     inboundOrdersTotal: computed(() => listTotal(inboundOrdersQuery.data.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined)),
-    refreshInboundOrders: inboundOrdersQuery.refetch,
+    refreshInboundOrders: () => refetchWithBusinessContext(filters, inboundOrdersQuery),
     completeInbound: (inboundOrderId: string) =>
       completeMutation.mutateAsync({
         path: { inboundOrderId },
@@ -180,21 +181,21 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
 export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {}) {
   const filters = defaultFilters<WmsListFilters>(initialFilters)
   const outboundOrdersQuery = useQuery(() =>
-    listBusinessConsoleWmsOutboundOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsOutboundOrdersQueryOptions({
       query: baseQuery(filters),
-    }),
+    }), filters),
   )
 
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void outboundOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, outboundOrdersQuery)
     },
   })
   const createMutation = useMutation({
     ...createBusinessConsoleWmsOutboundOrderMutationOptions(),
     onSuccess() {
-      void outboundOrdersQuery.refetch()
+      void refetchWithBusinessContext(filters, outboundOrdersQuery)
     },
   })
 
@@ -206,7 +207,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
     outboundOrdersError: outboundOrdersQuery.error,
     outboundOrdersPending: outboundOrdersQuery.isLoading,
     outboundOrdersTotal: computed(() => listTotal(outboundOrdersQuery.data.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined)),
-    refreshOutboundOrders: outboundOrdersQuery.refetch,
+    refreshOutboundOrders: () => refetchWithBusinessContext(filters, outboundOrdersQuery),
     completeOutbound: (outboundOrderId: string, payload: { packReviewNo: string; passed: boolean }) =>
       completeMutation.mutateAsync({
         path: { outboundOrderId },
@@ -225,14 +226,14 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsListFilters> = {
 export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWcsTaskListFilters>(initialFilters)
   const wcsTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsWcsTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsWcsTasksQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('externalTaskId', filters.externalTaskId),
         ...optionalQuery('warehouseTaskId', filters.warehouseTaskId),
         ...optionalQuery('failed', filters.failed),
       },
-    }),
+    }), filters),
   )
 
   function withQuery() {
@@ -241,19 +242,19 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
   const dispatchMutation = useMutation({
     ...dispatchBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void wcsTasksQuery.refetch()
+      void refetchWithBusinessContext(filters, wcsTasksQuery)
     },
   })
   const failMutation = useMutation({
     ...failBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void wcsTasksQuery.refetch()
+      void refetchWithBusinessContext(filters, wcsTasksQuery)
     },
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsWcsTaskMutationOptions(),
     onSuccess() {
-      void wcsTasksQuery.refetch()
+      void refetchWithBusinessContext(filters, wcsTasksQuery)
     },
   })
 
@@ -265,7 +266,7 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
     wcsTasksError: wcsTasksQuery.error,
     wcsTasksPending: wcsTasksQuery.isLoading,
     wcsTasksTotal: computed(() => listTotal(wcsTasksQuery.data.value as BusinessConsoleWmsWcsTaskListEnvelope | undefined)),
-    refreshWcsTasks: wcsTasksQuery.refetch,
+    refreshWcsTasks: () => refetchWithBusinessContext(filters, wcsTasksQuery),
     dispatchWcs: (
       warehouseTaskId: string,
       payload: { adapterType: string; externalTaskId: string; payloadJson: string },
@@ -294,15 +295,15 @@ function warehouseTaskQuery(filters: WmsWarehouseTaskListFilters) {
 export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const putawayTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsPutawayTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsPutawayTasksQueryOptions({
       query: warehouseTaskQuery(filters),
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
     onSuccess() {
-      void putawayTasksQuery.refetch()
+      void refetchWithBusinessContext(filters, putawayTasksQuery)
     },
   })
 
@@ -314,7 +315,7 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
     putawayTasksError: putawayTasksQuery.error,
     putawayTasksPending: putawayTasksQuery.isLoading,
     putawayTasksTotal: computed(() => listTotal(putawayTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined)),
-    refreshPutawayTasks: putawayTasksQuery.refetch,
+    refreshPutawayTasks: () => refetchWithBusinessContext(filters, putawayTasksQuery),
     createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
       createMutation.mutateAsync({
         path: { inboundOrderId },
@@ -330,15 +331,15 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
 export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const pickingTasksQuery = useQuery(() =>
-    listBusinessConsoleWmsPickingTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsPickingTasksQueryOptions({
       query: warehouseTaskQuery(filters),
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPickingTaskMutationOptions(),
     onSuccess() {
-      void pickingTasksQuery.refetch()
+      void refetchWithBusinessContext(filters, pickingTasksQuery)
     },
   })
 
@@ -350,7 +351,7 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
     pickingTasksError: pickingTasksQuery.error,
     pickingTasksPending: pickingTasksQuery.isLoading,
     pickingTasksTotal: computed(() => listTotal(pickingTasksQuery.data.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined)),
-    refreshPickingTasks: pickingTasksQuery.refetch,
+    refreshPickingTasks: () => refetchWithBusinessContext(filters, pickingTasksQuery),
     createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
       createMutation.mutateAsync({
         path: { outboundOrderId },
@@ -366,24 +367,24 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
 export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskListFilters> = {}) {
   const filters = defaultFilters<WmsWarehouseTaskListFilters>(initialFilters)
   const countExecutionsQuery = useQuery(() =>
-    listBusinessConsoleWmsCountExecutionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleWmsCountExecutionsQueryOptions({
       query: {
         ...baseQuery(filters),
         ...optionalQuery('locationCode', filters.locationCode),
       },
-    }),
+    }), filters),
   )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsCountExecutionMutationOptions(),
     onSuccess() {
-      void countExecutionsQuery.refetch()
+      void refetchWithBusinessContext(filters, countExecutionsQuery)
     },
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleWmsCountExecutionMutationOptions(),
     onSuccess() {
-      void countExecutionsQuery.refetch()
+      void refetchWithBusinessContext(filters, countExecutionsQuery)
     },
   })
 
@@ -395,7 +396,7 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     countExecutionsError: countExecutionsQuery.error,
     countExecutionsPending: countExecutionsQuery.isLoading,
     countExecutionsTotal: computed(() => listTotal(countExecutionsQuery.data.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined)),
-    refreshCountExecutions: countExecutionsQuery.refetch,
+    refreshCountExecutions: () => refetchWithBusinessContext(filters, countExecutionsQuery),
     createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
       createMutation.mutateAsync({ body }),
     createCountExecutionPending: createMutation.isLoading,

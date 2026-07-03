@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 import {
   createBusinessConsoleMaintenanceSparePartMutationOptions,
@@ -9,6 +10,7 @@ import {
   queryBusinessConsoleMaintenanceAvailabilityWindowsQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
 } from '@nerv-iip/api-client'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   useMaintenanceAvailabilityWindows,
   useMaintenanceInspections,
@@ -19,7 +21,9 @@ import {
 const coladaState = vi.hoisted(() => ({
   mutationCallsById: new Map<string, unknown[]>(),
   queryDataById: new Map<string, unknown>(),
+  queryFactoriesById: new Map<string, () => { enabled?: boolean } & Record<string, unknown>>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -76,26 +80,35 @@ vi.mock('@pinia/colada', () => ({
     const options = optionsFactory()
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryFactoriesById.set(id, optionsFactory)
     coladaState.queryOptionsById.set(id, options)
+
+    const refetch = vi.fn()
+    coladaState.queryRefetchById.set(id, refetch)
 
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
 }))
 
 describe('business maintenance composables', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     coladaState.mutationCallsById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryFactoriesById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.queryRefetchById.clear()
   })
 
   it('loads inspection rows and records a real inspection through the facade', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('listBusinessConsoleMaintenanceInspections', {
       success: true,
       data: {
@@ -140,6 +153,8 @@ describe('business maintenance composables', () => {
   })
 
   it('loads spare part requests and creates a request without inventing inventory balance', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('listBusinessConsoleMaintenanceSpareParts', {
       success: true,
       data: {
@@ -184,6 +199,8 @@ describe('business maintenance composables', () => {
   })
 
   it('keeps reliability disabled until a device is selected', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     const reliability = useMaintenanceReliability()
 
     expect(queryBusinessConsoleMaintenanceAssetReliabilityQueryOptions).toHaveBeenCalledWith({
@@ -198,6 +215,8 @@ describe('business maintenance composables', () => {
   })
 
   it('loads availability windows only for an explicit device scope', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     coladaState.queryDataById.set('queryBusinessConsoleMaintenanceAvailabilityWindows', {
       success: true,
       data: {
@@ -217,5 +236,44 @@ describe('business maintenance composables', () => {
     expect(coladaState.queryOptionsById.get('queryBusinessConsoleMaintenanceAvailabilityWindows')?.enabled).toBe(true)
     expect('availability' in availability).toBe(false)
     expect(availability.availabilityWindows.value).toHaveLength(1)
+  })
+
+  it('disables maintenance list queries until business context is selected', () => {
+    useMaintenanceInspections()
+
+    expect(listBusinessConsoleMaintenanceInspectionsQueryOptions).toHaveBeenCalledWith({
+      query: expect.objectContaining({ organizationId: '', environmentId: '' }),
+    })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleMaintenanceInspections')?.enabled).toBe(false)
+  })
+
+  it('does not refetch maintenance lists when business context is empty', async () => {
+    const inspections = useMaintenanceInspections()
+    const refetch = coladaState.queryRefetchById.get('listBusinessConsoleMaintenanceInspections')
+
+    await inspections.refreshInspections()
+
+    expect(refetch).not.toHaveBeenCalled()
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-maint', environmentId: 'env-maint' })
+    await inspections.refreshInspections()
+
+    expect(refetch).toHaveBeenCalledOnce()
+  })
+
+  it('updates maintenance query scope when business context changes', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-maint-a', environmentId: 'env-maint-a' })
+    useMaintenanceSpareParts()
+
+    context.patchContext({ organizationId: 'org-maint-b', environmentId: 'env-maint-b' })
+    coladaState.queryFactoriesById.get('listBusinessConsoleMaintenanceSpareParts')?.()
+
+    expect(listBusinessConsoleMaintenanceSparePartsQueryOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({
+        organizationId: 'org-maint-b',
+        environmentId: 'env-maint-b',
+      }),
+    })
   })
 })

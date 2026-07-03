@@ -12,6 +12,7 @@ import { useBusinessErp } from './useBusinessErp'
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
   queryDataById: new Map<string, unknown>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -32,11 +33,14 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
+    const refetch = vi.fn()
+    coladaState.refetchById.set(id, refetch)
+
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(),
+      refetch,
     }
   }),
 }))
@@ -47,6 +51,7 @@ describe('business ERP composable', () => {
     vi.clearAllMocks()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.refetchById.clear()
   })
 
   it('loads procurement purchase orders through the generated gateway client', () => {
@@ -117,5 +122,16 @@ describe('business ERP composable', () => {
     expect(purchaseRequisitions.value).toHaveLength(1)
     expect(purchaseRequisitions.value[0]?.requisitionNo).toBe('PR-001')
     expect(purchaseRequisitionsTotal.value).toBe(7)
+  })
+
+  it('does not refresh procurement documents when business context is empty', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: '', environmentId: '' })
+    const erp = useBusinessErp()
+
+    await erp.refreshProcurementDocuments()
+
+    expect(coladaState.refetchById.get('listBusinessConsoleErpPurchaseOrders')).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsoleErpPurchaseRequisitions')).not.toHaveBeenCalled()
   })
 })

@@ -27,6 +27,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { bindBusinessContext, hasBusinessContext, withBusinessContextEnabled } from './businessContextBinding'
 
 export interface PlanningContextFilters {
   organizationId: string
@@ -89,32 +90,32 @@ const PLANNING_QUERY_IDS = [
 ]
 
 function defaultContextFilters(organizationId: string, environmentId: string): PlanningContextFilters {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
-  })
+  }))
 }
 
 function defaultSuggestionFilters(organizationId: string, environmentId: string): PlanningSuggestionFilters {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
     status: 'open',
-  })
+  }))
 }
 
 function defaultMpsFilters(organizationId: string, environmentId: string): PlanningMpsFilters {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
     skuCode: undefined,
     siteCode: undefined,
     status: undefined,
-  })
+  }))
 }
 
 function defaultDemandForm(organizationId: string, environmentId: string): PlanningDemandForm {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
     demandType: 'sales-order',
@@ -125,11 +126,11 @@ function defaultDemandForm(organizationId: string, environmentId: string): Plann
     quantity: 0,
     dueDate: new Date().toISOString().slice(0, 10),
     idempotencyKey: '',
-  })
+  }))
 }
 
 function defaultMpsForm(organizationId: string, environmentId: string): PlanningMpsForm {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
     skuCode: '',
@@ -137,16 +138,16 @@ function defaultMpsForm(organizationId: string, environmentId: string): Planning
     siteCode: '',
     bucketDate: new Date().toISOString().slice(0, 10),
     quantity: 0,
-  })
+  }))
 }
 
 function defaultRunRequest(organizationId: string, environmentId: string): BusinessConsoleRunMrpRequest {
-  return reactive({
+  return bindBusinessContext(reactive({
     organizationId,
     environmentId,
     horizonStart: new Date().toISOString().slice(0, 10),
     horizonEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-  })
+  }))
 }
 
 function defaultRunSelection(): PlanningRunSelection {
@@ -190,23 +191,23 @@ export function useBusinessPlanning() {
   const queryCache = useQueryCache()
 
   const demandsQuery = useQuery(() =>
-    listBusinessConsolePlanningDemandsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsolePlanningDemandsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
       },
-    }),
+    }), filters),
   )
   const runsQuery = useQuery(() =>
-    listBusinessConsolePlanningMrpRunsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsolePlanningMrpRunsQueryOptions({
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
       },
-    }),
+    }), filters),
   )
   const mpsBucketsQuery = useQuery(() =>
-    listBusinessConsolePlanningMpsBucketsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsolePlanningMpsBucketsQueryOptions({
       query: {
         organizationId: mpsFilters.organizationId,
         environmentId: mpsFilters.environmentId,
@@ -214,7 +215,7 @@ export function useBusinessPlanning() {
         siteCode: mpsFilters.siteCode?.trim() || undefined,
         status: mpsFilters.status?.trim() || undefined,
       },
-    }),
+    }), mpsFilters),
   )
   const peggingQuery = useQuery(() => ({
     ...getBusinessConsolePlanningMrpPeggingQueryOptions({
@@ -226,16 +227,16 @@ export function useBusinessPlanning() {
         environmentId: filters.environmentId,
       },
     }),
-    enabled: runSelection.runId.trim().length > 0,
+    enabled: hasBusinessContext(filters) && runSelection.runId.trim().length > 0,
   }))
   const suggestionsQuery = useQuery(() =>
-    listBusinessConsolePlanningSuggestionsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsolePlanningSuggestionsQueryOptions({
       query: {
         organizationId: suggestionFilters.organizationId,
         environmentId: suggestionFilters.environmentId,
         status: suggestionFilters.status,
       },
-    }),
+    }), suggestionFilters),
   )
 
   const invalidatePlanningQueries = () =>
@@ -383,6 +384,10 @@ export function useBusinessPlanning() {
     peggingError: peggingQuery.error,
     peggingPending: peggingQuery.isLoading,
     refreshPlanning: async () => {
+      if (!hasBusinessContext(filters)) {
+        return
+      }
+
       const queries: Array<Promise<unknown>> = [
         demandsQuery.refetch(),
         mpsBucketsQuery.refetch(),

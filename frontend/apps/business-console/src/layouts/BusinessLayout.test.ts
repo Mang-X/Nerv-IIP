@@ -159,6 +159,19 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(wrapper.getComponent(AppShellTStub).props('user')).toMatchObject({ name: '已登录用户' })
   })
 
+  it('shows a business context empty state when the principal has no org or environment', () => {
+    const pinia = createPinia()
+    const auth = useAuthStore(pinia)
+    auth.$patch({
+      principal: { principalType: 'user', loginName: 'operator' },
+    })
+
+    const wrapper = mountLayout(pinia)
+
+    expect(wrapper.text()).toContain('未选择业务上下文')
+    expect(wrapper.text()).toContain('重新登录')
+  })
+
   it('renders the home page as a business workbench instead of a route directory', () => {
     const pinia = createPinia()
     const auth = useAuthStore(pinia)

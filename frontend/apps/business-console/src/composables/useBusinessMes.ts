@@ -82,7 +82,13 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -352,9 +358,9 @@ export function useMesWorkOrders() {
   const queryCache = useQueryCache()
 
   const workOrdersQuery = useQuery(() =>
-    listBusinessConsoleMesWorkOrdersQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesWorkOrdersQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   const createRushMutation = useMutation({
@@ -403,7 +409,7 @@ export function useMesWorkOrders() {
       reportMutation.mutateAsync({ body }),
     recordProductionReportError: reportMutation.error,
     recordProductionReportPending: reportMutation.isLoading,
-    refreshWorkOrders: workOrdersQuery.refetch,
+    refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     releaseWorkOrder: (workOrderId: string, body: { organizationId: string; environmentId: string; confirmWarnings: boolean; idempotencyKey: string }) =>
       releaseMutation.mutateAsync({ path: { workOrderId }, query: { organizationId: body.organizationId, environmentId: body.environmentId }, body }),
     releaseWorkOrderError: releaseMutation.error,
@@ -422,9 +428,9 @@ export function useMesProductionPlans() {
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() =>
-    listBusinessConsoleMesProductionPlansQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesProductionPlansQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   const convertMutation = useMutation({
@@ -459,7 +465,7 @@ export function useMesProductionPlans() {
     productionPlansError: plansQuery.error,
     productionPlansPending: plansQuery.isLoading,
     productionPlansTotal: computed(() => envelopeTotal(plansQuery.data.value)),
-    refreshProductionPlans: plansQuery.refetch,
+    refreshProductionPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
 }
 
@@ -491,7 +497,7 @@ export function useMesProductionPlanReadiness(productionPlanId = '') {
     ),
     planReadinessError: readinessQuery.error,
     planReadinessPending: readinessQuery.isLoading,
-    refreshPlanReadiness: readinessQuery.refetch,
+    refreshPlanReadiness: () => readinessEnabled.value ? readinessQuery.refetch() : Promise.resolve(),
   }
 }
 
@@ -499,9 +505,9 @@ export function useMesFoundationReadiness() {
   const filters = defaultFoundationFilters()
 
   const readinessQuery = useQuery(() =>
-    getBusinessConsoleMesFoundationReadinessQueryOptions({
+    withBusinessContextEnabled(getBusinessConsoleMesFoundationReadinessQueryOptions({
       query: toFoundationQuery(filters),
-    }),
+    }), filters),
   )
 
   return {
@@ -514,7 +520,7 @@ export function useMesFoundationReadiness() {
     ),
     readinessError: readinessQuery.error,
     readinessPending: readinessQuery.isLoading,
-    refreshReadiness: readinessQuery.refetch,
+    refreshReadiness: () => refetchWithBusinessContext(filters, readinessQuery),
   }
 }
 
@@ -522,9 +528,9 @@ export function useMesOverview() {
   const filters = defaultContext()
 
   const overviewQuery = useQuery(() =>
-    getBusinessConsoleMesOverviewQueryOptions({
+    withBusinessContextEnabled(getBusinessConsoleMesOverviewQueryOptions({
       query: toContextQuery(filters),
-    }),
+    }), filters),
   )
 
   const overview = computed(() =>
@@ -542,7 +548,7 @@ export function useMesOverview() {
     overviewError: overviewQuery.error,
     overviewPending: overviewQuery.isLoading,
     pendingWork: computed(() => overview.value?.pendingWork ?? []),
-    refreshOverview: overviewQuery.refetch,
+    refreshOverview: () => refetchWithBusinessContext(filters, overviewQuery),
   }
 }
 
@@ -593,9 +599,9 @@ export function useMesOperationTasks() {
   const queryCache = useQueryCache()
 
   const operationTasksQuery = useQuery(() =>
-    listBusinessConsoleMesOperationTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesOperationTasksQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
   const startMutation = useMutation({
     ...startBusinessConsoleMesOperationTaskMutationOptions(),
@@ -640,7 +646,7 @@ export function useMesOperationTasks() {
     operationTasksTotal: computed(() => envelopeTotal(operationTasksQuery.data.value)),
     pauseOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
       pauseMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
-    refreshOperationTasks: operationTasksQuery.refetch,
+    refreshOperationTasks: () => refetchWithBusinessContext(filters, operationTasksQuery),
     resumeOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
       resumeMutation.mutateAsync(operationActionBody(operationTaskId, context, body)),
     startOperationTask: (operationTaskId: string, context: MesContextFilters, body: BusinessConsoleMesOperationTaskActionRequest) =>
@@ -653,9 +659,9 @@ export function useMesMaterialIssueRequests() {
   const queryCache = useQueryCache()
 
   const requestsQuery = useQuery(() =>
-    listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   const createRequestMutation = useMutation({
@@ -682,7 +688,7 @@ export function useMesMaterialIssueRequests() {
     materialIssueRequestsError: requestsQuery.error,
     materialIssueRequestsPending: requestsQuery.isLoading,
     materialIssueRequestsTotal: computed(() => envelopeTotal(requestsQuery.data.value)),
-    refreshMaterialIssueRequests: requestsQuery.refetch,
+    refreshMaterialIssueRequests: () => refetchWithBusinessContext(filters, requestsQuery),
   }
 }
 
@@ -690,9 +696,9 @@ export function useMesDispatchTasks() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const dispatchQuery = useQuery(() =>
-    listBusinessConsoleMesDispatchTasksQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesDispatchTasksQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
   const assignMutation = useMutation({
     ...assignBusinessConsoleMesDispatchTaskMutationOptions(),
@@ -716,7 +722,7 @@ export function useMesDispatchTasks() {
     dispatchTasksPending: dispatchQuery.isLoading,
     dispatchTasksTotal: computed(() => envelopeTotal(dispatchQuery.data.value)),
     filters,
-    refreshDispatchTasks: dispatchQuery.refetch,
+    refreshDispatchTasks: () => refetchWithBusinessContext(filters, dispatchQuery),
   }
 }
 
@@ -724,14 +730,14 @@ export function useMesWipSummary() {
   const filters = defaultFilters()
 
   const wipQuery = useQuery(() =>
-    getBusinessConsoleMesWipSummaryQueryOptions({
+    withBusinessContextEnabled(getBusinessConsoleMesWipSummaryQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   return {
     filters,
-    refreshWip: wipQuery.refetch,
+    refreshWip: () => refetchWithBusinessContext(filters, wipQuery),
     wipError: wipQuery.error,
     wipPending: wipQuery.isLoading,
     wipRows: computed<BusinessConsoleMesWipSummaryRow[]>(() =>
@@ -747,9 +753,9 @@ export function useMesProductionReports() {
   const filters = defaultFilters()
 
   const reportsQuery = useQuery(() =>
-    listBusinessConsoleMesProductionReportsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesProductionReportsQueryOptions({
       query: toListQueryWithoutStatus(filters),
-    }),
+    }), filters),
   )
 
   return {
@@ -763,7 +769,7 @@ export function useMesProductionReports() {
     productionReportsError: reportsQuery.error,
     productionReportsPending: reportsQuery.isLoading,
     productionReportsTotal: computed(() => envelopeTotal(reportsQuery.data.value)),
-    refreshProductionReports: reportsQuery.refetch,
+    refreshProductionReports: () => refetchWithBusinessContext(filters, reportsQuery),
   }
 }
 
@@ -772,9 +778,9 @@ export function useMesFinishedGoodsReceipts() {
   const queryCache = useQueryCache()
 
   const receiptsQuery = useQuery(() =>
-    listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   const createReceiptMutation = useMutation({
@@ -801,7 +807,7 @@ export function useMesFinishedGoodsReceipts() {
     receiptRequestsError: receiptsQuery.error,
     receiptRequestsPending: receiptsQuery.isLoading,
     receiptRequestsTotal: computed(() => envelopeTotal(receiptsQuery.data.value)),
-    refreshReceiptRequests: receiptsQuery.refetch,
+    refreshReceiptRequests: () => refetchWithBusinessContext(filters, receiptsQuery),
   }
 }
 
@@ -809,9 +815,9 @@ export function useMesQualityContext() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const qualityQuery = useQuery(() =>
-    listBusinessConsoleMesRelatedQualityItemsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesRelatedQualityItemsQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
   const defectMutation = useMutation({
     ...recordBusinessConsoleMesDefectMutationOptions(),
@@ -830,7 +836,7 @@ export function useMesQualityContext() {
     qualityItemsTotal: computed(() => envelopeTotal(qualityQuery.data.value)),
     recordDefect: (body: BusinessConsoleMesRecordDefectRequest) => defectMutation.mutateAsync({ body }),
     recordDefectPending: defectMutation.isLoading,
-    refreshQualityItems: qualityQuery.refetch,
+    refreshQualityItems: () => refetchWithBusinessContext(filters, qualityQuery),
   }
 }
 
@@ -840,9 +846,9 @@ export function useMesDowntimeEvents() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const downtimeQuery = useQuery(() =>
-    listBusinessConsoleMesDowntimeEventsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesDowntimeEventsQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
   const recordMutation = useMutation({
     ...recordBusinessConsoleMesDowntimeEventMutationOptions(),
@@ -872,7 +878,7 @@ export function useMesDowntimeEvents() {
         body,
       }),
     recoverDowntimeEventPending: recoverMutation.isLoading,
-    refreshDowntimeEvents: downtimeQuery.refetch,
+    refreshDowntimeEvents: () => refetchWithBusinessContext(filters, downtimeQuery),
   }
 }
 
@@ -880,9 +886,9 @@ export function useMesShiftHandovers() {
   const filters = defaultFilters()
   const queryCache = useQueryCache()
   const handoversQuery = useQuery(() =>
-    listBusinessConsoleMesShiftHandoversQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesShiftHandoversQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
   const createMutation = useMutation({
     ...createBusinessConsoleMesShiftHandoverMutationOptions(),
@@ -910,7 +916,7 @@ export function useMesShiftHandovers() {
     handoversError: handoversQuery.error,
     handoversPending: handoversQuery.isLoading,
     handoversTotal: computed(() => envelopeTotal(handoversQuery.data.value)),
-    refreshHandovers: handoversQuery.refetch,
+    refreshHandovers: () => refetchWithBusinessContext(filters, handoversQuery),
   }
 }
 
@@ -986,9 +992,9 @@ export function useMesCapacityImpacts() {
   const filters = defaultFilters()
 
   const capacityQuery = useQuery(() =>
-    listBusinessConsoleMesCapacityImpactsQueryOptions({
+    withBusinessContextEnabled(listBusinessConsoleMesCapacityImpactsQueryOptions({
       query: toListQuery(filters),
-    }),
+    }), filters),
   )
 
   return {
@@ -1001,7 +1007,7 @@ export function useMesCapacityImpacts() {
     capacityImpactsPending: capacityQuery.isLoading,
     capacityImpactsTotal: computed(() => envelopeTotal(capacityQuery.data.value)),
     filters,
-    refreshCapacityImpacts: capacityQuery.refetch,
+    refreshCapacityImpacts: () => refetchWithBusinessContext(filters, capacityQuery),
   }
 }
 

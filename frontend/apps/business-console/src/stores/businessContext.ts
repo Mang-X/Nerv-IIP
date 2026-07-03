@@ -11,8 +11,8 @@ export interface BusinessContextState {
 }
 
 const DEFAULT_CONTEXT: BusinessContextState = {
-  organizationId: 'org-001',
-  environmentId: 'env-dev',
+  organizationId: '',
+  environmentId: '',
   siteCode: '',
   lineCode: '',
   workCenterCode: '',

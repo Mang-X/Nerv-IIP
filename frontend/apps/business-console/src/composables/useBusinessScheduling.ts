@@ -9,7 +9,12 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import { bindBusinessContext, hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+  refetchWithBusinessContext,
+  type BusinessContextFields,
+} from './businessContextBinding'
 
 const SCHEDULING_QUERY_IDS = [
   'listBusinessConsoleSchedulingPlans',
@@ -143,7 +148,10 @@ export function useBusinessScheduling() {
       }),
     releasePlanError: releaseMutation.error,
     releasePlanPending: releaseMutation.isLoading,
-    refreshPlanDetail: detailQuery.refetch,
-    refreshPlans: plansQuery.refetch,
+    refreshPlanDetail: () =>
+      hasBusinessContext(detailSelection) && detailSelection.planId.trim().length > 0
+        ? detailQuery.refetch()
+        : Promise.resolve(),
+    refreshPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
 }
