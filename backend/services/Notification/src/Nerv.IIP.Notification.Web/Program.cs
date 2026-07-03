@@ -8,6 +8,7 @@ using Nerv.IIP.Notification.Web.Application;
 using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
@@ -67,6 +68,15 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration);
+builder.Services.Configure<NotificationDeliveryOptions>(
+    builder.Configuration.GetSection("Notification:Delivery"));
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, SmtpEmailDeliveryProvider>();
+builder.Services.AddScoped<INotificationDeliveryProvider, WebhookDeliveryProvider>();
+builder.Services.AddScoped<NotificationDeliveryService>();
+builder.Services.AddHostedService<NotificationDeliveryRetryWorker>();
 builder.Services.Configure<OpsNotificationRecipientOptions>(
     builder.Configuration.GetSection(OpsNotificationRecipientOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);

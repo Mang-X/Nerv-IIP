@@ -9,6 +9,10 @@ public partial record DeliveryAttemptId : IGuidStronglyTypedId;
 public static class NotificationDeliveryChannels
 {
     public const string InApp = "in-app";
+    public const string WeCom = "wecom";
+    public const string DingTalk = "dingtalk";
+    public const string Email = "email";
+    public const string Webhook = "webhook";
 }
 
 public static class NotificationDeliveryAttemptStatuses
@@ -43,13 +47,17 @@ public sealed class DeliveryAttempt : Entity<DeliveryAttemptId>
     private DeliveryAttempt(
         NotificationMessageId notificationMessageId,
         string channel,
-        DateTimeOffset attemptedAtUtc)
+        DateTimeOffset attemptedAtUtc,
+        string? recipientAddress = null,
+        string? providerName = null)
     {
         NotificationMessageId = notificationMessageId;
         Channel = Required(channel, "Delivery channel is required.");
         Status = NotificationDeliveryAttemptStatuses.Started;
         AttemptedAtUtc = attemptedAtUtc;
         AttemptNo = 1;
+        RecipientAddress = string.IsNullOrWhiteSpace(recipientAddress) ? null : recipientAddress;
+        ProviderName = string.IsNullOrWhiteSpace(providerName) ? null : providerName;
     }
 
     public NotificationMessageId NotificationMessageId { get; private set; } = null!;
@@ -59,10 +67,23 @@ public sealed class DeliveryAttempt : Entity<DeliveryAttemptId>
     public int AttemptNo { get; private set; }
     public DateTimeOffset? NextRetryAtUtc { get; private set; }
     public string? FailureReason { get; private set; }
+    public string? RecipientAddress { get; private set; }
+    public string? ProviderName { get; private set; }
+    public string? ProviderMessageId { get; private set; }
 
     public static DeliveryAttempt Start(NotificationMessageId notificationMessageId, string channel, DateTimeOffset now)
     {
         return new DeliveryAttempt(notificationMessageId, channel, now);
+    }
+
+    public static DeliveryAttempt StartExternal(
+        NotificationMessageId notificationMessageId,
+        string channel,
+        string recipientAddress,
+        string providerName,
+        DateTimeOffset now)
+    {
+        return new DeliveryAttempt(notificationMessageId, channel, now, recipientAddress, providerName);
     }
 
     public static DeliveryAttempt Succeeded(NotificationMessageId notificationMessageId, string channel, DateTimeOffset now)
@@ -74,11 +95,17 @@ public sealed class DeliveryAttempt : Entity<DeliveryAttemptId>
 
     public void MarkSucceeded(DateTimeOffset now)
     {
+        MarkSucceeded(now, providerMessageId: null);
+    }
+
+    public void MarkSucceeded(DateTimeOffset now, string? providerMessageId)
+    {
         EnsureStarted();
         Status = NotificationDeliveryAttemptStatuses.Succeeded;
         AttemptedAtUtc = now;
         NextRetryAtUtc = null;
         FailureReason = null;
+        ProviderMessageId = string.IsNullOrWhiteSpace(providerMessageId) ? null : providerMessageId;
     }
 
     public void MarkFailed(string failureReason, DateTimeOffset now, int maxAttempts, TimeSpan retryDelay)
