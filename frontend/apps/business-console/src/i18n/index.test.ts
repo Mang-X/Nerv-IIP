@@ -13,6 +13,6 @@ describe('business console i18n', () => {
     const i18n = createBusinessConsoleI18n({ locale: 'en-US' })
 
     expect(i18n.global.t('nav.inventory')).toBe('库存')
-    expect(i18n.global.t('routes.schedules')).toBe('MES 排程')
+    expect(i18n.global.t('routes.schedules')).toBe('MES 规则排程（过渡）')
   })
 })

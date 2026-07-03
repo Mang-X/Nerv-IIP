@@ -207,7 +207,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
         { title: '质量与不良', icon: ShieldCheckIcon, to: { path: '/mes/quality' }, requiredPermissions: [P.mesQualityRead] },
         { title: '设备与停机', icon: WrenchIcon, to: { path: '/mes/downtime' }, requiredPermissions: [P.mesDowntimeRead] },
         { title: '异常与产能', icon: TrendingUpIcon, to: { path: '/mes/capacity' }, requiredPermissions: [P.mesCapacityRead] },
-        { title: '规则排程', icon: CalendarCogIcon, to: { path: '/mes/schedules' }, requiredPermissions: [P.mesSchedulesRead, P.mesSchedulesManage] },
+        { title: '规则排程（过渡）', icon: CalendarCogIcon, to: { path: '/mes/schedules' }, requiredPermissions: [P.mesSchedulesRead, P.mesSchedulesManage] },
         { title: '班次交接', icon: ArrowRightLeftIcon, to: { path: '/mes/handovers' }, requiredPermissions: [P.mesHandoversRead] },
       ],
     },

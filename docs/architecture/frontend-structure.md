@@ -228,7 +228,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/mes/production-reports` | 旧报工记录查询路由；新增报工从工单或工序上下文进入。 | BusinessGateway MES facade。 |
 | `/mes/quality` | 质量与不良，展示 MES 缺陷上下文和关联 Quality 事项。 | BusinessGateway MES facade。 |
 | `/mes/receipts` | 完工入库请求；新增请求通过抽屉承载，行级入口可回到工单上下文。 | BusinessGateway MES facade。 |
-| `/mes/schedules` | MES 规则排程结果和显式运行动作；不包含甘特，也不承担 APS 算法。 | BusinessGateway MES facade。 |
+| `/mes/schedules` | MES 规则排程过渡页，保留执行域规则分配结果和显式运行动作；不包含甘特，不承担 APS 算法，正式排产输出进入 `/scheduling`。 | BusinessGateway MES facade。 |
 | `/mes/downtime` | 设备与停机，展示停机、恢复和未结异常。 | BusinessGateway MES facade。 |
 | `/mes/handovers` | 班次交接，展示待交接事项和班组交接状态。 | BusinessGateway MES facade。 |
 | `/mes/traceability` | 追溯查询，可按工单、批次/序列、物料批次进入执行证据链。 | BusinessGateway MES facade。 |

@@ -12,6 +12,15 @@ describe('business console scheduling navigation', () => {
     expect(scheduling?.title).toBe('排产工作台')
     expect(scheduling?.requiredPermissions).toEqual([P.schedulingPlansRead])
   })
+
+  it('keeps MES rule scheduling labeled as a transitional entry', () => {
+    const mesItems = DOMAIN_SIDE_NAV.mes?.flatMap((section) => section.items) ?? []
+    const mesRuleScheduling = mesItems.find((item) => pathOf(item.to) === '/mes/schedules')
+
+    expect(resolveDomainId('/mes/schedules')).toBe('mes')
+    expect(mesRuleScheduling?.title).toBe('规则排程（过渡）')
+    expect(mesRuleScheduling?.requiredPermissions).toEqual([P.mesSchedulesRead, P.mesSchedulesManage])
+  })
 })
 
 describe('business console maintenance navigation', () => {

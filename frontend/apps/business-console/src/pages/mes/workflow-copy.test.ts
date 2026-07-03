@@ -359,6 +359,17 @@ describe('MES workflow copy', () => {
     expectNoForbiddenVisibleTerms(wrapper.text())
   })
 
+  it('points formal scheduling output from work orders to the Scheduling workbench', () => {
+    const wrapper = mountMesPage(WorkOrdersPage)
+    const schedulingLink = wrapper
+      .findAll('[data-router-link]')
+      .find((link) => link.attributes('data-to') === '"/scheduling"')
+
+    expect(wrapper.text()).toContain('正式排产输出')
+    expect(wrapper.text()).not.toContain('排程结果')
+    expect(schedulingLink?.text()).toContain('排产工作台')
+  })
+
   it('keeps operation tasks focused on supported row actions', () => {
     const wrapper = mountMesPage(OperationTasksPage)
 
