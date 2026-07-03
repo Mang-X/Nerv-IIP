@@ -42,6 +42,7 @@ import {
 import { watchDebounced } from '@vueuse/core'
 import {
   CalendarCheckIcon,
+  CalendarCogIcon,
   ClipboardCheckIcon,
   EyeIcon,
   FactoryIcon,
@@ -474,7 +475,7 @@ function isNonEmpty(value: string) {
       <DialogProContent class="sm:max-w-2xl">
         <DialogProHeader>
           <DialogProTitle>创建急单</DialogProTitle>
-          <DialogProDescription>急单用于生产插单和临时补单；提交后系统返回受影响工单和排程版本。</DialogProDescription>
+          <DialogProDescription>急单用于生产插单和临时补单；提交后系统返回 MES 规则排程反馈，正式排产输出请进入排产工作台。</DialogProDescription>
         </DialogProHeader>
         <form class="grid gap-4" @submit.prevent="submitRushWorkOrder">
           <p v-if="rushErrorMessage" class="text-sm text-destructive" role="alert">{{ rushErrorMessage }}</p>
@@ -527,9 +528,18 @@ function isNonEmpty(value: string) {
             </FieldPro>
           </FieldProGroup>
 
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+            <p class="text-sm text-muted-foreground">正式排产输出、冲突治理和甘特请进入排产工作台。</p>
+            <ButtonPro size="sm" type="button" variant="outline" as-child>
+              <RouterLink to="/scheduling"><CalendarCogIcon aria-hidden="true" />排产工作台</RouterLink>
+            </ButtonPro>
+          </div>
+
           <div v-if="lastRushScheduleVersion || lastRushAffectedWorkOrders.length" class="grid gap-2 rounded-lg border p-3">
-            <p class="text-sm font-semibold text-foreground">排程结果</p>
-            <p v-if="lastRushScheduleVersion" class="text-sm text-muted-foreground">排程版本 {{ lastRushScheduleVersion }}</p>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-sm font-semibold text-foreground">规则排程反馈</p>
+            </div>
+            <p v-if="lastRushScheduleVersion" class="text-sm text-muted-foreground">规则版本 {{ lastRushScheduleVersion }}；正式排产输出以排产工作台为准。</p>
             <p v-if="lastRushAffectedWorkOrders.length" class="text-sm text-muted-foreground">受影响工单：{{ lastRushAffectedWorkOrders.join(', ') }}</p>
           </div>
 

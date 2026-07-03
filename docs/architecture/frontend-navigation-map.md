@@ -275,7 +275,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 制造执行 | `/mes/handovers` | 已落地（FE-8 金标准） | 班次交接按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）。 |
 | 制造执行 | `/mes/traceability` | 已落地（FE-8 金标准） | 追溯查询：按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[查询类型/工单/批次] + DataTable）。 |
 | 制造执行 | `/mes/capacity` | 已落地（FE-8 金标准） | 产能影响按 FE-4 原型重做（PageHeader + SectionCards + Toolbar + DataTable + 服务端分页）。 |
-| 制造执行 | `/mes/schedules` | 已落地（FE-8 金标准，过渡定位） | 规则排程按 FE-4 原型重做（PageHeader + SectionCards + 结果 DataTable + 分页 + 运行 Dialog）；不是 APS 权威，也不包含甘特。 |
+| 制造执行 | `/mes/schedules` | 过渡（FE-8 金标准页面） | 规则排程按 FE-4 原型重做（PageHeader + SectionCards + 结果 DataTable + 分页 + 运行 Dialog）；只保留 MES 执行域规则分配和诊断，不是 APS 权威，也不包含甘特。正式 APS/Gantt、方案发布和冲突治理入口是 `/scheduling`。退出条件：从计划、工单和排产链路进入正式排程输出均指向 `/scheduling`，且 MES 执行域不再需要本地规则重算入口；届时该页应降级为诊断入口、挂 feature flag，或从默认导航移除。 |
 | 设备异常 | `/equipment` | 已落地（FE-9 金标准） | 设备运行看板按 FE-4 原型重做（PageHeader + SectionCards + Toolbar[设备范围] + 设备 DataTable + 当前阻塞面板）；行/阻塞「记录停机」带 deviceAssetId 跳 `/mes/downtime`（MES 设备联动）；不显示 organization/environment/debug/source metadata。 |
 | 设备异常 | `/equipment/alarms` | 已落地（FE-9 金标准） | 设备报警按 FE-4 原型重做（PageHeader + SectionCards + 报警 DataTable + RowActions[设备详情/记录停机]）；只展示业务可读状态，互链设备详情与 MES 停机。 |
 | 设备异常 | `/equipment/:deviceAssetId` | 已落地（FE-9 金标准，非菜单） | 设备详情按 FE-4 原型重做（PageHeader + SectionCards + 状态/报警卡 + 可用性窗口 DataTable）；由看板/报警进入，「记录停机」联动 MES，并可跳转历史趋势、OEE 与报警规则维护。 |
@@ -317,7 +317,7 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 | 基础数据 | 物料与产品 `/master-data/skus`、客户与供应商 `/master-data/partners`、工厂资源 `/master-data/resources`、字典 `/master-data/reference-data` |
 | 产品工程 | 工程版本 `/engineering`（MBOM / 工艺路线 / 生产版本 / 解析） |
 | 需求与计划 | 需求与物料计划 `/planning`、排产工作台 `/scheduling` |
-| 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程 `/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |
+| 制造执行 | 计划与工单（生产驾驶舱 `/mes`、生产计划 `/mes/plans`、工单与派工 `/mes/work-orders`、派工看板 `/mes/dispatch`）；执行与齐套（齐套与物料 `/mes/materials`、工序执行 `/mes/operation-tasks`、在制跟踪 `/mes/wip`）；报工与完工（报工记录 `/mes/production-reports`、报工与完工汇总 `/mes/reports`、完工入库 `/mes/receipts`）；异常与协同（质量与不良 `/mes/quality`、设备与停机 `/mes/downtime`、异常与产能 `/mes/capacity`、规则排程（过渡）`/mes/schedules`、班次交接 `/mes/handovers`）；追溯与诊断（追溯查询 `/mes/traceability`、生产准备检查 `/mes/foundation`） |
 | 质量管理 | 检验任务与记录 `/quality/inspections`、不合格品处理 `/quality/ncrs`、质量分析 `/quality/analysis`、原因码目录 `/quality/reason-codes` |
 | 库存管理 | 库存可用量 `/inventory/availability`、批次与预留 `/inventory/lots`、库存移动 `/inventory/movements`、库存盘点 `/inventory/counts` |
 | 仓储作业（“更多”内） | 收货入库 `/wms/inbound`（融合库存可用量上下文）、上架任务 `/wms/putaway`、出库发货 `/wms/outbound`、拣货任务 `/wms/picking`、WCS 任务 `/wms/wcs`、盘点执行 `/wms/counts` |
@@ -356,4 +356,4 @@ Business Console 同时需要能力目录、角色导航和对象直达，不能
 
 ### 状态升级和退出条件
 
-“过渡”状态没有固定时间上限，但必须有明确退出条件。任何过渡页面进入主导航或升级为“已落地”前，必须满足上文“菜单项升级门禁”六条；不得维护第二套措辞不同的退出标准。未满足门禁时，应保留为诊断/过渡入口、挂 feature flag，或从默认导航中移除。新增大域不得靠静态菜单先占位，必须先满足 AppShell T 型导航解锁路径和 RBAC 裁剪要求。
+“过渡”状态没有固定时间上限，但必须有明确退出条件。任何过渡页面进入主导航或升级为“已落地”前，必须满足上文“菜单项升级门禁”六条；不得维护第二套措辞不同的退出标准。未满足门禁时，应保留为诊断/过渡入口、挂 feature flag，或从默认导航中移除。新增大域不得靠静态菜单先占位，必须先满足 AppShell T 型导航解锁路径和 RBAC 裁剪要求。`/mes/schedules` 的退出以 `/scheduling` 完成正式 APS/Gantt 链路承接为准：计划、工单或排产相关入口不得把 MES 规则排程宣传为正式高级排程；MES 规则页只保留过渡诊断与执行域规则重算。
