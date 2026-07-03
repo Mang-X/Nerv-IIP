@@ -9,6 +9,15 @@ using NetCorePal.Extensions.Dto;
 
 namespace Nerv.IIP.PlatformGateway.Web.Endpoints.Notifications;
 
+public sealed class ConsoleNotificationDeadLetterListRequest
+{
+    public string? ConsumerName { get; set; }
+    public string? EventType { get; set; }
+    public string? Status { get; set; }
+    public int? Skip { get; set; }
+    public int? Take { get; set; }
+}
+
 [HttpGet("/api/console/v1/notifications/messages")]
 [GatewayOperationId("listConsoleNotificationMessages")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
@@ -74,6 +83,204 @@ public sealed class ListConsoleNotificationTasksEndpoint(
         try
         {
             var response = await notificationClient.ListTasksAsync(context, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpGet("/api/console/v1/notifications/dlq")]
+[GatewayOperationId("listConsoleNotificationDeadLetters")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ListConsoleNotificationDeadLettersEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<ConsoleNotificationDeadLetterListRequest, ResponseData<NotificationDeadLetterListResponse>>
+{
+    public override async Task HandleAsync(ConsoleNotificationDeadLetterListRequest req, CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersRead,
+            GatewayNotificationEndpointContext.WithQueryString(HttpContext, "/api/notifications/v1/dlq"),
+            "notification-dead-letter",
+            null,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.ListDeadLettersAsync(context, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpGet("/api/console/v1/notifications/dlq/{deadLetterId}")]
+[GatewayOperationId("getConsoleNotificationDeadLetter")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class GetConsoleNotificationDeadLetterEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : EndpointWithoutRequest<ResponseData<NotificationDeadLetterDetailResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        var deadLetterId = Route<string>("deadLetterId")!;
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersRead,
+            $"/api/notifications/v1/dlq/{Uri.EscapeDataString(deadLetterId)}",
+            "notification-dead-letter",
+            deadLetterId,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.GetDeadLetterAsync(context, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpPost("/api/console/v1/notifications/dlq/{deadLetterId}/replay")]
+[GatewayOperationId("replayConsoleNotificationDeadLetter")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ReplayConsoleNotificationDeadLetterEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : EndpointWithoutRequest<ResponseData<NotificationDeadLetterReplayResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        var deadLetterId = Route<string>("deadLetterId")!;
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersManage,
+            $"/api/notifications/v1/dlq/{Uri.EscapeDataString(deadLetterId)}/replay",
+            "notification-dead-letter",
+            deadLetterId,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.ReplayDeadLetterAsync(context, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpPost("/api/console/v1/notifications/dlq/replay-batch")]
+[GatewayOperationId("replayConsoleNotificationDeadLetters")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class ReplayConsoleNotificationDeadLettersEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<ReplayNotificationDeadLetterBatchRequest, ResponseData<NotificationDeadLetterBatchReplayResponse>>
+{
+    public override async Task HandleAsync(ReplayNotificationDeadLetterBatchRequest req, CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersManage,
+            "/api/notifications/v1/dlq/replay-batch",
+            "notification-dead-letter",
+            null,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.ReplayDeadLettersAsync(context, req, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
+[HttpPost("/api/console/v1/notifications/dlq/{deadLetterId}/ignore")]
+[GatewayOperationId("ignoreConsoleNotificationDeadLetter")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class IgnoreConsoleNotificationDeadLetterEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : Endpoint<IgnoreNotificationDeadLetterRequest, ResponseData<NotificationDeadLetterDetailResponse>>
+{
+    public override async Task HandleAsync(IgnoreNotificationDeadLetterRequest req, CancellationToken ct)
+    {
+        var deadLetterId = Route<string>("deadLetterId")!;
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersManage,
+            $"/api/notifications/v1/dlq/{Uri.EscapeDataString(deadLetterId)}/ignore",
+            "notification-dead-letter",
+            deadLetterId,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.IgnoreDeadLetterAsync(context, req, ct);
             await Send.OkAsync(response.AsResponseData(), ct);
         }
         catch (GatewayNotificationException ex)

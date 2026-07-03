@@ -1,4 +1,7 @@
 using System.Text.Json;
+using DotNetCore.CAP;
+using DotNetCore.CAP.Messages;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.Messaging.CAP;
@@ -189,11 +192,39 @@ public interface IIntegrationEventDeadLetterStore
         IntegrationEventDeadLetterStatus? status,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken);
+
+    Task<IntegrationEventDeadLetterMessage?> GetAsync(
+        Guid id,
+        CancellationToken cancellationToken);
+
     Task MarkReplayedAsync(
         Guid id,
         DateTimeOffset replayedAtUtc,
         CancellationToken cancellationToken);
+
+    Task MarkFailedAsync(
+        Guid id,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken);
+
+    Task MarkIgnoredAsync(
+        Guid id,
+        string reason,
+        DateTimeOffset ignoredAtUtc,
+        CancellationToken cancellationToken);
 }
+
+public sealed record IntegrationEventDeadLetterQuery(
+    string? ConsumerName,
+    IntegrationEventDeadLetterStatus? Status,
+    string? EventType,
+    int Skip = 0,
+    int Take = 100);
 
 public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventDeadLetterStore
 {
@@ -234,15 +265,40 @@ public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventD
         IntegrationEventDeadLetterStatus? status,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        return ListAsync(new IntegrationEventDeadLetterQuery(consumerName, status, EventType: null), cancellationToken);
+    }
 
+    public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(query);
+        var skip = Math.Max(query.Skip, 0);
+        var take = Math.Clamp(query.Take, 1, 500);
         lock (syncRoot)
         {
             return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>(
                 messages
-                    .Where(message => consumerName is null || message.ConsumerName == consumerName)
-                    .Where(message => status is null || message.Status == status)
+                    .Where(message => string.IsNullOrWhiteSpace(query.ConsumerName) || message.ConsumerName == query.ConsumerName)
+                    .Where(message => query.Status is null || message.Status == query.Status)
+                    .Where(message => string.IsNullOrWhiteSpace(query.EventType) || message.EventType == query.EventType)
+                    .OrderBy(message => message.DeadLetteredAtUtc)
+                    .Skip(skip)
+                    .Take(take)
                     .ToArray());
+        }
+    }
+
+    public Task<IntegrationEventDeadLetterMessage?> GetAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (syncRoot)
+        {
+            return Task.FromResult(messages.SingleOrDefault(message => message.Id == id));
         }
     }
 
@@ -268,6 +324,65 @@ public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventD
 
         return Task.CompletedTask;
     }
+
+    public Task MarkFailedAsync(
+        Guid id,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (syncRoot)
+        {
+            var index = messages.FindIndex(message => message.Id == id);
+            if (index >= 0)
+            {
+                messages[index] = messages[index] with
+                {
+                    Status = IntegrationEventDeadLetterStatus.Failed,
+                    FailureCode = failureCode,
+                    FailureMessage = Truncate(failureMessage, 1000),
+                    ReplayedAtUtc = failedAtUtc
+                };
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task MarkIgnoredAsync(
+        Guid id,
+        string reason,
+        DateTimeOffset ignoredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (syncRoot)
+        {
+            var index = messages.FindIndex(message => message.Id == id);
+            if (index >= 0)
+            {
+                messages[index] = messages[index] with
+                {
+                    Status = IntegrationEventDeadLetterStatus.Ignored,
+                    FailureCode = "ignored",
+                    FailureMessage = Truncate(reason, 1000),
+                    ReplayedAtUtc = ignoredAtUtc
+                };
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 }
 
 public sealed record IntegrationEventDeadLetterMessage(
@@ -318,5 +433,134 @@ public sealed record IntegrationEventDeadLetterMessage(
 public enum IntegrationEventDeadLetterStatus
 {
     Pending = 0,
-    Replayed = 1
+    Replayed = 1,
+    Failed = 2,
+    Ignored = 3
+}
+
+public sealed record IntegrationEventDeadLetterReplayResult(
+    Guid Id,
+    bool Succeeded,
+    string Status,
+    string? Message);
+
+public interface IIntegrationEventDeadLetterReplayHandler
+{
+    bool CanReplay(IntegrationEventDeadLetterMessage message);
+
+    Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken);
+}
+
+public sealed class IntegrationEventDeadLetterReplayExecutor(
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IEnumerable<IIntegrationEventDeadLetterReplayHandler> handlers,
+    TimeProvider timeProvider)
+{
+    private const string ReplayHandlerFailedCode = "replay-handler-failed";
+    private readonly IReadOnlyList<IIntegrationEventDeadLetterReplayHandler> handlers = handlers.ToArray();
+
+    public async Task<IntegrationEventDeadLetterReplayResult> ReplayAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var message = await deadLetterStore.GetAsync(id, cancellationToken);
+        if (message is null)
+        {
+            return new IntegrationEventDeadLetterReplayResult(id, false, "NotFound", "Dead-letter message was not found.");
+        }
+
+        var handler = handlers.FirstOrDefault(handler => handler.CanReplay(message));
+        if (handler is null)
+        {
+            await deadLetterStore.MarkFailedAsync(
+                id,
+                "replay-handler-not-found",
+                $"No replay handler is registered for '{message.EventClrType}'.",
+                timeProvider.GetUtcNow(),
+                cancellationToken);
+            return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), "No replay handler is registered.");
+        }
+
+        try
+        {
+            await handler.ReplayAsync(message, cancellationToken);
+            await deadLetterStore.MarkReplayedAsync(id, timeProvider.GetUtcNow(), cancellationToken);
+            return new IntegrationEventDeadLetterReplayResult(id, true, IntegrationEventDeadLetterStatus.Replayed.ToString(), null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await deadLetterStore.MarkFailedAsync(
+                id,
+                ReplayHandlerFailedCode,
+                ex.Message,
+                timeProvider.GetUtcNow(),
+                cancellationToken);
+            return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), ex.Message);
+        }
+    }
+
+    public async Task<IReadOnlyList<IntegrationEventDeadLetterReplayResult>> ReplayBatchAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await deadLetterStore.ListAsync(
+            query with { Status = query.Status ?? IntegrationEventDeadLetterStatus.Pending },
+            cancellationToken);
+        var results = new List<IntegrationEventDeadLetterReplayResult>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            results.Add(await ReplayAsync(candidate.Id, cancellationToken));
+        }
+
+        return results;
+    }
+}
+
+public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDeadLetterStore deadLetterStore)
+{
+    public const string HandlerRetryExhaustedFailureCode = "handler-retry-exhausted";
+
+    public async Task HandleAsync(FailedInfo failedInfo, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(failedInfo);
+        if (failedInfo.MessageType != MessageType.Subscribe || failedInfo.Message.Value is not IIntegrationEventEnvelope integrationEvent)
+        {
+            return;
+        }
+
+        var consumerName = ReadHeader(failedInfo.Message, Headers.Group)
+            ?? ReadHeader(failedInfo.Message, Headers.MessageName)
+            ?? "unknown.consumer";
+        var failureMessage = ReadHeader(failedInfo.Message, Headers.Exception)
+            ?? "CAP subscriber exhausted retry attempts.";
+        await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                consumerName,
+                integrationEvent,
+                HandlerRetryExhaustedFailureCode,
+                failureMessage),
+            cancellationToken);
+    }
+
+    private static string? ReadHeader(Message message, string name)
+    {
+        return message.Headers.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+    }
+}
+
+public static class CapDeadLetterOptionsExtensions
+{
+    public static CapOptions UseIntegrationEventDeadLetterOnFailedThreshold(this CapOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var previous = options.FailedThresholdCallback;
+        options.FailedThresholdCallback = failedInfo =>
+        {
+            previous?.Invoke(failedInfo);
+            using var scope = failedInfo.ServiceProvider.CreateScope();
+            var deadLetterer = scope.ServiceProvider.GetRequiredService<IntegrationEventCapFailureDeadLetterer>();
+            deadLetterer.HandleAsync(failedInfo, CancellationToken.None).GetAwaiter().GetResult();
+        };
+        return options;
+    }
 }

@@ -31,6 +31,8 @@ public static class IamPermissionCatalog
         ["ops.audit.read"] = "Read operation audit records.",
         ["observability.logs.read"] = "Query centralized platform logs.",
         ["notifications.intents.submit"] = "Submit notification intents.",
+        ["notifications.dlq.read"] = "Read notification integration event dead letters.",
+        ["notifications.dlq.manage"] = "Replay and ignore notification integration event dead letters.",
         ["notifications.messages.read"] = "Read notification messages.",
         ["notifications.messages.mark-read"] = "Mark notification messages as read.",
         ["notifications.tasks.read"] = "Read notification tasks.",

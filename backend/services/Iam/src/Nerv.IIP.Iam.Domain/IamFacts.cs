@@ -145,6 +145,8 @@ public static class NervIipSeedPermissions
         "business.maintenance.plans.read",
         "business.maintenance.plans.manage",
         "notifications.intents.submit",
+        "notifications.dlq.read",
+        "notifications.dlq.manage",
         "notifications.messages.read",
         "notifications.messages.mark-read",
         "notifications.tasks.read"

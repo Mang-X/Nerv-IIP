@@ -122,6 +122,84 @@ export type NervIipContractsNotificationNotificationTaskResponse = {
     createdAtUtc?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterListResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterListResponse = {
+    items?: Array<NervIipContractsNotificationNotificationDeadLetterResponse>;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: string;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipPlatformGatewayWebEndpointsNotificationsConsoleNotificationDeadLetterListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterDetailResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterDetailResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    eventClrType?: string;
+    eventJson?: string;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: string;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterReplayResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterReplayResponse = {
+    id?: string;
+    succeeded?: boolean;
+    status?: string;
+    message?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterBatchReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterBatchReplayResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterBatchReplayResponse = {
+    items?: Array<NervIipContractsNotificationNotificationDeadLetterReplayResponse>;
+};
+
+export type NervIipContractsNotificationReplayNotificationDeadLetterBatchRequest = {
+    consumerName?: string | null;
+    eventType?: string | null;
+    status?: string | null;
+    take?: number | null;
+};
+
+export type NervIipContractsNotificationIgnoreNotificationDeadLetterRequest = {
+    reason?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsNotificationNotificationIntentResponse | null;
 };
@@ -624,6 +702,153 @@ export type ListConsoleNotificationTasksResponses = {
 };
 
 export type ListConsoleNotificationTasksResponse = ListConsoleNotificationTasksResponses[keyof ListConsoleNotificationTasksResponses];
+
+export type ListConsoleNotificationDeadLettersData = {
+    body?: never;
+    path?: never;
+    query?: {
+        consumerName?: string | null;
+        eventType?: string | null;
+        status?: string | null;
+        skip?: number | null;
+        take?: number | null;
+    };
+    url: '/api/console/v1/notifications/dlq';
+};
+
+export type ListConsoleNotificationDeadLettersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListConsoleNotificationDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse;
+};
+
+export type ListConsoleNotificationDeadLettersResponse = ListConsoleNotificationDeadLettersResponses[keyof ListConsoleNotificationDeadLettersResponses];
+
+export type GetConsoleNotificationDeadLetterData = {
+    body?: never;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}';
+};
+
+export type GetConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse;
+};
+
+export type GetConsoleNotificationDeadLetterResponse = GetConsoleNotificationDeadLetterResponses[keyof GetConsoleNotificationDeadLetterResponses];
+
+export type ReplayConsoleNotificationDeadLetterData = {
+    body?: never;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/replay';
+};
+
+export type ReplayConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse;
+};
+
+export type ReplayConsoleNotificationDeadLetterResponse = ReplayConsoleNotificationDeadLetterResponses[keyof ReplayConsoleNotificationDeadLetterResponses];
+
+export type ReplayConsoleNotificationDeadLettersData = {
+    body: NervIipContractsNotificationReplayNotificationDeadLetterBatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/replay-batch';
+};
+
+export type ReplayConsoleNotificationDeadLettersErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayConsoleNotificationDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterBatchReplayResponse;
+};
+
+export type ReplayConsoleNotificationDeadLettersResponse = ReplayConsoleNotificationDeadLettersResponses[keyof ReplayConsoleNotificationDeadLettersResponses];
+
+export type IgnoreConsoleNotificationDeadLetterData = {
+    body: NervIipContractsNotificationIgnoreNotificationDeadLetterRequest;
+    path: {
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/ignore';
+};
+
+export type IgnoreConsoleNotificationDeadLetterErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type IgnoreConsoleNotificationDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse;
+};
+
+export type IgnoreConsoleNotificationDeadLetterResponse = IgnoreConsoleNotificationDeadLetterResponses[keyof IgnoreConsoleNotificationDeadLetterResponses];
 
 export type SubmitConsoleNotificationIntentData = {
     body: NervIipContractsNotificationSubmitNotificationIntentRequest;

@@ -32,6 +32,7 @@ Notification 当前已落地并拥有以下事实：
 6. NotificationPreference：按通知类型与通道记录用户级开关，critical severity 可强制投递。
 7. NotificationSubscription：按通知类型与通道记录外部投递订阅。
 8. NotificationMessage 的状态字段：承载已读、未读、归档、忽略等用户状态。
+9. IntegrationEventDeadLetter：Notification 消费侧无法处理的集成事件副本，支持 Pending、Replayed、Failed 和 Ignored 状态，用于 poison message 隔离、人工诊断和重放。
 
 Notification 不拥有以下事实：
 
@@ -81,6 +82,13 @@ Notification 不拥有以下事实：
 2. 增加 NotificationRecipientChannelBinding、NotificationPreference 和 NotificationSubscription。
 3. 支持按严重性、事件类型、组织环境和资源范围过滤外部通道。
 4. 支持投递重试、退避、通道限流和失败可观测性。
+
+### Phase 2.5. 消费可靠性治理
+
+1. 集成事件 envelope/type/version 等消费前拒绝写入 persistent DLQ，不执行业务副作用。
+2. CAP subscriber 业务 handler 在重试耗尽后写入 persistent DLQ，避免 poison message 无限占用消费循环。
+3. PlatformGateway 和 Console 提供 DLQ 查询、详情、单条/批量 replay 和人工 ignore 管理入口。
+4. DLQ 告警、指标聚合和跨服务统一看板属于 Observability 后续切片，不在 Notification 内复制告警系统。
 
 ### Phase 3. 合并与治理
 
