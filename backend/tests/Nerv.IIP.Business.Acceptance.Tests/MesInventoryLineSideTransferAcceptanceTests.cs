@@ -124,6 +124,125 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
     }
 
     [Fact]
+    public async Task Mes_work_order_cancel_returns_only_unconsumed_line_side_material()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb, "WO-695-CONSUME");
+        await mesDb.SaveChangesAsync();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryMovementHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var inventoryReservationHandler = CreateInventoryReservationReleaseHandler(inventoryDb);
+        var issuedAtUtc = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+        var receivedAtUtc = issuedAtUtc.AddMinutes(20);
+        var reportedAtUtc = issuedAtUtc.AddMinutes(40);
+        var cancelledAtUtc = issuedAtUtc.AddHours(1);
+        await inventoryMovementHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10), "WO-695-CONSUME", 10m), CancellationToken.None);
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-695-CONSUME",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                6m,
+                issuedAtUtc,
+                "issue-695-consume"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await new ReserveStockCommandHandler(inventoryDb).Handle(
+            new ReserveStockCommand(
+                "org-001",
+                "env-dev",
+                InventoryIntegrationEventSources.BusinessMes,
+                "WO-695-CONSUME",
+                issueRequest.RequestNo,
+                "reserve:wo-695-consume:mir",
+                "MAT-OIL",
+                "L",
+                "warehouse",
+                "line-side",
+                "LOT-OIL-A",
+                null,
+                "Unrestricted",
+                "production",
+                null,
+                6m),
+            CancellationToken.None);
+        await inventoryDb.SaveChangesAsync();
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001",
+                "env-dev",
+                issueResult.ReferenceId,
+                receivedAtUtc,
+                6m,
+                "LOT-OIL-A"),
+            CancellationToken.None);
+        var transferEvents = issueRequest.GetDomainEvents().ToArray();
+        var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-695-CONSUME",
+                "OP-10",
+                1m,
+                0m,
+                false,
+                reportedAtUtc,
+                "report-695-consume",
+                [
+                    new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 4m, issueResult.ReferenceId),
+                ]),
+            CancellationToken.None);
+        var consumption = mesDb.ProductionReportMaterialConsumptions.Local.Single(x => x.ReportNo == reportResult.ReportNo);
+        var consumptionEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
+            Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+        foreach (var movementEvent in new[] { issueEvent, receiptEvent, consumptionEvent })
+        {
+            await inventoryMovementHandler.HandleAsync(movementEvent, CancellationToken.None);
+        }
+
+        await new CancelWorkOrderCommandHandler(mesDb).Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-CONSUME", "plan cancelled", cancelledAtUtc),
+            CancellationToken.None);
+        var cancellationEvent = new WorkOrderCancelledIntegrationEventConverter().Convert(
+            Assert.IsType<WorkOrderCancelledDomainEvent>(mesDb.WorkOrders.Local.Single(x => x.WorkOrderId == "WO-695-CONSUME").GetDomainEvents().Last()));
+        var cancellationEvents = issueRequest.GetDomainEvents().ToArray();
+        var returnOutEvent = new MaterialLineSideReturnRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReturnRequestedDomainEvent>(cancellationEvents[0]));
+        var returnInEvent = new MaterialReturnedToWarehouseIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialReturnedToWarehouseDomainEvent>(cancellationEvents[1]));
+
+        Assert.Equal(-2m, returnOutEvent.Payload.Quantity);
+        Assert.Equal(2m, returnInEvent.Payload.Quantity);
+        await inventoryReservationHandler.HandleAsync(cancellationEvent, CancellationToken.None);
+        await inventoryMovementHandler.HandleAsync(returnOutEvent, CancellationToken.None);
+        await inventoryMovementHandler.HandleAsync(returnInEvent, CancellationToken.None);
+
+        Assert.Equal(MaterialIssueRequest.ReturnRequestedStatus, issueRequest.Status);
+        Assert.Equal(4m, issueRequest.ReceivedQuantity);
+        Assert.Equal(0m, inventoryDb.StockReservations.Single().OpenQuantity);
+        var warehouseLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "warehouse" && x.LocationCode == "line-side");
+        var lineSideLedger = inventoryDb.StockLedgers.Single(x => x.SiteCode == "production" && x.LocationCode == "line-side");
+        Assert.Equal(0m, warehouseLedger.ReservedQuantity);
+        Assert.Equal(warehouseLedger.OnHandQuantity, warehouseLedger.AvailableQuantity);
+        Assert.Equal(0m, lineSideLedger.OnHandQuantity);
+    }
+
+    [Fact]
     public async Task Mes_finished_goods_receipt_unit_cost_flows_to_inventory_moving_average_valuation()
     {
         await using var mesDb = CreateMesContext();
@@ -662,7 +781,9 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
 
             if (request is ReleaseStockReservationsBySourceCommand releaseCommand)
             {
-                var result = await new ReleaseStockReservationsBySourceCommandHandler(dbContext).Handle(releaseCommand, cancellationToken);
+                var result = await new ReleaseStockReservationsBySourceCommandHandler(
+                    dbContext,
+                    NullLogger<ReleaseStockReservationsBySourceCommandHandler>.Instance).Handle(releaseCommand, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return (TResponse)(object)result;
             }

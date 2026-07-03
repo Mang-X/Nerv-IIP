@@ -237,7 +237,27 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 
         foreach (var materialIssueRequest in materialIssueRequests)
         {
-            materialIssueRequest.CancelForWorkOrderCancellation(request.CancelledAtUtc);
+            try
+            {
+                var consumedQuantity = await dbContext.ProductionReportMaterialConsumptions
+                    .AsNoTracking()
+                    .Where(x =>
+                        x.OrganizationId == materialIssueRequest.OrganizationId &&
+                        x.EnvironmentId == materialIssueRequest.EnvironmentId &&
+                        x.MaterialIssueRequestNo == materialIssueRequest.RequestNo &&
+                        x.MaterialId == materialIssueRequest.MaterialId &&
+                        x.MaterialLotId == materialIssueRequest.MaterialLotId)
+                    .SumAsync(x => x.ConsumedQuantity, cancellationToken);
+                materialIssueRequest.CancelForWorkOrderCancellation(request.CancelledAtUtc, consumedQuantity);
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new KnownException(exception.Message, exception);
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                throw new KnownException(exception.Message, exception);
+            }
         }
 
         foreach (var receiptRequest in finishedGoodsReceiptRequests)

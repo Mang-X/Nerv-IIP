@@ -189,8 +189,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
     }
 
-    public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc)
+    public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc, decimal consumedQuantity = 0m)
     {
+        DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
+
         if (Status is CancelledStatus or ReturnRequestedStatus)
         {
             return;
@@ -204,7 +206,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             return;
         }
 
-        ReturnLineSideMaterial(cancelledAtUtc, ReceivedQuantity);
+        var returnableQuantity = Math.Max(0m, ReceivedQuantity - consumedQuantity);
+        if (returnableQuantity > 0m)
+        {
+            ReturnLineSideMaterial(cancelledAtUtc, returnableQuantity, consumedQuantity);
+        }
+
         Status = ReturnRequestedStatus;
     }
 

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
@@ -494,6 +495,51 @@ public sealed class InventoryEndpointContractTests
         Assert.Contains("available", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(10m, dbContext.StockLedgers.Single().OnHandQuantity);
         Assert.Equal(8m, dbContext.StockLedgers.Single().ReservedQuantity);
+    }
+
+    [Fact]
+    public async Task Release_reservations_by_source_skips_missing_ledger_and_releases_remaining_matches()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var goodLedger = DomainLedgerFactory.NewLedger();
+        goodLedger.ApplyMovement(DomainMovementFactory.Inbound(10m));
+        var goodReservation = StockReservation.Reserve(goodLedger, "mes", "WO-695", "MIR-GOOD", "idem-release-good-001", 4m);
+        goodLedger.Reserve(goodReservation);
+        var missingLedger = StockLedger.Create(
+            "org-001",
+            "env-dev",
+            "SKU-FG-1000",
+            "kg",
+            "SITE-01",
+            "LOC-MISSING",
+            "LOT-MISSING",
+            null,
+            "qualified",
+            "company",
+            "owner-001");
+        var missingReservation = StockReservation.Reserve(missingLedger, "mes", "WO-695", "MIR-MISSING", "idem-release-missing-001", 3m);
+        dbContext.StockLedgers.Add(goodLedger);
+        dbContext.StockReservations.AddRange(goodReservation, missingReservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseStockReservationsBySourceCommandHandler(
+            dbContext,
+            NullLogger<ReleaseStockReservationsBySourceCommandHandler>.Instance);
+
+        var result = await handler.Handle(
+            new ReleaseStockReservationsBySourceCommand("org-001", "env-dev", "business-mes", "WO-695", ["MIR-GOOD", "MIR-MISSING"]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.ReleasedReservationCount);
+        Assert.Equal(4m, result.ReleasedQuantity);
+        Assert.Equal(0m, goodReservation.OpenQuantity);
+        Assert.Equal("released", goodReservation.Status);
+        Assert.Equal(3m, missingReservation.OpenQuantity);
+        Assert.Equal("open", missingReservation.Status);
+        Assert.Equal(0m, goodLedger.ReservedQuantity);
+        Assert.Equal(10m, goodLedger.AvailableQuantity);
     }
 
     [Fact]

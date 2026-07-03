@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Contracts.Inventory;
 
@@ -24,7 +25,9 @@ public sealed class ReleaseStockReservationsBySourceCommandValidator : AbstractV
     }
 }
 
-public sealed class ReleaseStockReservationsBySourceCommandHandler(ApplicationDbContext dbContext)
+public sealed class ReleaseStockReservationsBySourceCommandHandler(
+    ApplicationDbContext dbContext,
+    ILogger<ReleaseStockReservationsBySourceCommandHandler> logger)
     : ICommandHandler<ReleaseStockReservationsBySourceCommand, ReleaseStockReservationsBySourceResult>
 {
     public async Task<ReleaseStockReservationsBySourceResult> Handle(
@@ -52,8 +55,23 @@ public sealed class ReleaseStockReservationsBySourceCommandHandler(ApplicationDb
         var releasedQuantity = 0m;
         foreach (var reservation in reservations)
         {
-            var ledger = await FindLedgerAsync(reservation, cancellationToken)
-                ?? throw new KnownException("Stock ledger does not exist for the requested reservation release.");
+            var ledger = await FindLedgerAsync(reservation, cancellationToken);
+            if (ledger is null)
+            {
+                logger.LogWarning(
+                    "Skipped Inventory reservation release because the matching stock ledger does not exist. ReservationId={ReservationId}, SourceService={SourceService}, SourceDocumentId={SourceDocumentId}, SourceDocumentLineId={SourceDocumentLineId}, SkuCode={SkuCode}, SiteCode={SiteCode}, LocationCode={LocationCode}, LotNo={LotNo}, QualityStatus={QualityStatus}.",
+                    reservation.Id,
+                    reservation.SourceService,
+                    reservation.SourceDocumentId,
+                    reservation.SourceDocumentLineId,
+                    reservation.SkuCode,
+                    reservation.SiteCode,
+                    reservation.LocationCode,
+                    reservation.LotNo,
+                    reservation.QualityStatus);
+                continue;
+            }
+
             var openQuantity = reservation.OpenQuantity;
             ledger.ReleaseReservation(reservation, openQuantity);
             releasedCount++;
