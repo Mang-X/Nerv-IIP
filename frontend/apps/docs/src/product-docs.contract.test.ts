@@ -210,6 +210,30 @@ describe('product docs app contract', () => {
     expect(routes).not.toContain('/api/mobile/v1/**')
   })
 
+  test('validates the added core-flow page domains against real business-console routes', () => {
+    const addedFlowRoutes = [
+      '/scheduling',
+      '/approval',
+      '/equipment/telemetry/tags',
+      '/equipment/telemetry/alarm-rules',
+      '/maintenance/spare-parts',
+      '/maintenance/reliability',
+      '/maintenance/availability',
+      '/barcode/rules',
+      '/barcode/templates',
+      '/barcode/print-batches',
+      '/barcode/scans',
+    ]
+
+    for (const route of addedFlowRoutes) {
+      expect(
+        extractBusinessConsoleRouteTokens(`\`${route}\``),
+        `${route} should be treated as a business-console route token`,
+      ).toContain(route)
+      expect(businessConsoleRoutes.has(route), `${route} should exist in business-console pages`).toBe(true)
+    }
+  })
+
   test('references only real business-console routes in public guide copy', () => {
     const publicFiles = listMarkdownFiles('.').filter((file) => !file.includes(`${join('internal', 'gaps')}`))
 

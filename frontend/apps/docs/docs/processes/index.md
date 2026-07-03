@@ -75,7 +75,7 @@ flowchart LR
 | 生产计划 | `/mes/plans` | `/api/business-console/v1/mes/production-plans` | MES 可回显来源计划和转工单状态。 |
 | 工单 / 工单详情 | `/mes/work-orders`, `/mes/work-orders/:workOrderId` | `/api/business-console/v1/mes/work-orders/**` | 工单详情页存在，但不是常驻菜单入口。 |
 | 派工 / 工序执行 | `/mes/dispatch`, `/mes/operation-tasks` | `/api/business-console/v1/mes/dispatch/**`, `/api/business-console/v1/mes/operation-tasks/**` | 支撑派工、开工、暂停、恢复和完工的执行视图。 |
-| 报工 / 完工入库 | `/mes/production-reports`, `/mes/receipts` | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipts` | 完工入库等待 Inventory/WMS 过账事实回写。 |
+| 报工 / 完工入库 | `/mes/production-reports`, `/mes/receipts` | `/api/business-console/v1/mes/production-reports`, `/api/business-console/v1/mes/finished-goods-receipt-requests` | 完工入库等待 Inventory/WMS 过账事实回写。 |
 | 库存移动 | `/inventory/movements` | `/api/business-console/v1/inventory/movements` | 可解释 posted 或 failed 的库存过账结果。 |
 
 ## 仓储库存
@@ -163,11 +163,11 @@ flowchart LR
 
 | 节点 | Business Console 页面 | BusinessGateway facade | 当前事实或缺口 |
 | --- | --- | --- | --- |
-| 设备台账 / 标签 / 报警规则 | `/master-data/devices`, `/equipment/telemetry/tags`, `/equipment/telemetry/alarm-rules` | `/api/business-console/v1/master-data/device-assets`, `/api/business-console/v1/equipment/telemetry/**` | 已有设备资产、采集标签和报警规则入口。 |
+| 设备台账 / 标签 / 报警规则 | `/master-data/devices`, `/equipment/telemetry/tags`, `/equipment/telemetry/alarm-rules` | `/api/business-console/v1/master-data/device-assets`, `/api/business-console/v1/telemetry/tags`, `/api/business-console/v1/telemetry/alarm-rules` | 已有设备资产、采集标签和报警规则入口。 |
 | 设备报警 | `/equipment/alarms` | `/api/business-console/v1/equipment/alarms` | IndustrialTelemetry alarm 事实已暴露；报警处置闭环仍后续深化。 |
 | 维修工单 | `/maintenance/work-orders` | `/api/business-console/v1/maintenance/work-orders` | Maintenance 可消费报警 raised/cleared 并形成工单上下文。 |
 | 备件需求 | `/maintenance/spare-parts` | `/api/business-console/v1/maintenance/spare-parts` | 完工备件出库请求事件已存在；备件库存策略体验仍需深化。 |
-| 恢复与可靠性 | `/maintenance/reliability`, `/maintenance/availability` | `/api/business-console/v1/maintenance/reliability`, `/api/business-console/v1/maintenance/availability-windows` | MTBF/MTTR 无样本返回空值，不伪造指标。 |
+| 恢复与可靠性 | `/maintenance/reliability`, `/maintenance/availability` | `/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability`, `/api/business-console/v1/maintenance/availability-windows`, `/api/business-console/v1/equipment/availability`, `/api/business-console/v1/telemetry/runtime-availability` | MTBF/MTTR 无样本返回空值，不伪造指标。 |
 
 ## 条码追溯
 
@@ -196,7 +196,7 @@ flowchart LR
 | 标签模板 | `/barcode/templates` | `/api/business-console/v1/barcode/templates` | 已有标签模板页面和 facade。 |
 | 打印批次 | `/barcode/print-batches` | `/api/business-console/v1/barcode/print-batches` | 已有打印批次分页和详情 facade；完整打印管理体验仍需产品化。 |
 | 扫码记录 | `/barcode/scans` | `/api/business-console/v1/barcode/scans` | 已有扫码记录分页和 record facade。 |
-| 追溯 | `/mes/traceability` | `/api/business-console/v1/mes/traceability` | BarcodeLabel 已记录 GS1/EPCIS 追溯事实；跨域可视化追溯图谱仍是缺口。 |
+| 追溯 | `/mes/traceability` | `/api/business-console/v1/mes/traceability/work-orders/{workOrderId}`, `/api/business-console/v1/mes/traceability/batches/{batchOrSerial}`, `/api/business-console/v1/mes/traceability/material-lots/{materialLotId}` | BarcodeLabel 已记录 GS1/EPCIS 追溯事实；跨域可视化追溯图谱仍是缺口。 |
 
 ## 当前限制
 
