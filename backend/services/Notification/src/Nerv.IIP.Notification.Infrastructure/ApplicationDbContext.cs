@@ -15,6 +15,9 @@ public sealed partial class ApplicationDbContext(DbContextOptions<ApplicationDbC
     public DbSet<NotificationMessage> NotificationMessages => Set<NotificationMessage>();
     public DbSet<NotificationTask> NotificationTasks => Set<NotificationTask>();
     public DbSet<DeliveryAttempt> DeliveryAttempts => Set<DeliveryAttempt>();
+    public DbSet<NotificationRecipientChannelBinding> RecipientChannelBindings => Set<NotificationRecipientChannelBinding>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
+    public DbSet<NotificationSubscription> NotificationSubscriptions => Set<NotificationSubscription>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
     public DbSet<PublishedMessage> PublishedMessages => Set<PublishedMessage>();
     public DbSet<ReceivedMessage> ReceivedMessages => Set<ReceivedMessage>();

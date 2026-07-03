@@ -1,6 +1,6 @@
 # Integration Event Consumption Matrix
 
-> Verified against `codex/issue-551-integration-event-consumers` on 2026-06-29. Re-verify when adding/removing any public `*IntegrationEvent` contract or `IIntegrationEventHandler`/`CapSubscribe` consumer.
+> Verified against `codex/issue-551-integration-event-consumers` on 2026-06-29. MAN-419 / #737 rechecked the IndustrialTelemetry onsite capability issue batch on 2026-07-03; rows marked with #683-#690 references are planned consumers, not active handlers. Re-verify when adding/removing any public `*IntegrationEvent` contract or `IIntegrationEventHandler`/`CapSubscribe` consumer.
 
 This matrix is the current code-backed decision record for public integration
 events and business-service-local integration events. It prevents older
@@ -49,10 +49,17 @@ Classification values:
 - `#509`: procure-to-pay AP automation from purchase receipt facts.
 - `#510`: order-to-cash AR automation from WMS outbound completion.
 - `#512`: saga/process-manager versus choreography/compensation ADR.
+- `#685`: IndustrialTelemetry `AlarmRaised`/`AlarmCleared` to Notification
+  station-message/task consumer.
+- `#690`: IndustrialTelemetry `DeviceStateChanged` downstream consumption into
+  runtime availability and at least one MES/Scheduling-facing consumer.
 
 This matrix does not close `#485`. The `#551` closure branch adds the
 Scheduling conflict notification consumer and records existing consumers or
-reserved boundaries for the other reviewed events.
+reserved boundaries for the other reviewed events. The 2026-07-03 onsite
+capability batch (#683-#690) adds planned consumers and connector/historian
+tracks, but this matrix must not mark those consumers as delivered until code
+adds the corresponding handler or `CapSubscribe` subscription.
 
 ## Public Contracts Matrix
 
@@ -68,9 +75,9 @@ reserved boundaries for the other reviewed events.
 | `Nerv.IIP.Contracts.DemandPlanning` | `demandPlanning.PlannedPurchaseSuggested` / `DemandPlanningIntegrationEvent<PlanningSuggestionPayload>` | DemandPlanning planned-purchase suggestion converter. | No active ERP handler found for the pre-acceptance suggestion event. ERP consumes accepted purchase suggestions through `PlanningSuggestionAcceptedIntegrationEvent`. | `deprecated/covered-by-other-contract` | Planned-purchase suggestions remain planning/audit facts until accepted. ERP purchase requisition creation is driven by the accepted-suggestion contract, not by raw suggestions. |
 | `Nerv.IIP.Contracts.DemandPlanning` | `demandPlanning.PlannedWorkOrderSuggested` / `DemandPlanningIntegrationEvent<PlanningSuggestionPayload>` | DemandPlanning planned-work-order suggestion converter. | MES does not consume this pre-acceptance event. MES consumes `PlanningSuggestionAcceptedIntegrationEvent`. | `deprecated/covered-by-other-contract` | Current MES handoff is the accepted-suggestion contract from `#461`/`#503`; keep the suggestion fact for planning/audit, not as the MES command trigger. |
 | `Nerv.IIP.Contracts.DemandPlanning` | `demandPlanning.PlanningSuggestionAccepted` / `PlanningSuggestionAcceptedIntegrationEvent` | DemandPlanning acceptance converter. | MES consumes accepted work-order suggestions. ERP consumes accepted purchase suggestions when the downstream reference targets ERP purchase requisition. | `consumed-internally` | No dangling action for accepted suggestions. Unsupported downstream targets remain ignored or dead-lettered by consumer-specific rules. |
-| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.DeviceStateChanged` / `DeviceStateChangedIntegrationEvent` | IndustrialTelemetry state converter. | No active handler found. | `producer-only-until-feature` | Current runtime views can query service facts directly. Future scheduling/MES projection consumers remain under `#485` if needed. |
-| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.AlarmRaised` / `AlarmRaisedIntegrationEvent` | IndustrialTelemetry alarm converter. | Maintenance consumes `AlarmRaisedIntegrationEvent` to open work-order context. | `consumed-internally` | No dangling action. |
-| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.AlarmCleared` / `AlarmClearedIntegrationEvent` | IndustrialTelemetry alarm-clear converter. | Maintenance consumes `AlarmClearedIntegrationEvent` to mark alarm-cleared work-order state. | `consumed-internally` | No dangling action. |
+| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.DeviceStateChanged` / `DeviceStateChangedIntegrationEvent` | IndustrialTelemetry state converter. | No active handler found. #690 plans runtime availability projection refresh plus at least one MES/Scheduling-facing consumer. | `needs-business-consumer` | Device state currently exists as service-owned facts and queryable snapshots; #690 owns the first downstream consumer closure. |
+| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.AlarmRaised` / `AlarmRaisedIntegrationEvent` | IndustrialTelemetry alarm converter. | Maintenance consumes `AlarmRaisedIntegrationEvent` to open work-order context. #685 plans an additional Notification consumer for station messages/tasks. | `consumed-internally` | Current Maintenance side effect is delivered; alarm notification remains open under #685 and must not be claimed as active until Notification adds a handler. |
+| `Nerv.IIP.Contracts.IndustrialTelemetry` | `industrialTelemetry.AlarmCleared` / `AlarmClearedIntegrationEvent` | IndustrialTelemetry alarm-clear converter. | Maintenance consumes `AlarmClearedIntegrationEvent` to mark alarm-cleared work-order state. #685 plans an additional Notification consumer to update/close the related station notification. | `consumed-internally` | Current Maintenance side effect is delivered; notification status synchronization remains open under #685. |
 | `Nerv.IIP.Contracts.Inventory` | `inventory.InventoryMovementRequested` / `InventoryMovementRequestedIntegrationEvent` | MES, WMS, BarcodeLabel, Maintenance and ERP-adjacent flows can request stock movements through this public contract. | Inventory consumes `InventoryMovementRequestedIntegrationEvent`. External requests are limited to `inbound`, `outbound`, `transfer` and `adjustment`; internal `count-adjustment` and `status-transfer-*` movements remain dedicated Inventory transactions. OwnerType is normalized through the Inventory domain whitelist before ledger dimensions are read or created. | `consumed-internally` | No dangling action. |
 | `Nerv.IIP.Contracts.Inventory` | `inventory.InventoryReservationReleaseRequested` / `InventoryReservationReleaseRequestedIntegrationEvent` | MES publishes work-order cancellation compensation when open material reservations must be released. | Inventory consumes `InventoryReservationReleaseRequestedIntegrationEvent` and releases open reservations by MES source document scope. Replayed events are idempotent because already released reservations no longer have open quantity. | `consumed-internally` | No dangling action. |
 | `Nerv.IIP.Contracts.Inventory` | `inventory.StockMovementPosted` / `StockMovementPostedIntegrationEvent` | Inventory publishes successful postings. | WMS and MES consume `StockMovementPostedIntegrationEvent`. | `consumed-internally` | AP automation may also observe receipt facts later, but the event is not unconsumed. |
