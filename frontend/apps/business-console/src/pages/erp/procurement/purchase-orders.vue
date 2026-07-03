@@ -22,6 +22,11 @@ import {
   PageHeader,
   SectionCard,
   SectionCards,
+  SelectPro,
+  SelectProContent,
+  SelectProItem,
+  SelectProTrigger,
+  SelectProValue,
   Spinner,
   StatusBadgePro,
   Toolbar,
@@ -34,7 +39,14 @@ import { formatAmount, formatError, formatQuantity } from '../shared'
 definePage({ meta: { requiresAuth: true, title: '采购订单', requiredPermissions: ['business.erp.procurement.read'] } })
 
 const orders = useErpPurchaseOrders()
-const { page, pageSize } = usePagedList(orders.filters, { resetOn: [() => orders.filters.keyword] })
+const { page, pageSize } = usePagedList(orders.filters, {
+  resetOn: [() => orders.filters.status, () => orders.filters.keyword],
+})
+
+const statusFilter = computed({
+  get: () => orders.filters.status || 'all',
+  set: (value: string) => { orders.filters.status = value === 'all' ? undefined : value },
+})
 
 const rows = computed(() =>
   orders.items.value.flatMap((order) =>
@@ -141,6 +153,15 @@ async function submit() {
     <Toolbar :show-search="false">
       <template #filters>
         <InputPro v-model="orders.filters.keyword" class="h-9 w-64" placeholder="采购单 / 供应商 / 物料 / 工厂" aria-label="采购订单关键字" />
+        <SelectPro v-model="statusFilter">
+          <SelectProTrigger class="h-9 w-32" aria-label="订单状态"><SelectProValue placeholder="订单状态" /></SelectProTrigger>
+          <SelectProContent>
+            <SelectProItem value="all">全部订单</SelectProItem>
+            <SelectProItem value="Released">已下达</SelectProItem>
+            <SelectProItem value="Closed">已关闭</SelectProItem>
+            <SelectProItem value="Cancelled">已取消</SelectProItem>
+          </SelectProContent>
+        </SelectPro>
       </template>
     </Toolbar>
 
