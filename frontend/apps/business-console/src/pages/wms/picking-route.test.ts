@@ -95,7 +95,7 @@ describe('WMS picking route context', () => {
     mount(PickingPage, { global: { stubs: uiStubs } })
 
     expect(wmsState.filters).toEqual(expect.objectContaining({
-      keyword: 'SKU-001 LOT-001 SN-001',
+      keyword: 'SKU-001',
       locationCode: 'A-01',
     }))
   })

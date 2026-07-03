@@ -50,14 +50,10 @@ watch(
   () => route.query,
   (query) => {
     const location = firstQuery(query.locationCode)
-    const keywordParts = [
-      firstQuery(query.skuCode),
-      firstQuery(query.lotNo) || firstQuery(query.batchNo) || firstQuery(query.materialLotId),
-      firstQuery(query.serialNo),
-    ].filter(Boolean)
+    const sku = firstQuery(query.skuCode)
 
     if (location) filters.locationCode = location
-    if (keywordParts.length) filters.keyword = keywordParts.join(' ')
+    if (sku) filters.keyword = sku
   },
   { immediate: true },
 )
