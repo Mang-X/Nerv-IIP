@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AvailabilityPage from './availability.vue'
 import CountsPage from './counts.vue'
+import LotsPage from './lots.vue'
 import MovementsPage from './movements.vue'
 
 const inventoryState = vi.hoisted(() => ({
@@ -33,6 +34,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
         serialNo: 'SN-001',
         qualityStatus: 'available',
         ownerType: 'owned',
+        reservedQuantity: 2,
         onHandQuantity: 10,
         availableQuantity: 8,
       },
@@ -80,7 +82,7 @@ const uiStubs = {
   // DataTablePro stub renders rows + the cell-actions slot, exposing a design-system table marker.
   DataTablePro: {
     props: ['rows', 'columns', 'rowKey'],
-    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i"><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>`,
+    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i"><td data-row>{{ JSON.stringify(row) }}</td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>`,
   },
   DataTablePagination: true,
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
@@ -149,6 +151,20 @@ describe('inventory workflow pages', () => {
     expect(link?.attributes('data-to')).toContain('/barcode/scans')
     expect(link?.attributes('data-to')).toContain('inventory.count')
     expect(link?.attributes('data-to')).toContain('LOT-001')
+  })
+
+  it('renders a facade-backed lot and reservation page with traceability links', () => {
+    const wrapper = mountInventoryPage(LotsPage)
+
+    expect(wrapper.text()).toContain('批次与预留')
+    expect(wrapper.text()).toContain('后端缺口')
+    expect(wrapper.text()).toContain('LOT-001')
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('2')
+
+    const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
+    expect(links.some((to) => to.includes('/mes/traceability') && to.includes('SN-001'))).toBe(true)
+    expect(links.some((to) => to.includes('/barcode/scans') && to.includes('SN-001'))).toBe(true)
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {

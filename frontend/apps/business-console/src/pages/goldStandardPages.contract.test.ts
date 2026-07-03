@@ -53,6 +53,7 @@ const GOLD_STANDARD_PAGES = [
   'barcode/templates.vue',
   'maintenance/work-orders.vue',
   'maintenance/plans.vue',
+  'inventory/lots.vue',
   'equipment/telemetry/tags.vue',
   'equipment/telemetry/alarm-rules.vue',
   'equipment/telemetry/history.vue',

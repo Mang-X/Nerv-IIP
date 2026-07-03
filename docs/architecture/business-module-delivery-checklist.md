@@ -30,7 +30,7 @@
 | ProductEngineering 产品工程 | [x] | [x] | [x] | [ ] | [ ] | 工程对象详情/版本对比/变更影响、文档预览与 FileStorage 深集成、移动端只读准备信息。 |
 | DemandPlanning 需求/MRP | [x] | [x] | [x] 单页 | [ ] | [ ] | MRP 运行详情、pegging 可视化、建议接受后的跟踪、计划员专用工作台。 |
 | Scheduling / APS lite | [x] | [x] | [x] MES 规则排程页，[ ] 独立 APS 工作台 | [ ] | [ ] | 独立 APS/Gantt 页面、重排/RFC、排程版本对比、生产大屏甘特。 |
-| Inventory 库存 | [x] | [x] | [x] | [ ] 独立库存 PDA | [ ] | 批次/序列号/冻结/预留分析、WMS 作业页内库存上下文深化、移动盘点与库存 PDA 边界。 |
+| Inventory 库存 | [x] | [x] | [x] | [ ] 独立库存 PDA | [ ] | MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；独立批次/序列号履历、冻结/解冻、预留明细、库存分析、WMS 作业页内库存上下文深化、移动盘点与库存 PDA 边界仍待后续。 |
 | Quality 质量 | [x] | [x] | [x] | [ ] 独立质量 PDA | [ ] | 移动检验、CAPA 深化、质量趋势/供应商质量分析、NCR 到返工/库存冻结穿透。 |
 | MES 制造执行 | [x] | [x] | [x] | [x] 部分一线作业 | [ ] | PC 详情深度、真实个人任务、扫码直达、离线报工、生产指挥大屏。 |
 | WMS 仓储作业 | [x] | [x] | [x] | [x] 部分一线作业 | [ ] | FEFO/FIFO、ASN 差异、directed putaway、LPN/HU、扫描解析与离线作业。 |
@@ -82,7 +82,7 @@
 - [x] 覆盖 stock location、stock availability、stock movement、reservation/release、status transfer、stock count create/confirm/cancel。
 - [x] 覆盖 Quality inspection result 到库存状态、WMS/MES movement request、posting failed/posted 反馈闭环。
 - [x] BusinessGateway 暴露 availability、movements、counts facade。
-- [ ] 还缺更完整的批次/序列号 UI 查询、库存冻结原因分析、预留分配分析、成本分析和移动端独立库存应用。
+- [ ] MAN-351 已补 availability facade 支撑的批次与预留 PC 视图；还缺独立批次/序列号履历、库存冻结原因分析、预留分配分析、成本分析和移动端独立库存应用。
 
 ### Quality
 
