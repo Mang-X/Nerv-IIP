@@ -1,0 +1,222 @@
+using Nerv.IIP.ConnectorHost.Connectors.OpcUa;
+
+namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests;
+
+public sealed class OpcUaTelemetryCollectorTests
+{
+    [Fact]
+    public async Task Run_cycle_browses_nodes_subscribes_tags_and_posts_bucketed_sample_with_idempotency_fields()
+    {
+        var opcUa = new FakeOpcUaClient(
+            [new OpcUaNode("ns=2;s=Line1.Temperature", "Line1 Temperature", true)],
+            [
+                new OpcUaDataChange(
+                    "ns=2;s=Line1.Temperature",
+                    10m,
+                    new DateTimeOffset(2026, 7, 3, 0, 0, 1, TimeSpan.Zero),
+                    "Good"),
+                new OpcUaDataChange(
+                    "ns=2;s=Line1.Temperature",
+                    20m,
+                    new DateTimeOffset(2026, 7, 3, 0, 0, 5, TimeSpan.Zero),
+                    "Good")
+            ]);
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(["ns=0;i=85"], opcUa.BrowsedNodeIds);
+        Assert.Equal(["ns=2;s=Line1.Temperature"], opcUa.SubscribedNodeIds);
+        var request = Assert.Single(samples.Requests);
+        Assert.Equal("org-001", request.OrganizationId);
+        Assert.Equal("env-dev", request.EnvironmentId);
+        Assert.Equal("device-line-1", request.DeviceAssetId);
+        Assert.Equal("temperature", request.TagKey);
+        Assert.Equal(new DateTimeOffset(2026, 7, 3, 0, 0, 0, TimeSpan.Zero), request.BucketStartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 7, 3, 0, 1, 0, TimeSpan.Zero), request.BucketEndUtc);
+        Assert.Equal(2, request.SampleCount);
+        Assert.Equal(10m, request.MinValue);
+        Assert.Equal(20m, request.MaxValue);
+        Assert.Equal(15m, request.AverageValue);
+        Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
+        Assert.Equal("opcua", request.SourceSystem);
+        Assert.Equal("connector-host-001/opcua-line-1", request.SourceConnector);
+    }
+
+    [Fact]
+    public async Task Run_cycle_reconnects_after_connection_loss_and_reports_health_metrics()
+    {
+        var opcUa = new FakeOpcUaClient(
+            [],
+            [new OpcUaDataChange("ns=2;s=Line1.Temperature", 42m, new DateTimeOffset(2026, 7, 3, 0, 0, 3, TimeSpan.Zero), "Good")])
+        {
+            ThrowConnectionLostOnFirstSubscribe = true
+        };
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(2, opcUa.ConnectCount);
+        Assert.Single(samples.Requests);
+        var targets = await connector.DiscoverAsync(CancellationToken.None);
+        var target = Assert.Single(targets);
+        Assert.Equal("running", target.ReportedStatus);
+        Assert.Equal("degraded", target.HealthStatus);
+        Assert.Equal("1", target.Metadata["reconnectCount"]);
+        Assert.Equal("1", target.Metadata["subscriptionRecoveries"]);
+        Assert.Equal(1m, connector.CurrentState.Metrics["reconnectCount"]);
+    }
+
+    [Fact]
+    public async Task Run_cycle_uses_stable_source_sequence_so_ingestion_is_idempotent()
+    {
+        var changes = new[]
+        {
+            new OpcUaDataChange(
+                "ns=2;s=Line1.Temperature",
+                42m,
+                new DateTimeOffset(2026, 7, 3, 0, 0, 3, TimeSpan.Zero),
+                "Good")
+        };
+        var opcUa = new FakeOpcUaClient([], changes);
+        var samples = new IdempotentIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var request = Assert.Single(samples.StoredRequests);
+        Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
+        Assert.Equal(2, samples.AcceptedWriteAttempts);
+    }
+
+    [Fact]
+    public async Task Run_cycle_counts_bad_or_non_numeric_notifications_as_dropped_samples()
+    {
+        var opcUa = new FakeOpcUaClient(
+            [],
+            [
+                new OpcUaDataChange("ns=2;s=Line1.Temperature", 10m, new DateTimeOffset(2026, 7, 3, 0, 0, 1, TimeSpan.Zero), "Bad"),
+                new OpcUaDataChange("ns=2;s=Line1.Temperature", "not-a-number", new DateTimeOffset(2026, 7, 3, 0, 0, 2, TimeSpan.Zero), "Good")
+            ]);
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Empty(samples.Requests);
+        Assert.Equal(2, connector.CurrentState.DroppedSamples);
+        var targets = await connector.DiscoverAsync(CancellationToken.None);
+        Assert.Equal("2", Assert.Single(targets).Metadata["droppedSamples"]);
+    }
+
+    private static OpcUaConnector CreateConnector(FakeOpcUaClient opcUa, IIndustrialTelemetrySamplesClient samples)
+    {
+        return new OpcUaConnector(
+            new OpcUaConnectorOptions(
+                ConnectorId: "opcua-line-1",
+                ConnectorHostId: "connector-host-001",
+                OrganizationId: "org-001",
+                EnvironmentId: "env-dev",
+                EndpointUrl: "opc.tcp://fake-server:4840",
+                SecurityPolicy: "None",
+                SecurityMode: "None",
+                CredentialReference: "local-dev-user-secret:opcua-line-1",
+                BrowseRootNodeId: "ns=0;i=85",
+                Tags:
+                [
+                    new OpcUaTagSubscription(
+                        DeviceAssetId: "device-line-1",
+                        TagKey: "temperature",
+                        NodeId: "ns=2;s=Line1.Temperature",
+                        SamplingIntervalMilliseconds: 1000,
+                        BucketSeconds: 60)
+                ]),
+            opcUa,
+            samples);
+    }
+
+    private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
+    {
+        public List<RecordIndustrialTelemetrySampleRequest> Requests { get; } = [];
+
+        public Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class IdempotentIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
+    {
+        private readonly Dictionary<(string? SourceSystem, string? SourceConnector, string DeviceAssetId, string TagKey, string SourceSequence), RecordIndustrialTelemetrySampleRequest> _requests = [];
+
+        public int AcceptedWriteAttempts { get; private set; }
+        public IReadOnlyCollection<RecordIndustrialTelemetrySampleRequest> StoredRequests => _requests.Values;
+
+        public Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken)
+        {
+            AcceptedWriteAttempts++;
+            var key = (request.SourceSystem, request.SourceConnector, request.DeviceAssetId, request.TagKey, request.SourceSequence);
+            if (_requests.TryGetValue(key, out var existing))
+            {
+                Assert.Equal(existing.BucketStartUtc, request.BucketStartUtc);
+                Assert.Equal(existing.BucketEndUtc, request.BucketEndUtc);
+                Assert.Equal(existing.SampleCount, request.SampleCount);
+                Assert.Equal(existing.AverageValue, request.AverageValue);
+                return Task.CompletedTask;
+            }
+
+            _requests[key] = request;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeOpcUaClient(
+        IReadOnlyList<OpcUaNode> nodes,
+        IReadOnlyList<OpcUaDataChange> dataChanges) : IOpcUaClient
+    {
+        public bool ThrowConnectionLostOnFirstSubscribe { get; init; }
+        public int ConnectCount { get; private set; }
+        public List<string> BrowsedNodeIds { get; } = [];
+        public List<string> SubscribedNodeIds { get; } = [];
+        private bool _thrown;
+
+        public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+        {
+            ConnectCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken)
+        {
+            BrowsedNodeIds.Add(rootNodeId);
+            return Task.FromResult(nodes);
+        }
+
+        public async Task SubscribeAsync(
+            IReadOnlyList<OpcUaTagSubscription> tags,
+            Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
+            CancellationToken cancellationToken)
+        {
+            SubscribedNodeIds.AddRange(tags.Select(x => x.NodeId));
+            if (ThrowConnectionLostOnFirstSubscribe && !_thrown)
+            {
+                _thrown = true;
+                throw new OpcUaConnectionLostException("simulated disconnect");
+            }
+
+            foreach (var change in dataChanges)
+            {
+                await onDataChange(change, cancellationToken);
+            }
+        }
+
+        public Task DisconnectAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+}

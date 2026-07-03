@@ -4,7 +4,8 @@ public class Worker(
     ILogger<Worker> logger,
     IConfiguration configuration,
     Application.ConnectorReportingLoop reportingLoop,
-    Application.ConnectorOperationLoop operationLoop) : BackgroundService
+    Application.ConnectorOperationLoop operationLoop,
+    IReadOnlyList<Connectors.OpcUa.IOpcUaCollectionConnector> opcUaCollectors) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -14,6 +15,11 @@ public class Worker(
         {
             try
             {
+                foreach (var collector in opcUaCollectors)
+                {
+                    await collector.RunCollectionCycleAsync(stoppingToken);
+                }
+
                 await reportingLoop.RunCycleAsync(stoppingToken);
                 await operationLoop.RunCycleAsync(stoppingToken);
                 logger.LogInformation("Connector Host cycle completed at {time}", DateTimeOffset.UtcNow);
