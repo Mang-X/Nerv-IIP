@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import SchedulesPage from './schedules.vue'
