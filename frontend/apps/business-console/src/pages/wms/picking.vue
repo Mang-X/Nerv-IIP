@@ -25,7 +25,8 @@ import {
   toast,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from 'lucide-vue-next'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '拣货任务', requiredPermissions: ['business.wms.shipments.read'] } })
 
@@ -40,9 +41,22 @@ const {
   createPickingPending,
   createPickingError,
 } = useWmsPickingTasks()
+const route = useRoute()
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.locationCode, () => filters.keyword],
 })
+
+watch(
+  () => route.query,
+  (query) => {
+    const location = firstQuery(query.locationCode)
+    const sku = firstQuery(query.skuCode)
+
+    if (location) filters.locationCode = location
+    if (sku) filters.keyword = sku
+  },
+  { immediate: true },
+)
 
 // 拣货任务挂在出库单下（领料齐套 → 出库拣货扣减）。创建需绑定出库单与单行任务。
 const createOpen = shallowRef(false)
@@ -117,6 +131,10 @@ function formatDateTime(value?: string | null) {
 }
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
 }
 </script>
 

@@ -208,6 +208,7 @@ Business Console 登录、刷新、退出和 `/me` 复用 PlatformGateway Consol
 | `/planning` | 需求、MRP run、pegging、计划建议和建议接受。 | BusinessGateway DemandPlanning facade。 |
 | `/erp` | ERP 业务协同过渡聚合页。 | 当前本地场景数据；正式 ERP facade/page 尚未落地。 |
 | `/inventory/availability` | 可用量查询。 | BusinessGateway Inventory facade。 |
+| `/inventory/lots` | 批次与预留视图，展示 availability facade 返回的批次、序列号、预留和可用量，并提供 MES/WMS/Quality/Barcode 上下文链接；独立冻结、预留明细和库存分析仍按后端 facade 缺口处理。 | BusinessGateway Inventory availability facade。 |
 | `/inventory/movements` | 库存移动工作台；新建移动通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/inventory/counts` | 盘点任务工作台；创建任务和确认差异通过抽屉承载。 | BusinessGateway Inventory facade。 |
 | `/quality/inspections` | 检验任务与记录；检验记录创建通过抽屉承载。 | BusinessGateway Quality facade。 |

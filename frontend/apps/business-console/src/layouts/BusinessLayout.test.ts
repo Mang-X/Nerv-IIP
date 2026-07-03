@@ -65,7 +65,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(shell.props('currentDomainId')).toBe('inventory')
     const sideNav = shell.props('sideNav') as SideGroup[]
     const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
-    expect(sideTitles).toEqual(['库存可用量', '库存移动', '库存盘点'])
+    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点'])
   })
 
   it('trims top domains and side navigation by principal permissions', () => {
@@ -87,7 +87,7 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(domains.map((d) => d.id)).toEqual(['workbench', 'inventory'])
 
     const sideNav = shell.props('sideNav') as SideGroup[]
-    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量'])
+    expect(sideNav.flatMap((g) => g.items.map((i) => i.title))).toEqual(['库存可用量', '批次与预留'])
   })
 
   it('drops side navigation groups after permission trimming removes every item', () => {

@@ -127,6 +127,17 @@ describe('business console ERP navigation', () => {
   })
 })
 
+describe('business console inventory navigation', () => {
+  it('adds the facade-backed lot and reservation page under inventory', () => {
+    const inventoryItems = DOMAIN_SIDE_NAV.inventory?.flatMap((section) => section.items) ?? []
+    const lots = inventoryItems.find((item) => pathOf(item.to) === '/inventory/lots')
+
+    expect(resolveDomainId('/inventory/lots')).toBe('inventory')
+    expect(lots?.title).toBe('批次与预留')
+    expect(lots?.requiredPermissions).toEqual([P.inventoryLedgerRead])
+  })
+})
+
 function pathOf(to: unknown) {
   return typeof to === 'object' && to !== null && 'path' in to ? String(to.path) : ''
 }
