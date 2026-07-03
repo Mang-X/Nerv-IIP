@@ -15,6 +15,12 @@ public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTime
 
 public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOffset ClosedAtUtc) : IDomainEvent;
 
+public sealed record WorkOrderCancelledDomainEvent(
+    WorkOrder WorkOrder,
+    DateTimeOffset CancelledAtUtc,
+    string Reason,
+    IReadOnlyCollection<string> MaterialIssueRequestNos) : IDomainEvent;
+
 public sealed record ProductionReportRecordedDomainEvent(ProductionReport ProductionReport) : IDomainEvent;
 
 public sealed record ProductionMaterialConsumedDomainEvent(ProductionReportMaterialConsumption MaterialConsumption) : IDomainEvent;

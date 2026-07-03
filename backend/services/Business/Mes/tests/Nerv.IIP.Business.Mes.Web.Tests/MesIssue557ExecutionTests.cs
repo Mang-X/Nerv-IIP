@@ -343,6 +343,37 @@ public sealed class MesIssue557ExecutionTests
         Assert.Null(materialRequest.ReceivedAtUtc);
     }
 
+    [Fact]
+    public async Task Cancel_work_order_maps_received_material_without_lot_to_business_error()
+    {
+        await using var dbContext = CreateDbContext(nameof(Cancel_work_order_maps_received_material_without_lot_to_business_error));
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-695-NOLOT", "SKU-FG", "PV-001", 10m, 1, Utc("2026-07-03T08:00:00Z"), "PCS");
+        workOrder.MarkReleased();
+        var materialRequest = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-695-NOLOT",
+            "WO-695-NOLOT",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            5m,
+            Utc("2026-07-03T07:00:00Z"));
+        materialRequest.ConfirmLineSideReceipt(Utc("2026-07-03T07:30:00Z"), 5m);
+        materialRequest.ClearDomainEvents();
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.MaterialIssueRequests.Add(materialRequest);
+        await dbContext.SaveChangesAsync();
+        var handler = new CancelWorkOrderCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CancelWorkOrderCommand("org-001", "env-dev", "WO-695-NOLOT", "plan cancelled", Utc("2026-07-03T09:00:00Z")),
+            CancellationToken.None));
+
+        Assert.Contains("received material lot", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(exception.InnerException);
+    }
+
     private static void SeedReleasedWorkOrderWithTwoOperations(ApplicationDbContext dbContext, OperationTaskLifecycleStatus secondStatus)
     {
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-001", "SKU-FG", "PV-001", 10m, 1, Utc("2026-06-30T08:00:00Z"), "PCS");

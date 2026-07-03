@@ -1,6 +1,7 @@
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Mes;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -74,5 +75,32 @@ public sealed class MesWorkOrderIntegrationEventTests
         Assert.Equal(closed.IdempotencyKey, closed.CorrelationId);
         Assert.Equal("WO-001", closed.CausationId);
         Assert.Equal("WO-001", closed.Payload.WorkOrderId);
+    }
+
+    [Fact]
+    public void Work_order_cancelled_converter_emits_inventory_reservation_release_request()
+    {
+        var cancelledAtUtc = new DateTimeOffset(2026, 7, 3, 8, 0, 0, TimeSpan.Zero);
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-695",
+            "SKU-001",
+            "PV-001",
+            10,
+            1,
+            cancelledAtUtc.AddHours(4),
+            "EA");
+        workOrder.MarkReleased();
+        workOrder.Cancel("plan cancelled", cancelledAtUtc, ["MIR-001"]);
+
+        var integrationEvent = new WorkOrderCancelledIntegrationEventConverter()
+            .Convert(Assert.IsType<WorkOrderCancelledDomainEvent>(workOrder.GetDomainEvents().Last()));
+
+        Assert.Equal(InventoryIntegrationEventTypes.InventoryReservationReleaseRequested, integrationEvent.EventType);
+        Assert.Equal(InventoryIntegrationEventSources.BusinessMes, integrationEvent.SourceService);
+        Assert.Equal("WO-695", integrationEvent.CausationId);
+        Assert.Equal("WO-695", integrationEvent.Payload.SourceDocumentId);
+        Assert.Equal(["MIR-001"], integrationEvent.Payload.SourceDocumentLineIds);
     }
 }
