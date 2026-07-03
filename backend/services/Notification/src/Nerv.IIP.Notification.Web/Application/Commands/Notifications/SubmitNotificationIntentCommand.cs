@@ -18,7 +18,8 @@ public sealed record SubmitNotificationIntentCommand(
 
 public sealed class SubmitNotificationIntentCommandHandler(
     INotificationIntentRepository repository,
-    ApplicationDbContext dbContext)
+    ApplicationDbContext dbContext,
+    NotificationDeliveryService deliveryService)
     : ICommandHandler<SubmitNotificationIntentCommand, NotificationIntentResponse>
 {
     public async Task<NotificationIntentResponse> Handle(SubmitNotificationIntentCommand command, CancellationToken cancellationToken)
@@ -54,13 +55,7 @@ public sealed class SubmitNotificationIntentCommandHandler(
             command.Now);
 
         await repository.AddAsync(intent, cancellationToken);
-        foreach (var message in intent.Messages)
-        {
-            dbContext.DeliveryAttempts.Add(DeliveryAttempt.Succeeded(
-                message.Id,
-                NotificationDeliveryChannels.InApp,
-                command.Now));
-        }
+        await deliveryService.StageSubmittedIntentAsync(intent, command.Now, cancellationToken);
 
         const string duplicateRecoverySavepoint = "notification_intent_submit_before_save";
         // Use EF's native current transaction here. The CAP unit-of-work wrapper does not expose savepoints,

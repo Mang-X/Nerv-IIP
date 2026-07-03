@@ -20,6 +20,13 @@ public static class NotificationMessageStatuses
     public const string Read = "read";
 }
 
+public static class NotificationSeverities
+{
+    public const string Info = "info";
+    public const string Warning = "warning";
+    public const string Critical = "critical";
+}
+
 public static class NotificationTaskStatuses
 {
     public const string Open = "open";
@@ -62,7 +69,7 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
         SourceEventType = Required(sourceEventType, "Source event type is required.");
         SourceEventId = Required(sourceEventId, "Source event id is required.");
         IntentType = RequiredIntentType(intentType);
-        Severity = Required(severity, "Severity is required.");
+        Severity = RequiredSeverity(severity);
         DedupeKey = Required(dedupeKey, "Dedupe key is required.");
         ResourceType = string.IsNullOrWhiteSpace(resourceType) ? null : resourceType;
         ResourceId = string.IsNullOrWhiteSpace(resourceId) ? null : resourceId;
@@ -154,6 +161,19 @@ public class NotificationIntent : Entity<NotificationIntentId>, IAggregateRoot
             && !string.Equals(value, NotificationIntentTypes.Task, StringComparison.Ordinal))
         {
             throw new KnownException($"Unsupported notification intent type: {value}");
+        }
+
+        return value;
+    }
+
+    private static string RequiredSeverity(string? severity)
+    {
+        var value = Required(severity, "Severity is required.").Trim().ToLowerInvariant();
+        if (value is not NotificationSeverities.Info
+            and not NotificationSeverities.Warning
+            and not NotificationSeverities.Critical)
+        {
+            throw new KnownException($"Unsupported notification severity: {value}");
         }
 
         return value;
