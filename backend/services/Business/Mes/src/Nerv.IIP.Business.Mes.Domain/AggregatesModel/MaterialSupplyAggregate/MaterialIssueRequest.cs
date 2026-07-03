@@ -10,6 +10,8 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public const string RequestedStatus = "Requested";
     public const string PartiallyReceivedStatus = "PartiallyReceived";
     public const string ReceivedStatus = "Received";
+    public const string CancelledStatus = "Cancelled";
+    public const string ReturnRequestedStatus = "ReturnRequested";
     public const int FailureMessageMaxLength = 500;
 
     private MaterialIssueRequest()
@@ -185,6 +187,25 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
         AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+    }
+
+    public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc)
+    {
+        if (Status is CancelledStatus or ReturnRequestedStatus)
+        {
+            return;
+        }
+
+        if (ReceivedQuantity <= 0m)
+        {
+            Status = CancelledStatus;
+            ReceivedAtUtc = null;
+            MaterialLotId = null;
+            return;
+        }
+
+        ReturnLineSideMaterial(cancelledAtUtc, ReceivedQuantity);
+        Status = ReturnRequestedStatus;
     }
 
     private static string NormalizeFailureMessage(string failureMessage)

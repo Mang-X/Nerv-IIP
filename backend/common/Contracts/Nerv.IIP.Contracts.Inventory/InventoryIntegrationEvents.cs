@@ -5,6 +5,7 @@ namespace Nerv.IIP.Contracts.Inventory;
 public static class InventoryIntegrationEventTypes
 {
     public const string InventoryMovementRequested = "inventory.InventoryMovementRequested";
+    public const string InventoryReservationReleaseRequested = "inventory.InventoryReservationReleaseRequested";
     public const string StockMovementPosted = "inventory.StockMovementPosted";
     public const string StockMovementPostingFailed = "inventory.StockMovementPostingFailed";
     public const string StockCountVarianceConfirmed = "inventory.StockCountVarianceConfirmed";
@@ -87,6 +88,30 @@ public sealed record InventoryMovementRequestedPayload(
     string? InventoryReservationId = null,
     decimal? UnitCost = null,
     string? TargetQualityStatus = null);
+
+public sealed record InventoryReservationReleaseRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InventoryReservationReleaseRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record InventoryReservationReleaseRequestedPayload(
+    string ReservationSourceService,
+    string SourceDocumentId,
+    IReadOnlyCollection<string> SourceDocumentLineIds,
+    string Reason,
+    DateTimeOffset RequestedAtUtc);
 
 public sealed record StockMovementPostedIntegrationEvent(
     string EventId,

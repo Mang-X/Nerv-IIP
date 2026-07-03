@@ -208,6 +208,22 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         AssignedAtUtc = assignedAtUtc;
     }
 
+    public void Cancel(DateTimeOffset cancelledAtUtc)
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            return;
+        }
+
+        if (Status == OperationTaskLifecycleStatus.Paused)
+        {
+            AccumulatePause(cancelledAtUtc);
+        }
+
+        Status = OperationTaskLifecycleStatus.Cancelled;
+        ExistingEndUtc = cancelledAtUtc;
+    }
+
     public void ApplyScheduleAssignment(
         string workCenterId,
         string? deviceAssetId,

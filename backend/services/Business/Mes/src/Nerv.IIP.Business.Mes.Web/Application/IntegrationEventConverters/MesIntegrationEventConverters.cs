@@ -389,6 +389,38 @@ public sealed class WorkOrderClosedIntegrationEventConverter
     }
 }
 
+public sealed class WorkOrderCancelledIntegrationEventConverter
+    : IIntegrationEventConverter<WorkOrderCancelledDomainEvent, InventoryReservationReleaseRequestedIntegrationEvent>
+{
+    public InventoryReservationReleaseRequestedIntegrationEvent Convert(WorkOrderCancelledDomainEvent domainEvent)
+    {
+        var workOrder = domainEvent.WorkOrder;
+        var idempotencyKey = EventIds.Idempotency(
+            "work-order-cancelled-reservation-release",
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            workOrder.WorkOrderId);
+        return new InventoryReservationReleaseRequestedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            InventoryIntegrationEventTypes.InventoryReservationReleaseRequested,
+            InventoryIntegrationEventVersions.V1,
+            domainEvent.CancelledAtUtc,
+            InventoryIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            workOrder.WorkOrderId,
+            workOrder.OrganizationId,
+            workOrder.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new InventoryReservationReleaseRequestedPayload(
+                InventoryIntegrationEventSources.BusinessMes,
+                workOrder.WorkOrderId,
+                domainEvent.MaterialIssueRequestNos,
+                domainEvent.Reason,
+                domainEvent.CancelledAtUtc));
+    }
+}
+
 internal static class EventIds
 {
     public static string Idempotency(params string?[] parts) =>

@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
@@ -213,7 +214,41 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
             request.WorkOrderId,
             cancellationToken);
 
-        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(request.Reason));
+        var materialIssueRequests = await dbContext.MaterialIssueRequests
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.WorkOrderId == request.WorkOrderId)
+            .ToListAsync(cancellationToken);
+        var finishedGoodsReceiptRequests = await dbContext.FinishedGoodsReceiptRequests
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.WorkOrderId == request.WorkOrderId)
+            .ToListAsync(cancellationToken);
+        var operationTasks = await dbContext.OperationTasks
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.WorkOrderId == request.WorkOrderId)
+            .ToListAsync(cancellationToken);
+
+        WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
+            request.Reason,
+            request.CancelledAtUtc,
+            materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
+
+        foreach (var materialIssueRequest in materialIssueRequests)
+        {
+            materialIssueRequest.CancelForWorkOrderCancellation(request.CancelledAtUtc);
+        }
+
+        foreach (var receiptRequest in finishedGoodsReceiptRequests)
+        {
+            receiptRequest.Cancel();
+        }
+
+        foreach (var operationTask in operationTasks)
+        {
+            operationTask.Cancel(request.CancelledAtUtc);
+        }
 
         return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
     }
