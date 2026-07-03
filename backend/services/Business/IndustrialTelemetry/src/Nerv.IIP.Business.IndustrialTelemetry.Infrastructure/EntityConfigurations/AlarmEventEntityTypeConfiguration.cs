@@ -26,7 +26,12 @@ public sealed class AlarmEventEntityTypeConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ClearedAtUtc).HasColumnName("cleared_at_utc").HasComment("UTC time when the alarm was cleared.");
         builder.Property(x => x.ClearedBy).HasMaxLength(150).HasColumnName("cleared_by").HasComment("Actor or system that cleared the alarm.");
         builder.Property(x => x.ClearReason).HasMaxLength(300).HasColumnName("clear_reason").HasComment("Reason recorded when the alarm was cleared.");
-        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.ExternalAlarmId }).IsUnique();
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.ExternalAlarmId })
+            .IsUnique()
+            .HasFilter("status = 'raised'");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ExternalAlarmId })
+            .IsUnique()
+            .HasFilter("status = 'raised' AND tag_key IS NOT NULL");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.RaisedAtUtc });
     }
 }
