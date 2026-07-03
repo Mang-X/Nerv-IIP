@@ -58,8 +58,18 @@ const GOLD_STANDARD_PAGES = [
   'equipment/telemetry/history.vue',
   'equipment/telemetry/oee.vue',
   'erp/index.vue',
+  'erp/procurement/rfqs.vue',
+  'erp/procurement/supplier-quotations.vue',
+  'erp/procurement/purchase-orders.vue',
+  'erp/procurement/receipts.vue',
   'erp/sales.vue',
+  'erp/sales/quotations.vue',
+  'erp/sales/orders.vue',
+  'erp/sales/deliveries.vue',
   'erp/finance.vue',
+  'erp/finance/ar-ap.vue',
+  'erp/finance/vouchers.vue',
+  'erp/finance/cost-candidates.vue',
 ]
 
 // SectionCards is NOT required: KPI cards are decided per page (business-meaningful,

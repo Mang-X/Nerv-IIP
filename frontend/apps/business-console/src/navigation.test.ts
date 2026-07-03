@@ -75,6 +75,58 @@ describe('business console approval navigation', () => {
   })
 })
 
+describe('business console ERP navigation', () => {
+  it('splits ERP into formal procurement, sales, and finance business-object pages', () => {
+    const erpSections = DOMAIN_SIDE_NAV.erp ?? []
+    const items = erpSections.flatMap((section) => section.items)
+    const paths = items.map((item) => pathOf(item.to))
+
+    expect(resolveDomainId('/erp/procurement/rfqs')).toBe('erp')
+    expect(resolveDomainId('/erp/sales/quotations')).toBe('erp')
+    expect(resolveDomainId('/erp/finance/cost-candidates')).toBe('erp')
+    expect(paths).toEqual([
+      '/erp',
+      '/erp/procurement/rfqs',
+      '/erp/procurement/supplier-quotations',
+      '/erp/procurement/purchase-orders',
+      '/erp/procurement/receipts',
+      '/erp/sales',
+      '/erp/sales/quotations',
+      '/erp/sales/orders',
+      '/erp/sales/deliveries',
+      '/erp/finance',
+      '/erp/finance/ar-ap',
+      '/erp/finance/vouchers',
+      '/erp/finance/cost-candidates',
+    ])
+  })
+
+  it('uses ERP domain permission codes for every ERP object page', () => {
+    const erpSections = DOMAIN_SIDE_NAV.erp ?? []
+    const byPath = new Map(
+      erpSections.flatMap((section) => section.items).map((item) => [pathOf(item.to), item.requiredPermissions]),
+    )
+
+    for (const path of [
+      '/erp',
+      '/erp/procurement/rfqs',
+      '/erp/procurement/supplier-quotations',
+      '/erp/procurement/purchase-orders',
+      '/erp/procurement/receipts',
+    ]) {
+      expect(byPath.get(path)).toEqual([P.erpProcurementRead])
+    }
+
+    for (const path of ['/erp/sales', '/erp/sales/quotations', '/erp/sales/orders', '/erp/sales/deliveries']) {
+      expect(byPath.get(path)).toEqual([P.erpSalesRead])
+    }
+
+    for (const path of ['/erp/finance', '/erp/finance/ar-ap', '/erp/finance/vouchers', '/erp/finance/cost-candidates']) {
+      expect(byPath.get(path)).toEqual([P.erpFinanceRead])
+    }
+  })
+})
+
 function pathOf(to: unknown) {
   return typeof to === 'object' && to !== null && 'path' in to ? String(to.path) : ''
 }

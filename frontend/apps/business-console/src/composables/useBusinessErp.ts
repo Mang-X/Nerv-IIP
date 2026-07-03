@@ -5,6 +5,8 @@ import {
   createBusinessConsoleErpAccountReceivableMutationOptions,
   createBusinessConsoleErpAccountPayableMutationOptions,
   createBusinessConsoleErpCostCandidateMutationOptions,
+  createBusinessConsoleErpPurchaseOrderMutationOptions,
+  createBusinessConsoleErpRequestForQuotationMutationOptions,
   getBusinessConsoleErpFinanceSummaryQueryOptions,
   listBusinessConsoleErpCostCandidatesQueryOptions,
   listBusinessConsoleErpDeliveryOrdersQueryOptions,
@@ -15,9 +17,13 @@ import {
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
   listBusinessConsoleErpQuotationsQueryOptions,
   listBusinessConsoleErpReceivablesQueryOptions,
+  listBusinessConsoleErpRequestsForQuotationQueryOptions,
   listBusinessConsoleErpSalesOrdersQueryOptions,
   openBusinessConsoleErpOpportunityMutationOptions,
   postBusinessConsoleErpJournalVoucherMutationOptions,
+  receiveBusinessConsoleErpSupplierQuotationMutationOptions,
+  recordBusinessConsoleErpPurchaseReceiptMutationOptions,
+  releaseBusinessConsoleErpDeliveryOrderMutationOptions,
   type BusinessConsoleErpCostCandidateItem,
   type BusinessConsoleErpCostCandidateListEnvelope,
   type BusinessConsoleErpDeliveryOrderItem,
@@ -38,6 +44,8 @@ import {
   type BusinessConsoleErpQuotationListEnvelope,
   type BusinessConsoleErpReceivableItem,
   type BusinessConsoleErpReceivableListEnvelope,
+  type BusinessConsoleErpRequestForQuotationItem,
+  type BusinessConsoleErpRequestForQuotationListEnvelope,
   type BusinessConsoleErpSalesOrderItem,
   type BusinessConsoleErpSalesOrderListEnvelope,
 } from '@nerv-iip/api-client'
@@ -183,6 +191,149 @@ export function useBusinessErp() {
   }
 }
 
+export function useErpPurchaseRequisitions(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  return useErpDocumentList<BusinessConsoleErpPurchaseRequisitionItem, BusinessConsoleErpPurchaseRequisitionListEnvelope>(
+    (query) => listBusinessConsoleErpPurchaseRequisitionsQueryOptions({ query }),
+    initialFilters,
+  )
+}
+
+export function useErpRequestsForQuotation(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const list = useErpDocumentList<BusinessConsoleErpRequestForQuotationItem, BusinessConsoleErpRequestForQuotationListEnvelope>(
+    (query) => listBusinessConsoleErpRequestsForQuotationQueryOptions({ query }),
+    initialFilters,
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleErpRequestForQuotationMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    createRequestForQuotation: (payload: {
+      supplierCodes: string[]
+      rfqNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, requiredDate: string }[]
+    }) =>
+      createMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          rfqNo: payload.rfqNo || null,
+          supplierCodes: payload.supplierCodes,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    createRequestForQuotationPending: createMutation.isLoading,
+    createRequestForQuotationError: createMutation.error,
+  }
+}
+
+export function useErpSupplierQuotations(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const rfqs = useErpRequestsForQuotation(initialFilters)
+  const receiveMutation = useMutation({
+    ...receiveBusinessConsoleErpSupplierQuotationMutationOptions(),
+    onSuccess() {
+      void rfqs.refresh()
+    },
+  })
+
+  return {
+    ...rfqs,
+    receiveSupplierQuotation: (payload: {
+      rfqNo: string
+      supplierCode: string
+      quotationNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+    }) =>
+      receiveMutation.mutateAsync({
+        body: {
+          organizationId: rfqs.organizationId.value,
+          environmentId: rfqs.environmentId.value,
+          quotationNo: payload.quotationNo || null,
+          rfqNo: payload.rfqNo,
+          supplierCode: payload.supplierCode,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    receiveSupplierQuotationPending: receiveMutation.isLoading,
+    receiveSupplierQuotationError: receiveMutation.error,
+  }
+}
+
+export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const list = useErpDocumentList<BusinessConsoleErpPurchaseOrderItem, BusinessConsoleErpPurchaseOrderListEnvelope>(
+    (query) => listBusinessConsoleErpPurchaseOrdersQueryOptions({ query }),
+    initialFilters,
+  )
+
+  const createMutation = useMutation({
+    ...createBusinessConsoleErpPurchaseOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    createPurchaseOrder: (payload: {
+      supplierCode: string
+      siteCode: string
+      purchaseOrderNo?: string
+      lines: { lineNo: string, skuCode: string, uomCode: string, quantity: number, unitPrice: number, promisedDate: string }[]
+    }) =>
+      createMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          purchaseOrderNo: payload.purchaseOrderNo || null,
+          supplierCode: payload.supplierCode,
+          siteCode: payload.siteCode,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    createPurchaseOrderPending: createMutation.isLoading,
+    createPurchaseOrderError: createMutation.error,
+  }
+}
+
+export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFilters> = {}) {
+  const purchaseOrders = useErpPurchaseOrders(initialFilters)
+  const recordMutation = useMutation({
+    ...recordBusinessConsoleErpPurchaseReceiptMutationOptions(),
+    onSuccess() {
+      void purchaseOrders.refresh()
+    },
+  })
+
+  return {
+    ...purchaseOrders,
+    recordPurchaseReceipt: (payload: {
+      purchaseOrderNo: string
+      purchaseReceiptNo?: string
+      lines: { purchaseOrderLineNo: string, receivedQuantity: number }[]
+    }) =>
+      recordMutation.mutateAsync({
+        body: {
+          organizationId: purchaseOrders.organizationId.value,
+          environmentId: purchaseOrders.environmentId.value,
+          purchaseReceiptNo: payload.purchaseReceiptNo || null,
+          purchaseOrderNo: payload.purchaseOrderNo,
+          lines: payload.lines,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    recordPurchaseReceiptPending: recordMutation.isLoading,
+    recordPurchaseReceiptError: recordMutation.error,
+  }
+}
+
 // 销售订单：读面 + 由已批准报价转换生成（quotationNo 必填）。
 export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
   const businessContext = useBusinessContextStore()
@@ -322,10 +473,31 @@ export function useErpOpportunities(initialFilters: Partial<BusinessErpListFilte
 
 // 发货单：读面（由销售订单履约生成）。
 export function useErpDeliveryOrders(initialFilters: Partial<BusinessErpListFilters> = {}) {
-  return useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
+  const list = useErpDocumentList<BusinessConsoleErpDeliveryOrderItem, BusinessConsoleErpDeliveryOrderListEnvelope>(
     (query) => listBusinessConsoleErpDeliveryOrdersQueryOptions({ query }),
     initialFilters,
   )
+  const releaseMutation = useMutation({
+    ...releaseBusinessConsoleErpDeliveryOrderMutationOptions(),
+    onSuccess() {
+      void list.refresh()
+    },
+  })
+
+  return {
+    ...list,
+    releaseDeliveryOrder: (deliveryOrderNo: string) =>
+      releaseMutation.mutateAsync({
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          deliveryOrderNo,
+          idempotencyKey: makeIdempotencyKey(),
+        },
+      }),
+    releaseDeliveryOrderPending: releaseMutation.isLoading,
+    releaseDeliveryOrderError: releaseMutation.error,
+  }
 }
 
 // 财务汇总（语义 KPI 来源）：应收/应付未结、成本候选、已过账凭证。
