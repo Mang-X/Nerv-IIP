@@ -9,6 +9,7 @@ import LotsPage from './lots.vue'
 import MovementsPage from './movements.vue'
 
 const inventoryState = vi.hoisted(() => ({
+  availabilityFilters: undefined as Record<string, string | undefined> | undefined,
   confirmAdjustment: vi.fn(),
   createCountTask: vi.fn(),
   postMovement: vi.fn(),
@@ -24,23 +25,8 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/composables/useBusinessInventory', () => ({
-  useInventoryAvailability: () => ({
-    availability: computed(() => ({ onHandQuantity: 10, availableQuantity: 8, reservedQuantity: 2 })),
-    availabilityError: ref(undefined),
-    availabilityLines: computed(() => [
-      {
-        locationCode: 'A-01',
-        lotNo: 'LOT-001',
-        serialNo: 'SN-001',
-        qualityStatus: 'available',
-        ownerType: 'owned',
-        reservedQuantity: 2,
-        onHandQuantity: 10,
-        availableQuantity: 8,
-      },
-    ]),
-    availabilityPending: ref(false),
-    filters: {
+  useInventoryAvailability: () => {
+    const filters = {
       environmentId: 'env-dev',
       organizationId: 'org-001',
       qualityStatus: 'available',
@@ -48,9 +34,29 @@ vi.mock('@/composables/useBusinessInventory', () => ({
       siteCode: 'S1',
       skuCode: 'SKU-001',
       uomCode: 'EA',
-    },
-    refreshAvailability: vi.fn(),
-  }),
+    }
+    inventoryState.availabilityFilters = filters
+
+    return {
+      availability: computed(() => ({ onHandQuantity: 10, availableQuantity: 7, reservedQuantity: 2 })),
+      availabilityError: ref(undefined),
+      availabilityLines: computed(() => [
+        {
+          locationCode: 'A-01',
+          lotNo: 'LOT-001',
+          serialNo: 'SN-001',
+          qualityStatus: 'available',
+          ownerType: 'owned',
+          reservedQuantity: 2,
+          onHandQuantity: 10,
+          availableQuantity: 7,
+        },
+      ]),
+      availabilityPending: ref(false),
+      filters,
+      refreshAvailability: vi.fn(),
+    }
+  },
   useInventoryCounts: () => ({
     confirmAdjustment: inventoryState.confirmAdjustment,
     confirmAdjustmentError: ref(undefined),
@@ -82,7 +88,11 @@ const uiStubs = {
   // DataTablePro stub renders rows + the cell-actions slot, exposing a design-system table marker.
   DataTablePro: {
     props: ['rows', 'columns', 'rowKey'],
-    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i"><td data-row>{{ JSON.stringify(row) }}</td><td><slot name="cell-actions" :row="row" /></td></tr></tbody></table>`,
+    template: `<table data-ui-table><tbody><tr v-for="(row, i) in rows" :key="i">
+      <td v-for="column in columns" :key="column.key" :data-cell="column.key">
+        <slot :name="'cell-' + column.key" :row="row">{{ column.accessor ? column.accessor(row) : row[column.key] }}</slot>
+      </td>
+    </tr></tbody></table>`,
   },
   DataTablePagination: true,
   RowActions: { props: ['label'], template: '<div><slot /></div>' },
@@ -160,11 +170,14 @@ describe('inventory workflow pages', () => {
     expect(wrapper.text()).toContain('后端缺口')
     expect(wrapper.text()).toContain('LOT-001')
     expect(wrapper.text()).toContain('SN-001')
-    expect(wrapper.text()).toContain('2')
+    expect(wrapper.get('[data-cell="reservedQuantity"]').text()).toBe('2')
+    expect(inventoryState.availabilityFilters?.qualityStatus).toBeUndefined()
 
     const links = wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to') ?? '')
-    expect(links.some((to) => to.includes('/mes/traceability') && to.includes('SN-001'))).toBe(true)
+    expect(links.some((to) => to.includes('/mes/traceability') && to.includes('batchOrSerial') && to.includes('SN-001'))).toBe(true)
     expect(links.some((to) => to.includes('/barcode/scans') && to.includes('SN-001'))).toBe(true)
+    expect(links.some((to) => to.includes('/wms/picking') && to.includes('locationCode') && to.includes('A-01'))).toBe(true)
+    expect(links.some((to) => to.includes('/quality/inspections') && to.includes('batchNo') && to.includes('materialLotId') && to.includes('LOT-001'))).toBe(true)
   })
 
   it('generates a fresh idempotency key each time the same count task is adjusted', async () => {

@@ -17,12 +17,35 @@ import {
   Toolbar,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from 'lucide-vue-next'
-import { computed } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '追溯查询', requiredPermissions: ['business.mes.traceability.read'] } })
 
 const { filters, refreshTraceability, traceability, traceabilityError, traceabilityPending } = useMesTraceability()
+const route = useRoute()
+
+watch(
+  () => route.query,
+  (query) => {
+    const mode = firstQuery(query.mode)
+    const batchOrSerial = firstQuery(query.batchOrSerial) || firstQuery(query.serialNo) || firstQuery(query.batchNo)
+    const materialLotId = firstQuery(query.materialLotId)
+    const workOrderId = firstQuery(query.workOrderId)
+
+    if (mode === 'work-order' || mode === 'batch' || mode === 'material-lot') filters.mode = mode
+    if (workOrderId) filters.workOrderId = workOrderId
+    if (batchOrSerial) {
+      filters.batchOrSerial = batchOrSerial
+      filters.materialLotId = materialLotId || batchOrSerial
+    }
+    else if (materialLotId) {
+      filters.materialLotId = materialLotId
+      if (!mode) filters.mode = 'material-lot'
+    }
+  },
+  { immediate: true },
+)
 
 const nodes = computed(() => traceability.value?.nodes ?? [])
 const errorMessage = computed(() => formatError(traceabilityError.value))
@@ -46,6 +69,10 @@ const columns: DataTableProColumn<NodeRow>[] = [
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
+}
+function firstQuery(value: unknown) {
+  if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
+  return typeof value === 'string' ? value : ''
 }
 </script>
 

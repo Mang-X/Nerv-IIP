@@ -33,6 +33,7 @@ const {
   filters,
   refreshAvailability,
 } = useInventoryAvailability()
+filters.qualityStatus = undefined
 
 watch(
   () => route.query,
@@ -97,11 +98,14 @@ function lineKey(line: Line) {
 }
 
 function lineContextQuery(line: Line) {
+  const lotNo = line.lotNo ?? undefined
   return {
     skuCode: filters.skuCode || undefined,
     siteCode: filters.siteCode || undefined,
     locationCode: line.locationCode ?? undefined,
-    lotNo: line.lotNo ?? undefined,
+    lotNo,
+    batchNo: lotNo,
+    materialLotId: lotNo,
     serialNo: line.serialNo ?? undefined,
   }
 }

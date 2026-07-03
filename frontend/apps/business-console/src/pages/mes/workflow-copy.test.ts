@@ -19,6 +19,7 @@ const routerState = vi.hoisted(() => ({
 const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
+  traceabilityFilters: undefined as { batchOrSerial: string, materialLotId: string, mode: string, workOrderId: string } | undefined,
 }))
 
 vi.mock('vue-router', () => ({
@@ -101,18 +102,23 @@ vi.mock('@/composables/useBusinessMes', () => ({
     productionPlansTotal: ref(1),
     refreshProductionPlans: vi.fn(),
   }),
-  useMesTraceability: () => ({
-    filters: reactive({
-      batchOrSerial: 'LOT-001',
-      materialLotId: 'LOT-001',
-      mode: 'batch',
+  useMesTraceability: () => {
+    const filters = reactive({
+      batchOrSerial: '',
+      materialLotId: '',
+      mode: 'work-order',
       workOrderId: '',
-    }),
-    refreshTraceability: vi.fn(),
-    traceability: ref({ edges: [], nodes: [] }),
-    traceabilityError: ref(undefined),
-    traceabilityPending: ref(false),
-  }),
+    })
+    mesSpies.traceabilityFilters = filters
+
+    return {
+      filters,
+      refreshTraceability: vi.fn(),
+      traceability: ref({ edges: [], nodes: [] }),
+      traceabilityError: ref(undefined),
+      traceabilityPending: ref(false),
+    }
+  },
   useMesWorkOrderDetail: () => ({
     detail: ref(null),
     detailError: ref(null),
@@ -336,6 +342,7 @@ describe('MES workflow copy', () => {
     routerState.push.mockReset()
     mesSpies.createReceiptRequest.mockClear()
     mesSpies.refreshReceiptRequests.mockClear()
+    mesSpies.traceabilityFilters = undefined
   })
 
   it('keeps work-order reporting business-facing and row-context driven', () => {
@@ -418,6 +425,7 @@ describe('MES workflow copy', () => {
   })
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
+    routeState.query = { batchOrSerial: 'LOT-001', mode: 'batch' }
     const wrapper = mountMesPage(TraceabilityPage)
 
     const scanLink = wrapper.get('[data-router-link]')
@@ -427,5 +435,17 @@ describe('MES workflow copy', () => {
     expect(target).toContain('"sourceDocumentId":"LOT-001"')
     expect(target).toContain('"scannedValue":"LOT-001"')
     expect(target).not.toContain('sourceWorkflow')
+  })
+
+  it('initializes traceability filters from an inventory batch or serial route', () => {
+    routeState.query = { batchOrSerial: 'SN-001', mode: 'batch' }
+
+    mountMesPage(TraceabilityPage)
+
+    expect(mesSpies.traceabilityFilters).toEqual(expect.objectContaining({
+      batchOrSerial: 'SN-001',
+      materialLotId: 'SN-001',
+      mode: 'batch',
+    }))
   })
 })
