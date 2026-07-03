@@ -1,4 +1,11 @@
 import { mount } from '@vue/test-utils'
+import type {
+  BusinessConsoleMaintenanceInspectionItem,
+  BusinessConsoleMaintenancePlanItem,
+  BusinessConsoleMaintenanceSparePartItem,
+  BusinessConsoleMaintenanceWorkOrderItem,
+  BusinessConsoleTelemetryHistoryItem,
+} from '@nerv-iip/api-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, nextTick, shallowRef } from 'vue'
 
@@ -14,6 +21,40 @@ const equipmentComposableState = vi.hoisted(() => ({
   deviceFilters: { deviceAssetId: 'DEV-OIL-01' },
   refreshDevice: vi.fn(),
 }))
+
+const reviewFixture = vi.hoisted(() => {
+  const historyItems = [
+    { itemType: 'alarm', tagKey: 'temperature', value: 'ALM-TEMP-HIGH', occurredAtUtc: '2026-07-01T01:20:00Z' },
+    { itemType: 'state', tagKey: 'runtime', value: 'running', occurredAtUtc: '2026-07-01T02:00:00Z' },
+    { itemType: 'sample', tagKey: 'pressure', value: '0.62MPa', occurredAtUtc: '2026-07-01T03:00:00Z' },
+    { itemType: 'sample', tagKey: 'vibration', value: '2.4mm/s', occurredAtUtc: '2026-07-01T04:00:00Z' },
+    { itemType: 'state', tagKey: 'runtime', value: 'idle', occurredAtUtc: '2026-07-01T05:00:00Z' },
+    { itemType: 'sample', tagKey: 'temperature', value: '72.3C', occurredAtUtc: '2026-07-01T06:00:00Z' },
+  ] satisfies BusinessConsoleTelemetryHistoryItem[]
+
+  const workOrders = [
+    { workOrderId: 'mwo-1', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T01:00:00Z' },
+    { workOrderId: 'mwo-2', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T02:00:00Z' },
+    { workOrderId: 'mwo-3', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T03:00:00Z' },
+    { workOrderId: 'mwo-4', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T04:00:00Z' },
+    { workOrderId: 'mwo-5', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T05:00:00Z' },
+    { workOrderId: 'mwo-6', deviceAssetId: 'DEV-OIL-01', status: 'open', openedAtUtc: '2026-07-01T06:00:00Z' },
+  ] satisfies BusinessConsoleMaintenanceWorkOrderItem[]
+
+  const plans = [
+    { planId: 'plan-1', deviceAssetId: 'DEV-OIL-01', planCode: 'PM-CNC-MONTHLY', interval: 'P30D', startsOn: '2026-07-01' },
+  ] satisfies BusinessConsoleMaintenancePlanItem[]
+
+  const inspections = [
+    { inspectionId: 'insp-6', workOrderId: 'mwo-6', inspector: '设备保全班', result: 'passed', inspectedAtUtc: '2026-07-01T07:00:00Z' },
+  ] satisfies BusinessConsoleMaintenanceInspectionItem[]
+
+  const spareParts = [
+    { sparePartLineId: 'sp-1', workOrderId: 'mwo-1', deviceAssetId: 'DEV-OIL-01', skuCode: 'BEARING-6205', quantity: 2, uomCode: 'EA' },
+  ] satisfies BusinessConsoleMaintenanceSparePartItem[]
+
+  return { historyItems, inspections, plans, spareParts, workOrders }
+})
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
@@ -75,10 +116,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
     historyItems: computed(() => []),
     historyPending: shallowRef(false),
     refreshHistory: vi.fn(),
-    visibleHistoryItems: computed(() => [
-      { eventType: 'alarm', tagKey: 'temperature', valueText: 'ALM-TEMP-HIGH', occurredAtUtc: '2026-07-01T01:20:00Z' },
-      { eventType: 'state', tagKey: 'runtime', valueText: 'running', occurredAtUtc: '2026-07-01T02:00:00Z' },
-    ]),
+    visibleHistoryItems: computed(() => reviewFixture.historyItems),
   }),
   useBusinessTelemetryOee: () => ({
     availabilityWindows: computed(() => []),
@@ -111,13 +149,13 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     refreshAvailability: vi.fn(),
   }),
   useMaintenanceInspections: () => ({
-    inspections: computed(() => [{ inspectionId: 'insp-1', deviceAssetId: 'DEV-OIL-01', result: 'passed', inspectedAtUtc: '2026-07-01T03:00:00Z' }]),
+    inspections: computed(() => reviewFixture.inspections),
     inspectionsError: shallowRef(),
     inspectionsPending: shallowRef(false),
     inspectionsTotal: computed(() => 1),
   }),
   useMaintenancePlans: () => ({
-    plans: computed(() => [{ maintenancePlanId: 'plan-1', deviceAssetId: 'DEV-OIL-01', planCode: 'PM-CNC-MONTHLY', planName: '主轴月度保养' }]),
+    plans: computed(() => reviewFixture.plans),
     plansError: shallowRef(),
     plansPending: shallowRef(false),
     plansTotal: computed(() => 1),
@@ -130,13 +168,13 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     refreshReliability: vi.fn(),
   }),
   useMaintenanceSpareParts: () => ({
-    spareParts: computed(() => [{ sparePartRequestId: 'sp-1', deviceAssetId: 'DEV-OIL-01', skuCode: 'BEARING-6205', requiredQuantity: 2 }]),
+    spareParts: computed(() => reviewFixture.spareParts),
     sparePartsError: shallowRef(),
     sparePartsPending: shallowRef(false),
     sparePartsTotal: computed(() => 1),
   }),
   useMaintenanceWorkOrders: () => ({
-    workOrders: computed(() => [{ workOrderId: 'mwo-1', deviceAssetId: 'DEV-OIL-01', workOrderNo: 'MWO-202607-001', status: 'open' }]),
+    workOrders: computed(() => reviewFixture.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
     workOrdersTotal: computed(() => 1),
@@ -184,10 +222,12 @@ describe('equipment pages', () => {
     expect(wrapper.text()).toContain('遥测深层上下文')
     expect(wrapper.text()).toContain('当前 OEE 只按设备运行状态计算可用率')
     expect(wrapper.text()).toContain('82.0%')
+    expect(wrapper.text()).toContain('历史事件6')
     expect(wrapper.text()).toContain('temperature')
     expect(wrapper.text()).toContain('维护与可靠性上下文')
-    expect(wrapper.text()).toContain('MWO-202607-001')
+    expect(wrapper.text()).toContain('mwo-1')
     expect(wrapper.text()).toContain('PM-CNC-MONTHLY')
+    expect(wrapper.text()).toContain('insp-6')
     expect(wrapper.text()).toContain('BEARING-6205')
     expect(wrapper.text()).toContain('MTBF')
     expect(wrapper.text()).toContain('正式页面')

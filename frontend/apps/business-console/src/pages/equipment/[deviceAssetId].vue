@@ -35,6 +35,8 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 definePage({ meta: { requiresAuth: true, title: '设备详情', requiredPermissions: ['business.iiot.telemetry.read'] } })
 
+const MAINTENANCE_DETAIL_TAKE = 250
+
 const route = useRoute()
 const router = useRouter()
 const routeDeviceAssetId = computed(() => {
@@ -69,10 +71,10 @@ const {
   reliabilityError,
   reliabilityPending,
 } = useMaintenanceReliability()
-const { workOrders, workOrdersError, workOrdersPending } = useMaintenanceWorkOrders()
-const { plans, plansError, plansPending } = useMaintenancePlans()
-const { inspections, inspectionsError, inspectionsPending } = useMaintenanceInspections()
-const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSpareParts()
+const { workOrders, workOrdersError, workOrdersPending } = useMaintenanceWorkOrders({ take: MAINTENANCE_DETAIL_TAKE })
+const { plans, plansError, plansPending } = useMaintenancePlans({ take: MAINTENANCE_DETAIL_TAKE })
+const { inspections, inspectionsError, inspectionsPending } = useMaintenanceInspections({ take: MAINTENANCE_DETAIL_TAKE })
+const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSpareParts({ take: MAINTENANCE_DETAIL_TAKE })
 
 const currentState = computed(() => device.value?.currentState)
 const errorMessage = computed(() => formatError(deviceError.value))
@@ -87,29 +89,30 @@ const maintenanceErrorMessage = computed(() => formatError(
 ))
 const blockCount = computed(() => availabilityWindows.value.filter((w) => w.availabilityStatus !== 'available').length)
 const historyPreview = computed(() => visibleHistoryItems.value.slice(0, 5))
+const historyCount = computed(() => visibleHistoryItems.value.length)
 const currentDeviceId = computed(() => filters.deviceAssetId.trim())
-const currentDeviceWorkOrders = computed(() =>
-  workOrders.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
+const currentDeviceWorkOrderMatches = computed(() =>
+  workOrders.value.filter((row) => row.deviceAssetId === currentDeviceId.value),
 )
-const currentDevicePlans = computed(() =>
-  plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
+const currentDeviceWorkOrders = computed(() => currentDeviceWorkOrderMatches.value.slice(0, 5))
+const currentDevicePlanMatches = computed(() =>
+  plans.value.filter((row) => row.deviceAssetId === currentDeviceId.value),
 )
+const currentDevicePlans = computed(() => currentDevicePlanMatches.value.slice(0, 5))
 const currentDeviceSpareParts = computed(() =>
   spareParts.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
 )
 const currentDeviceWorkOrderIds = computed(() =>
-  new Set(currentDeviceWorkOrders.value.map((row) => row.workOrderId).filter(Boolean)),
+  new Set(currentDeviceWorkOrderMatches.value.map((row) => row.workOrderId).filter(Boolean)),
 )
 const currentDevicePlanIds = computed(() =>
-  new Set(currentDevicePlans.value.map((row) => row.planId).filter(Boolean)),
+  new Set(currentDevicePlanMatches.value.map((row) => row.planId).filter(Boolean)),
 )
 const currentDeviceInspections = computed(() =>
-  inspections.value.filter((row) => {
-    const deviceAssetId = (row as { deviceAssetId?: string }).deviceAssetId
-    return deviceAssetId === currentDeviceId.value
-      || (row.workOrderId ? currentDeviceWorkOrderIds.value.has(row.workOrderId) : false)
-      || (row.planId ? currentDevicePlanIds.value.has(row.planId) : false)
-  }).slice(0, 5),
+  inspections.value.filter((row) =>
+    (row.workOrderId ? currentDeviceWorkOrderIds.value.has(row.workOrderId) : false)
+    || (row.planId ? currentDevicePlanIds.value.has(row.planId) : false),
+  ).slice(0, 5),
 )
 const telemetryPending = computed(() => historyPending.value || oeePending.value)
 const maintenancePending = computed(() =>
@@ -182,18 +185,18 @@ function historyTypeLabel(value?: string | null) {
   const labels: Record<string, string> = { alarm: '报警', sample: '采样', state: '状态' }
   return value ? (labels[value.toLowerCase()] ?? value) : '事件'
 }
-function historyType(row: { itemType?: string | null, eventType?: string | null }) {
-  return row.itemType ?? row.eventType
+function historyType(row: { itemType?: string | null }) {
+  return row.itemType
 }
-function historyValue(row: { value?: string | null, valueText?: string | null }) {
-  return row.value ?? row.valueText ?? '无数值'
+function historyValue(row: { value?: string | null }) {
+  return row.value ?? '无数值'
 }
 function maintenanceStatusLabel(value?: string | null) {
   const labels: Record<string, string> = { open: '待处理', opened: '待处理', scheduled: '已排程', inprogress: '处理中', 'in-progress': '处理中', completed: '已完成', closed: '已关闭' }
   return value ? (labels[value.toLowerCase()] ?? value) : '未知'
 }
-function workOrderLabel(row: { workOrderId?: string, workOrderNo?: string }) {
-  return row.workOrderNo ?? row.workOrderId ?? '维护工单'
+function workOrderLabel(row: { workOrderId?: string }) {
+  return row.workOrderId ?? '维护工单'
 }
 function intervalLabel(value?: string | null) {
   const labels: Record<string, string> = { P7D: '每周', P14D: '每两周', P30D: '每月', P90D: '每季度' }
@@ -388,7 +391,7 @@ function formatError(error: unknown) {
         <SectionCard description="可用率" :value="formatOeeRate(oee?.availabilityRate)" hint="IndustrialTelemetry OEE facade" />
         <SectionCard description="加载率" :value="formatOeeRate(oee?.loadingRate)" hint="排除计划停机窗口" />
         <SectionCard description="OEE P0" :value="formatOeeRate(oee?.oeeRate)" hint="不重算性能/质量" />
-        <SectionCard description="历史事件" :value="historyPreview.length" hint="设备历史趋势 facade" />
+        <SectionCard description="历史事件" :value="historyCount" hint="设备历史趋势 facade 返回数量" />
       </SectionCards>
 
       <div class="grid gap-4 lg:grid-cols-2">
@@ -493,7 +496,7 @@ function formatError(error: unknown) {
               <p v-if="row.sourceAlarmId || row.relatedAlarmId" class="text-xs text-muted-foreground">关联报警 {{ row.sourceAlarmId ?? row.relatedAlarmId }}</p>
             </div>
             <div v-if="!maintenancePending && !currentDeviceWorkOrders.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              当前设备没有 Maintenance 工单读面返回的记录；如需开单请进入维护工单正式页面。
+              当前返回窗口未包含该设备的 Maintenance 工单记录；如需确认全量或开单，请进入维护工单正式页面。
             </div>
           </div>
         </div>
@@ -512,7 +515,7 @@ function formatError(error: unknown) {
               <span class="text-xs text-muted-foreground">结果 {{ row.result ?? '未记录' }} · {{ formatDateTime(row.inspectedAtUtc) }}</span>
             </div>
             <div v-if="!maintenancePending && !currentDevicePlans.length && !currentDeviceInspections.length" class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              当前设备没有可关联的保养计划或点检记录；列表 facade 若未返回设备字段，不在详情页冒充已关联。
+              当前返回窗口未包含可关联的保养计划或点检记录；点检以工单/计划关联，缺少设备字段时不在详情页冒充已关联。
             </div>
           </div>
         </div>
