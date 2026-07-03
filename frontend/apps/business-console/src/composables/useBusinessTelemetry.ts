@@ -20,7 +20,7 @@ import {
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from './businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 100
 
@@ -153,7 +153,7 @@ export function useBusinessTelemetryAlarmRules(initialFilters: Partial<Telemetry
   const saveMutation = useMutation({
     ...createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions(),
     onSuccess() {
-      void alarmRulesQuery.refetch()
+      void refetchWithBusinessContext(businessContext, alarmRulesQuery)
     },
   })
 

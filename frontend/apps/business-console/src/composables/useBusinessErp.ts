@@ -44,7 +44,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { hasBusinessContext } from './businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 
 const DEFAULT_TAKE = 10
 
@@ -177,8 +177,8 @@ export function useBusinessErp() {
     purchaseOrdersPending: purchaseOrdersQuery.isLoading,
     refreshPurchaseOrders: () => hasBusinessContext(businessContext) ? purchaseOrdersQuery.refetch() : Promise.resolve(),
     refreshProcurementDocuments: () => {
-      void purchaseRequisitionsQuery.refetch()
-      void purchaseOrdersQuery.refetch()
+      void refetchWithBusinessContext(businessContext, purchaseRequisitionsQuery)
+      void refetchWithBusinessContext(businessContext, purchaseOrdersQuery)
     },
   }
 }
@@ -204,7 +204,7 @@ export function useErpSalesOrders(initialFilters: Partial<BusinessErpListFilters
   const createMutation = useMutation({
     ...createBusinessConsoleErpSalesOrderMutationOptions(),
     onSuccess() {
-      void salesOrdersQuery.refetch()
+      void refetchWithBusinessContext(businessContext, salesOrdersQuery)
     },
   })
 

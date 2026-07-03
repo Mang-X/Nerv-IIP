@@ -341,6 +341,10 @@ export function useBusinessApproval(actorInput: MaybeRefOrGetter<ApprovalActor>)
       unwrapTotal(delegationQuery.data.value as BusinessConsoleApprovalDelegationListEnvelope | undefined),
     ),
     refreshAll: async () => {
+      if (!hasBusinessContext(businessContext)) {
+        return
+      }
+
       await Promise.all([
         templateQuery.refetch(),
         chainQuery.refetch(),

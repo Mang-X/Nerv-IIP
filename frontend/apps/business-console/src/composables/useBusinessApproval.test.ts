@@ -22,6 +22,7 @@ const coladaState = vi.hoisted(() => ({
   invalidateQueries: vi.fn(async () => undefined),
   queryDataById: new Map<string, unknown>(),
   queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
@@ -82,11 +83,14 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryOptionsById.set(id, options)
 
+    const refetch = vi.fn(async () => undefined)
+    coladaState.refetchById.set(id, refetch)
+
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
       error: shallowRef(),
       isLoading: shallowRef(false),
-      refetch: vi.fn(async () => undefined),
+      refetch,
     }
   }),
   useQueryCache: vi.fn(() => ({
@@ -102,6 +106,7 @@ describe('business approval composable', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryDataById.clear()
     coladaState.queryOptionsById.clear()
+    coladaState.refetchById.clear()
   })
 
   it('loads approval center lists with current business context and actor filters', () => {
@@ -278,5 +283,18 @@ describe('business approval composable', () => {
       .toHaveBeenCalledWith(expect.objectContaining({
         body: { revokedBy: 'approver-b' },
       }))
+  })
+
+  it('does not refresh approval lists when business context is empty', async () => {
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    const approval = useBusinessApproval({ actorType: 'user', actorRef: 'approver-a' })
+
+    await approval.refreshAll()
+
+    expect(coladaState.refetchById.get('listBusinessConsoleApprovalTemplates')).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsoleApprovalChains')).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsoleApprovalTasks')).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsoleApprovalDecisions')).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsoleApprovalDelegations')).not.toHaveBeenCalled()
   })
 })

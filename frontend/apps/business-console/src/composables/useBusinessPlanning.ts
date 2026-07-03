@@ -384,6 +384,10 @@ export function useBusinessPlanning() {
     peggingError: peggingQuery.error,
     peggingPending: peggingQuery.isLoading,
     refreshPlanning: async () => {
+      if (!hasBusinessContext(filters)) {
+        return
+      }
+
       const queries: Array<Promise<unknown>> = [
         demandsQuery.refetch(),
         mpsBucketsQuery.refetch(),

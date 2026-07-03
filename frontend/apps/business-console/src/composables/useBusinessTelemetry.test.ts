@@ -181,6 +181,25 @@ describe('business telemetry composables', () => {
     expect(coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules')).toHaveBeenCalled()
   })
 
+  it('does not refetch alarm rules after mutation when business context is empty', async () => {
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    const rules = useBusinessTelemetryAlarmRules()
+
+    await rules.saveAlarmRule({
+      deviceAssetId: 'DEV-CNC-01',
+      ruleCode: 'TEMP_HIGH',
+      alarmCode: 'ALM-TEMP-HIGH',
+      severity: 'critical',
+      tagKey: 'temperature',
+      comparisonOperator: '>',
+      thresholdValue: 85,
+      unitCode: 'CEL',
+      isEnabled: true,
+    })
+
+    expect(coladaState.refetchById.get('listBusinessConsoleTelemetryAlarmRules')).not.toHaveBeenCalled()
+  })
+
   it('keeps history and OEE queries disabled until a device scope is provided', () => {
     const history = useBusinessTelemetryHistory()
     const oee = useBusinessTelemetryOee()
