@@ -75,6 +75,38 @@ public sealed class MaintenanceIntegrationEventHandlerTests
     }
 
     [Fact]
+    public async Task Dead_letter_store_truncates_failed_and_ignored_messages_to_column_limit()
+    {
+        await using var dbContext = CreateDbContext();
+        var deadLetterStore = new MaintenanceIntegrationEventDeadLetterStore(dbContext);
+        var failed = await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName,
+                CreateAlarmRaisedEvent("evt-alarm-failed-long-message", "alarm-failed-long-message", DateTimeOffset.UtcNow),
+                "manual-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var ignored = await deadLetterStore.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName,
+                CreateAlarmRaisedEvent("evt-alarm-ignored-long-message", "alarm-ignored-long-message", DateTimeOffset.UtcNow),
+                "manual-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var longMessage = new string('x', 1200);
+
+        await deadLetterStore.MarkFailedAsync(failed.Id, "replay-handler-failed", longMessage, DateTimeOffset.UtcNow, CancellationToken.None);
+        await deadLetterStore.MarkIgnoredAsync(ignored.Id, longMessage, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var failedMessage = await deadLetterStore.GetAsync(failed.Id, CancellationToken.None);
+        var ignoredMessage = await deadLetterStore.GetAsync(ignored.Id, CancellationToken.None);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed, failedMessage?.Status);
+        Assert.Equal(1000, failedMessage?.FailureMessage.Length);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Ignored, ignoredMessage?.Status);
+        Assert.Equal(1000, ignoredMessage?.FailureMessage.Length);
+    }
+
+    [Fact]
     public async Task Alarm_cleared_consumer_marks_matching_open_work_order_without_completing_it()
     {
         await using var dbContext = CreateDbContext();

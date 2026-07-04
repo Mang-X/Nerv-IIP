@@ -176,16 +176,21 @@ public sealed class IntegrationEventDeadLetter
 
     public void MarkFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
+
         FailureCode = failureCode;
-        FailureMessage = failureMessage;
+        FailureMessage = Truncate(failureMessage);
         Status = IntegrationEventDeadLetterStatus.Failed;
         ReplayedAtUtc = failedAtUtc;
     }
 
     public void MarkIgnored(string reason, DateTimeOffset ignoredAtUtc)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
         FailureCode = "ignored";
-        FailureMessage = reason;
+        FailureMessage = Truncate(reason);
         Status = IntegrationEventDeadLetterStatus.Ignored;
         ReplayedAtUtc = ignoredAtUtc;
     }
@@ -208,6 +213,9 @@ public sealed class IntegrationEventDeadLetter
             DeadLetteredAtUtc,
             ReplayedAtUtc);
     }
+
+    private static string Truncate(string value) =>
+        value.Length <= 1000 ? value : value[..1000];
 }
 
 public sealed class IntegrationEventDeadLetterEntityTypeConfiguration : IEntityTypeConfiguration<IntegrationEventDeadLetter>
