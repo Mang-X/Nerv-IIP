@@ -175,12 +175,14 @@ public sealed class OpcUaTelemetryCollectorTests
         var connector = CreateConnector(opcUa, samples, () => now);
 
         await connector.RunCollectionCycleAsync(CancellationToken.None);
-        Assert.Equal(1, GetSealedBucketCount(connector));
+        var targets = await connector.DiscoverAsync(CancellationToken.None);
+        Assert.Equal("1", Assert.Single(targets).Metadata["sealedBucketCount"]);
 
         now = new DateTimeOffset(2026, 7, 3, 0, 7, 1, TimeSpan.Zero);
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
-        Assert.Equal(0, GetSealedBucketCount(connector));
+        targets = await connector.DiscoverAsync(CancellationToken.None);
+        Assert.Equal("0", Assert.Single(targets).Metadata["sealedBucketCount"]);
 
         await opcUa.EmitAsync(
             new OpcUaDataChange("ns=2;s=Line1.Temperature", 20m, new DateTimeOffset(2026, 7, 3, 0, 0, 20, TimeSpan.Zero), "Good"),
@@ -275,15 +277,6 @@ public sealed class OpcUaTelemetryCollectorTests
             opcUa,
             samples,
             utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)));
-    }
-
-    private static int GetSealedBucketCount(OpcUaConnector connector)
-    {
-        var field = typeof(OpcUaConnector).GetField("_sealedBucketKeys", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-            ?? throw new InvalidOperationException("OPC UA connector sealed bucket field was not found.");
-        var countProperty = field.FieldType.GetProperty("Count")
-            ?? throw new InvalidOperationException("OPC UA connector sealed bucket field does not expose Count.");
-        return (int)countProperty.GetValue(field.GetValue(connector)!)!;
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient

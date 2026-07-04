@@ -64,9 +64,21 @@ public sealed class OpcUaConnector(
         }
     }
 
-    public Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ConnectorTarget>> DiscoverAsync(CancellationToken cancellationToken)
     {
-        var state = CurrentState;
+        OpcUaConnectorState state;
+        IReadOnlyDictionary<string, string> metadata;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            state = CurrentState;
+            metadata = CreateMetadata(state);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
         IReadOnlyList<ConnectorTarget> targets =
         [
             new(
@@ -84,9 +96,9 @@ public sealed class OpcUaConnector(
                     new ConnectorCapability("runtime.status", "1.0", "runtime", ["inspect"]),
                     new ConnectorCapability("industrial-telemetry.ingest", "1.0", "telemetry", ["browse", "subscribe", "sample"])
                 ],
-                CreateMetadata(state))
+                metadata)
         ];
-        return Task.FromResult(targets);
+        return targets;
     }
 
     private async Task ConnectBrowseAndSubscribeAsync(CancellationToken cancellationToken)
@@ -329,7 +341,8 @@ public sealed class OpcUaConnector(
             ["postedBuckets"] = state.PostedBuckets.ToString(),
             ["droppedSamples"] = state.DroppedSamples.ToString(),
             ["reconnectCount"] = state.ReconnectCount.ToString(),
-            ["subscriptionRecoveries"] = state.SubscriptionRecoveries.ToString()
+            ["subscriptionRecoveries"] = state.SubscriptionRecoveries.ToString(),
+            ["sealedBucketCount"] = _sealedBucketKeys.Count.ToString()
         };
 
         if (state.LastSampleAtUtc is not null)
