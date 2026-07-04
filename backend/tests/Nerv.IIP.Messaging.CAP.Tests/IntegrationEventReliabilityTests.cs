@@ -382,6 +382,66 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
+    public async Task Persistent_dead_letter_store_returns_metrics_by_status_and_event_type()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<TestDeadLetterDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var dbContext = new TestDeadLetterDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+        var store = new PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>(dbContext);
+        var pending = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-001"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var failed = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-002"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var ignored = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-003"),
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+        var replayed = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-metrics-004") with { EventType = "sample.OtherEvent" },
+                "manual-test",
+                "Stored for metrics."),
+            CancellationToken.None);
+
+        await store.MarkFailedAsync(failed.Id, "replay-handler-failed", "Replay failed.", DateTimeOffset.UtcNow, CancellationToken.None);
+        await store.MarkIgnoredAsync(ignored.Id, "Stale event.", DateTimeOffset.UtcNow, CancellationToken.None);
+        await store.MarkReplayedAsync(replayed.Id, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        var metrics = await store.GetMetricsAsync(CancellationToken.None);
+
+        Assert.Equal(1, metrics.PendingCount);
+        Assert.Equal(1, metrics.FailedCount);
+        Assert.Equal(1, metrics.IgnoredCount);
+        Assert.Equal(1, metrics.ReplayedCount);
+        var sampleMetrics = Assert.Single(metrics.EventTypes, x => x.EventType == pending.EventType);
+        Assert.Equal(1, sampleMetrics.PendingCount);
+        Assert.Equal(1, sampleMetrics.FailedCount);
+        Assert.Equal(1, sampleMetrics.IgnoredCount);
+        Assert.Equal(0, sampleMetrics.ReplayedCount);
+        var otherMetrics = Assert.Single(metrics.EventTypes, x => x.EventType == replayed.EventType);
+        Assert.Equal(0, otherMetrics.PendingCount);
+        Assert.Equal(1, otherMetrics.ReplayedCount);
+    }
+
+    [Fact]
     public async Task Processed_integration_event_inbox_uses_idempotency_key_not_random_event_id()
     {
         var options = new DbContextOptionsBuilder<TestProcessedEventDbContext>()

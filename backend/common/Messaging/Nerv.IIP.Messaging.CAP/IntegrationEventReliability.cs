@@ -266,7 +266,7 @@ public sealed record IntegrationEventDeadLetterMetrics(
     private static int CountStatus(
         IReadOnlyCollection<IntegrationEventDeadLetterMetricsRow> rows,
         IntegrationEventDeadLetterStatus status) =>
-        rows.Count(row => row.Status == status);
+        rows.Where(row => row.Status == status).Sum(row => row.Count);
 }
 
 public sealed record IntegrationEventDeadLetterEventTypeMetrics(
@@ -285,14 +285,14 @@ public sealed record IntegrationEventDeadLetterEventTypeMetrics(
         var materialized = rows.ToArray();
         return new IntegrationEventDeadLetterEventTypeMetrics(
             eventType,
-            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Pending),
-            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Failed),
-            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Ignored),
-            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Replayed));
+            materialized.Where(row => row.Status == IntegrationEventDeadLetterStatus.Pending).Sum(row => row.Count),
+            materialized.Where(row => row.Status == IntegrationEventDeadLetterStatus.Failed).Sum(row => row.Count),
+            materialized.Where(row => row.Status == IntegrationEventDeadLetterStatus.Ignored).Sum(row => row.Count),
+            materialized.Where(row => row.Status == IntegrationEventDeadLetterStatus.Replayed).Sum(row => row.Count));
     }
 }
 
-public sealed record IntegrationEventDeadLetterMetricsRow(string EventType, IntegrationEventDeadLetterStatus Status);
+public sealed record IntegrationEventDeadLetterMetricsRow(string EventType, IntegrationEventDeadLetterStatus Status, int Count = 1);
 
 public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventDeadLetterStore
 {
