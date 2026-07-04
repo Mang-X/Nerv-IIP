@@ -223,12 +223,17 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 
 public sealed class QueryRuntimeHoursQueryValidator : AbstractValidator<QueryRuntimeHoursQuery>
 {
+    private static readonly TimeSpan MaxWindow = TimeSpan.FromDays(366);
+
     public QueryRuntimeHoursQueryValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.WindowEndUtc)
+            .Must((query, windowEndUtc) => windowEndUtc.ToUniversalTime() - query.WindowStartUtc.ToUniversalTime() <= MaxWindow)
+            .WithMessage("Runtime-hours query window must not exceed 366 days.");
     }
 }
 
@@ -351,6 +356,8 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.OccurredAtUtc < windowStartUtc)
             .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
             .Select(x => new RuntimeHoursStatePoint(windowStartUtc, x.State))
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -361,6 +368,8 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
             .Where(x => x.OccurredAtUtc >= windowStartUtc)
             .Where(x => x.OccurredAtUtc < windowEndUtc)
             .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
             .Select(x => new RuntimeHoursStatePoint(x.OccurredAtUtc, x.State))
             .ToArrayAsync(cancellationToken);
 

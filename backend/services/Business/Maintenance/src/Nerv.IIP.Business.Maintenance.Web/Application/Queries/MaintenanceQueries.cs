@@ -257,6 +257,7 @@ internal sealed record ReliabilityWorkOrderProjection(DateTimeOffset OpenedAtUtc
 
 public static class AssetRuntimeSources
 {
+    // Retain the historical "oee" label for IndustrialTelemetry runtime-hours samples to keep reliability response compatibility.
     public const string Oee = "oee";
     public const string Fallback = "fallback";
 }
@@ -403,13 +404,12 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             response.EnsureSuccessStatusCode();
             var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<IndustrialTelemetryRuntimeHoursResponse>>(JsonOptions, cancellationToken);
             var data = envelope?.Data;
-            if (data is null || data.StateSampleCount == 0 || data.HasRuntimeSamples == false)
+            if (data is null || data.StateSampleCount == 0 || data.HasRuntimeSamples == false || data.TotalRuntimeHours is null)
             {
                 return await CalculateFallbackAsync();
             }
 
-            var runtimeHours = data.TotalRuntimeHours ?? CalculateLegacyRuntimeHours(data, windowStartUtc, windowEndUtc);
-            return new AssetRuntimeHoursResult(Math.Round(runtimeHours, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
+            return new AssetRuntimeHoursResult(Math.Round(data.TotalRuntimeHours.Value, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
         }
         catch (HttpRequestException exception)
         {
@@ -429,16 +429,6 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
 
         Task<AssetRuntimeHoursResult> CalculateFallbackAsync() =>
             fallbackProvider.CalculateFallbackAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
-    }
-
-    private static decimal CalculateLegacyRuntimeHours(
-        IndustrialTelemetryRuntimeHoursResponse data,
-        DateTimeOffset windowStartUtc,
-        DateTimeOffset windowEndUtc)
-    {
-        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
-        var loadingRate = data.LoadingRate ?? 1m;
-        return windowHours * loadingRate * data.AvailabilityRate;
     }
 
     private static string BuildRuntimeHoursPath(
@@ -469,14 +459,7 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
         int StateSampleCount,
         decimal? TotalRuntimeHours,
         decimal? TotalLoadingHours,
-        bool? HasRuntimeSamples,
-        decimal AvailabilityRate,
-        decimal? LoadingRate,
-        decimal PerformanceRate,
-        decimal QualityRate,
-        decimal OeeRate,
-        bool PerformanceRateEstimated,
-        bool QualityRateEstimated);
+        bool? HasRuntimeSamples);
 }
 
 public sealed record GetMaintenanceAssetAvailabilityWindowsQuery(
