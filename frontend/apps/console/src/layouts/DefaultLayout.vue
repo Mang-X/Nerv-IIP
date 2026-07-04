@@ -2,7 +2,7 @@
 import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { useAuthStore } from '@/stores/auth'
-import { BellIcon, Building2Icon, LayersIcon, ShieldIcon } from 'lucide-vue-next'
+import { BellIcon, Building2Icon, InboxIcon, LayersIcon, ShieldIcon, TriangleAlertIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -35,9 +35,18 @@ function isUnder(path: string, base: string) {
 
 const currentDomainId = computed(() => resolveDomainId(route?.path ?? '/'))
 
-// 当前域的左侧菜单：仅 IAM 域有二级菜单（用户/角色/会话）。
 const sideNav = computed<SideNav>(() => {
+  if (currentDomainId.value === 'notifications') {
+    return [{
+      items: [
+        { title: t('nav.notificationInbox'), icon: InboxIcon, to: { path: '/notifications' } },
+        { title: t('nav.notificationDlq'), icon: TriangleAlertIcon, to: { path: '/notifications/dlq' } },
+      ],
+    }]
+  }
+
   if (currentDomainId.value !== 'iam') return []
+
   return [{
     items: [
       { title: t('nav.users'), to: { path: '/iam/users' } },

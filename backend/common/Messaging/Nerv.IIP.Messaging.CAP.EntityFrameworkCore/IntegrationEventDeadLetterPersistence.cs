@@ -36,25 +36,67 @@ public sealed class PersistentIntegrationEventDeadLetterStore<TDbContext>(TDbCon
         IntegrationEventDeadLetterStatus? status,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.Set<IntegrationEventDeadLetter>().AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(consumerName))
+        return await ListAsync(new IntegrationEventDeadLetterQuery(consumerName, status, EventType: null), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken)
+    {
+        var queryable = dbContext.Set<IntegrationEventDeadLetter>().AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(query.ConsumerName))
         {
-            query = query.Where(x => x.ConsumerName == consumerName);
+            queryable = queryable.Where(x => x.ConsumerName == query.ConsumerName);
         }
 
-        if (status is not null)
+        if (query.Status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            queryable = queryable.Where(x => x.Status == query.Status);
         }
+
+        if (!string.IsNullOrWhiteSpace(query.EventType))
+        {
+            queryable = queryable.Where(x => x.EventType == query.EventType);
+        }
+
+        var skip = Math.Max(query.Skip, 0);
+        var take = Math.Clamp(query.Take, 1, 500);
 
         // SQLite cannot translate DateTimeOffset ordering; production providers keep sorting in SQL.
         IEnumerable<IntegrationEventDeadLetter> rows = IsSqliteProvider()
-            ? (await query.ToArrayAsync(cancellationToken)).OrderBy(x => x.DeadLetteredAtUtc)
-            : await query.OrderBy(x => x.DeadLetteredAtUtc).ToArrayAsync(cancellationToken);
+            ? (await queryable.ToArrayAsync(cancellationToken)).OrderBy(x => x.DeadLetteredAtUtc).Skip(skip).Take(take)
+            : await queryable.OrderBy(x => x.DeadLetteredAtUtc).Skip(skip).Take(take).ToArrayAsync(cancellationToken);
 
         return rows
             .Select(x => x.ToMessage())
             .ToArray();
+    }
+
+    public async Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Set<IntegrationEventDeadLetter>()
+            .AsNoTracking()
+            .GroupBy(x => new
+            {
+                EventType = x.EventType ?? "(unknown)",
+                x.Status
+            })
+            .Select(group => new IntegrationEventDeadLetterMetricsRow(
+                group.Key.EventType,
+                group.Key.Status,
+                group.Count()))
+            .ToArrayAsync(cancellationToken);
+        return IntegrationEventDeadLetterMetrics.FromRows(rows);
+    }
+
+    public async Task<IntegrationEventDeadLetterMessage?> GetAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        return (await dbContext.Set<IntegrationEventDeadLetter>()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == id, cancellationToken))
+            ?.ToMessage();
     }
 
     private bool IsSqliteProvider()
@@ -75,6 +117,41 @@ public sealed class PersistentIntegrationEventDeadLetterStore<TDbContext>(TDbCon
         }
 
         message.MarkReplayed(replayedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkFailedAsync(
+        Guid id,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.Set<IntegrationEventDeadLetter>()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkFailed(failureCode, failureMessage, failedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkIgnoredAsync(
+        Guid id,
+        string reason,
+        DateTimeOffset ignoredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.Set<IntegrationEventDeadLetter>()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkIgnored(reason, ignoredAtUtc);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
@@ -124,6 +201,27 @@ public sealed class IntegrationEventDeadLetter
         ReplayedAtUtc = replayedAtUtc;
     }
 
+    public void MarkFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(failureMessage);
+
+        Status = IntegrationEventDeadLetterStatus.Failed;
+        FailureCode = failureCode;
+        FailureMessage = Truncate(failureMessage);
+        ReplayedAtUtc = failedAtUtc;
+    }
+
+    public void MarkIgnored(string reason, DateTimeOffset ignoredAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        Status = IntegrationEventDeadLetterStatus.Ignored;
+        FailureCode = "ignored";
+        FailureMessage = Truncate(reason);
+        ReplayedAtUtc = ignoredAtUtc;
+    }
+
     public IntegrationEventDeadLetterMessage ToMessage()
     {
         return new IntegrationEventDeadLetterMessage(
@@ -142,6 +240,9 @@ public sealed class IntegrationEventDeadLetter
             DeadLetteredAtUtc,
             ReplayedAtUtc);
     }
+
+    private static string Truncate(string value) =>
+        value.Length <= 1000 ? value : value[..1000];
 }
 
 public static class IntegrationEventDeadLetterModelBuilderExtensions
@@ -166,7 +267,7 @@ public static class IntegrationEventDeadLetterModelBuilderExtensions
         builder.Property(x => x.EventJson).HasColumnName("event_json").IsRequired().HasColumnType("jsonb").HasComment("Serialized rejected integration event envelope and payload.");
         builder.Property(x => x.FailureCode).HasColumnName("failure_code").IsRequired().HasMaxLength(100).HasComment("Machine-readable reason the consumer rejected the message.");
         builder.Property(x => x.FailureMessage).HasColumnName("failure_message").IsRequired().HasMaxLength(1000).HasComment("Operator-readable rejection detail.");
-        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Dead-letter status: Pending or Replayed.");
+        builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Dead-letter status: Pending, Replayed, Failed, or Ignored.");
         builder.Property(x => x.DeadLetteredAtUtc).HasColumnName("dead_lettered_at_utc").IsRequired().HasComment("UTC time when the service stored the dead-letter message.");
         builder.Property(x => x.ReplayedAtUtc).HasColumnName("replayed_at_utc").HasComment("UTC time when the dead-letter message was marked replayed.");
         builder.HasIndex(x => new { x.ConsumerName, x.Status, x.DeadLetteredAtUtc });

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionErrors, CompleteConsoleFileUploadSessionResponses, CreateConsoleFileDownloadGrantData, CreateConsoleFileDownloadGrantErrors, CreateConsoleFileDownloadGrantResponses, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionErrors, CreateConsoleFileUploadSessionResponses, CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, DownloadConsoleFileGrantContentData, DownloadConsoleFileGrantContentErrors, DownloadConsoleFileGrantContentResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleFileMetadataData, GetConsoleFileMetadataErrors, GetConsoleFileMetadataResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, GetConsoleTusUploadOffsetData, GetConsoleTusUploadOffsetErrors, GetConsoleTusUploadOffsetResponses, HealthEndpointData, HealthEndpointResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointErrors, InvalidateGatewayCacheEndpointResponses, ListConsoleFilesData, ListConsoleFilesErrors, ListConsoleFilesResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesErrors, ListConsoleNotificationMessagesResponses, ListConsoleNotificationTasksData, ListConsoleNotificationTasksErrors, ListConsoleNotificationTasksResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadErrors, MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadErrors, MarkConsoleNotificationMessagesReadResponses, PatchConsoleTusUploadData, PatchConsoleTusUploadErrors, PatchConsoleTusUploadResponses, QueryConsoleLogsData, QueryConsoleLogsErrors, QueryConsoleLogsResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentErrors, SubmitConsoleNotificationIntentResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses } from './types.gen';
+import type { CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionErrors, CompleteConsoleFileUploadSessionResponses, CreateConsoleFileDownloadGrantData, CreateConsoleFileDownloadGrantErrors, CreateConsoleFileDownloadGrantResponses, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionErrors, CreateConsoleFileUploadSessionResponses, CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, DownloadConsoleFileGrantContentData, DownloadConsoleFileGrantContentErrors, DownloadConsoleFileGrantContentResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleFileMetadataData, GetConsoleFileMetadataErrors, GetConsoleFileMetadataResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleNotificationDeadLetterData, GetConsoleNotificationDeadLetterErrors, GetConsoleNotificationDeadLetterMetricsData, GetConsoleNotificationDeadLetterMetricsErrors, GetConsoleNotificationDeadLetterMetricsResponses, GetConsoleNotificationDeadLetterResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, GetConsoleTusUploadOffsetData, GetConsoleTusUploadOffsetErrors, GetConsoleTusUploadOffsetResponses, HealthEndpointData, HealthEndpointResponses, IgnoreConsoleNotificationDeadLetterData, IgnoreConsoleNotificationDeadLetterErrors, IgnoreConsoleNotificationDeadLetterResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointErrors, InvalidateGatewayCacheEndpointResponses, ListConsoleFilesData, ListConsoleFilesErrors, ListConsoleFilesResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, ListConsoleNotificationDeadLettersData, ListConsoleNotificationDeadLettersErrors, ListConsoleNotificationDeadLettersResponses, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesErrors, ListConsoleNotificationMessagesResponses, ListConsoleNotificationTasksData, ListConsoleNotificationTasksErrors, ListConsoleNotificationTasksResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadErrors, MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadErrors, MarkConsoleNotificationMessagesReadResponses, PatchConsoleTusUploadData, PatchConsoleTusUploadErrors, PatchConsoleTusUploadResponses, QueryConsoleLogsData, QueryConsoleLogsErrors, QueryConsoleLogsResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ReplayConsoleNotificationDeadLetterData, ReplayConsoleNotificationDeadLetterErrors, ReplayConsoleNotificationDeadLetterResponses, ReplayConsoleNotificationDeadLettersData, ReplayConsoleNotificationDeadLettersErrors, ReplayConsoleNotificationDeadLettersResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentErrors, SubmitConsoleNotificationIntentResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -44,6 +44,50 @@ export const listConsoleNotificationTasks = <ThrowOnError extends boolean = fals
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/notifications/tasks',
     ...options
+});
+
+export const listConsoleNotificationDeadLetters = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleNotificationDeadLettersData, ThrowOnError>) => (options?.client ?? client).get<ListConsoleNotificationDeadLettersResponses, ListConsoleNotificationDeadLettersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq',
+    ...options
+});
+
+export const getConsoleNotificationDeadLetterMetrics = <ThrowOnError extends boolean = false>(options?: Options<GetConsoleNotificationDeadLetterMetricsData, ThrowOnError>) => (options?.client ?? client).get<GetConsoleNotificationDeadLetterMetricsResponses, GetConsoleNotificationDeadLetterMetricsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq/metrics',
+    ...options
+});
+
+export const getConsoleNotificationDeadLetter = <ThrowOnError extends boolean = false>(options: Options<GetConsoleNotificationDeadLetterData, ThrowOnError>) => (options.client ?? client).get<GetConsoleNotificationDeadLetterResponses, GetConsoleNotificationDeadLetterErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}',
+    ...options
+});
+
+export const replayConsoleNotificationDeadLetter = <ThrowOnError extends boolean = false>(options: Options<ReplayConsoleNotificationDeadLetterData, ThrowOnError>) => (options.client ?? client).post<ReplayConsoleNotificationDeadLetterResponses, ReplayConsoleNotificationDeadLetterErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/replay',
+    ...options
+});
+
+export const replayConsoleNotificationDeadLetters = <ThrowOnError extends boolean = false>(options: Options<ReplayConsoleNotificationDeadLettersData, ThrowOnError>) => (options.client ?? client).post<ReplayConsoleNotificationDeadLettersResponses, ReplayConsoleNotificationDeadLettersErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq/replay-batch',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const ignoreConsoleNotificationDeadLetter = <ThrowOnError extends boolean = false>(options: Options<IgnoreConsoleNotificationDeadLetterData, ThrowOnError>) => (options.client ?? client).post<IgnoreConsoleNotificationDeadLetterResponses, IgnoreConsoleNotificationDeadLetterErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/notifications/dlq/{deadLetterId}/ignore',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const submitConsoleNotificationIntent = <ThrowOnError extends boolean = false>(options: Options<SubmitConsoleNotificationIntentData, ThrowOnError>) => (options.client ?? client).post<SubmitConsoleNotificationIntentResponses, SubmitConsoleNotificationIntentErrors, ThrowOnError>({

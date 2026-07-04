@@ -48,6 +48,71 @@ public sealed record MarkNotificationMessagesReadRequest(IReadOnlyCollection<str
 
 public sealed record MarkNotificationMessageReadResponse(string MessageId, string Status, DateTimeOffset ReadAtUtc);
 
+public sealed record NotificationDeadLetterListResponse(IReadOnlyCollection<NotificationDeadLetterResponse> Items);
+
+public sealed record NotificationDeadLetterResponse(
+    Guid Id,
+    string ConsumerName,
+    string? EventId,
+    string? EventType,
+    int? EventVersion,
+    string? SourceService,
+    string? IdempotencyKey,
+    string FailureCode,
+    string FailureMessage,
+    string Status,
+    DateTimeOffset DeadLetteredAtUtc,
+    DateTimeOffset? ReplayedAtUtc);
+
+public sealed record NotificationDeadLetterDetailResponse(
+    Guid Id,
+    string ConsumerName,
+    string? EventId,
+    string? EventType,
+    int? EventVersion,
+    string? SourceService,
+    string? IdempotencyKey,
+    string EventClrType,
+    string EventJson,
+    string FailureCode,
+    string FailureMessage,
+    string Status,
+    DateTimeOffset DeadLetteredAtUtc,
+    DateTimeOffset? ReplayedAtUtc);
+
+public sealed record ReplayNotificationDeadLetterBatchRequest(
+    string? ConsumerName,
+    string? EventType,
+    string? Status,
+    int? Take);
+
+public sealed record IgnoreNotificationDeadLetterRequest(string Reason);
+
+public sealed record NotificationDeadLetterReplayResponse(
+    Guid Id,
+    bool Succeeded,
+    string Status,
+    string? Message);
+
+public sealed record NotificationDeadLetterBatchReplayResponse(
+    IReadOnlyCollection<NotificationDeadLetterReplayResponse> Items);
+
+public sealed record NotificationDeadLetterMetricsResponse(
+    int ActionableCount,
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount,
+    IReadOnlyCollection<NotificationDeadLetterEventTypeMetricsResponse> EventTypes);
+
+public sealed record NotificationDeadLetterEventTypeMetricsResponse(
+    string EventType,
+    int ActionableCount,
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount);
+
 public sealed record UpsertNotificationRecipientChannelBindingRequest(
     string RecipientRef,
     string Channel,

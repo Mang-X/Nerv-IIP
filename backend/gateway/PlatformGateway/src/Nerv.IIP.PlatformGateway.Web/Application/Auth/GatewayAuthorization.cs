@@ -49,6 +49,8 @@ public static class GatewayPermissions
     public const string OpsTasksRead = "ops.tasks.read";
     public const string ObservabilityLogsRead = "observability.logs.read";
     public const string NotificationIntentsSubmit = "notifications.intents.submit";
+    public const string NotificationDeadLettersManage = "notifications.dlq.manage";
+    public const string NotificationDeadLettersRead = "notifications.dlq.read";
     public const string NotificationMessagesMarkRead = "notifications.messages.mark-read";
     public const string NotificationMessagesRead = "notifications.messages.read";
     public const string NotificationTasksRead = "notifications.tasks.read";

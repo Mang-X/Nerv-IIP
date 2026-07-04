@@ -5,6 +5,7 @@ using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
+using Nerv.IIP.Notification.Web.Application.DeadLetters;
 using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
@@ -60,6 +61,7 @@ if (usePostgreSql)
         options.Version = builder.Configuration["Cap:Version"] ?? "v1";
         options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+        options.UseIntegrationEventDeadLetterOnFailedThreshold();
     });
 }
 else
@@ -70,6 +72,8 @@ else
 builder.Services.AddNotificationPersistence(builder.Configuration);
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
+builder.Services.Configure<NotificationDeadLetterAlertOptions>(
+    builder.Configuration.GetSection(NotificationDeadLetterAlertOptions.SectionName));
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
@@ -91,6 +95,11 @@ else
 {
     builder.Services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
 }
+builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
+builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, NotificationDeadLetterReplayHandler>();
+builder.Services.AddScoped<NotificationDeadLetterAlertMonitor>();
+builder.Services.AddHostedService<NotificationDeadLetterAlertWorker>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();

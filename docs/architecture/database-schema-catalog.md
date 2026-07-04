@@ -681,7 +681,7 @@ Source:
 | `notification_preferences` | business | 用户级通知类型 × 通道开关，用于非 critical 通知的外部投递偏好。 | `OrganizationId + EnvironmentId + RecipientRef + NotificationType + Channel` 唯一；`NotificationType + Channel + Enabled` 支持偏好命中；critical severity 可以绕过 disabled preference 强制投递。 |
 | `notification_subscriptions` | business | 用户级通知类型 × 通道订阅，用于决定哪些非 critical 通知进入外部通道。 | `OrganizationId + EnvironmentId + RecipientRef + NotificationType + Channel` 唯一；`NotificationType + Channel + Enabled` 支持订阅命中；`NotificationType='*'` 表示通配订阅。 |
 | `processed_integration_events` | system | Notification 业务 inbox，记录已处理的集成事件，避免重复业务副作用。 | `ConsumerName + IdempotencyKey` 唯一；`EventId` 仅用于追溯原始发布事件；`SourceService + EventType + ProcessedAtUtc` 支持消费诊断。 |
-| `integration_event_dead_letters` | system | Notification 消费侧在业务处理前拒绝的集成事件，用于版本不兼容、envelope 缺失等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实；`consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 |
+| `integration_event_dead_letters` | system | Notification 消费侧拒绝或 handler 重试耗尽的集成事件，用于版本不兼容、envelope 缺失、业务 handler poison message 等场景的排查和 replay 标记。 | `id` 为 Guid；`consumer_name`、`event_id`、`event_type`、`event_version`、`source_service`、`idempotency_key`、`status` 和 `event_json` 保留拒绝事实；`status` 支持 `Pending`、`Replayed`、`Failed` 和 `Ignored`；`consumer_name + status + dead_lettered_at_utc` 支撑 pending 队列查看；`consumer_name + event_id` 支撑单事件排查。 |
 | `cap_published_messages` | system | CAP published message outbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；业务代码不直接读写。 |
 | `cap_received_messages` | system | CAP received message inbox，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义；用于 broker 级消费幂等。 |
 | `cap_locks` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键 `Key`；用于 CAP 内部协调。 |
@@ -690,7 +690,7 @@ Source:
 Known gaps:
 
 1. Notification 当前已有站内消息、任务、业务 inbox、CAP storage、persistent DLQ、外部渠道 provider 首批适配、收件人通道映射、偏好/订阅、重试和限流基线；模板映射仍按 Notification baseline 后续深化。
-2. `integration_event_dead_letters` 只负责拒绝事实和 replay 标记；自动 replay executor、失败状态机和管理入口仍属于 P2 后续切片。
+2. `integration_event_dead_letters` 已支持 Notification 管理入口按 consumer、event type 和状态查询、详情查看、单条/批量 replay、失败标记和人工忽略；DLQ 告警/指标聚合仍按 Observability 后续切片推进。
 
 ## 后续服务建表前清单
 
@@ -713,7 +713,7 @@ Known gaps:
 | BusinessIndustrialTelemetry | `industrial_telemetry` | Implemented | Yes | Yes | No | 已有 tag、设备状态快照、报警事件和采集汇总 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessMaintenance | `maintenance` | Implemented | Yes | Yes | No | 已有维修工单、保养计划、点检、停机原因和备件行 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessScheduling | `scheduling` | Implemented | Yes | Yes | No | 已有排程问题快照、排程方案、分配、资源负载、冲突、不可排工序、事件驱动方案失效投影、consumer inbox/DLQ 和 CAP system tables schema、migration、schema convention tests、BusinessGateway facade 和 verify script；客户 release bundle、高级优化器仍待后续。 |
-| Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、收件人通道映射、偏好/订阅、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；外部渠道 provider 首批覆盖企业微信、钉钉、SMTP 邮件和 webhook，模板映射仍待后续。 |
+| Notification | `notification` | Implemented baseline | Yes | Yes | No | 已有通知意图、站内消息、任务、投递尝试、收件人通道映射、偏好/订阅、业务 inbox、CAP storage 和 persistent DLQ schema、migration、schema convention tests；DLQ 管理入口支持查询、详情、单条/批量 replay 和 ignore；外部渠道 provider 首批覆盖企业微信、钉钉、SMTP 邮件和 webhook，模板映射仍待后续。 |
 | Knowledge | `knowledge` | Planned only | No | No | No | 知识源、文档、分片、索引状态、向量/全文索引边界和重建策略；关系库保存索引元数据，外部向量库保存可重建索引。 |
 | AI Integration | `ai` or `ai_integration` | Planned only | No | No | No | 模型/provider 配置、工具授权、调用审计、配额周期、prompt/version 归档、审批挂点和敏感信息边界。 |
 | Observability indexes | `observability` | Baseline only | No | No | No | 见 `docs/architecture/observability-baseline.md`；建表前补 LogChunk、LogEntryIndex、归档任务、retention 和 Gateway 查询边界。 |
