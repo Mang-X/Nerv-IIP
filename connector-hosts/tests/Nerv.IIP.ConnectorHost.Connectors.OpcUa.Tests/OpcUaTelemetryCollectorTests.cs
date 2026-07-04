@@ -229,6 +229,21 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("secret-value", credential.Password);
     }
 
+    [Theory]
+    [InlineData("None", "None", false)]
+    [InlineData("Basic256Sha256", "None", false)]
+    [InlineData("None", "SignAndEncrypt", false)]
+    [InlineData("Basic256Sha256", "SignAndEncrypt", true)]
+    public void Connection_options_require_application_certificate_only_for_secure_sessions(
+        string securityPolicy,
+        string securityMode,
+        bool expected)
+    {
+        var options = new OpcUaConnectionOptions("opc.tcp://localhost:4840", securityPolicy, securityMode, null, false);
+
+        Assert.Equal(expected, options.UsesSecurity);
+    }
+
     [Fact]
     public async Task Run_cycle_counts_bad_or_non_numeric_notifications_as_dropped_samples()
     {

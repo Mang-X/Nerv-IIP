@@ -19,21 +19,24 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
 
         var configuration = CreateApplicationConfiguration(options);
         await configuration.Validate(ApplicationType.Client);
-        var application = new ApplicationInstance(configuration)
+        if (options.UsesSecurity)
         {
-            ApplicationName = configuration.ApplicationName,
-            ApplicationType = ApplicationType.Client
-        };
-        var certificateReady = await application.CheckApplicationInstanceCertificatesAsync(false, 60, cancellationToken);
-        if (!certificateReady)
-        {
-            throw new InvalidOperationException("OPC UA client application certificate could not be created or loaded.");
+            var application = new ApplicationInstance(configuration)
+            {
+                ApplicationName = configuration.ApplicationName,
+                ApplicationType = ApplicationType.Client
+            };
+            var certificateReady = await application.CheckApplicationInstanceCertificatesAsync(false, 60, cancellationToken);
+            if (!certificateReady)
+            {
+                throw new InvalidOperationException("OPC UA client application certificate could not be created or loaded.");
+            }
         }
 
         var endpointDescription = await CoreClientUtils.SelectEndpointAsync(
             configuration,
             options.EndpointUrl,
-            UseSecurity(options),
+            options.UsesSecurity,
             telemetry: null!,
             cancellationToken);
         var endpoint = new ConfiguredEndpoint(null, endpointDescription, EndpointConfiguration.Create(configuration));
@@ -149,12 +152,6 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
     private Session RequireSession()
     {
         return _session ?? throw new InvalidOperationException("OPC UA session is not connected.");
-    }
-
-    private static bool UseSecurity(OpcUaConnectionOptions options)
-    {
-        return !string.Equals(options.SecurityPolicy, "None", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(options.SecurityMode, "None", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<UserIdentity> CreateIdentityAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)

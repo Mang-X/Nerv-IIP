@@ -21,7 +21,12 @@ public sealed record OpcUaConnectionOptions(
     string SecurityPolicy,
     string SecurityMode,
     string? CredentialReference,
-    bool AutoAcceptUntrustedServerCertificates);
+    bool AutoAcceptUntrustedServerCertificates)
+{
+    public bool UsesSecurity =>
+        !string.Equals(SecurityPolicy, "None", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(SecurityMode, "None", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed record OpcUaUserCredential(string UserName, string Password);
 
