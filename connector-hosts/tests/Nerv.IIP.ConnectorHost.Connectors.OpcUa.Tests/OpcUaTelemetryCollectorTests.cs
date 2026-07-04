@@ -163,6 +163,34 @@ public sealed class OpcUaTelemetryCollectorTests
     }
 
     [Fact]
+    public async Task Run_cycle_prunes_sealed_bucket_keys_after_late_sample_guard_window()
+    {
+        var now = new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero);
+        var opcUa = new SequencedFakeOpcUaClient(
+            [
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 10m, new DateTimeOffset(2026, 7, 3, 0, 0, 10, TimeSpan.Zero), "Good")],
+                []
+            ]);
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples, () => now);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        Assert.Equal(1, GetSealedBucketCount(connector));
+
+        now = new DateTimeOffset(2026, 7, 3, 0, 7, 1, TimeSpan.Zero);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        Assert.Equal(0, GetSealedBucketCount(connector));
+
+        await opcUa.EmitAsync(
+            new OpcUaDataChange("ns=2;s=Line1.Temperature", 20m, new DateTimeOffset(2026, 7, 3, 0, 0, 20, TimeSpan.Zero), "Good"),
+            CancellationToken.None);
+
+        Assert.Single(samples.Requests);
+        Assert.Equal(1, connector.CurrentState.DroppedSamples);
+    }
+
+    [Fact]
     public async Task Run_cycle_accepts_common_opcua_unsigned_and_boolean_scalar_values()
     {
         var opcUa = new FakeOpcUaClient(
@@ -246,7 +274,16 @@ public sealed class OpcUaTelemetryCollectorTests
                 ]),
             opcUa,
             samples,
-            utcNow);
+            utcNow ?? (() => new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero)));
+    }
+
+    private static int GetSealedBucketCount(OpcUaConnector connector)
+    {
+        var field = typeof(OpcUaConnector).GetField("_sealedBucketKeys", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("OPC UA connector sealed bucket field was not found.");
+        var countProperty = field.FieldType.GetProperty("Count")
+            ?? throw new InvalidOperationException("OPC UA connector sealed bucket field does not expose Count.");
+        return (int)countProperty.GetValue(field.GetValue(connector)!)!;
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
@@ -416,6 +453,7 @@ public sealed class OpcUaTelemetryCollectorTests
     private sealed class SequencedFakeOpcUaClient(IReadOnlyList<IReadOnlyList<OpcUaDataChange>> batches) : IOpcUaClient
     {
         private int _index;
+        private Func<OpcUaDataChange, CancellationToken, Task>? _onDataChange;
 
         public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
         {
@@ -432,11 +470,22 @@ public sealed class OpcUaTelemetryCollectorTests
             Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
             CancellationToken cancellationToken)
         {
+            _onDataChange = onDataChange;
             var changes = _index < batches.Count ? batches[_index++] : [];
             foreach (var change in changes)
             {
                 await onDataChange(change, cancellationToken);
             }
+        }
+
+        public Task EmitAsync(OpcUaDataChange change, CancellationToken cancellationToken)
+        {
+            if (_onDataChange is null)
+            {
+                throw new InvalidOperationException("OPC UA subscription callback has not been captured.");
+            }
+
+            return _onDataChange(change, cancellationToken);
         }
 
         public Task DisconnectAsync(CancellationToken cancellationToken)

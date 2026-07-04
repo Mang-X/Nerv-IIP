@@ -9,10 +9,11 @@ public sealed class OpcUaConnector(
     Func<DateTimeOffset>? utcNow = null) : IConnector, IOpcUaCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
-    private readonly HashSet<(string NodeId, DateTimeOffset BucketStartUtc)> _sealedBucketKeys = [];
+    private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), DateTimeOffset> _sealedBucketKeys = [];
     private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
+    private readonly TimeSpan _sealedBucketRetention = CalculateSealedBucketRetention(options.Tags);
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -128,7 +129,14 @@ public sealed class OpcUaConnector(
 
             var bucketStartUtc = FloorToBucket(change.SourceTimestampUtc, tag.BucketSeconds);
             var bucketKey = (tag.NodeId, bucketStartUtc);
-            if (_sealedBucketKeys.Contains(bucketKey))
+            var bucketEndUtc = bucketStartUtc.AddSeconds(tag.BucketSeconds);
+            if (bucketEndUtc < _utcNow() - _sealedBucketRetention)
+            {
+                MarkDroppedSample();
+                return;
+            }
+
+            if (_sealedBucketKeys.ContainsKey(bucketKey))
             {
                 MarkDroppedSample();
                 return;
@@ -136,7 +144,7 @@ public sealed class OpcUaConnector(
 
             if (!_buckets.TryGetValue(bucketKey, out var bucket))
             {
-                bucket = new TelemetryBucket(tag, bucketStartUtc, bucketStartUtc.AddSeconds(tag.BucketSeconds));
+                bucket = new TelemetryBucket(tag, bucketStartUtc, bucketEndUtc);
                 _buckets[bucketKey] = bucket;
             }
 
@@ -182,6 +190,7 @@ public sealed class OpcUaConnector(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            PruneSealedBucketKeys(nowUtc);
             var closedBuckets = _buckets
                 .Where(x => x.Value.BucketEndUtc <= nowUtc)
                 .OrderBy(x => x.Value.BucketStartUtc)
@@ -194,12 +203,25 @@ public sealed class OpcUaConnector(
 
             var (key, bucket) = closedBuckets[0];
             _buckets.Remove(key);
-            _sealedBucketKeys.Add(key);
+            _sealedBucketKeys[key] = bucket.BucketEndUtc;
             return new BucketFlushItem(key, bucket);
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private void PruneSealedBucketKeys(DateTimeOffset nowUtc)
+    {
+        var cutoffUtc = nowUtc - _sealedBucketRetention;
+        var staleKeys = _sealedBucketKeys
+            .Where(x => x.Value < cutoffUtc)
+            .Select(x => x.Key)
+            .ToArray();
+        foreach (var key in staleKeys)
+        {
+            _sealedBucketKeys.Remove(key);
         }
     }
 
@@ -333,6 +355,12 @@ public sealed class OpcUaConnector(
         var unixSeconds = timestampUtc.ToUnixTimeSeconds();
         var bucketStartUnixSeconds = unixSeconds - unixSeconds % bucketSeconds;
         return DateTimeOffset.FromUnixTimeSeconds(bucketStartUnixSeconds);
+    }
+
+    private static TimeSpan CalculateSealedBucketRetention(IReadOnlyList<OpcUaTagSubscription> tags)
+    {
+        var maxBucketSeconds = tags.Count == 0 ? 60 : tags.Max(x => Math.Max(x.BucketSeconds, 1));
+        return TimeSpan.FromSeconds(Math.Max(60, maxBucketSeconds * 5));
     }
 
     private sealed record BucketFlushItem(
