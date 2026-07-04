@@ -51,7 +51,8 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationTaskId, x.ReportedAtUtc })
             .HasDatabaseName("ix_production_reports_scope_operation_time");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReversedReportNo })
-            .HasDatabaseName("ix_production_reports_scope_reversed_report_no");
+            .IsUnique()
+            .HasDatabaseName("ux_production_reports_scope_reversed_report_no");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .IsUnique()
             .HasDatabaseName("ux_production_reports_scope_report_no");

@@ -44,17 +44,18 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                 oldComment: "Consumed material quantity for this lot.");
 
             migrationBuilder.CreateIndex(
-                name: "ix_production_reports_scope_reversed_report_no",
+                name: "ux_production_reports_scope_reversed_report_no",
                 schema: "mes",
                 table: "production_reports",
-                columns: new[] { "organization_id", "environment_id", "reversed_report_no" });
+                columns: new[] { "organization_id", "environment_id", "reversed_report_no" },
+                unique: true);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "ix_production_reports_scope_reversed_report_no",
+                name: "ux_production_reports_scope_reversed_report_no",
                 schema: "mes",
                 table: "production_reports");
 

@@ -583,6 +583,42 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public void Traceability_active_report_filters_translate_to_npgsql_exists_queries()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var activeProductionReports = dbContext.ActiveProductionReports();
+        var materialLotSql = dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.MaterialLotId == "LOT-001" &&
+                activeProductionReports.Any(report =>
+                    report.OrganizationId == x.OrganizationId &&
+                    report.EnvironmentId == x.EnvironmentId &&
+                    report.ReportNo == x.ReportNo))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+        var producedBatchSql = activeProductionReports
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                (x.ProducedLotNo == "LOT-001" || x.SerialNo == "LOT-001"))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+
+        Assert.Contains("EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", materialLotSql, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", producedBatchSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", producedBatchSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Convert_plan_to_work_order_persists_demand_planning_source_reference_for_queries_and_traceability()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

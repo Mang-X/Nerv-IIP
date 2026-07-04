@@ -758,7 +758,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                         .HasDatabaseName("ux_production_reports_scope_report_no");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "ReversedReportNo")
-                        .HasDatabaseName("ix_production_reports_scope_reversed_report_no");
+                        .IsUnique()
+                        .HasDatabaseName("ux_production_reports_scope_reversed_report_no");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId")
                         .HasDatabaseName("ix_production_reports_scope_work_order_fk");

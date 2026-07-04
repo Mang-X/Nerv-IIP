@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
@@ -1383,6 +1384,21 @@ public sealed record MesTraceabilityNode(string NodeId, string NodeType, string 
 
 public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
+public static class MesTraceabilityProductionReportQueries
+{
+    public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
+    {
+        return dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(report =>
+                report.ReversedReportNo == null &&
+                !dbContext.ProductionReports.Any(reversal =>
+                    reversal.OrganizationId == report.OrganizationId &&
+                    reversal.EnvironmentId == report.EnvironmentId &&
+                    reversal.ReversedReportNo == report.ReportNo));
+    }
+}
+
 public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<GetWorkOrderTraceabilityQuery, MesTraceabilityResponse>
 {
@@ -1405,17 +1421,12 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         var detail = await new GetMesWorkOrderDetailQueryHandler(dbContext).Handle(
             new GetMesWorkOrderDetailQuery(request.OrganizationId, request.EnvironmentId, request.WorkOrderId),
             cancellationToken);
-        var reports = await dbContext.ProductionReports
-            .AsNoTracking()
+        var activeProductionReports = dbContext.ActiveProductionReports();
+        var reports = await activeProductionReports
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.ReversedReportNo == null &&
-                !dbContext.ProductionReports.Any(reversal =>
-                    reversal.OrganizationId == x.OrganizationId &&
-                    reversal.EnvironmentId == x.EnvironmentId &&
-                    reversal.ReversedReportNo == x.ReportNo))
+                x.WorkOrderId == request.WorkOrderId)
             .Select(x => new { Id = x.ReportNo, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
             .ToArrayAsync(cancellationToken);
         var activeReportNos = reports.Select(x => x.Id).ToArray();
@@ -1511,21 +1522,17 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
 {
     public async Task<MesTraceabilityResponse> Handle(GetBatchTraceabilityQuery request, CancellationToken cancellationToken)
     {
+        var activeProductionReports = dbContext.ActiveProductionReports();
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.MaterialLotId == request.BatchOrSerial &&
-                dbContext.ProductionReports.Any(report =>
+                activeProductionReports.Any(report =>
                     report.OrganizationId == x.OrganizationId &&
                     report.EnvironmentId == x.EnvironmentId &&
-                    report.ReportNo == x.ReportNo &&
-                    report.ReversedReportNo == null) &&
-                !dbContext.ProductionReports.Any(reversal =>
-                    reversal.OrganizationId == x.OrganizationId &&
-                    reversal.EnvironmentId == x.EnvironmentId &&
-                    reversal.ReversedReportNo == x.ReportNo))
+                    report.ReportNo == x.ReportNo))
             .Select(x => new
             {
                 x.ReportNo,
@@ -1537,16 +1544,10 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
-        var producedReports = await dbContext.ProductionReports
-            .AsNoTracking()
+        var producedReports = await activeProductionReports
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.ReversedReportNo == null &&
-                !dbContext.ProductionReports.Any(reversal =>
-                    reversal.OrganizationId == x.OrganizationId &&
-                    reversal.EnvironmentId == x.EnvironmentId &&
-                    reversal.ReversedReportNo == x.ReportNo) &&
                 (x.ProducedLotNo == request.BatchOrSerial || x.SerialNo == request.BatchOrSerial))
             .Select(x => new { x.ReportNo, x.WorkOrderId, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
             .ToArrayAsync(cancellationToken);
@@ -1607,21 +1608,17 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
 {
     public async Task<MesTraceabilityResponse> Handle(GetMaterialLotTraceabilityQuery request, CancellationToken cancellationToken)
     {
+        var activeProductionReports = dbContext.ActiveProductionReports();
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.MaterialLotId == request.MaterialLotId &&
-                dbContext.ProductionReports.Any(report =>
+                activeProductionReports.Any(report =>
                     report.OrganizationId == x.OrganizationId &&
                     report.EnvironmentId == x.EnvironmentId &&
-                    report.ReportNo == x.ReportNo &&
-                    report.ReversedReportNo == null) &&
-                !dbContext.ProductionReports.Any(reversal =>
-                    reversal.OrganizationId == x.OrganizationId &&
-                    reversal.EnvironmentId == x.EnvironmentId &&
-                    reversal.ReversedReportNo == x.ReportNo))
+                    report.ReportNo == x.ReportNo))
             .Select(x => new
             {
                 x.ReportNo,
