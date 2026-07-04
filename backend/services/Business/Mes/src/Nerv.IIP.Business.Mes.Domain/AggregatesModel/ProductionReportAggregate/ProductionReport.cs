@@ -24,17 +24,19 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? scrapReasonCode,
         string? defectRecordNo,
         string? producedLotNo,
-        string? serialNo)
+        string? serialNo,
+        string? reversedReportNo,
+        string? reversalReason)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         ReportNo = DomainGuard.Required(reportNo, nameof(reportNo));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         OperationTaskId = DomainGuard.Required(operationTaskId, nameof(operationTaskId));
-        GoodQuantity = DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
-        ScrapQuantity = DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
-        ReworkQuantity = DomainGuard.NonNegative(reworkQuantity, nameof(reworkQuantity));
-        if (GoodQuantity + ScrapQuantity + ReworkQuantity <= 0)
+        GoodQuantity = goodQuantity;
+        ScrapQuantity = scrapQuantity;
+        ReworkQuantity = reworkQuantity;
+        if (GoodQuantity == 0m && ScrapQuantity == 0m && ReworkQuantity == 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one reported quantity must be positive.");
         }
@@ -45,6 +47,8 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         DefectRecordNo = string.IsNullOrWhiteSpace(defectRecordNo) ? null : defectRecordNo.Trim();
         ProducedLotNo = string.IsNullOrWhiteSpace(producedLotNo) ? null : producedLotNo.Trim();
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
+        ReversedReportNo = string.IsNullOrWhiteSpace(reversedReportNo) ? null : reversedReportNo.Trim();
+        ReversalReason = string.IsNullOrWhiteSpace(reversalReason) ? null : reversalReason.Trim();
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -59,8 +63,12 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
     public string? DefectRecordNo { get; private set; }
     public string? ProducedLotNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public string? ReversedReportNo { get; private set; }
+    public string? ReversalReason { get; private set; }
     public bool CompletesOperation { get; private set; }
     public DateTimeOffset ReportedAtUtc { get; private set; }
+
+    public bool IsReversal => !string.IsNullOrWhiteSpace(ReversedReportNo);
 
     public static ProductionReport Record(
         string organizationId,
@@ -78,6 +86,14 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
         string? producedLotNo = null,
         string? serialNo = null)
     {
+        DomainGuard.NonNegative(goodQuantity, nameof(goodQuantity));
+        DomainGuard.NonNegative(scrapQuantity, nameof(scrapQuantity));
+        DomainGuard.NonNegative(reworkQuantity, nameof(reworkQuantity));
+        if (goodQuantity + scrapQuantity + reworkQuantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one reported quantity must be positive.");
+        }
+
         var report = new ProductionReport(
             organizationId,
             environmentId,
@@ -92,9 +108,43 @@ public sealed class ProductionReport : Entity<ProductionReportId>, IAggregateRoo
             scrapReasonCode,
             defectRecordNo,
             producedLotNo,
-            serialNo);
+            serialNo,
+            null,
+            null);
         report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report));
         return report;
     }
 
+    public static ProductionReport Reverse(
+        ProductionReport original,
+        string reportNo,
+        DateTimeOffset reportedAtUtc,
+        string reason)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        if (original.IsReversal)
+        {
+            throw new InvalidOperationException("Reversal production reports cannot be reversed.");
+        }
+
+        var report = new ProductionReport(
+            original.OrganizationId,
+            original.EnvironmentId,
+            reportNo,
+            original.WorkOrderId,
+            original.OperationTaskId,
+            -original.GoodQuantity,
+            -original.ScrapQuantity,
+            original.CompletesOperation,
+            reportedAtUtc,
+            -original.ReworkQuantity,
+            original.ScrapReasonCode,
+            original.DefectRecordNo,
+            original.ProducedLotNo,
+            original.SerialNo,
+            original.ReportNo,
+            reason);
+        report.AddDomainEvent(new ProductionReportRecordedDomainEvent(report));
+        return report;
+    }
 }

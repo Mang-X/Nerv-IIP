@@ -79,6 +79,19 @@ public sealed record RecordProductionReportResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
     string ReportNo);
 
+public sealed record ReverseProductionReportRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string ReportNo,
+    string Reason,
+    DateTimeOffset? ReversedAtUtc,
+    string? IdempotencyKey = null);
+
+public sealed record ReverseProductionReportResponse(
+    global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate.ProductionReportId ProductionReportId,
+    string ReportNo,
+    string OriginalReportNo);
+
 public sealed record ListProductionReportsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -888,6 +901,24 @@ public sealed class ListProductionReportsEndpoint(ISender sender)
     }
 }
 
+public sealed class ReverseProductionReportEndpoint(ISender sender, TimeProvider timeProvider)
+    : MesEndpoint<ReverseProductionReportRequest, ReverseProductionReportResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<ReverseProductionReportEndpoint>());
+
+    public override async Task HandleAsync(ReverseProductionReportRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ReverseProductionReportCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ReportNo,
+            req.Reason,
+            req.ReversedAtUtc ?? timeProvider.GetUtcNow(),
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new ReverseProductionReportResponse(result.Id, result.ReportNo, result.OriginalReportNo), ct);
+    }
+}
+
 public sealed class RecordDefectEndpoint(ISender sender, TimeProvider timeProvider)
     : MesEndpoint<RecordDefectRequest, MesAcceptedResponse>
 {
@@ -1184,6 +1215,7 @@ public static class MesEndpointContracts
         new(typeof(GetWipSummaryEndpoint), "GET", "/api/business/v1/mes/wip", MesPermissionCodes.OperationsRead, "getBusinessMesWipSummary"),
         new(typeof(RecordProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingWrite, "recordBusinessMesProductionReport"),
         new(typeof(ListProductionReportsEndpoint), "GET", "/api/business/v1/mes/production-reports", MesPermissionCodes.ReportingRead, "listBusinessMesProductionReports"),
+        new(typeof(ReverseProductionReportEndpoint), "POST", "/api/business/v1/mes/production-reports/{reportNo}/reverse", MesPermissionCodes.ReportingWrite, "reverseBusinessMesProductionReport"),
         new(typeof(RecordDefectEndpoint), "POST", "/api/business/v1/mes/defects", MesPermissionCodes.QualityWrite, "recordBusinessMesDefect"),
         new(typeof(ListRelatedQualityItemsEndpoint), "GET", "/api/business/v1/mes/related-quality-items", MesPermissionCodes.QualityRead, "listBusinessMesRelatedQualityItems"),
         new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),

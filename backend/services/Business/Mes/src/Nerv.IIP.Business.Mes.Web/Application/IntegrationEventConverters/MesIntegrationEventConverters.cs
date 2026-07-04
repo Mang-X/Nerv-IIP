@@ -40,7 +40,7 @@ public sealed class ProductionMaterialConsumedIntegrationEventConverter
             "production",
             "line-side",
             consumption.MaterialLotId,
-            -Math.Abs(consumption.ConsumedQuantity),
+            -consumption.ConsumedQuantity,
             occurredAtUtc);
     }
 
