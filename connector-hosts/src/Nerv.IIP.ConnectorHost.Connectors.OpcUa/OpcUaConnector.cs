@@ -5,10 +5,13 @@ namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 public sealed class OpcUaConnector(
     OpcUaConnectorOptions options,
     IOpcUaClient opcUaClient,
-    IIndustrialTelemetrySamplesClient samplesClient) : IConnector, IOpcUaCollectionConnector
+    IIndustrialTelemetrySamplesClient samplesClient,
+    Func<DateTimeOffset>? utcNow = null) : IConnector, IOpcUaCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
     private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
 
     public OpcUaConnectorState CurrentState { get; private set; } = new(
         "stopped",
@@ -30,30 +33,30 @@ public sealed class OpcUaConnector(
             try
             {
                 await ConnectBrowseAndSubscribeAsync(cancellationToken);
-                await FlushAllBucketsAsync(cancellationToken);
-                MarkRunning();
+                await FlushClosedBucketsAsync(_utcNow(), cancellationToken);
+                await MarkRunningAsync(cancellationToken);
                 return;
             }
             catch (OpcUaConnectionLostException) when (attempts < options.MaxReconnectAttempts)
             {
                 attempts++;
-                CurrentState = CurrentState with
+                await UpdateStateAsync(state => state with
                 {
                     HealthStatus = "degraded",
                     Summary = "OPC UA subscription disconnected; reconnecting.",
-                    ReconnectCount = CurrentState.ReconnectCount + 1,
-                    SubscriptionRecoveries = CurrentState.SubscriptionRecoveries + 1
-                };
+                    ReconnectCount = state.ReconnectCount + 1,
+                    SubscriptionRecoveries = state.SubscriptionRecoveries + 1
+                }, cancellationToken);
                 await opcUaClient.DisconnectAsync(cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                CurrentState = CurrentState with
+                await UpdateStateAsync(state => state with
                 {
                     ReportedStatus = "stopped",
                     HealthStatus = "unhealthy",
                     Summary = $"OPC UA collection failed: {ex.Message}"
-                };
+                }, cancellationToken);
                 throw;
             }
         }
@@ -97,20 +100,23 @@ public sealed class OpcUaConnector(
 
         if (options.Tags.Count == 0)
         {
-            CurrentState = CurrentState with
+            await UpdateStateAsync(state => state with
             {
                 ReportedStatus = "running",
                 HealthStatus = "degraded",
                 Summary = "OPC UA collector is connected but has no configured tag subscriptions."
-            };
+            }, cancellationToken);
             return;
         }
 
         await opcUaClient.SubscribeAsync(options.Tags, HandleDataChangeAsync, cancellationToken);
     }
 
-    private Task HandleDataChangeAsync(OpcUaDataChange change, CancellationToken cancellationToken)
+    private async Task HandleDataChangeAsync(OpcUaDataChange change, CancellationToken cancellationToken)
     {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
         if (!_tagsByNodeId.TryGetValue(change.NodeId, out var tag)
             || !string.Equals(change.Status, "Good", StringComparison.OrdinalIgnoreCase)
             || !OpcUaValueConversion.TryConvertDecimal(change.Value, out var value))
@@ -121,7 +127,7 @@ public sealed class OpcUaConnector(
                 HealthStatus = "degraded",
                 Summary = "OPC UA collector dropped one or more invalid samples."
             };
-            return Task.CompletedTask;
+            return;
         }
 
         var bucketStartUtc = FloorToBucket(change.SourceTimestampUtc, tag.BucketSeconds);
@@ -138,22 +144,38 @@ public sealed class OpcUaConnector(
             ReceivedSamples = CurrentState.ReceivedSamples + 1,
             LastSampleAtUtc = change.SourceTimestampUtc
         };
-        return Task.CompletedTask;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
-    private async Task FlushAllBucketsAsync(CancellationToken cancellationToken)
+    private async Task FlushClosedBucketsAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken)
     {
-        foreach (var bucket in _buckets.Values.OrderBy(x => x.BucketStartUtc).ThenBy(x => x.Tag.TagKey))
+        await _gate.WaitAsync(cancellationToken);
+        try
         {
-            await samplesClient.RecordSampleAsync(CreateRequest(bucket), cancellationToken);
-            CurrentState = CurrentState with
+            var closedBuckets = _buckets
+                .Where(x => x.Value.BucketEndUtc <= nowUtc)
+                .OrderBy(x => x.Value.BucketStartUtc)
+                .ThenBy(x => x.Value.Tag.TagKey)
+                .ToArray();
+            foreach (var (key, bucket) in closedBuckets)
             {
-                PostedBuckets = CurrentState.PostedBuckets + 1,
-                LastPostedBucketEndUtc = bucket.BucketEndUtc
-            };
+                await samplesClient.RecordSampleAsync(CreateRequest(bucket), cancellationToken);
+                _buckets.Remove(key);
+                CurrentState = CurrentState with
+                {
+                    PostedBuckets = CurrentState.PostedBuckets + 1,
+                    LastPostedBucketEndUtc = bucket.BucketEndUtc
+                };
+            }
         }
-
-        _buckets.Clear();
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private RecordIndustrialTelemetrySampleRequest CreateRequest(TelemetryBucket bucket)
@@ -176,17 +198,33 @@ public sealed class OpcUaConnector(
             $"{options.ConnectorHostId}/{options.ConnectorId}");
     }
 
-    private void MarkRunning()
+    private async Task MarkRunningAsync(CancellationToken cancellationToken)
     {
-        var health = CurrentState.DroppedSamples > 0 || CurrentState.ReconnectCount > 0 ? "degraded" : "healthy";
-        CurrentState = CurrentState with
+        await UpdateStateAsync(state =>
         {
-            ReportedStatus = "running",
-            HealthStatus = health,
-            Summary = health == "healthy"
+            var health = state.DroppedSamples > 0 || state.ReconnectCount > 0 ? "degraded" : "healthy";
+            return state with
+            {
+                ReportedStatus = "running",
+                HealthStatus = health,
+                Summary = health == "healthy"
                 ? "OPC UA collector is connected and sampling."
                 : "OPC UA collector is connected with recoverable sampling issues."
-        };
+            };
+        }, cancellationToken);
+    }
+
+    private async Task UpdateStateAsync(Func<OpcUaConnectorState, OpcUaConnectorState> update, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            CurrentState = update(CurrentState);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private IReadOnlyDictionary<string, string> CreateMetadata(OpcUaConnectorState state)

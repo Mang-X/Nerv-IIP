@@ -23,6 +23,8 @@ public sealed record OpcUaConnectionOptions(
     string? CredentialReference,
     bool AutoAcceptUntrustedServerCertificates);
 
+public sealed record OpcUaUserCredential(string UserName, string Password);
+
 public sealed record OpcUaTagSubscription(
     string DeviceAssetId,
     string TagKey,
@@ -91,6 +93,11 @@ public interface IOpcUaClient
     Task DisconnectAsync(CancellationToken cancellationToken);
 }
 
+public interface IOpcUaCredentialResolver
+{
+    ValueTask<OpcUaUserCredential?> ResolveAsync(string? credentialReference, CancellationToken cancellationToken);
+}
+
 public interface IOpcUaCollectionConnector
 {
     Task RunCollectionCycleAsync(CancellationToken cancellationToken);
@@ -157,6 +164,17 @@ internal static class OpcUaValueConversion
                 return true;
             case string stringValue:
                 return decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out result);
+            case IConvertible convertible:
+                try
+                {
+                    result = Convert.ToDecimal(convertible, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch (Exception ex) when (ex is InvalidCastException or FormatException or OverflowException)
+                {
+                    result = 0;
+                    return false;
+                }
             default:
                 result = 0;
                 return false;

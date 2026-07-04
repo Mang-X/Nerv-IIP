@@ -1,10 +1,11 @@
 using Opc.Ua;
 using Opc.Ua.Client;
+using System.Text;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
 
 #pragma warning disable CS0618
-public sealed class OpcUaNetStandardClient : IOpcUaClient, IDisposable
+public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialResolver) : IOpcUaClient, IDisposable
 {
     private Session? _session;
     private Subscription? _subscription;
@@ -25,7 +26,7 @@ public sealed class OpcUaNetStandardClient : IOpcUaClient, IDisposable
             telemetry: null!,
             cancellationToken);
         var endpoint = new ConfiguredEndpoint(null, endpointDescription, EndpointConfiguration.Create(configuration));
-        var identity = new UserIdentity();
+        var identity = await CreateIdentityAsync(options, cancellationToken);
 
         _session = await Session.Create(
             configuration,
@@ -142,6 +143,18 @@ public sealed class OpcUaNetStandardClient : IOpcUaClient, IDisposable
     {
         return !string.Equals(options.SecurityPolicy, "None", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(options.SecurityMode, "None", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<UserIdentity> CreateIdentityAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+    {
+        var credential = await credentialResolver.ResolveAsync(options.CredentialReference, cancellationToken);
+        return credential is null
+            ? new UserIdentity()
+            : new UserIdentity(new UserNameIdentityToken
+            {
+                UserName = credential.UserName,
+                Password = Encoding.UTF8.GetBytes(credential.Password)
+            });
     }
 
     private static ApplicationConfiguration CreateApplicationConfiguration(OpcUaConnectionOptions options)

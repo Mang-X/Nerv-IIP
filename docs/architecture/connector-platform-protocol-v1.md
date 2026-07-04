@@ -285,7 +285,7 @@ OPC UA 采集器归属 `connector-hosts`，作为 Connector Host 的设备协议
 
 - `OpcUa:Enabled` 默认关闭。
 - `OpcUa:EndpointUrl`、`SecurityPolicy`、`SecurityMode`、`BrowseRootNodeId` 描述 OPC UA 连接与浏览入口。
-- `OpcUa:CredentialReference` 只保存凭据引用，例如 user-secrets、环境变量或外部密钥管理路径；仓库配置不得保存设备用户名、密码、证书私钥或客户密钥。
+- `OpcUa:CredentialReference` 只保存凭据引用；首批实现支持 `env:<PREFIX>`，并从 `<PREFIX>_USERNAME` / `<PREFIX>_PASSWORD` 读取 OPC UA 用户名密码。仓库配置不得保存设备用户名、密码、证书私钥或客户密钥。
 - `OpcUa:Tags[]` 绑定 `DeviceAssetId`、`TagKey`、OPC UA `NodeId`、采样间隔和 bucket 秒数。
 
 采样写入约束：
@@ -294,7 +294,7 @@ OPC UA 采集器归属 `connector-hosts`，作为 Connector Host 的设备协议
 - 写入 `POST /api/business/v1/iiot/samples` 时必须携带 `source_system=opcua`、`source_connector={connectorHostId}/{connectorId}` 和稳定 `source_sequence=opcua:{connectorId}:{tagKey}:{bucketStartUnixMilliseconds}`，由 IndustrialTelemetry 侧已有幂等约束处理重复 bucket。
 - 断线重连、订阅恢复、丢样计数和最近采样/写入时间通过 state-snapshot 的 metadata/metrics 暴露，heartbeat 仍只证明 Connector Host 存活。
 
-首批验证可以使用 OPC UA 模拟器，也可以用 Connector Host fake OPC UA adapter 做端到端 collector 测试；若 Docker 或外部模拟器不可用，必须在交付说明中明确替代证据覆盖了浏览、订阅、bucket 写入、source_sequence 幂等字段和重连/丢样指标。
+首批自动化验证可使用 Connector Host fake OPC UA adapter 覆盖浏览、订阅、bucket 写入、source_sequence 幂等字段和重连/丢样指标；合入或发布前仍应优先补充 open62541、Prosys 或等价 OPC UA 模拟器 smoke。若 Docker 或外部模拟器不可用，交付说明必须明确限制与替代证据。
 
 ## 非目标
 

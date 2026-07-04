@@ -21,6 +21,7 @@ builder.Services.AddSingleton<IConnectorOperationExecutor>(sp => sp.GetRequiredS
 if (builder.Configuration.GetValue("OpcUa:Enabled", false))
 {
     builder.Services.AddSingleton(_ => CreateOpcUaOptions(builder.Configuration));
+    builder.Services.AddSingleton<IOpcUaCredentialResolver, EnvironmentOpcUaCredentialResolver>();
     builder.Services.AddSingleton<IOpcUaClient, OpcUaNetStandardClient>();
     builder.Services.AddHttpClient<IIndustrialTelemetrySamplesClient, HttpIndustrialTelemetrySamplesClient>((services, client) =>
     {

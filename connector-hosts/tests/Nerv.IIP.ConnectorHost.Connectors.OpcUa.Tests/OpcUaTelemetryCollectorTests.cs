@@ -93,6 +93,72 @@ public sealed class OpcUaTelemetryCollectorTests
     }
 
     [Fact]
+    public async Task Run_cycle_keeps_open_bucket_across_cycles_and_flushes_once_after_bucket_end()
+    {
+        var now = new DateTimeOffset(2026, 7, 3, 0, 0, 30, TimeSpan.Zero);
+        var opcUa = new SequencedFakeOpcUaClient(
+            [
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 10m, new DateTimeOffset(2026, 7, 3, 0, 0, 10, TimeSpan.Zero), "Good")],
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 20m, new DateTimeOffset(2026, 7, 3, 0, 0, 40, TimeSpan.Zero), "Good")],
+                []
+            ]);
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples, () => now);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        Assert.Empty(samples.Requests);
+
+        now = new DateTimeOffset(2026, 7, 3, 0, 0, 50, TimeSpan.Zero);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        Assert.Empty(samples.Requests);
+
+        now = new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var request = Assert.Single(samples.Requests);
+        Assert.Equal(2, request.SampleCount);
+        Assert.Equal(15m, request.AverageValue);
+        Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
+    }
+
+    [Fact]
+    public async Task Run_cycle_accepts_common_opcua_unsigned_and_boolean_scalar_values()
+    {
+        var opcUa = new FakeOpcUaClient(
+            [],
+            [
+                new OpcUaDataChange("ns=2;s=Line1.Temperature", (ushort)40, new DateTimeOffset(2026, 7, 3, 0, 0, 1, TimeSpan.Zero), "Good"),
+                new OpcUaDataChange("ns=2;s=Line1.Temperature", true, new DateTimeOffset(2026, 7, 3, 0, 0, 2, TimeSpan.Zero), "Good")
+            ]);
+        var samples = new RecordingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var request = Assert.Single(samples.Requests);
+        Assert.Equal(2, request.SampleCount);
+        Assert.Equal(1m, request.MinValue);
+        Assert.Equal(40m, request.MaxValue);
+        Assert.Equal(20.5m, request.AverageValue);
+        Assert.Equal(0, connector.CurrentState.DroppedSamples);
+    }
+
+    [Fact]
+    public async Task Environment_credential_resolver_resolves_username_password_references_without_storing_secret_in_options()
+    {
+        using var variables = new TemporaryEnvironmentVariables(
+            ("NERV_IIP_OPCUA_LINE1_USERNAME", "operator"),
+            ("NERV_IIP_OPCUA_LINE1_PASSWORD", "secret-value")).Set();
+        var resolver = new EnvironmentOpcUaCredentialResolver();
+
+        var credential = await resolver.ResolveAsync("env:NERV_IIP_OPCUA_LINE1", CancellationToken.None);
+
+        Assert.NotNull(credential);
+        Assert.Equal("operator", credential.UserName);
+        Assert.Equal("secret-value", credential.Password);
+    }
+
+    [Fact]
     public async Task Run_cycle_counts_bad_or_non_numeric_notifications_as_dropped_samples()
     {
         var opcUa = new FakeOpcUaClient(
@@ -112,7 +178,10 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal("2", Assert.Single(targets).Metadata["droppedSamples"]);
     }
 
-    private static OpcUaConnector CreateConnector(FakeOpcUaClient opcUa, IIndustrialTelemetrySamplesClient samples)
+    private static OpcUaConnector CreateConnector(
+        IOpcUaClient opcUa,
+        IIndustrialTelemetrySamplesClient samples,
+        Func<DateTimeOffset>? utcNow = null)
     {
         return new OpcUaConnector(
             new OpcUaConnectorOptions(
@@ -135,7 +204,8 @@ public sealed class OpcUaTelemetryCollectorTests
                         BucketSeconds: 60)
                 ]),
             opcUa,
-            samples);
+            samples,
+            utcNow);
     }
 
     private sealed class RecordingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
@@ -217,6 +287,61 @@ public sealed class OpcUaTelemetryCollectorTests
         public Task DisconnectAsync(CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SequencedFakeOpcUaClient(IReadOnlyList<IReadOnlyList<OpcUaDataChange>> batches) : IOpcUaClient
+    {
+        private int _index;
+
+        public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<OpcUaNode>>([]);
+        }
+
+        public async Task SubscribeAsync(
+            IReadOnlyList<OpcUaTagSubscription> tags,
+            Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
+            CancellationToken cancellationToken)
+        {
+            var changes = _index < batches.Count ? batches[_index++] : [];
+            foreach (var change in changes)
+            {
+                await onDataChange(change, cancellationToken);
+            }
+        }
+
+        public Task DisconnectAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TemporaryEnvironmentVariables(params (string Name, string Value)[] variables) : IDisposable
+    {
+        private readonly Dictionary<string, string?> _previous = variables.ToDictionary(x => x.Name, x => Environment.GetEnvironmentVariable(x.Name));
+
+        public void Dispose()
+        {
+            foreach (var (name, value) in _previous)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+        }
+
+        public TemporaryEnvironmentVariables Set()
+        {
+            foreach (var (name, value) in variables)
+            {
+                Environment.SetEnvironmentVariable(name, value);
+            }
+
+            return this;
         }
     }
 }
