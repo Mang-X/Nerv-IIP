@@ -1,5 +1,6 @@
 using MediatR;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -18,6 +19,8 @@ namespace Nerv.IIP.Business.Mes.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
+
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
 
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
@@ -72,21 +75,70 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.ConfigureConventions(configurationBuilder);
     }
 
-    public override Task<int> SaveChangesAsync(
+    public override async Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
-            this,
-            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
-            cancellationToken);
+        try
+        {
+            return await ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
+                this,
+                token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
+                cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
+        {
+            ChangeTracker.Clear();
+            throw DuplicateProductionReportReversal(exception);
+        }
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
-            this,
-            () => base.SaveChanges(acceptAllChangesOnSuccess));
+        try
+        {
+            return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
+                this,
+                () => base.SaveChanges(acceptAllChangesOnSuccess));
+        }
+        catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
+        {
+            ChangeTracker.Clear();
+            throw DuplicateProductionReportReversal(exception);
+        }
+    }
+
+    private bool IsDuplicateProductionReportReversal(DbUpdateException exception)
+    {
+        return ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, ProductionReportReversalUniqueIndexName) ||
+            IsSqliteDuplicateProductionReportReversal(exception);
+    }
+
+    private static KnownException DuplicateProductionReportReversal(DbUpdateException exception)
+    {
+        return new KnownException("原报工已冲销，不能重复冲销。", exception);
+    }
+
+    private bool IsSqliteDuplicateProductionReportReversal(Exception exception)
+    {
+        var providerName = Database.ProviderName ?? string.Empty;
+        if (!providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return EnumerateExceptions(exception).Any(inner =>
+            inner.Message.Contains("production_reports.organization_id", StringComparison.OrdinalIgnoreCase) &&
+            inner.Message.Contains("production_reports.environment_id", StringComparison.OrdinalIgnoreCase) &&
+            inner.Message.Contains("production_reports.reversed_report_no", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<Exception> EnumerateExceptions(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            yield return current;
+        }
     }
 
     private static void ConfigureCapStorage(ModelBuilder modelBuilder)
