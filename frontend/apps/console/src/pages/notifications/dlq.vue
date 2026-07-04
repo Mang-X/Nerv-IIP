@@ -151,7 +151,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
             刷新
           </Button>
           <Button
-            :disabled="actionPending || pendingCount === 0"
+            :disabled="actionPending || deadLetters.length === 0"
             size="sm"
             type="button"
             aria-label="重放当前筛选死信"

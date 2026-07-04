@@ -575,9 +575,53 @@ public sealed class SchedulingPlanReleasedHandlerTests
                     .ToArray());
         }
 
+        public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+            IntegrationEventDeadLetterQuery query,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>(
+                messages
+                    .Where(message => query.ConsumerName is null || message.ConsumerName == query.ConsumerName)
+                    .Where(message => query.Status is null || message.Status == query.Status)
+                    .Where(message => query.EventType is null || message.EventType == query.EventType)
+                    .Skip(query.Skip)
+                    .Take(query.Take)
+                    .ToArray());
+        }
+
+        public Task<IntegrationEventDeadLetterMessage?> GetAsync(
+            Guid id,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(messages.FirstOrDefault(message => message.Id == id));
+        }
+
         public Task MarkReplayedAsync(
             Guid id,
             DateTimeOffset replayedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailedAsync(
+            Guid id,
+            string failureCode,
+            string failureMessage,
+            DateTimeOffset failedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task MarkIgnoredAsync(
+            Guid id,
+            string reason,
+            DateTimeOffset ignoredAtUtc,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -619,9 +663,46 @@ public sealed class SchedulingPlanReleasedHandlerTests
             return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>([]);
         }
 
+        public Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+            IntegrationEventDeadLetterQuery query,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>([]);
+        }
+
+        public Task<IntegrationEventDeadLetterMessage?> GetAsync(
+            Guid id,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IntegrationEventDeadLetterMessage?>(null);
+        }
+
         public Task MarkReplayedAsync(
             Guid id,
             DateTimeOffset replayedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task MarkFailedAsync(
+            Guid id,
+            string failureCode,
+            string failureMessage,
+            DateTimeOffset failedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task MarkIgnoredAsync(
+            Guid id,
+            string reason,
+            DateTimeOffset ignoredAtUtc,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();

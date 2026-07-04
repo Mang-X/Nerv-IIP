@@ -62,6 +62,6 @@ public sealed class NotificationDeadLetterReplayHandler(IServiceProvider service
         return typeof(Program).Assembly
             .GetTypes()
             .Where(type => type is { IsAbstract: false, IsInterface: false })
-            .SingleOrDefault(type => handlerInterface.IsAssignableFrom(type));
+            .FirstOrDefault(type => handlerInterface.IsAssignableFrom(type));
     }
 }

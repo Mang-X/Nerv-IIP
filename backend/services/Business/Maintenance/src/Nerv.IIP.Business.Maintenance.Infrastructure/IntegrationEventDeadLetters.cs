@@ -36,21 +36,45 @@ public sealed class MaintenanceIntegrationEventDeadLetterStore(ApplicationDbCont
         IntegrationEventDeadLetterStatus? status,
         CancellationToken cancellationToken)
     {
-        var query = dbContext.IntegrationEventDeadLetters.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(consumerName))
+        return await ListAsync(new IntegrationEventDeadLetterQuery(consumerName, status, EventType: null), cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAsync(
+        IntegrationEventDeadLetterQuery query,
+        CancellationToken cancellationToken)
+    {
+        var queryable = dbContext.IntegrationEventDeadLetters.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(query.ConsumerName))
         {
-            query = query.Where(x => x.ConsumerName == consumerName);
+            queryable = queryable.Where(x => x.ConsumerName == query.ConsumerName);
         }
 
-        if (status is not null)
+        if (query.Status is not null)
         {
-            query = query.Where(x => x.Status == status);
+            queryable = queryable.Where(x => x.Status == query.Status);
         }
 
-        return await query
+        if (!string.IsNullOrWhiteSpace(query.EventType))
+        {
+            queryable = queryable.Where(x => x.EventType == query.EventType || x.EventClrType == query.EventType);
+        }
+
+        return await queryable
             .OrderBy(x => x.DeadLetteredAtUtc)
+            .Skip(query.Skip)
+            .Take(query.Take)
             .Select(x => x.ToMessage())
             .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IntegrationEventDeadLetterMessage?> GetAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        return (await dbContext.IntegrationEventDeadLetters
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken))
+            ?.ToMessage();
     }
 
     public async Task MarkReplayedAsync(
@@ -66,6 +90,41 @@ public sealed class MaintenanceIntegrationEventDeadLetterStore(ApplicationDbCont
         }
 
         message.MarkReplayed(replayedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkFailedAsync(
+        Guid id,
+        string failureCode,
+        string failureMessage,
+        DateTimeOffset failedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.IntegrationEventDeadLetters
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkFailed(failureCode, failureMessage, failedAtUtc);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkIgnoredAsync(
+        Guid id,
+        string reason,
+        DateTimeOffset ignoredAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var message = await dbContext.IntegrationEventDeadLetters
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (message is null)
+        {
+            return;
+        }
+
+        message.MarkIgnored(reason, ignoredAtUtc);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
@@ -113,6 +172,22 @@ public sealed class IntegrationEventDeadLetter
     {
         Status = IntegrationEventDeadLetterStatus.Replayed;
         ReplayedAtUtc = replayedAtUtc;
+    }
+
+    public void MarkFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
+    {
+        FailureCode = failureCode;
+        FailureMessage = failureMessage;
+        Status = IntegrationEventDeadLetterStatus.Failed;
+        ReplayedAtUtc = failedAtUtc;
+    }
+
+    public void MarkIgnored(string reason, DateTimeOffset ignoredAtUtc)
+    {
+        FailureCode = "ignored";
+        FailureMessage = reason;
+        Status = IntegrationEventDeadLetterStatus.Ignored;
+        ReplayedAtUtc = ignoredAtUtc;
     }
 
     public IntegrationEventDeadLetterMessage ToMessage()

@@ -245,6 +245,31 @@ public sealed class IntegrationEventReliabilityTests
     }
 
     [Fact]
+    public async Task Dead_letter_replay_executor_marks_failed_when_handler_resolution_throws()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var message = await store.AddAsync(
+            IntegrationEventDeadLetterMessage.Create(
+                "sample.consumer",
+                CreateValidEvent("event-replay-resolution-001"),
+                "manual-replay-test",
+                "Stored for replay."),
+            CancellationToken.None);
+        var executor = new IntegrationEventDeadLetterReplayExecutor(
+            store,
+            [new ThrowingCanReplayHandler()],
+            new StaticTimeProvider(DateTimeOffset.Parse("2026-05-26T00:00:00Z")));
+
+        var result = await executor.ReplayAsync(message.Id, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed.ToString(), result.Status);
+        var failed = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Failed, CancellationToken.None));
+        Assert.Equal(message.Id, failed.Id);
+        Assert.Equal("replay-handler-failed", failed.FailureCode);
+    }
+
+    [Fact]
     public async Task Cap_retry_exhausted_subscribe_failure_dead_letters_handler_exception_without_throwing_from_callback()
     {
         var store = new InMemoryIntegrationEventDeadLetterStore();
@@ -276,6 +301,41 @@ public sealed class IntegrationEventReliabilityTests
         Assert.Equal("event-handler-failed-001", deadLetter.EventId);
         Assert.Equal("handler-retry-exhausted", deadLetter.FailureCode);
         Assert.Contains("Business rule failed", deadLetter.FailureMessage);
+    }
+
+    [Fact]
+    public async Task Cap_retry_exhausted_subscribe_failure_dead_letters_raw_json_value_after_cap_persistence()
+    {
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var services = new ServiceCollection()
+            .AddSingleton<IIntegrationEventDeadLetterStore>(store)
+            .AddSingleton<IntegrationEventCapFailureDeadLetterer>()
+            .BuildServiceProvider();
+        var sourceEvent = CreateValidEvent("event-handler-failed-json-001");
+        var capMessage = new DotNetCore.CAP.Messages.Message(
+            new Dictionary<string, string?>
+            {
+                [DotNetCore.CAP.Messages.Headers.Group] = "sample.consumer",
+                [DotNetCore.CAP.Messages.Headers.MessageName] = typeof(SampleIntegrationEvent).FullName,
+                [DotNetCore.CAP.Messages.Headers.Exception] = "KnownException-->Business rule failed."
+            },
+            JsonSerializer.Serialize(sourceEvent, sourceEvent.GetType()));
+
+        var failure = new DotNetCore.CAP.Messages.FailedInfo
+        {
+            ServiceProvider = services,
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = capMessage
+        };
+
+        var exception = await Record.ExceptionAsync(() =>
+            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+
+        Assert.Null(exception);
+        var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        Assert.Equal("event-handler-failed-json-001", deadLetter.EventId);
+        Assert.Equal("handler-retry-exhausted", deadLetter.FailureCode);
+        Assert.Equal("value", JsonSerializer.Deserialize<SampleIntegrationEvent>(deadLetter.EventJson)?.Payload.Value);
     }
 
     [Fact]
@@ -596,6 +656,16 @@ public sealed class IntegrationEventReliabilityTests
             }
 
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingCanReplayHandler : IIntegrationEventDeadLetterReplayHandler
+    {
+        public bool CanReplay(IntegrationEventDeadLetterMessage message) => throw new InvalidOperationException("Handler registry is ambiguous.");
+
+        public Task ReplayAsync(IntegrationEventDeadLetterMessage message, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("Replay should not be called when handler matching fails.");
         }
     }
 

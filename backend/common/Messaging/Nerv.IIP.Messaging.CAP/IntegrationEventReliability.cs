@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using DotNetCore.CAP;
 using DotNetCore.CAP.Messages;
@@ -421,7 +422,7 @@ public sealed record IntegrationEventDeadLetterMessage(
             integrationEvent.SourceService,
             integrationEvent.IdempotencyKey,
             integrationEvent.GetType().FullName ?? typeof(TIntegrationEvent).FullName ?? typeof(TIntegrationEvent).Name,
-            JsonSerializer.Serialize(integrationEvent),
+            JsonSerializer.Serialize(integrationEvent, integrationEvent.GetType()),
             failureCode,
             failureMessage,
             IntegrationEventDeadLetterStatus.Pending,
@@ -467,20 +468,20 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
             return new IntegrationEventDeadLetterReplayResult(id, false, "NotFound", "Dead-letter message was not found.");
         }
 
-        var handler = handlers.FirstOrDefault(handler => handler.CanReplay(message));
-        if (handler is null)
-        {
-            await deadLetterStore.MarkFailedAsync(
-                id,
-                "replay-handler-not-found",
-                $"No replay handler is registered for '{message.EventClrType}'.",
-                timeProvider.GetUtcNow(),
-                cancellationToken);
-            return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), "No replay handler is registered.");
-        }
-
         try
         {
+            var handler = handlers.FirstOrDefault(handler => handler.CanReplay(message));
+            if (handler is null)
+            {
+                await deadLetterStore.MarkFailedAsync(
+                    id,
+                    "replay-handler-not-found",
+                    $"No replay handler is registered for '{message.EventClrType}'.",
+                    timeProvider.GetUtcNow(),
+                    cancellationToken);
+                return new IntegrationEventDeadLetterReplayResult(id, false, IntegrationEventDeadLetterStatus.Failed.ToString(), "No replay handler is registered.");
+            }
+
             await handler.ReplayAsync(message, cancellationToken);
             await deadLetterStore.MarkReplayedAsync(id, timeProvider.GetUtcNow(), cancellationToken);
             return new IntegrationEventDeadLetterReplayResult(id, true, IntegrationEventDeadLetterStatus.Replayed.ToString(), null);
@@ -517,11 +518,22 @@ public sealed class IntegrationEventDeadLetterReplayExecutor(
 public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDeadLetterStore deadLetterStore)
 {
     public const string HandlerRetryExhaustedFailureCode = "handler-retry-exhausted";
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public async Task HandleAsync(FailedInfo failedInfo, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(failedInfo);
-        if (failedInfo.MessageType != MessageType.Subscribe || failedInfo.Message.Value is not IIntegrationEventEnvelope integrationEvent)
+        if (failedInfo.MessageType != MessageType.Subscribe)
+        {
+            return;
+        }
+
+        var integrationEvent = failedInfo.Message.Value as IIntegrationEventEnvelope
+            ?? TryDeserializeEnvelope(failedInfo.Message);
+        if (integrationEvent is null)
         {
             return;
         }
@@ -538,6 +550,77 @@ public sealed class IntegrationEventCapFailureDeadLetterer(IIntegrationEventDead
                 HandlerRetryExhaustedFailureCode,
                 failureMessage),
             cancellationToken);
+    }
+
+    private static IIntegrationEventEnvelope? TryDeserializeEnvelope(Message message)
+    {
+        var eventType = ResolveEventType(ReadHeader(message, Headers.Type))
+            ?? ResolveEventType(ReadHeader(message, Headers.MessageName));
+        if (eventType is null)
+        {
+            return null;
+        }
+
+        var json = ExtractJson(message.Value);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize(json, eventType, SerializerOptions) as IIntegrationEventEnvelope;
+    }
+
+    private static Type? ResolveEventType(string? eventTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(eventTypeName))
+        {
+            return null;
+        }
+
+        return AsIntegrationEventEnvelope(Type.GetType(eventTypeName, throwOnError: false))
+            ?? AppDomain.CurrentDomain
+                .GetAssemblies()
+                .SelectMany(GetTypesSafely)
+                .Select(type => AsIntegrationEventEnvelope(type))
+                .FirstOrDefault(type =>
+                    type is not null
+                    && (string.Equals(type.FullName, eventTypeName, StringComparison.Ordinal)
+                        || string.Equals(type.Name, eventTypeName, StringComparison.Ordinal)));
+    }
+
+    private static IEnumerable<Type> GetTypesSafely(System.Reflection.Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (System.Reflection.ReflectionTypeLoadException ex)
+        {
+            return ex.Types.OfType<Type>();
+        }
+    }
+
+    private static Type? AsIntegrationEventEnvelope(Type? type)
+    {
+        return type is not null
+            && !type.IsAbstract
+            && !type.IsInterface
+            && typeof(IIntegrationEventEnvelope).IsAssignableFrom(type)
+                ? type
+                : null;
+    }
+
+    private static string? ExtractJson(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string text => text,
+            JsonElement element => element.GetRawText(),
+            byte[] bytes => Encoding.UTF8.GetString(bytes),
+            IIntegrationEventEnvelope envelope => JsonSerializer.Serialize(envelope, envelope.GetType(), SerializerOptions),
+            _ => JsonSerializer.Serialize(value, value.GetType(), SerializerOptions)
+        };
     }
 
     private static string? ReadHeader(Message message, string name)
