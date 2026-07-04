@@ -1,5 +1,6 @@
 using Opc.Ua;
 using Opc.Ua.Client;
+using Opc.Ua.Configuration;
 using System.Text;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa;
@@ -18,6 +19,16 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
 
         var configuration = CreateApplicationConfiguration(options);
         await configuration.Validate(ApplicationType.Client);
+        var application = new ApplicationInstance(configuration)
+        {
+            ApplicationName = configuration.ApplicationName,
+            ApplicationType = ApplicationType.Client
+        };
+        var certificateReady = await application.CheckApplicationInstanceCertificatesAsync(false, 60, cancellationToken);
+        if (!certificateReady)
+        {
+            throw new InvalidOperationException("OPC UA client application certificate could not be created or loaded.");
+        }
 
         var endpointDescription = await CoreClientUtils.SelectEndpointAsync(
             configuration,
@@ -109,7 +120,8 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
         }
 
         session.AddSubscription(_subscription);
-        _subscription.Create();
+        await _subscription.CreateAsync(cancellationToken);
+        await _subscription.ApplyChangesAsync(cancellationToken);
         var samplingWindowMilliseconds = Math.Max(1000, tags.Max(x => x.SamplingIntervalMilliseconds) * 2);
         await Task.Delay(TimeSpan.FromMilliseconds(samplingWindowMilliseconds), cancellationToken);
         if (_lastKeepAliveError is not null)
@@ -169,18 +181,23 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
                 ApplicationCertificate = new CertificateIdentifier
                 {
                     StoreType = CertificateStoreType.Directory,
-                    StorePath = "CertificateStores/OpcUa/own",
+                    StorePath = GetCertificateStorePath("own"),
                     SubjectName = "Nerv.IIP Connector Host OPC UA"
                 },
                 TrustedPeerCertificates = new CertificateTrustList
                 {
                     StoreType = CertificateStoreType.Directory,
-                    StorePath = "CertificateStores/OpcUa/trusted"
+                    StorePath = GetCertificateStorePath("trusted")
+                },
+                TrustedIssuerCertificates = new CertificateTrustList
+                {
+                    StoreType = CertificateStoreType.Directory,
+                    StorePath = GetCertificateStorePath("issuers")
                 },
                 RejectedCertificateStore = new CertificateTrustList
                 {
                     StoreType = CertificateStoreType.Directory,
-                    StorePath = "CertificateStores/OpcUa/rejected"
+                    StorePath = GetCertificateStorePath("rejected")
                 },
                 AutoAcceptUntrustedCertificates = options.AutoAcceptUntrustedServerCertificates
             },
@@ -193,5 +210,16 @@ public sealed class OpcUaNetStandardClient(IOpcUaCredentialResolver credentialRe
                 DefaultSessionTimeout = 60_000
             }
         };
+    }
+
+    private static string GetCertificateStorePath(string storeName)
+    {
+        var basePath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(basePath))
+        {
+            basePath = Path.Combine(Path.GetTempPath(), "Nerv.IIP");
+        }
+
+        return Path.Combine(basePath, "Nerv.IIP", "ConnectorHost", "OpcUa", "CertificateStores", storeName);
     }
 }
