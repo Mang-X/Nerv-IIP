@@ -9,6 +9,7 @@ public sealed class OpcUaConnector(
     Func<DateTimeOffset>? utcNow = null) : IConnector, IOpcUaCollectionConnector
 {
     private readonly Dictionary<(string NodeId, DateTimeOffset BucketStartUtc), TelemetryBucket> _buckets = [];
+    private readonly HashSet<(string NodeId, DateTimeOffset BucketStartUtc)> _sealedBucketKeys = [];
     private readonly Dictionary<string, OpcUaTagSubscription> _tagsByNodeId = options.Tags.ToDictionary(x => x.NodeId, StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Func<DateTimeOffset> _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
@@ -117,33 +118,34 @@ public sealed class OpcUaConnector(
         await _gate.WaitAsync(cancellationToken);
         try
         {
-        if (!_tagsByNodeId.TryGetValue(change.NodeId, out var tag)
-            || !string.Equals(change.Status, "Good", StringComparison.OrdinalIgnoreCase)
-            || !OpcUaValueConversion.TryConvertDecimal(change.Value, out var value))
-        {
+            if (!_tagsByNodeId.TryGetValue(change.NodeId, out var tag)
+                || !string.Equals(change.Status, "Good", StringComparison.OrdinalIgnoreCase)
+                || !OpcUaValueConversion.TryConvertDecimal(change.Value, out var value))
+            {
+                MarkDroppedSample();
+                return;
+            }
+
+            var bucketStartUtc = FloorToBucket(change.SourceTimestampUtc, tag.BucketSeconds);
+            var bucketKey = (tag.NodeId, bucketStartUtc);
+            if (_sealedBucketKeys.Contains(bucketKey))
+            {
+                MarkDroppedSample();
+                return;
+            }
+
+            if (!_buckets.TryGetValue(bucketKey, out var bucket))
+            {
+                bucket = new TelemetryBucket(tag, bucketStartUtc, bucketStartUtc.AddSeconds(tag.BucketSeconds));
+                _buckets[bucketKey] = bucket;
+            }
+
+            bucket.Add(value);
             CurrentState = CurrentState with
             {
-                DroppedSamples = CurrentState.DroppedSamples + 1,
-                HealthStatus = "degraded",
-                Summary = "OPC UA collector dropped one or more invalid samples."
+                ReceivedSamples = CurrentState.ReceivedSamples + 1,
+                LastSampleAtUtc = change.SourceTimestampUtc
             };
-            return;
-        }
-
-        var bucketStartUtc = FloorToBucket(change.SourceTimestampUtc, tag.BucketSeconds);
-        var bucketKey = (tag.NodeId, bucketStartUtc);
-        if (!_buckets.TryGetValue(bucketKey, out var bucket))
-        {
-            bucket = new TelemetryBucket(tag, bucketStartUtc, bucketStartUtc.AddSeconds(tag.BucketSeconds));
-            _buckets[bucketKey] = bucket;
-        }
-
-        bucket.Add(value);
-        CurrentState = CurrentState with
-        {
-            ReceivedSamples = CurrentState.ReceivedSamples + 1,
-            LastSampleAtUtc = change.SourceTimestampUtc
-        };
         }
         finally
         {
@@ -153,6 +155,30 @@ public sealed class OpcUaConnector(
 
     private async Task FlushClosedBucketsAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken)
     {
+        while (true)
+        {
+            var item = await TryTakeNextClosedBucketAsync(nowUtc, cancellationToken);
+            if (item is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await samplesClient.RecordSampleAsync(CreateRequest(item.Bucket), cancellationToken);
+            }
+            catch
+            {
+                await RestoreBucketForRetryAsync(item, cancellationToken);
+                throw;
+            }
+
+            await MarkBucketPostedAsync(item.Bucket, cancellationToken);
+        }
+    }
+
+    private async Task<BucketFlushItem?> TryTakeNextClosedBucketAsync(DateTimeOffset nowUtc, CancellationToken cancellationToken)
+    {
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -161,21 +187,61 @@ public sealed class OpcUaConnector(
                 .OrderBy(x => x.Value.BucketStartUtc)
                 .ThenBy(x => x.Value.Tag.TagKey)
                 .ToArray();
-            foreach (var (key, bucket) in closedBuckets)
+            if (closedBuckets.Length == 0)
             {
-                await samplesClient.RecordSampleAsync(CreateRequest(bucket), cancellationToken);
-                _buckets.Remove(key);
-                CurrentState = CurrentState with
-                {
-                    PostedBuckets = CurrentState.PostedBuckets + 1,
-                    LastPostedBucketEndUtc = bucket.BucketEndUtc
-                };
+                return null;
             }
+
+            var (key, bucket) = closedBuckets[0];
+            _buckets.Remove(key);
+            _sealedBucketKeys.Add(key);
+            return new BucketFlushItem(key, bucket);
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private async Task RestoreBucketForRetryAsync(BucketFlushItem item, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            _sealedBucketKeys.Remove(item.Key);
+            _buckets.TryAdd(item.Key, item.Bucket);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task MarkBucketPostedAsync(TelemetryBucket bucket, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            CurrentState = CurrentState with
+            {
+                PostedBuckets = CurrentState.PostedBuckets + 1,
+                LastPostedBucketEndUtc = bucket.BucketEndUtc
+            };
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private void MarkDroppedSample()
+    {
+        CurrentState = CurrentState with
+        {
+            DroppedSamples = CurrentState.DroppedSamples + 1,
+            HealthStatus = "degraded",
+            Summary = "OPC UA collector dropped one or more invalid or late samples."
+        };
     }
 
     private RecordIndustrialTelemetrySampleRequest CreateRequest(TelemetryBucket bucket)
@@ -268,4 +334,8 @@ public sealed class OpcUaConnector(
         var bucketStartUnixSeconds = unixSeconds - unixSeconds % bucketSeconds;
         return DateTimeOffset.FromUnixTimeSeconds(bucketStartUnixSeconds);
     }
+
+    private sealed record BucketFlushItem(
+        (string NodeId, DateTimeOffset BucketStartUtc) Key,
+        TelemetryBucket Bucket);
 }

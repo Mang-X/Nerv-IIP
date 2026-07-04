@@ -70,26 +70,22 @@ public sealed class OpcUaTelemetryCollectorTests
     }
 
     [Fact]
-    public async Task Run_cycle_uses_stable_source_sequence_so_ingestion_is_idempotent()
+    public async Task Run_cycle_uses_stable_source_sequence_when_ingestion_retries_after_failure()
     {
-        var changes = new[]
-        {
-            new OpcUaDataChange(
-                "ns=2;s=Line1.Temperature",
-                42m,
-                new DateTimeOffset(2026, 7, 3, 0, 0, 3, TimeSpan.Zero),
-                "Good")
-        };
-        var opcUa = new FakeOpcUaClient([], changes);
-        var samples = new IdempotentIndustrialTelemetrySamplesClient();
+        var opcUa = new SequencedFakeOpcUaClient(
+            [
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 42m, new DateTimeOffset(2026, 7, 3, 0, 0, 3, TimeSpan.Zero), "Good")],
+                []
+            ]);
+        var samples = new FailOnceIndustrialTelemetrySamplesClient();
         var connector = CreateConnector(opcUa, samples);
 
-        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => connector.RunCollectionCycleAsync(CancellationToken.None));
         await connector.RunCollectionCycleAsync(CancellationToken.None);
 
-        var request = Assert.Single(samples.StoredRequests);
+        var request = Assert.Single(samples.Requests);
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
-        Assert.Equal(2, samples.AcceptedWriteAttempts);
+        Assert.Equal(2, samples.WriteAttempts);
     }
 
     [Fact]
@@ -119,6 +115,51 @@ public sealed class OpcUaTelemetryCollectorTests
         Assert.Equal(2, request.SampleCount);
         Assert.Equal(15m, request.AverageValue);
         Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
+    }
+
+    [Fact]
+    public async Task Run_cycle_does_not_block_notifications_while_posting_closed_bucket()
+    {
+        var now = new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero);
+        var opcUa = new CallbackCapturingOpcUaClient(
+            [new OpcUaDataChange("ns=2;s=Line1.Temperature", 10m, new DateTimeOffset(2026, 7, 3, 0, 0, 10, TimeSpan.Zero), "Good")]);
+        var samples = new BlockingIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples, () => now);
+
+        var runTask = connector.RunCollectionCycleAsync(CancellationToken.None);
+        await samples.WaitForRecordAttemptAsync();
+
+        var emitTask = opcUa.EmitAsync(
+            new OpcUaDataChange("ns=2;s=Line1.Temperature", 20m, new DateTimeOffset(2026, 7, 3, 0, 1, 2, TimeSpan.Zero), "Good"),
+            CancellationToken.None);
+        var completed = await Task.WhenAny(emitTask, Task.Delay(TimeSpan.FromMilliseconds(250)));
+
+        samples.AllowRecord();
+        await runTask;
+
+        Assert.Same(emitTask, completed);
+        Assert.Equal(2, connector.CurrentState.ReceivedSamples);
+    }
+
+    [Fact]
+    public async Task Run_cycle_drops_late_samples_for_already_posted_bucket()
+    {
+        var now = new DateTimeOffset(2026, 7, 3, 0, 1, 1, TimeSpan.Zero);
+        var opcUa = new SequencedFakeOpcUaClient(
+            [
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 10m, new DateTimeOffset(2026, 7, 3, 0, 0, 10, TimeSpan.Zero), "Good")],
+                [new OpcUaDataChange("ns=2;s=Line1.Temperature", 20m, new DateTimeOffset(2026, 7, 3, 0, 0, 20, TimeSpan.Zero), "Good")]
+            ]);
+        var samples = new IdempotentIndustrialTelemetrySamplesClient();
+        var connector = CreateConnector(opcUa, samples, () => now);
+
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+        await connector.RunCollectionCycleAsync(CancellationToken.None);
+
+        var request = Assert.Single(samples.StoredRequests);
+        Assert.Equal("opcua:opcua-line-1:temperature:1783036800000", request.SourceSequence);
+        Assert.Equal(1, samples.AcceptedWriteAttempts);
+        Assert.Equal(1, connector.CurrentState.DroppedSamples);
     }
 
     [Fact]
@@ -219,6 +260,46 @@ public sealed class OpcUaTelemetryCollectorTests
         }
     }
 
+    private sealed class BlockingIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
+    {
+        private readonly TaskCompletionSource _recordAttempt = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken)
+        {
+            _recordAttempt.TrySetResult();
+            return _release.Task.WaitAsync(cancellationToken);
+        }
+
+        public Task WaitForRecordAttemptAsync()
+        {
+            return _recordAttempt.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        public void AllowRecord()
+        {
+            _release.TrySetResult();
+        }
+    }
+
+    private sealed class FailOnceIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
+    {
+        public int WriteAttempts { get; private set; }
+        public List<RecordIndustrialTelemetrySampleRequest> Requests { get; } = [];
+
+        public Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken)
+        {
+            WriteAttempts++;
+            if (WriteAttempts == 1)
+            {
+                throw new InvalidOperationException("simulated downstream ingestion failure");
+            }
+
+            Requests.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class IdempotentIndustrialTelemetrySamplesClient : IIndustrialTelemetrySamplesClient
     {
         private readonly Dictionary<(string? SourceSystem, string? SourceConnector, string DeviceAssetId, string TagKey, string SourceSequence), RecordIndustrialTelemetrySampleRequest> _requests = [];
@@ -282,6 +363,48 @@ public sealed class OpcUaTelemetryCollectorTests
             {
                 await onDataChange(change, cancellationToken);
             }
+        }
+
+        public Task DisconnectAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CallbackCapturingOpcUaClient(IReadOnlyList<OpcUaDataChange> initialDataChanges) : IOpcUaClient
+    {
+        private Func<OpcUaDataChange, CancellationToken, Task>? _onDataChange;
+
+        public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<OpcUaNode>> BrowseAsync(string rootNodeId, CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<OpcUaNode>>([]);
+        }
+
+        public async Task SubscribeAsync(
+            IReadOnlyList<OpcUaTagSubscription> tags,
+            Func<OpcUaDataChange, CancellationToken, Task> onDataChange,
+            CancellationToken cancellationToken)
+        {
+            _onDataChange = onDataChange;
+            foreach (var change in initialDataChanges)
+            {
+                await onDataChange(change, cancellationToken);
+            }
+        }
+
+        public Task EmitAsync(OpcUaDataChange change, CancellationToken cancellationToken)
+        {
+            if (_onDataChange is null)
+            {
+                throw new InvalidOperationException("OPC UA subscription callback has not been captured.");
+            }
+
+            return _onDataChange(change, cancellationToken);
         }
 
         public Task DisconnectAsync(CancellationToken cancellationToken)

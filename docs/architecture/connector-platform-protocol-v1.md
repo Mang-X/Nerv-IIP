@@ -285,7 +285,7 @@ OPC UA 采集器归属 `connector-hosts`，作为 Connector Host 的设备协议
 
 - `OpcUa:Enabled` 默认关闭。
 - `OpcUa:EndpointUrl`、`SecurityPolicy`、`SecurityMode`、`BrowseRootNodeId` 描述 OPC UA 连接与浏览入口。
-- `OpcUa:CredentialReference` 只保存凭据引用；首批实现支持 `env:<PREFIX>`，并从 `<PREFIX>_USERNAME` / `<PREFIX>_PASSWORD` 读取 OPC UA 用户名密码。仓库配置不得保存设备用户名、密码、证书私钥或客户密钥。
+- `OpcUa:CredentialReference` 只保存凭据引用；留空/null 时使用匿名会话。首批实现支持 `env:<PREFIX>`，并从 `<PREFIX>_USERNAME` / `<PREFIX>_PASSWORD` 读取 OPC UA 用户名密码；配置了 `env:<PREFIX>` 但环境变量缺失时会 fail-fast，避免静默降级为匿名。仓库配置不得保存设备用户名、密码、证书私钥或客户密钥。
 - `OpcUa:Tags[]` 绑定 `DeviceAssetId`、`TagKey`、OPC UA `NodeId`、采样间隔和 bucket 秒数。
 
 采样写入约束：
