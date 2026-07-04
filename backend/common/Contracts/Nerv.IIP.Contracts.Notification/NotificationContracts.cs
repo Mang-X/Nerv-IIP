@@ -97,6 +97,22 @@ public sealed record NotificationDeadLetterReplayResponse(
 public sealed record NotificationDeadLetterBatchReplayResponse(
     IReadOnlyCollection<NotificationDeadLetterReplayResponse> Items);
 
+public sealed record NotificationDeadLetterMetricsResponse(
+    int ActionableCount,
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount,
+    IReadOnlyCollection<NotificationDeadLetterEventTypeMetricsResponse> EventTypes);
+
+public sealed record NotificationDeadLetterEventTypeMetricsResponse(
+    string EventType,
+    int ActionableCount,
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount);
+
 public sealed record UpsertNotificationRecipientChannelBindingRequest(
     string RecipientRef,
     string Channel,

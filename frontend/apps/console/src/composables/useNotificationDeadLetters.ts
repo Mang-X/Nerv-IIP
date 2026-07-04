@@ -1,4 +1,5 @@
 import {
+  getConsoleNotificationDeadLetterMetricsQueryOptions,
   getConsoleNotificationDeadLetterQueryOptions,
   ignoreConsoleNotificationDeadLetterMutationOptions,
   listConsoleNotificationDeadLettersQueryOptions,
@@ -7,6 +8,7 @@ import {
   type NotificationDeadLetterBatchReplayEnvelope,
   type NotificationDeadLetterDetailEnvelope,
   type NotificationDeadLetterListEnvelope,
+  type NotificationDeadLetterMetricsEnvelope,
   type NotificationDeadLetterResponse,
   type NotificationDeadLetterReplayEnvelope,
 } from '@nerv-iip/api-client'
@@ -34,6 +36,7 @@ function isDeadLetterEntry(entry: UseQueryEntry) {
       part !== null &&
       '_id' in part &&
       (part._id === 'listConsoleNotificationDeadLetters' ||
+        part._id === 'getConsoleNotificationDeadLetterMetrics' ||
         part._id === 'getConsoleNotificationDeadLetter')
     )
   })
@@ -108,6 +111,23 @@ export function useNotificationDeadLetters() {
     )
   })
 
+  const metricsQuery = useQuery(() => {
+    const context = consoleContext.value
+    if (!context) {
+      return disabledDeadLetterQueryOptions<NotificationDeadLetterMetricsEnvelope>(
+        'getConsoleNotificationDeadLetterMetrics',
+      )
+    }
+
+    return withConsoleContextQueryKey(
+      getConsoleNotificationDeadLetterMetricsQueryOptions({
+        headers: consoleContextHeaders(context),
+      } as Parameters<typeof getConsoleNotificationDeadLetterMetricsQueryOptions>[0]),
+      context,
+      {},
+    )
+  })
+
   const replayMutation = useMutation({
     ...replayConsoleNotificationDeadLetterMutationOptions(),
     onSuccess(result) {
@@ -139,24 +159,27 @@ export function useNotificationDeadLetters() {
     () => unwrapResponseData(listQuery.data.value)?.items ?? [],
   )
   const selectedDeadLetter = computed(() => unwrapResponseData(detailQuery.data.value))
-  const pendingCount = computed(
-    () => deadLetters.value.filter((item) => (item.status ?? '').toLowerCase() === 'pending').length,
-  )
-  const failedCount = computed(
-    () => deadLetters.value.filter((item) => (item.status ?? '').toLowerCase() === 'failed').length,
-  )
+  const metrics = computed(() => unwrapResponseData(metricsQuery.data.value))
+  const actionableCount = computed(() => metrics.value?.actionableCount ?? 0)
+  const pendingCount = computed(() => metrics.value?.pendingCount ?? 0)
+  const failedCount = computed(() => metrics.value?.failedCount ?? 0)
   const listEnvelopeError = computed(() =>
     responseEnvelopeError(listQuery.data.value, 'Unable to load dead letters.'),
   )
   const detailEnvelopeError = computed(() =>
     responseEnvelopeError(detailQuery.data.value, 'Unable to load dead-letter detail.'),
   )
+  const metricsEnvelopeError = computed(() =>
+    responseEnvelopeError(metricsQuery.data.value, 'Unable to load dead-letter metrics.'),
+  )
   const allError = computed(
     () =>
       listQuery.error.value ??
       detailQuery.error.value ??
+      metricsQuery.error.value ??
       listEnvelopeError.value ??
       detailEnvelopeError.value ??
+      metricsEnvelopeError.value ??
       replayMutation.error.value ??
       replayBatchMutation.error.value ??
       ignoreMutation.error.value ??
@@ -166,7 +189,11 @@ export function useNotificationDeadLetters() {
   async function refreshDeadLetters() {
     actionError.value = undefined
     try {
-      await Promise.all([listQuery.refetch(), selectedDeadLetterId.value ? detailQuery.refetch() : Promise.resolve()])
+      await Promise.all([
+        listQuery.refetch(),
+        metricsQuery.refetch(),
+        selectedDeadLetterId.value ? detailQuery.refetch() : Promise.resolve(),
+      ])
     } catch (error) {
       actionError.value = toError(error, 'Unable to refresh dead letters.')
     }
@@ -245,6 +272,7 @@ export function useNotificationDeadLetters() {
 
   return {
     actionError,
+    actionableCount,
     allError,
     consumerNameFilter,
     deadLetters,
@@ -254,6 +282,7 @@ export function useNotificationDeadLetters() {
     ignore,
     ignorePending: ignoreMutation.isLoading,
     listPending: listQuery.isLoading,
+    metricsPending: metricsQuery.isLoading,
     pendingCount,
     refreshDeadLetters,
     replay,

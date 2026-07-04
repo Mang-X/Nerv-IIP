@@ -50,7 +50,7 @@
 5. `operationId` 使用 lower camelCase，并以业务动作表达意图，例如 `listConsoleInstances`、`getConsoleInstanceDetail`、`restartConsoleInstance`、`getConsoleOperationTask`。
 6. 新增或修改 Gateway 控制台接口时，必须先更新后端 Endpoint 与 OpenAPI 测试，再导出 OpenAPI 快照并重新生成前端 api-client。
 7. OpenAPI 是契约事实来源；导出的 JSON 快照是前端生成输入，不允许手改快照来绕过后端契约。
-8. Notification DLQ 管理接口由 PlatformGateway 暴露为 `/api/console/v1/notifications/dlq/**`，稳定 operationId 为 `listConsoleNotificationDeadLetters`、`getConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetters` 和 `ignoreConsoleNotificationDeadLetter`；Console 前端只消费生成的 `@nerv-iip/api-client` 稳定导出。
+8. Notification DLQ 管理接口由 PlatformGateway 暴露为 `/api/console/v1/notifications/dlq/**`，稳定 operationId 为 `listConsoleNotificationDeadLetters`、`getConsoleNotificationDeadLetterMetrics`、`getConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetter`、`replayConsoleNotificationDeadLetters` 和 `ignoreConsoleNotificationDeadLetter`；Console 前端只消费生成的 `@nerv-iip/api-client` 稳定导出。
 
 ### BusinessGateway Console OpenAPI
 

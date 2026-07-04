@@ -1,4 +1,5 @@
 export {
+  getConsoleNotificationDeadLetterMetricsQueryOptions,
   getConsoleNotificationDeadLetterQueryOptions,
   ignoreConsoleNotificationDeadLetterMutationOptions,
   listConsoleNotificationDeadLettersQueryOptions,
@@ -23,6 +24,7 @@ import type {
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterBatchReplayResponse,
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse,
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse,
+  NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse,
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse,
   NetCorePalExtensionsDtoResponseDataOfNotificationIntentResponse,
   NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse,
@@ -35,6 +37,7 @@ import type {
   NervIipContractsNotificationMarkNotificationMessageReadResponse,
   NervIipContractsNotificationMarkNotificationMessagesReadRequest,
   NervIipContractsNotificationNotificationDeadLetterDetailResponse,
+  NervIipContractsNotificationNotificationDeadLetterMetricsResponse,
   NervIipContractsNotificationNotificationDeadLetterReplayResponse,
   NervIipContractsNotificationNotificationDeadLetterResponse,
   NervIipContractsNotificationNotificationIntentResponse,
@@ -65,6 +68,8 @@ export type NotificationDeadLetterResponse =
   NervIipContractsNotificationNotificationDeadLetterResponse
 export type NotificationDeadLetterDetailResponse =
   NervIipContractsNotificationNotificationDeadLetterDetailResponse
+export type NotificationDeadLetterMetricsResponse =
+  NervIipContractsNotificationNotificationDeadLetterMetricsResponse
 export type NotificationDeadLetterReplayResponse =
   NervIipContractsNotificationNotificationDeadLetterReplayResponse
 export type NotificationIntentResponse =
@@ -89,6 +94,8 @@ export type NotificationDeadLetterListEnvelope =
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterListResponse
 export type NotificationDeadLetterDetailEnvelope =
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse
+export type NotificationDeadLetterMetricsEnvelope =
+  NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse
 export type NotificationDeadLetterReplayEnvelope =
   NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterReplayResponse
 export type NotificationDeadLetterBatchReplayEnvelope =

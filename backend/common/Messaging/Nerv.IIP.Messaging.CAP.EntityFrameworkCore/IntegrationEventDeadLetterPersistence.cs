@@ -72,6 +72,17 @@ public sealed class PersistentIntegrationEventDeadLetterStore<TDbContext>(TDbCon
             .ToArray();
     }
 
+    public async Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.Set<IntegrationEventDeadLetter>()
+            .AsNoTracking()
+            .Select(x => new IntegrationEventDeadLetterMetricsRow(
+                x.EventType ?? "(unknown)",
+                x.Status))
+            .ToArrayAsync(cancellationToken);
+        return IntegrationEventDeadLetterMetrics.FromRows(rows);
+    }
+
     public async Task<IntegrationEventDeadLetterMessage?> GetAsync(
         Guid id,
         CancellationToken cancellationToken)

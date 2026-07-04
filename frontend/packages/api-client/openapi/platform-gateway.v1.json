@@ -259,6 +259,37 @@
         ]
       }
     },
+    "/api/console/v1/notifications/dlq/metrics": {
+      "get": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "getConsoleNotificationDeadLetterMetrics",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/notifications/dlq/{deadLetterId}": {
       "get": {
         "tags": [
@@ -2447,6 +2478,88 @@
       "NervIIPPlatformGatewayWebEndpointsNotificationsConsoleNotificationDeadLetterListRequest": {
         "type": "object",
         "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationDeadLetterMetricsResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsNotificationNotificationDeadLetterMetricsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "actionableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ignoredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replayedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPContractsNotificationNotificationDeadLetterEventTypeMetricsResponse"
+            }
+          }
+        }
+      },
+      "NervIIPContractsNotificationNotificationDeadLetterEventTypeMetricsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "eventType": {
+            "type": "string"
+          },
+          "actionableCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "failedCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "ignoredCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "replayedCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
       },
       "NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse": {
         "allOf": [

@@ -15,6 +15,7 @@ definePage({
 
 const {
   allError,
+  actionableCount,
   consumerNameFilter,
   deadLetters,
   detailPending,
@@ -23,6 +24,7 @@ const {
   ignore,
   ignorePending,
   listPending,
+  metricsPending,
   pendingCount,
   refreshDeadLetters,
   replay,
@@ -37,6 +39,9 @@ const {
 const ignoreReason = ref('')
 const actionPending = computed(
   () => replayPending.value || replayBatchPending.value || ignorePending.value,
+)
+const refreshPending = computed(
+  () => listPending.value || metricsPending.value,
 )
 const errorMessage = computed(() => allError.value?.message ?? '')
 const canReplaySelected = computed(
@@ -140,7 +145,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
       >
         <template #actions>
           <Button
-            :disabled="listPending"
+            :disabled="refreshPending"
             size="sm"
             type="button"
             variant="outline"
@@ -163,10 +168,11 @@ function shortText(value: string | null | undefined, fallback = '-') {
         </template>
       </PageHeader>
 
-      <SectionCards :columns="3">
+      <SectionCards :columns="4">
         <SectionCard description="当前筛选" :value="deadLetters.length" hint="列表结果" />
-        <SectionCard description="待重放" :value="pendingCount" hint="Pending" />
-        <SectionCard description="重放失败" :value="failedCount" hint="Failed" />
+        <SectionCard description="可处理积压" :value="actionableCount" hint="Pending + Failed" />
+        <SectionCard description="待重放" :value="pendingCount" hint="全局 Pending" />
+        <SectionCard description="重放失败" :value="failedCount" hint="全局 Failed" />
       </SectionCards>
 
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">

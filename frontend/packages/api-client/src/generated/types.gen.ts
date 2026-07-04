@@ -149,6 +149,28 @@ export type NervIipPlatformGatewayWebEndpointsNotificationsConsoleNotificationDe
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsNotificationNotificationDeadLetterMetricsResponse | null;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    eventTypes?: Array<NervIipContractsNotificationNotificationDeadLetterEventTypeMetricsResponse>;
+};
+
+export type NervIipContractsNotificationNotificationDeadLetterEventTypeMetricsResponse = {
+    eventType?: string;
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterDetailResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsNotificationNotificationDeadLetterDetailResponse | null;
 };
@@ -735,6 +757,33 @@ export type ListConsoleNotificationDeadLettersResponses = {
 };
 
 export type ListConsoleNotificationDeadLettersResponse = ListConsoleNotificationDeadLettersResponses[keyof ListConsoleNotificationDeadLettersResponses];
+
+export type GetConsoleNotificationDeadLetterMetricsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/notifications/dlq/metrics';
+};
+
+export type GetConsoleNotificationDeadLetterMetricsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleNotificationDeadLetterMetricsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfNotificationDeadLetterMetricsResponse;
+};
+
+export type GetConsoleNotificationDeadLetterMetricsResponse = GetConsoleNotificationDeadLetterMetricsResponses[keyof GetConsoleNotificationDeadLetterMetricsResponses];
 
 export type GetConsoleNotificationDeadLetterData = {
     body?: never;

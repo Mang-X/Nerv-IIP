@@ -72,6 +72,8 @@ else
 builder.Services.AddNotificationPersistence(builder.Configuration);
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
+builder.Services.Configure<NotificationDeadLetterAlertOptions>(
+    builder.Configuration.GetSection(NotificationDeadLetterAlertOptions.SectionName));
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
@@ -96,6 +98,8 @@ else
 builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
 builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
 builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, NotificationDeadLetterReplayHandler>();
+builder.Services.AddScoped<NotificationDeadLetterAlertMonitor>();
+builder.Services.AddHostedService<NotificationDeadLetterAlertWorker>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();

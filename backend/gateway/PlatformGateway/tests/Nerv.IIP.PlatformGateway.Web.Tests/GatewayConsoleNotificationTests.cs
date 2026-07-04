@@ -127,6 +127,23 @@ public sealed class GatewayConsoleNotificationTests
     }
 
     [Fact]
+    public async Task Get_dead_letter_metrics_forwards_read_permission()
+    {
+        var notification = new FakeGatewayNotificationClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(notification, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/notifications/dlq/metrics");
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<NotificationDeadLetterMetricsResponse>(response);
+        Assert.Equal(2, body.ActionableCount);
+        Assert.Equal("/api/notifications/v1/dlq/metrics", notification.LastRequest!.RequestUri);
+        Assert.Equal(GatewayPermissions.NotificationDeadLettersRead, auth.LastRequirement!.PermissionCode);
+    }
+
+    [Fact]
     public async Task Replay_and_ignore_dead_letters_use_manage_permission_and_forward_payloads()
     {
         var notification = new FakeGatewayNotificationClient();
@@ -376,6 +393,31 @@ public sealed class GatewayConsoleNotificationTests
             LastRequest = context;
             LastRequirement = context.PermissionRequirement;
             return Task.FromResult(new NotificationDeadLetterListResponse([DeadLetterResponse("Pending")]));
+        }
+
+        public Task<NotificationDeadLetterMetricsResponse> GetDeadLetterMetricsAsync(
+            GatewayNotificationRequestContext context,
+            CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastRequest = context;
+            LastRequirement = context.PermissionRequirement;
+            return Task.FromResult(new NotificationDeadLetterMetricsResponse(
+                ActionableCount: 2,
+                PendingCount: 1,
+                FailedCount: 1,
+                IgnoredCount: 0,
+                ReplayedCount: 0,
+                EventTypes:
+                [
+                    new NotificationDeadLetterEventTypeMetricsResponse(
+                        "ops.OperationTaskFailed",
+                        ActionableCount: 2,
+                        PendingCount: 1,
+                        FailedCount: 1,
+                        IgnoredCount: 0,
+                        ReplayedCount: 0)
+                ]));
         }
 
         public Task<NotificationDeadLetterDetailResponse> GetDeadLetterAsync(

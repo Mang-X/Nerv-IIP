@@ -135,6 +135,45 @@ public sealed class ListConsoleNotificationDeadLettersEndpoint(
     }
 }
 
+[HttpGet("/api/console/v1/notifications/dlq/metrics")]
+[GatewayOperationId("getConsoleNotificationDeadLetterMetrics")]
+[Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]
+public sealed class GetConsoleNotificationDeadLetterMetricsEndpoint(
+    IGatewayNotificationClient notificationClient,
+    IGatewayAuthorizationClient auth)
+    : EndpointWithoutRequest<ResponseData<NotificationDeadLetterMetricsResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        var context = await GatewayNotificationEndpointContext.AuthorizeAsync(
+            HttpContext,
+            auth,
+            GatewayPermissions.NotificationDeadLettersRead,
+            "/api/notifications/v1/dlq/metrics",
+            "notification-dead-letter",
+            null,
+            ct);
+        if (context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await notificationClient.GetDeadLetterMetricsAsync(context, ct);
+            await Send.OkAsync(response.AsResponseData(), ct);
+        }
+        catch (GatewayNotificationException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteDownstreamErrorAsync(HttpContext, ex, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            await GatewayNotificationEndpointResults.WriteBadGatewayAsync(HttpContext, ex, ct);
+        }
+    }
+}
+
 [HttpGet("/api/console/v1/notifications/dlq/{deadLetterId}")]
 [GatewayOperationId("getConsoleNotificationDeadLetter")]
 [Authorize(Policy = GatewayPolicies.ConsoleAuthenticated)]

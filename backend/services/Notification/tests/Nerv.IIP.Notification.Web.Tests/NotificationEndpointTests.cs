@@ -6,10 +6,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
+using Nerv.IIP.Notification.Web.Application.DeadLetters;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.ServiceAuth;
 
@@ -31,6 +34,7 @@ public sealed class NotificationEndpointTests
             await client.PostAsJsonAsync("/api/notifications/v1/messages/read-batch", new { messageIds = new[] { Guid.NewGuid().ToString() } }),
             await client.GetAsync("/api/notifications/v1/tasks?recipientRef=user:admin"),
             await client.GetAsync("/api/notifications/v1/dlq"),
+            await client.GetAsync("/api/notifications/v1/dlq/metrics"),
             await client.GetAsync($"/api/notifications/v1/dlq/{Guid.NewGuid()}"),
             await client.PostAsync($"/api/notifications/v1/dlq/{Guid.NewGuid()}/replay", null),
             await client.PostAsJsonAsync("/api/notifications/v1/dlq/replay-batch", new { eventType = "ops.OperationTaskFailed" }),
@@ -341,6 +345,94 @@ public sealed class NotificationEndpointTests
         Assert.Equal("Ignored", ignored.Status);
         Assert.Equal("ignored", ignored.FailureCode);
         Assert.Equal("tracked in replacement incident", ignored.FailureMessage);
+    }
+
+    [Fact]
+    public async Task Dead_letter_metrics_endpoint_returns_actionable_backlog_counts()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateNotificationClient();
+        await AddDeadLetterAsync(factory, "event-dlq-metrics-pending", "operation-task-failed:dlq-metrics-pending");
+        var failed = await AddDeadLetterAsync(factory, "event-dlq-metrics-failed", "operation-task-failed:dlq-metrics-failed");
+        var ignored = await AddDeadLetterAsync(factory, "event-dlq-metrics-ignored", "operation-task-failed:dlq-metrics-ignored", eventType: "ops.OtherEvent");
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+            await store.MarkFailedAsync(
+                failed.Id,
+                "replay-handler-failed",
+                "handler still fails",
+                DateTimeOffset.Parse("2026-07-04T00:00:00Z"),
+                CancellationToken.None);
+            await store.MarkIgnoredAsync(
+                ignored.Id,
+                "tracked elsewhere",
+                DateTimeOffset.Parse("2026-07-04T00:01:00Z"),
+                CancellationToken.None);
+        }
+
+        var response = await client.GetAsync("/api/notifications/v1/dlq/metrics");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var metrics = await ReadDataAsync<NotificationDeadLetterMetricsResponse>(response);
+        Assert.Equal(2, metrics.ActionableCount);
+        Assert.Equal(1, metrics.PendingCount);
+        Assert.Equal(1, metrics.FailedCount);
+        Assert.Equal(1, metrics.IgnoredCount);
+        Assert.Equal(0, metrics.ReplayedCount);
+        Assert.Contains(metrics.EventTypes, item =>
+            item.EventType == "ops.OperationTaskFailed"
+            && item.PendingCount == 1
+            && item.FailedCount == 1
+            && item.ActionableCount == 2);
+        Assert.Contains(metrics.EventTypes, item =>
+            item.EventType == "ops.OtherEvent"
+            && item.IgnoredCount == 1
+            && item.ActionableCount == 0);
+    }
+
+    [Fact]
+    public async Task Dead_letter_alert_monitor_submits_critical_notification_when_backlog_reaches_threshold()
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        await AddDeadLetterAsync(factory, "event-dlq-alert-one", "operation-task-failed:dlq-alert-one");
+        await AddDeadLetterAsync(factory, "event-dlq-alert-two", "operation-task-failed:dlq-alert-two");
+
+        using var scope = factory.Services.CreateScope();
+        var monitor = ActivatorUtilities.CreateInstance<NotificationDeadLetterAlertMonitor>(
+            scope.ServiceProvider,
+            Options.Create(new NotificationDeadLetterAlertOptions
+            {
+                Enabled = true,
+                OrganizationId = "org-001",
+                EnvironmentId = "env-001",
+                Threshold = 2,
+                RecipientRefs = ["role:ops-admin"],
+                DedupeWindow = TimeSpan.FromHours(1)
+            }));
+
+        var first = await monitor.CheckOnceAsync(DateTimeOffset.Parse("2026-07-04T03:30:00Z"), CancellationToken.None);
+        var duplicate = await monitor.CheckOnceAsync(DateTimeOffset.Parse("2026-07-04T03:45:00Z"), CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+
+        Assert.True(first.AlertSubmitted);
+        Assert.True(duplicate.AlertSubmitted);
+        Assert.True(duplicate.Duplicate);
+        Assert.Equal("notification", intent.SourceService);
+        Assert.Equal("notification.DeadLetterBacklogThresholdExceeded", intent.SourceEventType);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
+        Assert.Equal("notification-dlq-backlog:org-001:env-001:2:202607040300", intent.DedupeKey);
+        Assert.Equal("notification-dead-letter-backlog", intent.ResourceType);
+        Assert.Equal("notification-dlq", intent.ResourceId);
+        Assert.Equal("role:ops-admin", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
     }
 
     [Fact]

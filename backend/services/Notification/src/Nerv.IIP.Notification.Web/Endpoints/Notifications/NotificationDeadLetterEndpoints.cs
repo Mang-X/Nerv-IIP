@@ -30,6 +30,18 @@ public sealed class ListNotificationDeadLettersEndpoint(IIntegrationEventDeadLet
     }
 }
 
+[HttpGet("/api/notifications/v1/dlq/metrics")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class GetNotificationDeadLetterMetricsEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
+    : EndpointWithoutRequest<ResponseData<NotificationDeadLetterMetricsResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        var metrics = await deadLetterStore.GetMetricsAsync(ct);
+        await Send.OkAsync(NotificationDeadLetterEndpointMapper.ToMetricsResponse(metrics).AsResponseData(), ct);
+    }
+}
+
 [HttpGet("/api/notifications/v1/dlq/{deadLetterId}")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class GetNotificationDeadLetterEndpoint(IIntegrationEventDeadLetterStore deadLetterStore)
@@ -158,6 +170,25 @@ internal static class NotificationDeadLetterEndpointMapper
 
     public static NotificationDeadLetterReplayResponse ToReplayResponse(IntegrationEventDeadLetterReplayResult result) =>
         new(result.Id, result.Succeeded, result.Status, result.Message);
+
+    public static NotificationDeadLetterMetricsResponse ToMetricsResponse(IntegrationEventDeadLetterMetrics metrics) =>
+        new(
+            metrics.ActionableCount,
+            metrics.PendingCount,
+            metrics.FailedCount,
+            metrics.IgnoredCount,
+            metrics.ReplayedCount,
+            metrics.EventTypes.Select(ToEventTypeMetricsResponse).ToArray());
+
+    private static NotificationDeadLetterEventTypeMetricsResponse ToEventTypeMetricsResponse(
+        IntegrationEventDeadLetterEventTypeMetrics metrics) =>
+        new(
+            metrics.EventType,
+            metrics.ActionableCount,
+            metrics.PendingCount,
+            metrics.FailedCount,
+            metrics.IgnoredCount,
+            metrics.ReplayedCount);
 
     public static IntegrationEventDeadLetterStatus? ParseStatus(string? status)
     {

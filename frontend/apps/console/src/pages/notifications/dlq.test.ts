@@ -12,6 +12,7 @@ const deadLetterState = vi.hoisted(() => ({
   ignore: vi.fn(),
   ignorePending: { __v_isRef: true, value: false },
   listPending: { __v_isRef: true, value: false },
+  metricsPending: { __v_isRef: true, value: false },
   refreshDeadLetters: vi.fn(),
   replay: vi.fn(),
   replayBatchPending: { __v_isRef: true, value: false },
@@ -55,6 +56,7 @@ const rows = [
 
 vi.mock('@/composables/useNotificationDeadLetters', () => ({
   useNotificationDeadLetters: () => ({
+    actionableCount: computed(() => 1),
     allError: deadLetterState.allError,
     consumerNameFilter: deadLetterState.consumerNameFilter,
     deadLetters: computed(() => rows),
@@ -64,6 +66,7 @@ vi.mock('@/composables/useNotificationDeadLetters', () => ({
     ignore: deadLetterState.ignore,
     ignorePending: deadLetterState.ignorePending,
     listPending: deadLetterState.listPending,
+    metricsPending: deadLetterState.metricsPending,
     pendingCount: computed(() => 1),
     refreshDeadLetters: deadLetterState.refreshDeadLetters,
     replay: deadLetterState.replay,
@@ -88,6 +91,7 @@ describe('Notification DLQ page', () => {
     deadLetterState.eventTypeFilter.value = ''
     deadLetterState.ignorePending.value = false
     deadLetterState.listPending.value = false
+    deadLetterState.metricsPending.value = false
     deadLetterState.replayBatchPending.value = false
     deadLetterState.replayPending.value = false
     deadLetterState.selectedDeadLetterId.value = rows[0].id

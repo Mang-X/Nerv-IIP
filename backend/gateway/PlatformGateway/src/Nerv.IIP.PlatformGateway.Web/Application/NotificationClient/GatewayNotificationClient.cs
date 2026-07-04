@@ -39,6 +39,10 @@ public interface IGatewayNotificationClient
         GatewayNotificationRequestContext context,
         CancellationToken cancellationToken);
 
+    Task<NotificationDeadLetterMetricsResponse> GetDeadLetterMetricsAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken);
+
     Task<NotificationDeadLetterDetailResponse> GetDeadLetterAsync(
         GatewayNotificationRequestContext context,
         CancellationToken cancellationToken);
@@ -97,6 +101,15 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
         GatewayNotificationRequestContext context,
         CancellationToken cancellationToken) =>
         SendForJsonAsync<NotificationDeadLetterListResponse>(
+            context,
+            HttpMethod.Get,
+            () => null,
+            cancellationToken);
+
+    public Task<NotificationDeadLetterMetricsResponse> GetDeadLetterMetricsAsync(
+        GatewayNotificationRequestContext context,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<NotificationDeadLetterMetricsResponse>(
             context,
             HttpMethod.Get,
             () => null,

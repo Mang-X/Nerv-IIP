@@ -197,6 +197,8 @@ public interface IIntegrationEventDeadLetterStore
         IntegrationEventDeadLetterQuery query,
         CancellationToken cancellationToken);
 
+    Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken);
+
     Task<IntegrationEventDeadLetterMessage?> GetAsync(
         Guid id,
         CancellationToken cancellationToken);
@@ -226,6 +228,71 @@ public sealed record IntegrationEventDeadLetterQuery(
     string? EventType,
     int Skip = 0,
     int Take = 100);
+
+public sealed record IntegrationEventDeadLetterMetrics(
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount,
+    IReadOnlyCollection<IntegrationEventDeadLetterEventTypeMetrics> EventTypes)
+{
+    public int ActionableCount => PendingCount + FailedCount;
+
+    public static IntegrationEventDeadLetterMetrics FromMessages(IEnumerable<IntegrationEventDeadLetterMessage> messages)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        return FromRows(messages.Select(message => new IntegrationEventDeadLetterMetricsRow(
+            string.IsNullOrWhiteSpace(message.EventType) ? "(unknown)" : message.EventType,
+            message.Status)));
+    }
+
+    public static IntegrationEventDeadLetterMetrics FromRows(IEnumerable<IntegrationEventDeadLetterMetricsRow> rows)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        var materialized = rows.ToArray();
+        return new IntegrationEventDeadLetterMetrics(
+            CountStatus(materialized, IntegrationEventDeadLetterStatus.Pending),
+            CountStatus(materialized, IntegrationEventDeadLetterStatus.Failed),
+            CountStatus(materialized, IntegrationEventDeadLetterStatus.Ignored),
+            CountStatus(materialized, IntegrationEventDeadLetterStatus.Replayed),
+            materialized
+                .GroupBy(row => string.IsNullOrWhiteSpace(row.EventType) ? "(unknown)" : row.EventType, StringComparer.Ordinal)
+                .Select(group => IntegrationEventDeadLetterEventTypeMetrics.FromRows(group.Key, group))
+                .OrderByDescending(metric => metric.ActionableCount)
+                .ThenBy(metric => metric.EventType, StringComparer.Ordinal)
+                .ToArray());
+    }
+
+    private static int CountStatus(
+        IReadOnlyCollection<IntegrationEventDeadLetterMetricsRow> rows,
+        IntegrationEventDeadLetterStatus status) =>
+        rows.Count(row => row.Status == status);
+}
+
+public sealed record IntegrationEventDeadLetterEventTypeMetrics(
+    string EventType,
+    int PendingCount,
+    int FailedCount,
+    int IgnoredCount,
+    int ReplayedCount)
+{
+    public int ActionableCount => PendingCount + FailedCount;
+
+    public static IntegrationEventDeadLetterEventTypeMetrics FromRows(
+        string eventType,
+        IEnumerable<IntegrationEventDeadLetterMetricsRow> rows)
+    {
+        var materialized = rows.ToArray();
+        return new IntegrationEventDeadLetterEventTypeMetrics(
+            eventType,
+            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Pending),
+            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Failed),
+            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Ignored),
+            materialized.Count(row => row.Status == IntegrationEventDeadLetterStatus.Replayed));
+    }
+}
+
+public sealed record IntegrationEventDeadLetterMetricsRow(string EventType, IntegrationEventDeadLetterStatus Status);
 
 public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventDeadLetterStore
 {
@@ -288,6 +355,15 @@ public sealed class InMemoryIntegrationEventDeadLetterStore : IIntegrationEventD
                     .Skip(skip)
                     .Take(take)
                     .ToArray());
+        }
+    }
+
+    public Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (syncRoot)
+        {
+            return Task.FromResult(IntegrationEventDeadLetterMetrics.FromMessages(messages));
         }
     }
 

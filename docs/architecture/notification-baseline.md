@@ -88,7 +88,7 @@ Notification 不拥有以下事实：
 1. 集成事件 envelope/type/version 等消费前拒绝写入 persistent DLQ，不执行业务副作用。
 2. CAP subscriber 业务 handler 在重试耗尽后写入 persistent DLQ，避免 poison message 无限占用消费循环。
 3. PlatformGateway 和 Console 提供 DLQ 查询、详情、单条/批量 replay 和人工 ignore 管理入口。
-4. DLQ 告警、指标聚合和跨服务统一看板属于 Observability 后续切片，不在 Notification 内复制告警系统。
+4. Notification 提供 DLQ backlog metrics endpoint 和最小阈值通知 worker：当 persistent DLQ 的 `Pending + Failed` 可处理积压达到 `Notification:DeadLetterAlerts:Threshold`，且 `Enabled`、`OrganizationId`、`EnvironmentId`、`RecipientRefs` 已显式配置时，Notification 会通过自身 intent 管道提交一条 critical 运维任务通知；跨服务统一看板、长期指标存储和通用 Observability 告警引擎仍属于 Observability 后续切片。
 
 ### Phase 3. 合并与治理
 

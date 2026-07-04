@@ -590,6 +590,12 @@ public sealed class SchedulingPlanReleasedHandlerTests
                     .ToArray());
         }
 
+        public Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(IntegrationEventDeadLetterMetrics.FromMessages(messages));
+        }
+
         public Task<IntegrationEventDeadLetterMessage?> GetAsync(
             Guid id,
             CancellationToken cancellationToken)
@@ -669,6 +675,12 @@ public sealed class SchedulingPlanReleasedHandlerTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<IReadOnlyList<IntegrationEventDeadLetterMessage>>([]);
+        }
+
+        public Task<IntegrationEventDeadLetterMetrics> GetMetricsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(IntegrationEventDeadLetterMetrics.FromMessages([]));
         }
 
         public Task<IntegrationEventDeadLetterMessage?> GetAsync(

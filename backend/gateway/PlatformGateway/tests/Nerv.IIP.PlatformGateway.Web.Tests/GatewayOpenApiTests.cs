@@ -86,6 +86,7 @@ public sealed class GatewayOpenApiTests
         Assert.Equal("markConsoleNotificationMessageRead", paths.GetProperty("/api/console/v1/notifications/messages/{messageId}/read").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("markConsoleNotificationMessagesRead", paths.GetProperty("/api/console/v1/notifications/messages/read-batch").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("listConsoleNotificationDeadLetters", paths.GetProperty("/api/console/v1/notifications/dlq").GetProperty("get").GetProperty("operationId").GetString());
+        Assert.Equal("getConsoleNotificationDeadLetterMetrics", paths.GetProperty("/api/console/v1/notifications/dlq/metrics").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("getConsoleNotificationDeadLetter", paths.GetProperty("/api/console/v1/notifications/dlq/{deadLetterId}").GetProperty("get").GetProperty("operationId").GetString());
         Assert.Equal("replayConsoleNotificationDeadLetter", paths.GetProperty("/api/console/v1/notifications/dlq/{deadLetterId}/replay").GetProperty("post").GetProperty("operationId").GetString());
         Assert.Equal("replayConsoleNotificationDeadLetters", paths.GetProperty("/api/console/v1/notifications/dlq/replay-batch").GetProperty("post").GetProperty("operationId").GetString());
