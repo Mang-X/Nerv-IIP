@@ -33,7 +33,12 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = DomainGuard.Required(materialLotId, nameof(materialLotId));
         UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
-        ConsumedQuantity = DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
+        if (consumedQuantity == 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(consumedQuantity), "Consumed quantity cannot be zero.");
+        }
+
+        ConsumedQuantity = consumedQuantity;
         MaterialIssueRequestNo = DomainGuard.Required(materialIssueRequestNo, nameof(materialIssueRequestNo));
     }
 
@@ -63,6 +68,7 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
         decimal consumedQuantity,
         string materialIssueRequestNo)
     {
+        DomainGuard.Positive(consumedQuantity, nameof(consumedQuantity));
         var consumption = new ProductionReportMaterialConsumption(
             organizationId,
             environmentId,
@@ -74,6 +80,26 @@ public sealed class ProductionReportMaterialConsumption : Entity<ProductionRepor
             uomCode,
             consumedQuantity,
             materialIssueRequestNo);
+        consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
+        return consumption;
+    }
+
+    public static ProductionReportMaterialConsumption Reverse(
+        ProductionReportMaterialConsumption original,
+        string reversalReportNo)
+    {
+        ArgumentNullException.ThrowIfNull(original);
+        var consumption = new ProductionReportMaterialConsumption(
+            original.OrganizationId,
+            original.EnvironmentId,
+            reversalReportNo,
+            original.WorkOrderId,
+            original.OperationTaskId,
+            original.MaterialId,
+            original.MaterialLotId,
+            original.UomCode,
+            -original.ConsumedQuantity,
+            original.MaterialIssueRequestNo);
         consumption.AddDomainEvent(new ProductionMaterialConsumedDomainEvent(consumption));
         return consumption;
     }

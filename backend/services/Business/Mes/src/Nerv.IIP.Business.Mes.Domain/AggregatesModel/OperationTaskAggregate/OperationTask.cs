@@ -191,6 +191,19 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         MachineTimeTicks = elapsedTicks;
     }
 
+    public void ReopenAfterReportReversal()
+    {
+        if (Status != OperationTaskLifecycleStatus.Completed)
+        {
+            return;
+        }
+
+        Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingEndUtc = null;
+        LaborTimeTicks = 0;
+        MachineTimeTicks = 0;
+    }
+
     public void Assign(
         string? assignedUserId,
         string? deviceAssetId,

@@ -24,6 +24,8 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.DefectRecordNo).HasColumnName("defect_record_no").HasMaxLength(100).HasComment("Optional MES defect record number linked to this production report.");
         builder.Property(x => x.ProducedLotNo).HasColumnName("produced_lot_no").HasMaxLength(100).HasComment("Optional produced finished-goods lot number for genealogy.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number for genealogy.");
+        builder.Property(x => x.ReversedReportNo).HasColumnName("reversed_report_no").HasMaxLength(100).HasComment("Original MES production report number reversed by this negative correction report.");
+        builder.Property(x => x.ReversalReason).HasColumnName("reversal_reason").HasMaxLength(500).HasComment("Operator or system reason captured when this report reverses an original production report.");
         builder.Property(x => x.CompletesOperation).HasColumnName("completes_operation").IsRequired().HasComment("Whether this report marks the operation as completed.");
         builder.Property(x => x.ReportedAtUtc).HasColumnName("reported_at_utc").IsRequired().HasComment("UTC time when production was reported.");
         builder.HasAlternateKey(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
@@ -48,6 +50,9 @@ public sealed class ProductionReportEntityTypeConfiguration : IEntityTypeConfigu
             .HasDatabaseName("ix_production_reports_scope_operation_fk");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderId, x.OperationTaskId, x.ReportedAtUtc })
             .HasDatabaseName("ix_production_reports_scope_operation_time");
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReversedReportNo })
+            .IsUnique()
+            .HasDatabaseName("ux_production_reports_scope_reversed_report_no");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.ReportNo })
             .IsUnique()
             .HasDatabaseName("ux_production_reports_scope_report_no");

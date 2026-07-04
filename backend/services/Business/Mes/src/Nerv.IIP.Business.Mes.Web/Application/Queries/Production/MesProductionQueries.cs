@@ -33,6 +33,8 @@ public sealed record ProductionReportFact(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
+    string? ReversedReportNo = null,
+    string? ReversalReason = null,
     string? InventoryPostingFailureCode = null,
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null);
@@ -98,6 +100,8 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
                 x.DefectRecordNo,
                 x.ProducedLotNo,
                 x.SerialNo,
+                x.ReversedReportNo,
+                x.ReversalReason,
                 dbContext.ProductionReportMaterialConsumptions
                     .Where(consumption => consumption.OrganizationId == x.OrganizationId
                         && consumption.EnvironmentId == x.EnvironmentId

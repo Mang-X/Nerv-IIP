@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(42, MesEndpointContracts.All.Count);
+        Assert.Equal(43, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -168,6 +168,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/production-reports"
             && x.PermissionCode == MesPermissionCodes.ReportingRead
             && x.OperationId == "listBusinessMesProductionReports");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/production-reports/{reportNo}/reverse"
+            && x.PermissionCode == MesPermissionCodes.ReportingWrite
+            && x.OperationId == "reverseBusinessMesProductionReport");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/mes/defects"
@@ -575,6 +580,42 @@ public sealed class MesEndpointContractTests
         var sql = query.ToQueryString();
         Assert.Contains("operation_tasks", sql, StringComparison.Ordinal);
         Assert.Contains("status", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Traceability_active_report_filters_translate_to_npgsql_exists_queries()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var activeProductionReports = dbContext.ActiveProductionReports();
+        var materialLotSql = dbContext.ProductionReportMaterialConsumptions
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                x.MaterialLotId == "LOT-001" &&
+                activeProductionReports.Any(report =>
+                    report.OrganizationId == x.OrganizationId &&
+                    report.EnvironmentId == x.EnvironmentId &&
+                    report.ReportNo == x.ReportNo))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+        var producedBatchSql = activeProductionReports
+            .Where(x =>
+                x.OrganizationId == "org-001" &&
+                x.EnvironmentId == "env-dev" &&
+                (x.ProducedLotNo == "LOT-001" || x.SerialNo == "LOT-001"))
+            .Select(x => x.ReportNo)
+            .ToQueryString();
+
+        Assert.Contains("EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("NOT EXISTS", materialLotSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", materialLotSql, StringComparison.Ordinal);
+        Assert.Contains("NOT EXISTS", producedBatchSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("reversed_report_no", producedBatchSql, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1802,6 +1802,217 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state()
+    {
+        var services = CreateServices(nameof(Reverse_production_report_restores_progress_consumption_and_traceability_to_initial_state));
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-REV-001", "SKU-FG-REV", "PV-REV-1", 10m, 20, now.AddHours(8), "PCS");
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.WorkOrders.Add(workOrder);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-001",
+            "OP-REV-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-REV-001",
+            "WO-REV-001",
+            "OP-REV-10",
+            "MAT-OIL",
+            "L",
+            6m,
+            now.AddMinutes(1));
+        materialIssue.ConfirmLineSideReceipt(now.AddMinutes(5), 6m, "LOT-OIL-REV");
+        materialIssue.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        await dbContext.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-001",
+                "OP-REV-10",
+                4m,
+                1m,
+                true,
+                now.AddMinutes(30),
+                "report-rev-001",
+                [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
+                ReworkQuantity: 2m,
+                ProducedLotNo: "LOT-FG-REV"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var receiptResult = await new CreateFinishedGoodsReceiptRequestCommandHandler(dbContext, codingService).Handle(
+            new CreateFinishedGoodsReceiptRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-001",
+                "SKU-FG-REV",
+                4m,
+                "PCS",
+                now.AddMinutes(40),
+                UnitCost: 12.34m,
+                IdempotencyKey: "receipt-rev-001",
+                ProducedLotNo: "LOT-FG-REV"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reversal = await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand(
+                "org-001",
+                "env-dev",
+                reportResult.ReportNo,
+                "wrong quantity",
+                now.AddMinutes(50),
+                "reverse-rev-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.NotEqual(reportResult.ReportNo, reversal.ReportNo);
+        var persistedWorkOrder = await dbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-REV-001");
+        Assert.Equal(0m, persistedWorkOrder.CompletedQuantity);
+        Assert.Equal(0m, persistedWorkOrder.ScrapQuantity);
+        Assert.Equal(WorkOrder.StartedStatus, persistedWorkOrder.Status);
+        var operationTask = await dbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-REV-10");
+        Assert.Equal(OperationTaskLifecycleStatus.InProgress, operationTask.Status);
+        Assert.Null(operationTask.ExistingEndUtc);
+
+        var reversalReport = await dbContext.ProductionReports.SingleAsync(x => x.ReportNo == reversal.ReportNo);
+        Assert.Equal(reportResult.ReportNo, reversalReport.ReversedReportNo);
+        Assert.Equal(-4m, reversalReport.GoodQuantity);
+        Assert.Equal(-1m, reversalReport.ScrapQuantity);
+        Assert.Equal(-2m, reversalReport.ReworkQuantity);
+        Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
+
+        var netConsumed = await dbContext.ProductionReportMaterialConsumptions
+            .Where(x => x.MaterialLotId == "LOT-OIL-REV")
+            .SumAsync(x => x.ConsumedQuantity);
+        Assert.Equal(0m, netConsumed);
+        Assert.Empty(await dbContext.OutputLotGenealogies.Where(x => x.ProducedLotNo == "LOT-FG-REV").ToArrayAsync());
+        Assert.Equal(
+            FinishedGoodsReceiptRequest.CancelledStatus,
+            (await dbContext.FinishedGoodsReceiptRequests.SingleAsync(x => x.RequestNo == receiptResult.RequestNo)).Status);
+
+        var traceability = await new GetMaterialLotTraceabilityQueryHandler(dbContext)
+            .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-OIL-REV"), CancellationToken.None);
+        Assert.Single(traceability.Nodes);
+        Assert.Equal("Unknown", traceability.Nodes.Single().Status);
+        Assert.Empty(traceability.Edges);
+    }
+
+    [Fact]
+    public async Task Reverse_production_report_rejects_closed_work_order_and_duplicate_reversal()
+    {
+        var services = CreateServices(nameof(Reverse_production_report_rejects_closed_work_order_and_duplicate_reversal));
+        var now = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REV-CLOSED", "SKU-FG-REV", "PV-REV-1", 5m, 20, now.AddHours(8), "PCS"));
+        var workOrder = dbContext.WorkOrders.Local.Single();
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-CLOSED",
+            "OP-REV-CLOSED",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var report = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-CLOSED",
+                "OP-REV-CLOSED",
+                5m,
+                0m,
+                true,
+                now.AddMinutes(30),
+                "report-rev-closed",
+                ProducedLotNo: "LOT-FG-CLOSED"),
+            CancellationToken.None);
+        workOrder.Close(now.AddMinutes(40));
+        await dbContext.SaveChangesAsync();
+
+        var closedException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", report.ReportNo, "closed", now.AddMinutes(50), "reverse-closed"),
+                CancellationToken.None));
+        Assert.Contains("已关闭", closedException.Message);
+
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REV-DUP", "SKU-FG-REV", "PV-REV-1", 5m, 20, now.AddHours(9), "PCS"));
+        var duplicateWorkOrder = dbContext.WorkOrders.Local.Single(x => x.WorkOrderIdValue == "WO-REV-DUP");
+        duplicateWorkOrder.MarkReleased();
+        duplicateWorkOrder.Start(now);
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-REV-DUP",
+            "OP-REV-DUP",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null));
+        await dbContext.SaveChangesAsync();
+        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-REV-DUP",
+                "OP-REV-DUP",
+                5m,
+                0m,
+                true,
+                now.AddMinutes(45),
+                "report-rev-dup",
+                ProducedLotNo: "LOT-FG-DUP"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "first reversal", now.AddMinutes(60), "reverse-first"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var duplicateException = await Assert.ThrowsAsync<KnownException>(() =>
+            new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+                new ReverseProductionReportCommand("org-001", "env-dev", duplicateReport.ReportNo, "duplicate reversal", now.AddMinutes(70), "reverse-second"),
+                CancellationToken.None));
+        Assert.Contains("已冲销", duplicateException.Message);
+    }
+
+    [Fact]
     public async Task List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks()
     {
         var services = CreateServices(nameof(List_work_orders_query_returns_scoped_persisted_work_orders_with_tasks));

@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
@@ -373,6 +374,108 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             x.LocationCode == "line-side" &&
             x.Quantity == -5m);
         Assert.Equal(4, inventoryDb.StockMovements.Count());
+    }
+
+    [Fact]
+    public async Task Mes_production_report_reversal_posts_inverse_consumption_and_restores_line_side_inventory()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb, "WO-696");
+        await mesDb.SaveChangesAsync();
+        var mesCodingService = new MesCodingService();
+        var inventoryPublisher = new RecordingIntegrationEventPublisher();
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, inventoryPublisher);
+        var issuedAtUtc = DateTimeOffset.Parse("2026-07-03T08:00:00Z");
+        var receivedAtUtc = issuedAtUtc.AddMinutes(20);
+        var reportedAtUtc = issuedAtUtc.AddHours(1);
+        var reversedAtUtc = issuedAtUtc.AddHours(2);
+        await inventoryHandler.HandleAsync(CreateWarehouseSeedEvent(issuedAtUtc.AddMinutes(-10), "WO-696", 5m), CancellationToken.None);
+
+        var issueResult = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001",
+                "env-dev",
+                "WO-696",
+                "OP-10",
+                "MAT-OIL",
+                "L",
+                5m,
+                issuedAtUtc,
+                "issue-696"),
+            CancellationToken.None);
+        var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issueResult.ReferenceId);
+        await mesDb.SaveChangesAsync();
+
+        await new ConfirmLineSideMaterialReceiptCommandHandler(mesDb).Handle(
+            new ConfirmLineSideMaterialReceiptCommand(
+                "org-001",
+                "env-dev",
+                issueResult.ReferenceId,
+                receivedAtUtc,
+                5m,
+                "LOT-OIL-A"),
+            CancellationToken.None);
+        var transferEvents = issueRequest.GetDomainEvents().ToArray();
+        var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialIssueRequestedDomainEvent>(transferEvents[0]));
+        var receiptEvent = new MaterialLineSideReceiptConfirmedIntegrationEventConverter().Convert(
+            Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(transferEvents[1]));
+        issueRequest.ClearDomainEvents();
+        await mesDb.SaveChangesAsync();
+
+        var reportResult = await new RecordProductionReportCommandHandler(mesDb, mesCodingService).Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-696",
+                "OP-10",
+                1m,
+                0m,
+                false,
+                reportedAtUtc,
+                "report-696",
+                [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 2m, issueResult.ReferenceId)]),
+            CancellationToken.None);
+        var consumption = mesDb.ProductionReportMaterialConsumptions.Local.Single(x => x.ReportNo == reportResult.ReportNo);
+        var consumptionEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
+            Assert.IsType<ProductionMaterialConsumedDomainEvent>(consumption.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+
+        foreach (var movementEvent in new[] { issueEvent, receiptEvent, consumptionEvent })
+        {
+            await inventoryHandler.HandleAsync(movementEvent, CancellationToken.None);
+        }
+        Assert.Equal(3m, inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == "production" &&
+            x.LocationCode == "line-side" &&
+            x.SkuCode == "MAT-OIL" &&
+            x.LotNo == "LOT-OIL-A").OnHandQuantity);
+
+        var reversalResult = await new ReverseProductionReportCommandHandler(mesDb, mesCodingService).Handle(
+            new ReverseProductionReportCommand(
+                "org-001",
+                "env-dev",
+                reportResult.ReportNo,
+                "wrong quantity",
+                reversedAtUtc,
+                "reverse-696"),
+            CancellationToken.None);
+        var reversalConsumption = mesDb.ProductionReportMaterialConsumptions.Local.Single(x => x.ReportNo == reversalResult.ReportNo);
+        var reversalEvent = new ProductionMaterialConsumedIntegrationEventConverter().Convert(
+            Assert.IsType<ProductionMaterialConsumedDomainEvent>(reversalConsumption.GetDomainEvents().Single()));
+        await mesDb.SaveChangesAsync();
+
+        await inventoryHandler.HandleAsync(reversalEvent, CancellationToken.None);
+
+        Assert.Equal(2m, reversalEvent.Payload.Quantity);
+        var lineSideLedger = inventoryDb.StockLedgers.Single(x =>
+            x.SiteCode == "production" &&
+            x.LocationCode == "line-side" &&
+            x.SkuCode == "MAT-OIL" &&
+            x.LotNo == "LOT-OIL-A");
+        Assert.Equal(5m, lineSideLedger.OnHandQuantity);
+        Assert.Equal(5m, lineSideLedger.AvailableQuantity);
     }
 
     [Fact]
