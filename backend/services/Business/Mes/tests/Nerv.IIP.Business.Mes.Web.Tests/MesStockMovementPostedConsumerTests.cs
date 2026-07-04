@@ -2,6 +2,8 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Inventory;
@@ -91,12 +93,104 @@ public sealed class MesStockMovementPostedConsumerTests
             dbContext,
             new InMemoryIntegrationEventDeadLetterStore());
 
-        await handler.HandleAsync(CreatePostedEvent("FGR-001", quantity: 3m), CancellationToken.None);
+        await handler.HandleAsync(CreatePostedEvent("FGR-001", quantity: 9m), CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
         var receipt = await dbContext.FinishedGoodsReceiptRequests.SingleAsync();
         Assert.Equal(FinishedGoodsReceiptRequest.RequestedStatus, receipt.Status);
         Assert.Null(receipt.PostedInventoryMovementId);
+    }
+
+    [Fact]
+    public async Task Stock_movement_posted_consumer_marks_partial_finished_goods_receipt_without_closing_request()
+    {
+        await using var dbContext = CreateDbContext(nameof(Stock_movement_posted_consumer_marks_partial_finished_goods_receipt_without_closing_request));
+        dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-001",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore());
+
+        await handler.HandleAsync(CreatePostedEvent("FGR-001", quantity: 3m), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var receipt = await dbContext.FinishedGoodsReceiptRequests.SingleAsync();
+        Assert.Equal("PartiallyPosted", receipt.Status);
+        Assert.Equal(3m, receipt.PostedQuantity);
+        Assert.Equal(5m, receipt.RemainingQuantity);
+        Assert.Equal("INV-MOV-001", receipt.PostedInventoryMovementId);
+    }
+
+    [Fact]
+    public async Task Retry_finished_goods_receipt_inventory_posting_reemits_remaining_quantity_after_partial_post()
+    {
+        await using var dbContext = CreateDbContext(nameof(Retry_finished_goods_receipt_inventory_posting_reemits_remaining_quantity_after_partial_post));
+        var receipt = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-001",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null,
+            12.34m);
+        receipt.MarkInventoryPosted("INV-MOV-PARTIAL", 3m, DateTimeOffset.Parse("2026-06-15T09:05:00Z"));
+        receipt.ClearDomainEvents();
+        dbContext.FinishedGoodsReceiptRequests.Add(receipt);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new RetryFinishedGoodsReceiptInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryFinishedGoodsReceiptInventoryPostingCommand("org-001", "env-dev", "FGR-001", "retry-remaining-001"),
+            CancellationToken.None);
+
+        Assert.Equal("FGR-001", result.RequestNo);
+        var retryEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(receipt.GetDomainEvents().Single());
+        Assert.Equal(5m, retryEvent.Quantity);
+        Assert.Contains("retry-remaining-001", retryEvent.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_keeps_partial_posting_evidence_when_remaining_posting_fails()
+    {
+        var receipt = FinishedGoodsReceiptRequest.Create(
+            "org-001",
+            "env-dev",
+            "FGR-001",
+            "WO-001",
+            "SKU-FG",
+            8m,
+            "PCS",
+            DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
+            "LOT-FG-001",
+            null,
+            12.34m);
+        var postedAtUtc = DateTimeOffset.Parse("2026-06-15T09:05:00Z");
+        receipt.MarkInventoryPosted("INV-MOV-PARTIAL", 3m, postedAtUtc);
+
+        receipt.MarkInventoryPostingFailed(
+            "inventory.validation.failed",
+            "remaining posting rejected",
+            DateTimeOffset.Parse("2026-06-15T09:10:00Z"));
+
+        Assert.Equal(FinishedGoodsReceiptRequest.InventoryPostingFailedStatus, receipt.Status);
+        Assert.Equal(3m, receipt.PostedQuantity);
+        Assert.Equal(5m, receipt.RemainingQuantity);
+        Assert.Equal("INV-MOV-PARTIAL", receipt.PostedInventoryMovementId);
+        Assert.Equal(postedAtUtc, receipt.PostedAtUtc);
     }
 
     [Fact]

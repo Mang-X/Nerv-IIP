@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(43, MesEndpointContracts.All.Count);
+        Assert.Equal(44, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -193,6 +193,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests"
             && x.PermissionCode == MesPermissionCodes.ReceiptsRead
             && x.OperationId == "listBusinessMesFinishedGoodsReceiptRequests");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry"
+            && x.PermissionCode == MesPermissionCodes.ReceiptsManage
+            && x.OperationId == "retryBusinessMesFinishedGoodsReceiptInventoryPosting");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/capacity-impacts"
@@ -1370,6 +1375,7 @@ public sealed class MesEndpointContractTests
         "/api/business/v1/mes/work-orders/WO-001/close",
         "/api/business/v1/mes/work-orders/WO-001/hold",
         "/api/business/v1/mes/work-orders/WO-001/cancel",
+        "/api/business/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry",
     ];
 
     private static async ValueTask DisposeAuthOnlyFactoryAsync(WebApplicationFactory<Program> factory)

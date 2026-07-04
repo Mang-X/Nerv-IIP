@@ -23,6 +23,7 @@ public sealed class FinishedGoodsReceiptRequestEntityTypeConfiguration : IEntity
         builder.Property(x => x.ProducedLotNo).HasColumnName("produced_lot_no").HasMaxLength(100).HasComment("Optional produced finished-goods lot number requested for receipt.");
         builder.Property(x => x.SerialNo).HasColumnName("serial_no").HasMaxLength(100).HasComment("Optional produced serial number requested for receipt.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasMaxLength(30).HasDefaultValue(FinishedGoodsReceiptRequest.RequestedStatus).HasComment("MES finished-goods receipt request lifecycle status.");
+        builder.Property(x => x.PostedQuantity).HasColumnName("posted_quantity").HasPrecision(18, 6).IsRequired().HasDefaultValue(0m).HasComment("Cumulative quantity Inventory has posted for this MES finished-goods receipt request.");
         builder.Property(x => x.PostedInventoryMovementId).HasColumnName("posted_inventory_movement_id").HasMaxLength(100).HasComment("Inventory movement id posted for this receipt request when known.");
         builder.Property(x => x.PostedAtUtc).HasColumnName("posted_at_utc").HasComment("UTC time when Inventory posted the receipt movement.");
         builder.Property(x => x.InventoryPostingFailureCode).HasColumnName("inventory_posting_failure_code").HasMaxLength(100).HasComment("Last Inventory posting failure code returned for this MES finished-goods receipt request.");
