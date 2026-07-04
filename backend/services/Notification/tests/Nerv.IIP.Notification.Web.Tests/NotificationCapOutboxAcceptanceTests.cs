@@ -8,8 +8,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Npgsql;
 using System.Data;
 using System.Net.Sockets;
@@ -108,6 +110,75 @@ public sealed class NotificationCapOutboxAcceptanceTests
         });
     }
 
+    [Fact]
+    [Trait("Category", "cap-rabbitmq-dlq")]
+    public async Task Rabbitmq_handler_exception_dead_letters_after_retry_threshold_and_continues_consuming()
+    {
+        var adminConnectionString = ReadPostgresConnectionString();
+        var rabbitMqHost = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_HOST") ?? "localhost";
+        var rabbitMqPort = ReadInt("NERV_IIP_TEST_RABBITMQ_PORT", 5672);
+        if (!await CanConnectPostgresAsync(adminConnectionString) || !await CanConnectTcpAsync(rabbitMqHost, rabbitMqPort))
+        {
+            return;
+        }
+
+        await using var database = await DisposablePostgresDatabase.CreateAsync(adminConnectionString, "notification_cap_rabbitmq_dlq");
+        await using var factory = CreateFactory(
+            database.ConnectionString,
+            "RabbitMQ",
+            new Dictionary<string, string?>
+            {
+                ["RabbitMQ:HostName"] = rabbitMqHost,
+                ["RabbitMQ:Port"] = rabbitMqPort.ToString(),
+                ["RabbitMQ:UserName"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_USERNAME") ?? "guest",
+                ["RabbitMQ:Password"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_PASSWORD") ?? "guest",
+            });
+        await MigrateAsync(factory);
+        await InitializeCapStorageAsync(factory);
+        using var client = factory.CreateClient();
+
+        await PublishAsync(
+            factory,
+            CreateFailedEvent("event-cap-rabbitmq-poison", "operation-task-failed:cap-rabbitmq-poison")
+                with
+                {
+                    Payload = new OperationTaskFailedPayload(
+                        OperationTaskId: string.Empty,
+                        AttemptId: "attempt-event-cap-rabbitmq-poison",
+                        InstanceKey: "demo-api-001",
+                        OperationCode: "lifecycle.restart",
+                        FinishedAtUtc: DateTimeOffset.Parse("2026-05-25T08:00:05Z"),
+                        FailureCode: "timeout")
+                },
+            useTransaction: true);
+
+        await AssertEventuallyAsync(async () =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var deadLetter = await dbContext.Set<IntegrationEventDeadLetter>()
+                .SingleOrDefaultAsync(x => x.EventId == "event-cap-rabbitmq-poison");
+
+            Assert.True(deadLetter is not null, await ReadCapDebugAsync(dbContext));
+            Assert.Equal(IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode, deadLetter.FailureCode);
+            Assert.Equal(IntegrationEventDeadLetterStatus.Pending, deadLetter.Status);
+            Assert.StartsWith(OperationTaskFailedIntegrationEventHandlerForNotification.ConsumerName, deadLetter.ConsumerName, StringComparison.Ordinal);
+        });
+
+        await PublishAsync(factory, CreateFailedEvent("event-cap-rabbitmq-after-poison", "operation-task-failed:cap-rabbitmq-after-poison"), useTransaction: true);
+
+        await AssertEventuallyAsync(async () =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var intent = await dbContext.NotificationIntents
+                .SingleOrDefaultAsync(x => x.SourceEventId == "event-cap-rabbitmq-after-poison");
+
+            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext));
+            Assert.Equal(NotificationContractConstants.IntentTypeTask, intent.IntentType);
+        });
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         string connectionString,
         string messagingProvider,
@@ -117,12 +188,15 @@ public sealed class NotificationCapOutboxAcceptanceTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
+                var capVersion = $"t-{messagingProvider.ToLowerInvariant()}-{Guid.NewGuid():N}"[..20];
                 var settings = new Dictionary<string, string?>
                 {
                     ["Persistence:Provider"] = "PostgreSQL",
                     ["ConnectionStrings:NotificationDb"] = connectionString,
                     ["Messaging:Provider"] = messagingProvider,
-                    ["Cap:Version"] = $"test-{messagingProvider.ToLowerInvariant()}",
+                    ["Cap:Version"] = capVersion,
+                    ["Cap:FailedRetryCount"] = "1",
+                    ["Cap:FailedRetryInterval"] = "1",
                     ["InternalService:BearerToken"] = "test-internal-token",
                 };
 
@@ -142,6 +216,15 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 builder.ConfigureAppConfiguration((_, configuration) =>
                 {
                     configuration.AddInMemoryCollection(settings);
+                });
+
+                builder.ConfigureServices(services =>
+                {
+                    services.Configure<CapOptions>(options =>
+                    {
+                        options.FailedRetryCount = 1;
+                        options.FailedRetryInterval = 1;
+                    });
                 });
             });
     }
