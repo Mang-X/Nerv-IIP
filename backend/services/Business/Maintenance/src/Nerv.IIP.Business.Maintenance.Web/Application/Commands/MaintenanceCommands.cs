@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -229,9 +231,12 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractV
 
 public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
     ApplicationDbContext dbContext,
-    IAssetRuntimeHoursProvider? runtimeHoursProvider = null)
+    IAssetRuntimeHoursProvider? runtimeHoursProvider = null,
+    ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler>? logger = null)
     : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
 {
+    private readonly ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler> logger = logger ?? NullLogger<GenerateDueMaintenanceWorkOrdersCommandHandler>.Instance;
+
     public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
     {
         var plans = await dbContext.MaintenancePlans
@@ -250,8 +255,18 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
                 AddPlanWorkOrder(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds);
             }
 
-            if (runtimeHoursProvider is null || plan.RuntimeHourInterval is null)
+            if (plan.RuntimeHourInterval is null)
             {
+                continue;
+            }
+
+            if (runtimeHoursProvider is null)
+            {
+                logger.LogWarning(
+                    "Runtime-hour PM plan {PlanCode} for {DeviceAssetId} was skipped because no IAssetRuntimeHoursProvider is registered; threshold {NextDueRuntimeHours} remains pending for retry.",
+                    plan.PlanCode,
+                    plan.DeviceAssetId,
+                    plan.NextDueRuntimeHours);
                 continue;
             }
 
@@ -264,6 +279,12 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
                 cancellationToken);
             if (!runtime.HasRuntimeSamples)
             {
+                logger.LogWarning(
+                    "Runtime-hour PM plan {PlanCode} for {DeviceAssetId} was skipped because runtime provider returned no real samples from {RuntimeSource}; threshold {NextDueRuntimeHours} remains pending for retry.",
+                    plan.PlanCode,
+                    plan.DeviceAssetId,
+                    runtime.RuntimeSource,
+                    plan.NextDueRuntimeHours);
                 continue;
             }
 

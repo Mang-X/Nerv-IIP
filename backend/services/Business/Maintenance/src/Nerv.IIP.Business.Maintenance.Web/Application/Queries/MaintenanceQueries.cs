@@ -391,7 +391,7 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, BuildOeePath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
+            using var request = new HttpRequestMessage(HttpMethod.Get, BuildRuntimeHoursPath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
             var token = tokenProvider?.BearerToken;
             if (!string.IsNullOrWhiteSpace(token))
             {
@@ -401,30 +401,29 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             var client = httpClientFactory.CreateClient(ClientName);
             using var response = await client.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<IndustrialTelemetryOeeResponse>>(JsonOptions, cancellationToken);
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<IndustrialTelemetryRuntimeHoursResponse>>(JsonOptions, cancellationToken);
             var data = envelope?.Data;
-            if (data is null || data.StateSampleCount == 0)
+            if (data is null || data.StateSampleCount == 0 || data.HasRuntimeSamples == false)
             {
                 return await CalculateFallbackAsync();
             }
 
-            var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
-            var loadingRate = data.LoadingRate ?? 1m;
-            return new AssetRuntimeHoursResult(Math.Round(windowHours * loadingRate * data.AvailabilityRate, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
+            var runtimeHours = data.TotalRuntimeHours ?? CalculateLegacyRuntimeHours(data, windowStartUtc, windowEndUtc);
+            return new AssetRuntimeHoursResult(Math.Round(runtimeHours, 6), AssetRuntimeSources.Oee, HasRuntimeSamples: true);
         }
         catch (HttpRequestException exception)
         {
-            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source was unavailable for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
+            logger.LogWarning(exception, "IndustrialTelemetry runtime-hours source was unavailable for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
             return await CalculateFallbackAsync();
         }
         catch (TaskCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source timed out for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
+            logger.LogWarning(exception, "IndustrialTelemetry runtime-hours source timed out for {OrganizationId}/{EnvironmentId}/{DeviceAssetId}; falling back to Maintenance availability windows.", organizationId, environmentId, deviceAssetId);
             return await CalculateFallbackAsync();
         }
         catch (JsonException exception)
         {
-            logger.LogWarning(exception, "IndustrialTelemetry OEE runtime source returned an invalid response for {RequestUri}; falling back to Maintenance availability windows.", BuildOeePath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
+            logger.LogWarning(exception, "IndustrialTelemetry runtime-hours source returned an invalid response for {RequestUri}; falling back to Maintenance availability windows.", BuildRuntimeHoursPath(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc));
             return await CalculateFallbackAsync();
         }
 
@@ -432,14 +431,24 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
             fallbackProvider.CalculateFallbackAsync(organizationId, environmentId, deviceAssetId, windowStartUtc, windowEndUtc, cancellationToken);
     }
 
-    private static string BuildOeePath(
+    private static decimal CalculateLegacyRuntimeHours(
+        IndustrialTelemetryRuntimeHoursResponse data,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc)
+    {
+        var windowHours = (decimal)(windowEndUtc - windowStartUtc).TotalHours;
+        var loadingRate = data.LoadingRate ?? 1m;
+        return windowHours * loadingRate * data.AvailabilityRate;
+    }
+
+    private static string BuildRuntimeHoursPath(
         string organizationId,
         string environmentId,
         string deviceAssetId,
         DateTimeOffset windowStartUtc,
         DateTimeOffset windowEndUtc)
     {
-        return "/api/business/v1/iiot/oee?" + string.Join('&',
+        return "/api/business/v1/iiot/runtime-hours?" + string.Join('&',
             Query("organizationId", organizationId),
             Query("environmentId", environmentId),
             Query("deviceAssetId", deviceAssetId),
@@ -451,13 +460,16 @@ public sealed class HttpIndustrialTelemetryAssetRuntimeHoursProvider(
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 
-    private sealed record IndustrialTelemetryOeeResponse(
+    private sealed record IndustrialTelemetryRuntimeHoursResponse(
         string OrganizationId,
         string EnvironmentId,
         string DeviceAssetId,
         DateTimeOffset WindowStartUtc,
         DateTimeOffset WindowEndUtc,
         int StateSampleCount,
+        decimal? TotalRuntimeHours,
+        decimal? TotalLoadingHours,
+        bool? HasRuntimeSamples,
         decimal AvailabilityRate,
         decimal? LoadingRate,
         decimal PerformanceRate,
