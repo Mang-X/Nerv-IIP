@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
+using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -112,7 +113,66 @@ public sealed class GatewayAuthorizationClientTests
         Assert.Equal(TimeSpan.FromSeconds(12), cache.LastTtl);
     }
 
-    private static HttpGatewayAuthorizationClient CreateClient(CountingAuthorizationHandler handler)
+    [Fact]
+    public async Task CheckAsync_read_continuity_reuses_cached_authorization_when_iam_is_temporarily_unavailable()
+    {
+        var handler = new FlakyAuthorizationHandler();
+        var client = CreateClient(handler);
+        var requirement = new GatewayPermissionRequirement(
+            "apphub.instances.read",
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        var first = await client.CheckAsync(
+            "token-v7",
+            requirement,
+            GatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+        handler.FailWithServiceUnavailable = true;
+        var second = await client.CheckAsync(
+            "token-v7",
+            requirement,
+            GatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+
+        Assert.True(first.IsAllowed);
+        Assert.True(second.IsAllowed);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task CheckAsync_realtime_mode_bypasses_cached_authorization_when_iam_is_unavailable()
+    {
+        var handler = new FlakyAuthorizationHandler();
+        var client = CreateClient(handler);
+        var requirement = new GatewayPermissionRequirement(
+            "iam.users.manage",
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        var first = await client.CheckAsync(
+            "token-v7",
+            requirement,
+            GatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+        handler.FailWithServiceUnavailable = true;
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync(
+            "token-v7",
+            requirement,
+            GatewayAuthorizationContinuityMode.RealtimeRequired,
+            CancellationToken.None));
+
+        Assert.True(first.IsAllowed);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    private static HttpGatewayAuthorizationClient CreateClient(HttpMessageHandler handler)
     {
         return CreateClient(
             handler,
@@ -121,7 +181,7 @@ public sealed class GatewayAuthorizationClientTests
     }
 
     private static HttpGatewayAuthorizationClient CreateClient(
-        CountingAuthorizationHandler handler,
+        HttpMessageHandler handler,
         IAppCache cache,
         IOptions<GatewayAuthorizationOptions> options)
     {
@@ -129,7 +189,7 @@ public sealed class GatewayAuthorizationClientTests
         {
             BaseAddress = new Uri("http://iam.local")
         };
-        return new HttpGatewayAuthorizationClient(httpClient, cache, options);
+        return new HttpGatewayAuthorizationClient(httpClient, cache, options, new GatewayDownstreamHealthState());
     }
 
     private sealed class CountingAuthorizationHandler : HttpMessageHandler
@@ -139,6 +199,32 @@ public sealed class GatewayAuthorizationClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             CallCount++;
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ResponseDataEnvelope<AuthorizationCheckResponse>(
+                    new AuthorizationCheckResponse(true, "user-admin", "user", "admin", null),
+                    true,
+                    "OK",
+                    0))
+            };
+            return Task.FromResult(response);
+        }
+    }
+
+    private sealed class FlakyAuthorizationHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+
+        public bool FailWithServiceUnavailable { get; set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            if (FailWithServiceUnavailable)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
             var response = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new ResponseDataEnvelope<AuthorizationCheckResponse>(

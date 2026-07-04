@@ -12,6 +12,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
@@ -44,6 +45,7 @@ builder.Services.AddNervIipObservability(builder.Configuration, "business-gatewa
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
+builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();

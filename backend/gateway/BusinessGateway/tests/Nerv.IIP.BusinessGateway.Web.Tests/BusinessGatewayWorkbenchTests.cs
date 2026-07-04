@@ -167,6 +167,9 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(0, notification.TaskCallCount);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         AssertSourceStatus(document.RootElement.GetProperty("data"), "Notification", "unavailable");
+
+        var health = await client.GetStringAsync("/health");
+        Assert.Equal("Healthy", health);
     }
 
     [Fact]
@@ -193,6 +196,74 @@ public sealed class BusinessGatewayWorkbenchTests
             .Single(sourceStatus => sourceStatus.GetProperty("source").GetString() == "Notification");
         Assert.Equal("unavailable", notificationStatus.GetProperty("status").GetString());
         Assert.Equal(BusinessGatewayPermissions.NotificationTasksRead, notificationStatus.GetProperty("permissionCode").GetString());
+    }
+
+    [Fact]
+    public async Task Workbench_summary_keeps_other_sources_available_and_health_reports_degraded_source()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
+            BusinessGatewayPermissions.NotificationTasksRead,
+            BusinessGatewayPermissions.MesWorkOrdersRead);
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessNotificationClient>();
+            services.AddSingleton<IBusinessNotificationClient>(new ThrowingNotificationClient());
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        AssertSourceStatus(data, "Notification", "unavailable");
+        AssertSourceStatus(data, "BusinessMES", "available");
+        Assert.Equal(1, mes.WorkOrderListCallCount);
+
+        var health = await client.GetStringAsync("/health");
+        Assert.Contains("Degraded", health, StringComparison.Ordinal);
+        Assert.Contains("Notification", health, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Workbench_summary_keeps_other_sources_available_when_one_source_authorization_check_fails()
+    {
+        var auth = new ThrowingApprovalAuthorizationClient();
+        var approval = new RecordingApprovalClient();
+        var mes = new RecordingMesClient();
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessApprovalClient>();
+            services.AddSingleton<IBusinessApprovalClient>(approval);
+            services.RemoveAll<IBusinessMesClient>();
+            services.AddSingleton<IBusinessMesClient>(mes);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = document.RootElement.GetProperty("data");
+        AssertSourceStatus(data, "BusinessApproval", "unavailable");
+        AssertSourceStatus(data, "BusinessMES", "available");
+        Assert.Equal(0, approval.CallCount);
+        Assert.Equal(1, mes.WorkOrderListCallCount);
+
+        var approvalStatus = data.GetProperty("sourceStatuses")
+            .EnumerateArray()
+            .Single(sourceStatus => sourceStatus.GetProperty("source").GetString() == "BusinessApproval");
+        Assert.Equal("authorization-unavailable", approvalStatus.GetProperty("reason").GetString());
+        Assert.Contains("IAM", await client.GetStringAsync("/health"), StringComparison.Ordinal);
     }
 
     private static void AssertSourceStatus(JsonElement data, string source, string status)
@@ -232,6 +303,25 @@ public sealed class BusinessGatewayWorkbenchTests
                 requirement.PermissionCode is BusinessGatewayPermissions.NotificationMessagesRead or BusinessGatewayPermissions.NotificationTasksRead
                     ? new BusinessGatewayAuthorizationResult(true, null, "user", null, null)
                     : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
+    }
+
+    private sealed class ThrowingApprovalAuthorizationClient : IBusinessGatewayAuthorizationClient
+    {
+        public Task<BusinessGatewayAuthorizationResult> CheckAsync(
+            string bearerToken,
+            BusinessGatewayPermissionRequirement requirement,
+            CancellationToken cancellationToken)
+        {
+            if (requirement.PermissionCode == BusinessGatewayPermissions.ApprovalsRead)
+            {
+                throw new HttpRequestException("iam unavailable");
+            }
+
+            return Task.FromResult(
+                requirement.PermissionCode == BusinessGatewayPermissions.MesWorkOrdersRead
+                    ? BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
+                    : BusinessGatewayAuthorizationResult.Forbidden("forbidden"));
+        }
     }
 }
 
