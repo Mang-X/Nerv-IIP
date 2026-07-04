@@ -531,12 +531,12 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             throw new KnownException($"完工入库引用的产出批次不存在，ProducedLotNo = {request.ProducedLotNo}");
         }
 
-        var activeReceiptQuantity = await dbContext.FinishedGoodsReceiptRequests
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId &&
-                x.Status != FinishedGoodsReceiptRequest.CancelledStatus)
+        // MES receipt creation is a low-concurrency operator workflow; strict cross-command serialization would need a separate DB lock/constraint design.
+        var activeReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId)
             .SumAsync(x => x.Quantity, cancellationToken);
         if (activeReceiptQuantity + request.Quantity > workOrder.CompletedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
         {
@@ -558,6 +558,19 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
         await Task.CompletedTask;
         return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);
+    }
+
+    public static IQueryable<FinishedGoodsReceiptRequest> ActiveReceiptRequestsForWorkOrder(
+        IQueryable<FinishedGoodsReceiptRequest> receiptRequests,
+        string organizationId,
+        string environmentId,
+        string workOrderId)
+    {
+        return receiptRequests.Where(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.WorkOrderId == workOrderId &&
+            x.Status != FinishedGoodsReceiptRequest.CancelledStatus);
     }
 }
 

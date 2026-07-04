@@ -624,6 +624,29 @@ public sealed class MesEndpointContractTests
     }
 
     [Fact]
+    public void Finished_goods_receipt_cumulative_quantity_guard_translates_to_npgsql_sum_query()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var sql = CreateFinishedGoodsReceiptRequestCommandHandler.ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                "org-001",
+                "env-dev",
+                "WO-001")
+            .GroupBy(_ => 1)
+            .Select(group => group.Sum(x => x.Quantity))
+            .ToQueryString();
+
+        Assert.Contains("finished_goods_receipt_requests", sql, StringComparison.Ordinal);
+        Assert.Contains("sum", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("status", sql, StringComparison.Ordinal);
+        Assert.Contains("Cancelled", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Convert_plan_to_work_order_persists_demand_planning_source_reference_for_queries_and_traceability()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

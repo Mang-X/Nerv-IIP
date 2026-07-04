@@ -128,7 +128,7 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
 
     public void MarkInventoryPostingFailed(string failureCode, string failureMessage, DateTimeOffset failedAtUtc)
     {
-        if (Status == PostedStatus)
+        if (Status == PostedStatus || Status == CancelledStatus)
         {
             return;
         }
@@ -147,9 +147,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
 
     public void RetryInventoryPosting(string idempotencyKey)
     {
-        if (Status != InventoryPostingFailedStatus && Status != PartiallyPostedStatus)
+        if (Status != InventoryPostingFailedStatus)
         {
-            throw new InvalidOperationException("Only failed or partially posted finished-goods receipt requests can retry Inventory posting.");
+            throw new InvalidOperationException("Only failed finished-goods receipt requests can retry Inventory posting.");
         }
 
         if (RemainingQuantity <= QuantityTolerance)
