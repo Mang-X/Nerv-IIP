@@ -38,7 +38,8 @@ public sealed class PostgreSqlIamAuthService(
         CancellationToken cancellationToken)
     {
         var user = await userRepository.GetByLoginNameAsync(loginName, cancellationToken);
-        if (user is null || !user.Enabled)
+        var now = DateTimeOffset.UtcNow;
+        if (user is null || !user.Enabled || user.IsAccountExpired(now))
         {
             await securityAudit.RecordAndSaveAsync(
                 new SecurityAuditContext($"login:{loginName}", Guid.CreateVersion7().ToString("N"), ipAddress, "unknown", "unknown"),
@@ -52,7 +53,6 @@ public sealed class PostgreSqlIamAuthService(
             throw Unauthorized();
         }
 
-        var now = DateTimeOffset.UtcNow;
         if (user.IsLockedOut(now))
         {
             var auditContext = await CreateUserAuditContextAsync(user, $"user:{user.Id.Id}", ipAddress, cancellationToken);
@@ -127,7 +127,7 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         var user = await userRepository.GetByIdAsync(session.UserId, cancellationToken);
-        if (user is null || !user.Enabled)
+        if (user is null || !user.Enabled || user.IsAccountExpired(now))
         {
             throw Unauthorized();
         }
@@ -206,6 +206,7 @@ public sealed class PostgreSqlIamAuthService(
         var user = await userRepository.GetByIdAsync(userId, cancellationToken);
         if (user is null
             || !user.Enabled
+            || user.IsAccountExpired(now)
             || !string.Equals(user.SecurityStamp, principal.SecurityStamp, StringComparison.Ordinal)
             || user.PermissionVersion != principal.PermissionVersion)
         {
@@ -231,6 +232,36 @@ public sealed class PostgreSqlIamAuthService(
                 membership.OrganizationId,
                 membership.EnvironmentId,
                 cancellationToken));
+    }
+
+    public async Task<string?> GetAuthenticatedUserIdAsync(HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        var principal = tokenService.TryReadPrincipal(httpContext);
+        if (principal is null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var sessionId = new UserSessionId(principal.SessionId);
+        var userId = new UserId(principal.UserId);
+        var session = await userSessionRepository.GetByPrincipalAsync(sessionId, userId, cancellationToken);
+        if (session is null || !session.CanRefresh(now) || session.PermissionVersion != principal.PermissionVersion)
+        {
+            return null;
+        }
+
+        var user = await userRepository.GetByIdAsync(userId, cancellationToken);
+        if (user is null
+            || !user.Enabled
+            || user.IsAccountExpired(now)
+            || !string.Equals(user.SecurityStamp, principal.SecurityStamp, StringComparison.Ordinal)
+            || user.PermissionVersion != principal.PermissionVersion)
+        {
+            return null;
+        }
+
+        return user.Id.Id;
     }
 
     public async Task<bool> UserHasPermissionAsync(
@@ -362,7 +393,7 @@ public sealed class PostgreSqlIamAuthService(
         EnsureCallbackSecret(request.CallbackSecret, provider);
         EnsureAllowedEmailDomain(request.Email, provider);
         var user = await userRepository.GetByEmailAsync(request.Email, cancellationToken);
-        if (user is null || !user.Enabled)
+        if (user is null || !user.Enabled || user.IsAccountExpired(DateTimeOffset.UtcNow))
         {
             throw Unauthorized();
         }
@@ -416,7 +447,7 @@ public sealed class PostgreSqlIamAuthService(
         }
 
         var user = await userRepository.GetByIdAsync(new UserId(context.UserId), cancellationToken);
-        if (user is null || !user.Enabled)
+        if (user is null || !user.Enabled || user.IsAccountExpired(DateTimeOffset.UtcNow))
         {
             throw Unauthorized();
         }
@@ -497,7 +528,12 @@ public sealed class PostgreSqlIamAuthService(
                 membership.EnvironmentId.Id,
                 issuedAtUtc);
         var expiresAtUtc = tokenService.GetAccessTokenExpiresAtUtc(issuedAtUtc);
-        return new AuthResponse(accessToken, refreshToken, session.Id.Id, expiresAtUtc);
+        return new AuthResponse(
+            accessToken,
+            refreshToken,
+            session.Id.Id,
+            expiresAtUtc,
+            user.PasswordChangeRequired || (user.PasswordExpiresAtUtc is not null && user.PasswordExpiresAtUtc <= issuedAtUtc));
     }
 
     private static UnauthorizedAccessException Unauthorized()

@@ -12,18 +12,28 @@ public interface IIamUserApplicationService
 {
     Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken);
 
-    Task<UserResponse> CreateUserAsync(string loginName, string email, string password, CancellationToken cancellationToken);
+    Task<UserResponse> CreateUserAsync(
+        string loginName,
+        string email,
+        string password,
+        DateTimeOffset? accountExpiresAtUtc,
+        CancellationToken cancellationToken);
 
     Task<UserResponse> UpdateUserAsync(
         string userId,
         string loginName,
         string email,
         bool enabled,
+        DateTimeOffset? accountExpiresAtUtc,
         CancellationToken cancellationToken);
+
+    Task EnableUserAsync(string userId, CancellationToken cancellationToken);
 
     Task DisableUserAsync(string userId, CancellationToken cancellationToken);
 
     Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
+
+    Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : IIamUserApplicationService
@@ -42,9 +52,21 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
         return Task.FromResult(users);
     }
 
-    public Task<UserResponse> CreateUserAsync(string loginName, string email, string password, CancellationToken cancellationToken)
+    public Task<UserResponse> CreateUserAsync(
+        string loginName,
+        string email,
+        string password,
+        DateTimeOffset? accountExpiresAtUtc,
+        CancellationToken cancellationToken)
     {
-        return Task.FromResult(ToResponse(store.CreateUser(loginName, email, password)));
+        try
+        {
+            return Task.FromResult(ToResponse(store.CreateUser(loginName, email, password, accountExpiresAtUtc)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
     }
 
     public Task<UserResponse> UpdateUserAsync(
@@ -52,9 +74,16 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
         string loginName,
         string email,
         bool enabled,
+        DateTimeOffset? accountExpiresAtUtc,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(ToResponse(store.UpdateUser(userId, loginName, email, enabled)));
+        return Task.FromResult(ToResponse(store.UpdateUser(userId, loginName, email, enabled, accountExpiresAtUtc)));
+    }
+
+    public Task EnableUserAsync(string userId, CancellationToken cancellationToken)
+    {
+        store.EnableUser(userId);
+        return Task.CompletedTask;
     }
 
     public Task DisableUserAsync(string userId, CancellationToken cancellationToken)
@@ -74,24 +103,50 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
         {
             store.ResetPassword(userId, newPassword);
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
-            throw new KnownException($"User '{userId}' was not found.");
+            throw new KnownException(ex.Message);
         }
 
         return Task.CompletedTask;
     }
 
+    public Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken)
+    {
+        try
+        {
+            store.ChangePassword(userId, currentPassword, newPassword);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
+        return Task.CompletedTask;
+    }
+
     private static UserResponse ToResponse(UserFact user)
     {
-        return new UserResponse(user.UserId, user.LoginName, user.Email, user.Enabled);
+        return new UserResponse(
+            user.UserId,
+            user.LoginName,
+            user.Email,
+            user.Enabled,
+            user.AccountExpiresAtUtc,
+            user.PasswordChangeRequired,
+            user.PasswordExpiresAtUtc,
+            user.LockoutUntilUtc);
     }
 }
 
 public sealed class PostgreSqlIamUserApplicationService(
     IUserRepository repository,
     IUserSessionRepository userSessionRepository,
-    IamPasswordService passwordService) : IIamUserApplicationService
+    IamPasswordService passwordService,
+    IamPasswordPolicy passwordPolicy) : IIamUserApplicationService
 {
     public async Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
@@ -111,8 +166,10 @@ public sealed class PostgreSqlIamUserApplicationService(
         string loginName,
         string email,
         string password,
+        DateTimeOffset? accountExpiresAtUtc,
         CancellationToken cancellationToken)
     {
+        passwordPolicy.ValidateComplexity(password);
         if (await repository.GetByLoginNameAsync(loginName, cancellationToken) is not null)
         {
             throw new KnownException($"Login name '{loginName}' is already used.");
@@ -124,6 +181,7 @@ public sealed class PostgreSqlIamUserApplicationService(
         }
 
         var userId = new UserId($"user-{Guid.CreateVersion7():N}");
+        var now = DateTimeOffset.UtcNow;
         var user = new User(
             userId,
             loginName,
@@ -131,7 +189,11 @@ public sealed class PostgreSqlIamUserApplicationService(
             passwordService.Hash(password),
             true,
             Guid.NewGuid().ToString("n"),
-            1);
+            1,
+            accountExpiresAtUtc,
+            now,
+            passwordPolicy.GetPasswordExpiresAtUtc(now),
+            passwordChangeRequired: true);
         await repository.AddAsync(user, cancellationToken);
         return ToResponse(user);
     }
@@ -141,6 +203,7 @@ public sealed class PostgreSqlIamUserApplicationService(
         string loginName,
         string email,
         bool enabled,
+        DateTimeOffset? accountExpiresAtUtc,
         CancellationToken cancellationToken)
     {
         var typedUserId = new UserId(userId);
@@ -159,15 +222,29 @@ public sealed class PostgreSqlIamUserApplicationService(
             throw new KnownException($"Email '{email}' is already used.");
         }
 
-        user.UpdateProfile(loginName, email, enabled);
+        user.UpdateProfile(loginName, email, enabled, accountExpiresAtUtc);
         return ToResponse(user);
+    }
+
+    public async Task EnableUserAsync(string userId, CancellationToken cancellationToken)
+    {
+        var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
+            ?? throw new KnownException($"User '{userId}' was not found.");
+        user.Enable();
     }
 
     public async Task DisableUserAsync(string userId, CancellationToken cancellationToken)
     {
-        var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
+        var typedUserId = new UserId(userId);
+        var user = await repository.GetByIdAsync(typedUserId, cancellationToken)
             ?? throw new KnownException($"User '{userId}' was not found.");
         user.Disable();
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
+        foreach (var session in sessions)
+        {
+            session.Revoke(now, "user-disabled");
+        }
     }
 
     public async Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken)
@@ -180,9 +257,15 @@ public sealed class PostgreSqlIamUserApplicationService(
         var typedUserId = new UserId(userId);
         var user = await repository.GetByIdAsync(typedUserId, cancellationToken)
             ?? throw new KnownException($"User '{userId}' was not found.");
-        user.UpdatePasswordHash(passwordService.Hash(newPassword));
-
+        passwordPolicy.ValidateNewPassword(user, newPassword);
         var now = DateTimeOffset.UtcNow;
+        user.UpdatePasswordHash(
+            passwordService.Hash(newPassword),
+            now,
+            passwordPolicy.GetPasswordExpiresAtUtc(now),
+            passwordChangeRequired: true,
+            passwordPolicy.Current.PasswordHistoryCount);
+
         var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
         foreach (var session in sessions)
         {
@@ -190,9 +273,40 @@ public sealed class PostgreSqlIamUserApplicationService(
         }
     }
 
+    public async Task ChangePasswordAsync(
+        string userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken)
+    {
+        var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
+            ?? throw new KnownException($"User '{userId}' was not found.");
+        if (!passwordService.Verify(user, currentPassword))
+        {
+            throw new KnownException("Current password is invalid.");
+        }
+
+        passwordPolicy.ValidateNewPassword(user, newPassword);
+        var now = DateTimeOffset.UtcNow;
+        user.UpdatePasswordHash(
+            passwordService.Hash(newPassword),
+            now,
+            passwordPolicy.GetPasswordExpiresAtUtc(now),
+            passwordChangeRequired: false,
+            passwordPolicy.Current.PasswordHistoryCount);
+    }
+
     private static UserResponse ToResponse(User user)
     {
-        return new UserResponse(user.Id.Id, user.LoginName, user.Email, user.Enabled);
+        return new UserResponse(
+            user.Id.Id,
+            user.LoginName,
+            user.Email,
+            user.Enabled,
+            user.AccountExpiresAtUtc,
+            user.PasswordChangeRequired,
+            user.PasswordExpiresAtUtc,
+            user.LockoutUntilUtc);
     }
 }
 

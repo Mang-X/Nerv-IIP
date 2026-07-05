@@ -10,6 +10,7 @@ import UsersPage from './index.vue'
 const iamState = vi.hoisted(() => ({
   createUser: vi.fn(),
   disableUser: vi.fn(),
+  enableUser: vi.fn(),
   filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
   refreshUsers: vi.fn(),
   resetUserPassword: vi.fn(),
@@ -32,6 +33,9 @@ vi.mock('@/composables/useIamAdmin', () => ({
     disableUser: iamState.disableUser,
     disableUserError: computed(() => undefined),
     disableUserPending: shallowRef(false),
+    enableUser: iamState.enableUser,
+    enableUserError: computed(() => undefined),
+    enableUserPending: shallowRef(false),
     filters: reactive(iamState.filters),
     refreshUsers: iamState.refreshUsers,
     resetUserPassword: iamState.resetUserPassword,
@@ -47,6 +51,10 @@ vi.mock('@/composables/useIamAdmin', () => ({
         loginName: 'admin',
         email: 'admin@nerv-iip.local',
         enabled: true,
+        accountExpiresAtUtc: null,
+        passwordChangeRequired: false,
+        passwordExpiresAtUtc: null,
+        lockoutUntilUtc: null,
       },
     ]),
     usersError: computed(() => undefined),
@@ -79,6 +87,7 @@ describe('IAM users page', () => {
     document.body.innerHTML = ''
     iamState.createUser.mockResolvedValue(undefined)
     iamState.disableUser.mockResolvedValue(undefined)
+    iamState.enableUser.mockResolvedValue(undefined)
     iamState.refreshUsers.mockResolvedValue(undefined)
     iamState.resetUserPassword.mockResolvedValue(undefined)
     iamState.filters.pageIndex = 1
@@ -204,7 +213,16 @@ describe('IAM users form dialogs', () => {
     const wrapper = mount(UserEditDialog, {
       props: {
         open: true,
-        user: { userId: 'user-admin', loginName: '', email: '', enabled: true },
+        user: {
+          userId: 'user-admin',
+          loginName: '',
+          email: '',
+          enabled: true,
+          accountExpiresAtUtc: null,
+          passwordChangeRequired: false,
+          passwordExpiresAtUtc: null,
+          lockoutUntilUtc: null,
+        },
       },
       global: { stubs: { ...dialogStubs } },
     })
@@ -229,6 +247,10 @@ describe('IAM users form dialogs', () => {
           loginName: 'admin',
           email: 'admin@nerv-iip.local',
           enabled: true,
+          accountExpiresAtUtc: null,
+          passwordChangeRequired: false,
+          passwordExpiresAtUtc: null,
+          lockoutUntilUtc: null,
         },
       },
       global: { stubs: { ...dialogStubs } },

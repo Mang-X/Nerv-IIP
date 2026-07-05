@@ -38,6 +38,7 @@ public sealed class GatewayConsoleAuthTests
         Assert.Equal(GatewayAccessToken, body!.AccessToken);
         Assert.Equal("refresh-token", body.RefreshToken);
         Assert.Equal("session-001", body.SessionId);
+        Assert.True(body.PasswordChangeRequired);
         AssertPrincipal(Principal, body.Principal);
     }
 
@@ -283,7 +284,8 @@ public sealed class GatewayConsoleAuthTests
                         accessToken = GatewayAccessToken,
                         refreshToken = "new-refresh-token",
                         sessionId = "session-001",
-                        expiresAtUtc = DateTimeOffset.Parse("2026-05-18T08:00:00Z")
+                        expiresAtUtc = DateTimeOffset.Parse("2026-05-18T08:00:00Z"),
+                        passwordChangeRequired = true
                     }))
                 };
             }
@@ -313,6 +315,7 @@ public sealed class GatewayConsoleAuthTests
 
         Assert.Equal(GatewayAccessToken, response.AccessToken);
         Assert.Equal("new-refresh-token", response.RefreshToken);
+        Assert.True(response.PasswordChangeRequired);
         AssertPrincipal(Principal, response.Principal);
         Assert.Equal(HttpMethod.Post, handler.Requests[0].Method);
         Assert.Equal("/api/iam/v1/auth/login", handler.Requests[0].RequestUri!.AbsolutePath);
@@ -393,6 +396,7 @@ public sealed class GatewayConsoleAuthTests
             "refresh-token",
             "session-001",
             DateTimeOffset.UtcNow.AddMinutes(15),
+            true,
             Principal);
     }
 
