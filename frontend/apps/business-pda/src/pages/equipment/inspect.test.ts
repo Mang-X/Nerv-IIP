@@ -43,6 +43,16 @@ const inspections = ref<Array<Record<string, unknown>>>([
     inspector: 'op-1',
     result: 'pass',
     inspectedAtUtc: '2026-06-10T08:00:00Z',
+    measurements: [
+      {
+        characteristicCode: 'bearing-temperature',
+        measuredValue: 65,
+        uomCode: 'C',
+        lowerSpecLimit: 0,
+        upperSpecLimit: 70,
+        isWithinSpec: true,
+      },
+    ],
   },
 ])
 const inspectionsPending = ref(false)
@@ -195,6 +205,35 @@ describe('PDA equipment inspect page', () => {
     expect(body).not.toHaveProperty('environmentId')
     expect(body).not.toHaveProperty('inspector')
     expect(body).not.toHaveProperty('inspectedAtUtc')
+  })
+
+  it('submits entered measurement values with the inspection record', async () => {
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
+    await wrapper.get('[data-testid="measurement-value"]').setValue('65')
+    await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
+    await wrapper.get('[data-testid="measurement-lower"]').setValue('0')
+    await wrapper.get('[data-testid="measurement-upper"]').setValue('70')
+
+    await wrapper.get('[data-testid="submit"]').trigger('click')
+    await flushPromises()
+
+    expect(recordInspection).toHaveBeenCalledTimes(1)
+    expect(recordInspection.mock.calls[0][0]).toEqual({
+      planId: 'p1111111-1111-1111-1111-111111111111',
+      result: 'pass',
+      measurements: [
+        {
+          characteristicCode: 'bearing-temperature',
+          measuredValue: 65,
+          uomCode: 'C',
+          lowerSpecLimit: 0,
+          upperSpecLimit: 70,
+        },
+      ],
+    })
   })
 
   it('disables submit while recordPending (double-submit guard)', async () => {

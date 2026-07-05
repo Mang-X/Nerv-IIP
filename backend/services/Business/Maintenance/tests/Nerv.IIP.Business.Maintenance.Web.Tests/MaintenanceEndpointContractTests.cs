@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -30,7 +31,7 @@ public sealed class MaintenanceEndpointContractTests
     {
         var contracts = MaintenanceEndpointContracts.All.ToArray();
 
-        Assert.Equal(18, contracts.Length);
+        Assert.Equal(20, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceWorkOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/repair-started" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "startMaintenanceRepair");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/work-orders/{workOrderId}/complete" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "completeMaintenanceWorkOrder");
@@ -39,6 +40,8 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/plans" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenancePlans");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansManage && x.OperationId == "recordMaintenanceInspection");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspections" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "listMaintenanceInspections");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/inspection-measurements/trends" && x.PermissionCode == MaintenancePermissionCodes.PlansRead && x.OperationId == "queryMaintenanceInspectionMeasurementTrend");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/reliability/summary" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "queryMaintenanceReliabilitySummary");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersRead && x.OperationId == "listMaintenanceSpareParts");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/spare-parts" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceSparePart");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/maintenance/downtime-reasons" && x.PermissionCode == MaintenancePermissionCodes.WorkOrdersManage && x.OperationId == "createMaintenanceDowntimeReason");
@@ -100,6 +103,64 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal("inspector-002", item.Inspector);
         Assert.Equal("failed", item.Result);
         Assert.Equal(plan.Id, item.PlanId);
+    }
+
+    [Fact]
+    public async Task Maintenance_inspection_records_measurement_values_and_trend_query_returns_device_characteristic_history()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-MEASURE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var inspectedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+
+        await new RecordMaintenanceInspectionCommandHandler(dbContext).Handle(
+            new RecordMaintenanceInspectionCommand(
+                "org-001",
+                "env-dev",
+                plan.Id,
+                null,
+                "inspector-001",
+                "passed",
+                inspectedAtUtc,
+                [
+                    new MaintenanceInspectionMeasurementInput("bearing-temperature", 65m, "C", 0m, 70m),
+                    new MaintenanceInspectionMeasurementInput("noise", 82m, "dB", null, 80m),
+                ]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var listed = await new ListMaintenanceInspectionsQueryHandler(dbContext).Handle(
+            new ListMaintenanceInspectionsQuery("org-001", "env-dev"),
+            CancellationToken.None);
+        var trend = await new QueryMaintenanceInspectionMeasurementTrendQueryHandler(dbContext).Handle(
+            new QueryMaintenanceInspectionMeasurementTrendQuery(
+                "org-001",
+                "env-dev",
+                "DEV-CNC-01",
+                "bearing-temperature",
+                inspectedAtUtc.AddMinutes(-1),
+                inspectedAtUtc.AddMinutes(1)),
+            CancellationToken.None);
+
+        var inspection = Assert.Single(listed.Items);
+        Assert.Collection(
+            inspection.Measurements.OrderBy(x => x.CharacteristicCode),
+            line =>
+            {
+                Assert.Equal("bearing-temperature", line.CharacteristicCode);
+                Assert.True(line.IsWithinSpec);
+            },
+            line =>
+            {
+                Assert.Equal("noise", line.CharacteristicCode);
+                Assert.False(line.IsWithinSpec);
+            });
+
+        var trendItem = Assert.Single(trend.Items);
+        Assert.Equal(65m, trendItem.MeasuredValue);
+        Assert.Equal("C", trendItem.UomCode);
+        Assert.True(trendItem.IsWithinSpec);
     }
 
     [Theory]
@@ -762,6 +823,42 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Complete_work_order_can_require_actual_labor_minutes_by_configuration()
+    {
+        await using var dbContext = CreateDbContext();
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "equipment-failure", "Equipment failure", "breakdown", "equipment-failure"));
+        await dbContext.SaveChangesAsync();
+        var handler = new CompleteMaintenanceWorkOrderCommandHandler(
+            dbContext,
+            Options.Create(new MaintenanceCompletionOptions { RequireActualLaborMinutes = true }));
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(workOrder.Id, "fixed", "equipment-failure", 10, []),
+            CancellationToken.None));
+
+        await handler.Handle(
+            new CompleteMaintenanceWorkOrderCommand(
+                workOrder.Id,
+                "fixed",
+                "equipment-failure",
+                10,
+                [],
+                ActualLaborMinutes: 75,
+                SparePartCostAmount: 120.50m,
+                ExternalServiceCostAmount: 35m,
+                CostCurrencyCode: "CNY"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(75, workOrder.ActualLaborMinutes);
+        Assert.Equal(120.50m, workOrder.SparePartCostAmount);
+        Assert.Equal(35m, workOrder.ExternalServiceCostAmount);
+        Assert.Equal("CNY", workOrder.CostCurrencyCode);
+    }
+
+    [Fact]
     public async Task Downtime_reason_commands_update_delete_and_protect_referenced_reasons()
     {
         await using var dbContext = CreateDbContext();
@@ -825,6 +922,39 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(120m, response.MttrMinutes);
         Assert.Equal(AssetRuntimeSources.Fallback, response.MtbfRuntimeSource);
         Assert.False(response.MtbfRuntimeHasSamples);
+    }
+
+    [Fact]
+    public async Task Reliability_summary_aggregates_labor_and_cost_by_device_and_technician()
+    {
+        await using var dbContext = CreateDbContext();
+        var windowStart = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddDays(1);
+        var first = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
+        var second = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 30);
+        var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001", "worker-002", 45);
+        first.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 75, sparePartCostAmount: 120m, externalServiceCostAmount: 30m, costCurrencyCode: "CNY");
+        second.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 20, sparePartCostAmount: 10m, externalServiceCostAmount: 5m, costCurrencyCode: "CNY");
+        dbContext.MaintenanceWorkOrders.AddRange(first, second, otherDevice);
+        dbContext.Entry(first).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
+        dbContext.Entry(second).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(2);
+        dbContext.Entry(otherDevice).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(3);
+        await dbContext.SaveChangesAsync();
+
+        var response = await new QueryMaintenanceReliabilitySummaryQueryHandler(dbContext).Handle(
+            new QueryMaintenanceReliabilitySummaryQuery("org-001", "env-dev", windowStart, windowEnd, DeviceAssetId: "DEV-CNC-01"),
+            CancellationToken.None);
+
+        var item = Assert.Single(response.Items);
+        Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
+        Assert.Equal("worker-001", item.AssignedTechnicianUserId);
+        Assert.Equal(2, item.WorkOrderCount);
+        Assert.Equal(2, item.CompletedWorkOrderCount);
+        Assert.Equal(120, item.EstimatedLaborMinutes);
+        Assert.Equal(95, item.ActualLaborMinutes);
+        Assert.Equal(130m, item.SparePartCostAmount);
+        Assert.Equal(35m, item.ExternalServiceCostAmount);
+        Assert.Equal(165m, item.TotalCostAmount);
     }
 
     [Fact]
