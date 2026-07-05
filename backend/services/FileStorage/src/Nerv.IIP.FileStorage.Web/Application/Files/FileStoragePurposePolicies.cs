@@ -89,9 +89,8 @@ internal static class FileStoragePurposePolicies
         long usedBytes,
         IConfiguration? configuration)
     {
-        var maxBytes = configuration?.GetValue<long?>($"FileStorage:Quotas:OrganizationPurpose:{organizationId}:{environmentId}:{filePurpose}:MaxBytes")
-            ?? configuration?.GetValue<long?>($"FileStorage:Quotas:Organization:{organizationId}:{environmentId}:MaxBytes")
-            ?? configuration?.GetValue<long?>($"FileStorage:PurposePolicies:{filePurpose}:QuotaBytes");
+        var policy = ResolveQuotaPolicy(organizationId, environmentId, filePurpose, configuration);
+        var maxBytes = policy.MaxBytes;
         if (maxBytes is null)
         {
             return FileStorageQuotaDecision.Allowed(maxBytes, usedBytes);
@@ -102,10 +101,40 @@ internal static class FileStoragePurposePolicies
             : FileStorageQuotaDecision.Rejected(maxBytes, usedBytes);
     }
 
-    public static SemaphoreSlim GetQuotaReservationLock(string organizationId, string environmentId, string filePurpose)
+    public static FileStorageQuotaPolicy ResolveQuotaPolicy(
+        string organizationId,
+        string environmentId,
+        string filePurpose,
+        IConfiguration? configuration)
     {
+        var organizationPurposeMaxBytes = configuration?.GetValue<long?>($"FileStorage:Quotas:OrganizationPurpose:{organizationId}:{environmentId}:{filePurpose}:MaxBytes");
+        if (organizationPurposeMaxBytes is not null)
+        {
+            return new FileStorageQuotaPolicy(FileStorageQuotaScope.OrganizationPurpose, organizationPurposeMaxBytes);
+        }
+
+        var organizationMaxBytes = configuration?.GetValue<long?>($"FileStorage:Quotas:Organization:{organizationId}:{environmentId}:MaxBytes");
+        if (organizationMaxBytes is not null)
+        {
+            return new FileStorageQuotaPolicy(FileStorageQuotaScope.Organization, organizationMaxBytes);
+        }
+
+        return new FileStorageQuotaPolicy(
+            FileStorageQuotaScope.Purpose,
+            configuration?.GetValue<long?>($"FileStorage:PurposePolicies:{filePurpose}:QuotaBytes"));
+    }
+
+    public static SemaphoreSlim GetQuotaReservationLock(
+        string organizationId,
+        string environmentId,
+        string filePurpose,
+        FileStorageQuotaScope quotaScope)
+    {
+        var lockKey = quotaScope == FileStorageQuotaScope.Organization
+            ? $"{organizationId}\u001f{environmentId}"
+            : $"{organizationId}\u001f{environmentId}\u001f{filePurpose}";
         return QuotaReservationLocks.GetOrAdd(
-            $"{organizationId}\u001f{environmentId}\u001f{filePurpose}",
+            lockKey,
             _ => new SemaphoreSlim(1, 1));
     }
 
@@ -164,6 +193,15 @@ internal sealed record FileStorageQuotaDecision(bool IsAllowed, long? MaxBytes, 
 {
     public static FileStorageQuotaDecision Allowed(long? maxBytes, long usedBytes) => new(true, maxBytes, usedBytes);
     public static FileStorageQuotaDecision Rejected(long? maxBytes, long usedBytes) => new(false, maxBytes, usedBytes);
+}
+
+internal sealed record FileStorageQuotaPolicy(FileStorageQuotaScope Scope, long? MaxBytes);
+
+internal enum FileStorageQuotaScope
+{
+    Purpose,
+    OrganizationPurpose,
+    Organization
 }
 
 internal sealed class FileSignature

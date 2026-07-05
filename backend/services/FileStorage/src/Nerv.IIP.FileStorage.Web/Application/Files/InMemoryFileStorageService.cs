@@ -100,10 +100,16 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             return FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!);
         }
 
+        var quotaPolicy = FileStoragePurposePolicies.ResolveQuotaPolicy(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            configuration);
         var quotaLock = FileStoragePurposePolicies.GetQuotaReservationLock(
             request.OrganizationId,
             request.EnvironmentId,
-            request.FilePurpose);
+            request.FilePurpose,
+            quotaPolicy.Scope);
         await quotaLock.WaitAsync(cancellationToken);
         UploadSession session;
         try
@@ -113,7 +119,10 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
                 request.EnvironmentId,
                 request.FilePurpose,
                 request.ExpectedSizeBytes,
-                CalculateUsedBytes(request.OrganizationId, request.EnvironmentId, request.FilePurpose),
+                CalculateUsedBytes(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    quotaPolicy.Scope == FileStorageQuotaScope.Organization ? null : request.FilePurpose),
                 configuration);
             if (!quota.IsAllowed)
             {
@@ -304,10 +313,23 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             return Task.FromResult(FileStorageResult<FileStorageUsageResponse>.BadRequest("OrganizationId and EnvironmentId are required."));
         }
 
-        var usedBytes = CalculateUsedBytes(request.OrganizationId, request.EnvironmentId, request.FilePurpose);
-        var quota = request.FilePurpose is null
-            ? FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, string.Empty, 0, usedBytes, configuration).MaxBytes
-            : FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, request.FilePurpose, 0, usedBytes, configuration).MaxBytes;
+        var quotaPurpose = request.FilePurpose ?? string.Empty;
+        var quotaPolicy = FileStoragePurposePolicies.ResolveQuotaPolicy(
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotaPurpose,
+            configuration);
+        var usedBytes = CalculateUsedBytes(
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotaPolicy.Scope == FileStorageQuotaScope.Organization ? null : request.FilePurpose);
+        var quota = FileStoragePurposePolicies.CheckQuota(
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotaPurpose,
+            0,
+            usedBytes,
+            configuration).MaxBytes;
         return Task.FromResult(FileStorageResult<FileStorageUsageResponse>.Ok(new FileStorageUsageResponse(
             request.OrganizationId,
             request.EnvironmentId,

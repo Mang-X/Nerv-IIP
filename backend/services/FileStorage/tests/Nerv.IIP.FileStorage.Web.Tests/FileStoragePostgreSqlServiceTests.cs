@@ -153,6 +153,52 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task CreateUploadSession_OrganizationQuotaCountsAllPurposes()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.StoredFiles.Add(StoredFileRecord.Create(
+            "file_existing",
+            "org-001",
+            "prod",
+            "AppHub",
+            "ApplicationPackage",
+            "app-42",
+            "application-package",
+            "existing.zip",
+            "application/zip",
+            4096,
+            null,
+            "org-001/file_existing",
+            "clean",
+            "available",
+            DateTimeOffset.UtcNow.AddMinutes(-10),
+            DateTimeOffset.UtcNow.AddMinutes(-10)));
+        await dbContext.SaveChangesAsync();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Quotas:Organization:org-001:prod:MaxBytes"] = "4096"
+            })
+            .Build();
+        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+
+        var result = await service.CreateUploadSessionAsync(
+            CreateUploadRequest() with
+            {
+                FilePurpose = "avatar",
+                FileName = "avatar.png",
+                ContentType = "image/png",
+                ExpectedSizeBytes = 1,
+                Checksum = null
+            },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+        Assert.Equal("File storage quota would be exceeded.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
     public async Task CompleteUploadSession_MarksSessionCompletedAndInsertsStoredFileRecord()
     {
         await using var dbContext = CreateDbContext();

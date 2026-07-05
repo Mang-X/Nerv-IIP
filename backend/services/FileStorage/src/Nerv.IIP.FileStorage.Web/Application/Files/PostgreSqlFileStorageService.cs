@@ -57,10 +57,16 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!);
         }
 
+        var quotaPolicy = FileStoragePurposePolicies.ResolveQuotaPolicy(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            configuration);
         var quotaLock = FileStoragePurposePolicies.GetQuotaReservationLock(
             request.OrganizationId,
             request.EnvironmentId,
-            request.FilePurpose);
+            request.FilePurpose,
+            quotaPolicy.Scope);
         await quotaLock.WaitAsync(cancellationToken);
         UploadSessionRecord session;
         try
@@ -68,7 +74,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             var usedBytes = await CalculateUsedBytesAsync(
                 request.OrganizationId,
                 request.EnvironmentId,
-                request.FilePurpose,
+                quotaPolicy.Scope == FileStorageQuotaScope.Organization ? null : request.FilePurpose,
                 cancellationToken);
             var quota = FileStoragePurposePolicies.CheckQuota(
                 request.OrganizationId,
@@ -273,14 +279,24 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<FileStorageUsageResponse>.BadRequest("OrganizationId and EnvironmentId are required.");
         }
 
+        var quotaPurpose = request.FilePurpose ?? string.Empty;
+        var quotaPolicy = FileStoragePurposePolicies.ResolveQuotaPolicy(
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotaPurpose,
+            configuration);
         var usedBytes = await CalculateUsedBytesAsync(
             request.OrganizationId,
             request.EnvironmentId,
-            request.FilePurpose,
+            quotaPolicy.Scope == FileStorageQuotaScope.Organization ? null : request.FilePurpose,
             cancellationToken);
-        var quota = request.FilePurpose is null
-            ? FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, string.Empty, 0, usedBytes, configuration).MaxBytes
-            : FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, request.FilePurpose, 0, usedBytes, configuration).MaxBytes;
+        var quota = FileStoragePurposePolicies.CheckQuota(
+            request.OrganizationId,
+            request.EnvironmentId,
+            quotaPurpose,
+            0,
+            usedBytes,
+            configuration).MaxBytes;
 
         return FileStorageResult<FileStorageUsageResponse>.Ok(new FileStorageUsageResponse(
             request.OrganizationId,
