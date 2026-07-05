@@ -155,7 +155,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     public void MarkScheduleInvalidated()
     {
-        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        if (Status is OperationTaskLifecycleStatus.InProgress or
+            OperationTaskLifecycleStatus.Paused or
+            OperationTaskLifecycleStatus.Completed or
+            OperationTaskLifecycleStatus.Cancelled)
         {
             return;
         }

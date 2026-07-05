@@ -464,12 +464,66 @@ public sealed class SchedulingPlanReleasedHandlerTests
 
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
             await handler.HandleAsync(integrationEvent, CancellationToken.None);
-            await dbContext.SaveChangesAsync();
         }
 
         await using var assertionDbContext = CreateDbContext(options);
         var task = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
         Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(OperationTaskLifecycleStatus.InProgress)]
+    [InlineData(OperationTaskLifecycleStatus.Paused)]
+    public async Task SchedulePlanInvalidatedHandler_DoesNotOverrideActiveOrPausedOperationTaskStatus(
+        OperationTaskLifecycleStatus status)
+    {
+        var options = CreateDbContextOptions($"mes-scheduling-invalidated-active-{Guid.CreateVersion7():N}", new InMemoryDatabaseRoot());
+        await using (var dbContext = CreateDbContext(options))
+        {
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "FG-APS",
+                "PV-001",
+                1m,
+                10,
+                DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+                "PCS",
+                null));
+            var task = OperationTask.Queue(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-10",
+                10,
+                "WC-OIL",
+                [],
+                DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                TimeSpan.FromMinutes(90));
+            task.Start(DateTimeOffset.Parse("2026-06-01T12:05:00Z"));
+            if (status == OperationTaskLifecycleStatus.Paused)
+            {
+                task.Pause(DateTimeOffset.Parse("2026-06-01T12:10:00Z"));
+            }
+
+            dbContext.OperationTasks.Add(task);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+
+            await handler.HandleAsync(CreateInvalidatedEvent(), CancellationToken.None);
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        var taskAfterInvalidation = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal(status, taskAfterInvalidation.Status);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
     }
 

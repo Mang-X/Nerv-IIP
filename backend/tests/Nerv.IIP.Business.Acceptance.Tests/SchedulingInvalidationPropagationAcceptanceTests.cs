@@ -7,10 +7,10 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
-using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
@@ -19,6 +19,7 @@ using Nerv.IIP.Notification.Infrastructure.Repositories;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.Notifications;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 using MesDbContext = Nerv.IIP.Business.Mes.Infrastructure.ApplicationDbContext;
 using NotificationDbContext = Nerv.IIP.Notification.Infrastructure.ApplicationDbContext;
@@ -34,26 +35,27 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
     public async Task AssetUnavailable_invalidates_scheduling_plan_marks_mes_operation_and_notifies_planner_idempotently()
     {
         await using var schedulingDb = CreateSchedulingDbContext();
-        schedulingDb.SchedulePlans.Add(CreateSchedulePlan());
+        var releasedPlan = CreateSchedulePlan();
+        releasedPlan.Release(FixedNow);
+        schedulingDb.SchedulePlans.Add(releasedPlan);
         await schedulingDb.SaveChangesAsync();
+        var schedulingPublisher = new RecordingIntegrationEventPublisher();
         var schedulingHandler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
             schedulingDb,
             new InMemoryIntegrationEventDeadLetterStore(),
             new FixedTimeProvider(FixedNow),
+            schedulingPublisher,
+            new SchedulePlanInvalidatedIntegrationEventConverter(
+                new FixedTimeProvider(FixedNow),
+                new StubSchedulingIntegrationEventContextAccessor()),
             NullLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
 
         await schedulingHandler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
         var invalidation = await schedulingDb.SchedulePlanInvalidations.SingleAsync();
-        var invalidatedPlan = await schedulingDb.SchedulePlans
-            .Include(x => x.Assignments)
-            .SingleAsync(x => x.PlanId == invalidation.PlanId);
-        var invalidatedEvent = new SchedulePlanInvalidatedIntegrationEventConverter(
-                new FixedTimeProvider(FixedNow),
-                new StubSchedulingIntegrationEventContextAccessor())
-            .Convert(new SchedulePlanInvalidatedDomainEvent(
-                invalidation,
-                SchedulePlanInvalidatedSnapshot.FromPlan(invalidatedPlan, invalidatedPlan.Assignments)));
+        Assert.Equal("plan-released", invalidation.PlanId);
+        var invalidatedEvent = Assert.IsType<SchedulePlanInvalidatedIntegrationEvent>(Assert.Single(schedulingPublisher.Published));
+        Assert.Equal("released", invalidatedEvent.Payload.PlanStatus);
 
         await using var mesDb = CreateMesDbContext();
         mesDb.WorkOrders.Add(WorkOrder.Create(
@@ -84,7 +86,6 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
 
         await mesHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
         await mesHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
-        await mesDb.SaveChangesAsync();
 
         var task = await mesDb.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
         Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
@@ -109,7 +110,7 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .Include(x => x.Tasks)
             .SingleAsync();
         Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, intent.SourceEventType);
-        Assert.Equal("plan-generated", intent.ResourceId);
+        Assert.Equal("plan-released", intent.ResourceId);
         Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
         Assert.Single(intent.Tasks);
         Assert.Equal(1, await notificationDb.ProcessedIntegrationEvents.CountAsync());
@@ -146,7 +147,7 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "env-dev",
             SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
                 ContractVersion: 1,
-                PlanId: "plan-generated",
+                PlanId: "plan-released",
                 ProblemId: "problem-001",
                 ProblemFingerprint: "fingerprint-001",
                 AlgorithmVersion: "aps-lite-v1",
@@ -245,6 +246,21 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<IIntegrationEventEnvelope> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            if (integrationEvent is IIntegrationEventEnvelope envelope)
+            {
+                Published.Add(envelope);
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NoopMediator : IMediator

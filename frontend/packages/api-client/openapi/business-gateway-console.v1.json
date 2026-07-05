@@ -7818,6 +7818,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -8101,6 +8102,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -8542,6 +8544,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -8751,6 +8754,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -8960,6 +8964,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -9382,6 +9387,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -9710,6 +9716,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -9848,6 +9855,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -10029,6 +10037,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -10281,6 +10290,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -10707,6 +10717,7 @@
                 "scrapAccepted",
                 "scrapped",
                 "requested",
+                "scheduleInvalidated",
                 "started",
                 "warning"
               ]
@@ -26575,6 +26586,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -26629,6 +26641,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -26786,6 +26799,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -27244,6 +27258,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -27369,6 +27384,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -27610,6 +27626,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -27962,6 +27979,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -28065,6 +28083,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -28260,6 +28279,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]
@@ -28599,6 +28619,7 @@
               "scrapAccepted",
               "scrapped",
               "requested",
+              "scheduleInvalidated",
               "started",
               "warning"
             ]

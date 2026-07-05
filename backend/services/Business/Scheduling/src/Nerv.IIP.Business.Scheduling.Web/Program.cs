@@ -86,6 +86,7 @@ try
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<ISchedulingIntegrationEventContextAccessor, HttpSchedulingIntegrationEventContextAccessor>();
+    builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
     if (isTesting)
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, NoopSchedulingEquipmentAvailabilityProvider>();

@@ -35,6 +35,7 @@ describe('operationTaskStatusLabel', () => {
     expect(operationTaskStatusLabel('InProgress')).toBe('执行中')
     expect(operationTaskStatusLabel('Paused')).toBe('已暂停')
     expect(operationTaskStatusLabel('Held')).toBe('已暂停')
+    expect(operationTaskStatusLabel('ScheduleInvalidated')).toBe('排程已失效')
     expect(operationTaskStatusLabel('Completed')).toBe('已完成')
     expect(operationTaskStatusLabel('Blocked')).toBe('受阻')
   })

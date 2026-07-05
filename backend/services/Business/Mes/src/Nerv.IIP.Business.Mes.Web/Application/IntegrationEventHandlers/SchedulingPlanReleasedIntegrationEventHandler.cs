@@ -193,6 +193,7 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalid
             .ToArray();
         if (operationIds.Length == 0)
         {
+            await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -207,6 +208,8 @@ public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalid
         {
             task.MarkScheduleInvalidated();
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 

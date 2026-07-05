@@ -32,6 +32,7 @@ export const OPERATION_TASK_STATUS_LABELS: Record<string, string> = {
   InProgress: '执行中',
   Paused: '已暂停',
   Held: '已暂停',
+  ScheduleInvalidated: '排程已失效',
   Completed: '已完成',
   Blocked: '受阻',
 }
