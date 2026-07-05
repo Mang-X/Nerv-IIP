@@ -25,7 +25,7 @@ IndustrialTelemetry 拥有采集后的设备运行事实；Maintenance 拥有维
 
 IndustrialTelemetry 保存 `AlarmEvent`、设备状态快照、tag 映射和采集汇总。`AlarmEvent` 表达“某个设备资产在某个采集口径下发生了报警”这一运行事实，来源可以是 Connector Host、OPC UA、MQTT、SCADA adapter 或其他受控数据入口。
 
-IndustrialTelemetry 只发布 `industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` 等公共集成事件。事件 payload 可携带报警 ID、设备资产 ID、报警代码、严重度、发生时间、清除时间和 correlation 信息，但不得携带 PLC 控制指令、现场控制凭据、大体积时序数据或 SCADA 画面状态。OEE P0 只将设备状态事实值 `running` 视为 productive runtime；`standby`、`idle` 和 `ready` 可以表示 runtime availability 可用，但不计入 OEE productive running ticks。Business Console 既有 `availabilityRate` 字段名暂保持兼容，但当前 P0 数值口径是 productive runtime rate；历史把 standby 计入该字段的窗口在刷新后会下降。`GET /api/business/v1/iiot/runtime-hours` 是 Maintenance 等内部消费者获取运行小时的服务边界，按 UTC 日拆分 productive runtime/loading hours，并仍以 `DeviceStateSnapshot` 为当前事实来源；compute-on-query 窗口最大 366 天，超过该范围需要等 #689 historian/聚合表承接。
+IndustrialTelemetry 只发布 `industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` 等公共集成事件。事件 payload 可携带报警 ID、设备资产 ID、报警代码、严重度、发生时间、清除时间和 correlation 信息，但不得携带 PLC 控制指令、现场控制凭据、大体积时序数据或 SCADA 画面状态。OEE P0 只将设备状态事实值 `running` 视为 productive runtime；`standby`、`idle` 和 `ready` 可以表示 runtime availability 可用，但不计入 OEE productive running ticks。Business Console 既有 `availabilityRate` 字段名暂保持兼容，但当前 P0 数值口径是 productive runtime rate；历史把 standby 计入该字段的窗口在刷新后会下降。`GET /api/business/v1/iiot/runtime-hours` 是 Maintenance 等内部消费者获取运行小时的服务边界，按 UTC 日拆分 productive runtime/loading hours，并仍以 `DeviceStateSnapshot` 为当前事实来源；长生命周期窗口会在服务端按 366 天分片查询以避免单次物化过大，#689 historian/聚合表仍负责后续更高效的历史承接。
 
 ### 2. Maintenance 消费报警并形成维修事实
 

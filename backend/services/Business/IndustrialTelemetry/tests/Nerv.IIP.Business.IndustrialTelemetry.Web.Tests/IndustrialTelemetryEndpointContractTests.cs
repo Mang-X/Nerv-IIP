@@ -77,7 +77,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
-    public void Runtime_hours_validator_rejects_unbounded_query_windows()
+    public void Runtime_hours_validator_allows_long_pm_lifecycle_windows()
     {
         var start = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -88,8 +88,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
             start,
             start.AddDays(367)));
 
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, x => SameProperty(x.PropertyName, nameof(QueryRuntimeHoursQuery.WindowEndUtc)));
+        Assert.True(result.IsValid);
     }
 
     [Fact]
@@ -245,6 +244,27 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("2026-06-02", daily[1].GetProperty("businessDate").GetString());
         Assert.Equal(1.5m, daily[1].GetProperty("runtimeHours").GetDecimal());
         Assert.Equal(2m, daily[1].GetProperty("loadingHours").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Runtime_hours_endpoint_accepts_pm_lifecycle_windows_longer_than_single_chunk()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-RUNTIME-LONG", "running", new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-long-001");
+        await PostSampleAsync(client, "DEV-RUNTIME-LONG", "stopped", new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "runtime-long-002");
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/runtime-hours?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-RUNTIME-LONG&windowStartUtc=2025-01-01T00:00:00Z&windowEndUtc=2026-01-03T00:00:00Z");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(367m * 24m, data.GetProperty("totalRuntimeHours").GetDecimal());
+        Assert.Equal(367m * 24m, data.GetProperty("totalLoadingHours").GetDecimal());
+        Assert.True(data.GetProperty("hasRuntimeSamples").GetBoolean());
     }
 
     [Fact]

@@ -223,17 +223,12 @@ public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 
 public sealed class QueryRuntimeHoursQueryValidator : AbstractValidator<QueryRuntimeHoursQuery>
 {
-    private static readonly TimeSpan MaxWindow = TimeSpan.FromDays(366);
-
     public QueryRuntimeHoursQueryValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
-        RuleFor(x => x.WindowEndUtc)
-            .Must((query, windowEndUtc) => windowEndUtc.ToUniversalTime() - query.WindowStartUtc.ToUniversalTime() <= MaxWindow)
-            .WithMessage("Runtime-hours query window must not exceed 366 days.");
     }
 }
 
@@ -346,27 +341,94 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<QueryRuntimeHoursQuery, RuntimeHoursResponse>
 {
+    private static readonly TimeSpan QueryChunkSize = TimeSpan.FromDays(366);
+
     public async Task<RuntimeHoursResponse> Handle(QueryRuntimeHoursQuery request, CancellationToken cancellationToken)
     {
         var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
         var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
-        var carryInState = await dbContext.DeviceStateSnapshots
+        var stateSampleCount = await CountStateSamplesAsync(request, windowStartUtc, windowEndUtc, cancellationToken);
+        var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
+        for (var chunkStartUtc = windowStartUtc; chunkStartUtc < windowEndUtc;)
+        {
+            var chunkEndUtc = chunkStartUtc.Add(QueryChunkSize);
+            if (chunkEndUtc > windowEndUtc)
+            {
+                chunkEndUtc = windowEndUtc;
+            }
+
+            MergeBuckets(buckets, await QueryChunkBucketsAsync(request, chunkStartUtc, chunkEndUtc, cancellationToken));
+            chunkStartUtc = chunkEndUtc;
+        }
+
+        var orderedBuckets = buckets.Values
+            .OrderBy(x => x.BusinessDate, StringComparer.Ordinal)
+            .ToArray();
+        return new RuntimeHoursResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            stateSampleCount,
+            Math.Round(orderedBuckets.Sum(x => x.RuntimeHours), 6),
+            Math.Round(orderedBuckets.Sum(x => x.LoadingHours), 6),
+            stateSampleCount > 0,
+            orderedBuckets
+                .Select(x => new RuntimeHoursDailyItem(
+                    x.BusinessDate,
+                    Math.Round(x.RuntimeHours, 6),
+                    Math.Round(x.LoadingHours, 6),
+                    x.StateSampleCount))
+                .ToArray());
+    }
+
+    private async Task<int> CountStateSamplesAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var hasCarryInState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => x.OccurredAtUtc < windowStartUtc)
+            .AnyAsync(cancellationToken);
+        var inWindowStateCount = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= windowStartUtc)
+            .Where(x => x.OccurredAtUtc < windowEndUtc)
+            .CountAsync(cancellationToken);
+
+        return inWindowStateCount + (hasCarryInState ? 1 : 0);
+    }
+
+    private async Task<IReadOnlyCollection<RuntimeHoursBucket>> QueryChunkBucketsAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset chunkStartUtc,
+        DateTimeOffset chunkEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var carryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < chunkStartUtc)
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.RecordedAtUtc)
             .ThenByDescending(x => x.SourceSequence)
-            .Select(x => new RuntimeHoursStatePoint(windowStartUtc, x.State))
+            .Select(x => new RuntimeHoursStatePoint(chunkStartUtc, x.State))
             .FirstOrDefaultAsync(cancellationToken);
 
         var inWindowStates = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => x.OccurredAtUtc >= windowStartUtc)
-            .Where(x => x.OccurredAtUtc < windowEndUtc)
+            .Where(x => x.OccurredAtUtc >= chunkStartUtc)
+            .Where(x => x.OccurredAtUtc < chunkEndUtc)
             .OrderBy(x => x.OccurredAtUtc)
             .ThenBy(x => x.RecordedAtUtc)
             .ThenBy(x => x.SourceSequence)
@@ -376,26 +438,22 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
         var states = carryInState is null
             ? inWindowStates
             : [carryInState, .. inWindowStates];
-        var buckets = CalculateDailyRuntimeHours(states, windowStartUtc, windowEndUtc);
+        return CalculateDailyRuntimeHours(states, chunkStartUtc, chunkEndUtc);
+    }
 
-        return new RuntimeHoursResponse(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.DeviceAssetId,
-            windowStartUtc,
-            windowEndUtc,
-            states.Length,
-            Math.Round(buckets.Sum(x => x.RuntimeHours), 6),
-            Math.Round(buckets.Sum(x => x.LoadingHours), 6),
-            states.Length > 0,
-            buckets
-                .OrderBy(x => x.BusinessDate, StringComparer.Ordinal)
-                .Select(x => new RuntimeHoursDailyItem(
-                    x.BusinessDate,
-                    Math.Round(x.RuntimeHours, 6),
-                    Math.Round(x.LoadingHours, 6),
-                    x.StateSampleCount))
-                .ToArray());
+    private static void MergeBuckets(Dictionary<string, RuntimeHoursBucket> target, IReadOnlyCollection<RuntimeHoursBucket> source)
+    {
+        foreach (var bucket in source)
+        {
+            target[bucket.BusinessDate] = target.TryGetValue(bucket.BusinessDate, out var existing)
+                ? existing with
+                {
+                    RuntimeHours = existing.RuntimeHours + bucket.RuntimeHours,
+                    LoadingHours = existing.LoadingHours + bucket.LoadingHours,
+                    StateSampleCount = existing.StateSampleCount + bucket.StateSampleCount,
+                }
+                : bucket;
+        }
     }
 
     private static IReadOnlyCollection<RuntimeHoursBucket> CalculateDailyRuntimeHours(
