@@ -10,6 +10,7 @@ using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Notifications;
+using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
@@ -74,6 +75,8 @@ builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(
     builder.Configuration.GetSection(NotificationDeadLetterAlertOptions.SectionName));
+builder.Services.Configure<ObservabilityAlertOptions>(
+    builder.Configuration.GetSection(ObservabilityAlertOptions.SectionName));
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
@@ -100,6 +103,12 @@ builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
 builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, NotificationDeadLetterReplayHandler>();
 builder.Services.AddScoped<NotificationDeadLetterAlertMonitor>();
 builder.Services.AddHostedService<NotificationDeadLetterAlertWorker>();
+builder.Services.AddScoped<IObservabilityAlertProbe, ServiceHealthAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, NotificationDeadLetterBacklogAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, AppHubConnectorHeartbeatAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, PostgreSqlWatermarkAlertProbe>();
+builder.Services.AddScoped<ObservabilityAlertMonitor>();
+builder.Services.AddHostedService<ObservabilityAlertWorker>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();

@@ -129,6 +129,38 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__NotificationDb: Host=postgres;Port=5432;Database=nerv_iip_notification;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      Observability__Alerts__Enabled: ${NERV_IIP_OBSERVABILITY_ALERTS_ENABLED:-true}
+      Observability__Alerts__OrganizationId: ${NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID:?set NERV_IIP_CONNECTOR_HOST_ORGANIZATION_ID}
+      Observability__Alerts__EnvironmentId: ${NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID:?set NERV_IIP_CONNECTOR_HOST_ENVIRONMENT_ID}
+      Observability__Alerts__InternalServiceBearerToken: ${NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN:?set NERV_IIP_INTERNAL_SERVICE_BEARER_TOKEN}
+      Observability__Alerts__AppHubBaseUrl: http://apphub:8080
+      Observability__Alerts__RecipientRefs__0: ${NERV_IIP_OBSERVABILITY_ALERT_RECIPIENT_REF:-role:ops-admin}
+      Observability__Alerts__Rules__0__RuleId: service-health-apphub
+      Observability__Alerts__Rules__0__Name: AppHub health
+      Observability__Alerts__Rules__0__Kind: service-health
+      Observability__Alerts__Rules__0__HealthUrl: http://apphub:8080/health
+      Observability__Alerts__Rules__1__RuleId: notification-dlq-backlog
+      Observability__Alerts__Rules__1__Name: Notification CAP/DLQ backlog
+      Observability__Alerts__Rules__1__Kind: cap-dlq-backlog
+      Observability__Alerts__Rules__1__Threshold: ${NERV_IIP_OBSERVABILITY_DLQ_THRESHOLD:-1}
+      Observability__Alerts__Rules__2__RuleId: connector-host-heartbeat-stale
+      Observability__Alerts__Rules__2__Name: Connector Host heartbeat stale
+      Observability__Alerts__Rules__2__Kind: connector-heartbeat-stale
+      Observability__Alerts__Rules__2__Threshold: ${NERV_IIP_OBSERVABILITY_HEARTBEAT_STALE_THRESHOLD:-1}
+      Observability__Alerts__Rules__2__HeartbeatMaxAge: ${NERV_IIP_OBSERVABILITY_HEARTBEAT_MAX_AGE:-00:05:00}
+      Observability__Alerts__Rules__3__RuleId: postgres-connection-watermark
+      Observability__Alerts__Rules__3__Name: PostgreSQL connection watermark
+      Observability__Alerts__Rules__3__Kind: postgres-watermark
+      Observability__Alerts__Rules__3__MetricName: connections
+      Observability__Alerts__Rules__3__ConnectionStringName: NotificationDb
+      Observability__Alerts__Rules__3__WatermarkPercent: ${NERV_IIP_OBSERVABILITY_POSTGRES_CONNECTION_WATERMARK:-80}
+      Observability__Alerts__Rules__4__RuleId: postgres-database-size-watermark
+      Observability__Alerts__Rules__4__Name: PostgreSQL database size watermark
+      Observability__Alerts__Rules__4__Kind: postgres-watermark
+      Observability__Alerts__Rules__4__MetricName: database-size
+      Observability__Alerts__Rules__4__ConnectionStringName: NotificationDb
+      Observability__Alerts__Rules__4__WatermarkPercent: ${NERV_IIP_OBSERVABILITY_POSTGRES_DISK_WATERMARK:-85}
+      Observability__Alerts__Rules__4__CapacityMegabytes: ${NERV_IIP_OBSERVABILITY_POSTGRES_CAPACITY_MB:-10240}
     ports:
       - "${NERV_IIP_NOTIFICATION_PORT:-5106}:8080"
 
