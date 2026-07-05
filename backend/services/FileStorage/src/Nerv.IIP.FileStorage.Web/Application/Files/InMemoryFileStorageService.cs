@@ -74,7 +74,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
         uploadSessionTtl = ResolveUploadSessionTtl(configuration);
     }
 
-    public Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
+    public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
         CreateUploadSessionRequest request,
         CancellationToken cancellationToken)
     {
@@ -82,12 +82,12 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
 
         if (!FilePurposePolicy.IsAllowed(request.FilePurpose))
         {
-            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'."));
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest($"Unsupported file purpose '{request.FilePurpose}'.");
         }
 
         if (!FileStorageRequestValidation.IsValidCreateUploadSessionRequest(request))
         {
-            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid."));
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid.");
         }
 
         var declaredType = FileStoragePurposePolicies.ValidateDeclaredType(
@@ -97,41 +97,55 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             configuration);
         if (!declaredType.IsAllowed)
         {
-            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!));
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!);
         }
 
-        var quota = FileStoragePurposePolicies.CheckQuota(
+        var quotaLock = FileStoragePurposePolicies.GetQuotaReservationLock(
             request.OrganizationId,
             request.EnvironmentId,
-            request.FilePurpose,
-            request.ExpectedSizeBytes,
-            CalculateUsedBytes(request.OrganizationId, request.EnvironmentId, request.FilePurpose),
-            configuration);
-        if (!quota.IsAllowed)
+            request.FilePurpose);
+        await quotaLock.WaitAsync(cancellationToken);
+        UploadSession session;
+        try
         {
-            return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded."));
+            var quota = FileStoragePurposePolicies.CheckQuota(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                request.ExpectedSizeBytes,
+                CalculateUsedBytes(request.OrganizationId, request.EnvironmentId, request.FilePurpose),
+                configuration);
+            if (!quota.IsAllowed)
+            {
+                return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var uploadSessionId = NewId("ups");
+            var fileId = NewId("file");
+            session = new UploadSession(
+                uploadSessionId,
+                fileId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                new DomainOwnerReference(request.Owner.OwnerService, request.Owner.OwnerType, request.Owner.OwnerId),
+                request.FilePurpose,
+                request.FileName,
+                request.ContentType,
+                request.ExpectedSizeBytes,
+                request.Checksum,
+                uploadProvider.Provider,
+                now,
+                now.Add(uploadSessionTtl),
+                Completed: false);
+
+            uploadSessions[session.UploadSessionId] = session;
+        }
+        finally
+        {
+            quotaLock.Release();
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var uploadSessionId = NewId("ups");
-        var fileId = NewId("file");
-        var session = new UploadSession(
-            uploadSessionId,
-            fileId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            new DomainOwnerReference(request.Owner.OwnerService, request.Owner.OwnerType, request.Owner.OwnerId),
-            request.FilePurpose,
-            request.FileName,
-            request.ContentType,
-            request.ExpectedSizeBytes,
-            request.Checksum,
-            uploadProvider.Provider,
-            now,
-            now.Add(uploadSessionTtl),
-            Completed: false);
-
-        uploadSessions[session.UploadSessionId] = session;
         var upload = uploadProvider.CreateUploadInstructions(session.UploadSessionId, session.FileId);
 
         var response = new CreateUploadSessionResponse(
@@ -142,7 +156,7 @@ public sealed class InMemoryFileStorageService : IFileStorageService, ILocalFile
             session.ExpiresAtUtc,
             upload);
 
-        return Task.FromResult(FileStorageResult<CreateUploadSessionResponse>.Ok(response));
+        return FileStorageResult<CreateUploadSessionResponse>.Ok(response);
     }
 
     public async Task<FileStorageResult<FileMetadataResponse>> CompleteUploadSessionAsync(

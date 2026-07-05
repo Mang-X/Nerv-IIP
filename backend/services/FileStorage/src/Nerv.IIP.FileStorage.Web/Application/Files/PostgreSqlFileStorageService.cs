@@ -57,46 +57,60 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!);
         }
 
-        var usedBytes = await CalculateUsedBytesAsync(
+        var quotaLock = FileStoragePurposePolicies.GetQuotaReservationLock(
             request.OrganizationId,
             request.EnvironmentId,
-            request.FilePurpose,
-            cancellationToken);
-        var quota = FileStoragePurposePolicies.CheckQuota(
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.FilePurpose,
-            request.ExpectedSizeBytes,
-            usedBytes,
-            configuration);
-        if (!quota.IsAllowed)
+            request.FilePurpose);
+        await quotaLock.WaitAsync(cancellationToken);
+        UploadSessionRecord session;
+        try
         {
-            return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
+            var usedBytes = await CalculateUsedBytesAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                cancellationToken);
+            var quota = FileStoragePurposePolicies.CheckQuota(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                request.ExpectedSizeBytes,
+                usedBytes,
+                configuration);
+            if (!quota.IsAllowed)
+            {
+                return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var uploadSessionId = NewId("ups");
+            var fileId = NewId("file");
+            session = UploadSessionRecord.Create(
+                uploadSessionId,
+                fileId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Owner.OwnerService,
+                request.Owner.OwnerType,
+                request.Owner.OwnerId,
+                request.FilePurpose,
+                request.FileName,
+                request.ContentType,
+                request.ExpectedSizeBytes,
+                request.Checksum,
+                BuildObjectKey(request.OrganizationId, fileId),
+                uploadProvider.Provider,
+                now,
+                now.AddMinutes(15));
+
+            dbContext.UploadSessions.Add(session);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            quotaLock.Release();
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var uploadSessionId = NewId("ups");
-        var fileId = NewId("file");
-        var session = UploadSessionRecord.Create(
-            uploadSessionId,
-            fileId,
-            request.OrganizationId,
-            request.EnvironmentId,
-            request.Owner.OwnerService,
-            request.Owner.OwnerType,
-            request.Owner.OwnerId,
-            request.FilePurpose,
-            request.FileName,
-            request.ContentType,
-            request.ExpectedSizeBytes,
-            request.Checksum,
-            BuildObjectKey(request.OrganizationId, fileId),
-            uploadProvider.Provider,
-            now,
-            now.AddMinutes(15));
-
-        dbContext.UploadSessions.Add(session);
-        await dbContext.SaveChangesAsync(cancellationToken);
         var upload = uploadProvider.CreateUploadInstructions(session.UploadSessionId, session.FileId);
 
         return FileStorageResult<CreateUploadSessionResponse>.Ok(new CreateUploadSessionResponse(

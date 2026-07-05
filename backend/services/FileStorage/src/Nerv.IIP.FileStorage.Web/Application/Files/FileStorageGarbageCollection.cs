@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.FileStorage.Infrastructure;
+using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 
 namespace Nerv.IIP.FileStorage.Web.Application.Files;
@@ -53,13 +54,36 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
                 && x.PhysicalDeleteAfterUtc != null
                 && x.PhysicalDeleteAfterUtc <= now)
             .ToArrayAsync(cancellationToken);
+        var physicalDeleteFileIds = physicalDeleteFiles
+            .Select(x => x.FileId)
+            .ToArray();
+        var physicalDeleteUploadSessions = physicalDeleteFileIds.Length == 0
+            ? Array.Empty<UploadSessionRecord>()
+            : await dbContext.UploadSessions
+                .Where(x => physicalDeleteFileIds.Contains(x.FileId))
+                .ToArrayAsync(cancellationToken);
+        var physicalDeleteDownloadGrants = physicalDeleteFileIds.Length == 0
+            ? Array.Empty<DownloadGrantRecord>()
+            : await dbContext.DownloadGrants
+                .Where(x => physicalDeleteFileIds.Contains(x.FileId))
+                .ToArrayAsync(cancellationToken);
         dbContext.StoredFiles.RemoveRange(physicalDeleteFiles);
+        dbContext.UploadSessions.RemoveRange(physicalDeleteUploadSessions);
+        dbContext.DownloadGrants.RemoveRange(physicalDeleteDownloadGrants);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var localTusFilesRemoved = 0;
         if (tusStoreAccessor.TryGet(out var store))
         {
             foreach (var session in expiredUploadSessions)
+            {
+                if (store.Delete(session.UploadSessionId))
+                {
+                    localTusFilesRemoved++;
+                }
+            }
+
+            foreach (var session in physicalDeleteUploadSessions)
             {
                 if (store.Delete(session.UploadSessionId))
                 {

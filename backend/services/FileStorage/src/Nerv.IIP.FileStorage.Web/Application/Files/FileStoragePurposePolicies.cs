@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 
@@ -5,6 +6,8 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 internal static class FileStoragePurposePolicies
 {
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> QuotaReservationLocks = new(StringComparer.Ordinal);
+
     public static FileStoragePolicyValidationResult ValidateDeclaredType(
         string filePurpose,
         string fileName,
@@ -57,7 +60,11 @@ internal static class FileStoragePurposePolicies
 
         await using var stream = store.OpenRead(uploadSessionId);
         var buffer = new byte[signature.MaxHeaderBytes];
-        var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+        var read = await stream.ReadAtLeastAsync(
+            buffer,
+            buffer.Length,
+            throwOnEndOfStream: false,
+            cancellationToken);
         return signature.Matches(buffer.AsSpan(0, read));
     }
 
@@ -93,6 +100,13 @@ internal static class FileStoragePurposePolicies
         return usedBytes + requestedBytes <= maxBytes.Value
             ? FileStorageQuotaDecision.Allowed(maxBytes, usedBytes)
             : FileStorageQuotaDecision.Rejected(maxBytes, usedBytes);
+    }
+
+    public static SemaphoreSlim GetQuotaReservationLock(string organizationId, string environmentId, string filePurpose)
+    {
+        return QuotaReservationLocks.GetOrAdd(
+            $"{organizationId}\u001f{environmentId}\u001f{filePurpose}",
+            _ => new SemaphoreSlim(1, 1));
     }
 
     private static HashSet<string> GetStringSet(IConfiguration? configuration, string key)

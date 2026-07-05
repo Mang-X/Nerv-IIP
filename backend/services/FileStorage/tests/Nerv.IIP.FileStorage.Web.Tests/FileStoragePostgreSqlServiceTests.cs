@@ -685,67 +685,88 @@ public sealed class FileStoragePostgreSqlServiceTests
     [Fact]
     public async Task GarbageCollector_SoftDeletesExpiredFormalFilesThenPhysicallyRemovesAfterGrace()
     {
-        await using var dbContext = CreateDbContext();
-        var now = DateTimeOffset.UtcNow;
-        dbContext.StoredFiles.AddRange(
-            StoredFileRecord.Create(
-                "file_old",
-                "org-001",
-                "prod",
-                "AppHub",
-                "ApplicationPackage",
-                "app-42",
-                "application-package",
-                "old.zip",
-                "application/zip",
-                5,
-                null,
-                "org-001/file_old",
-                "clean",
-                "available",
-                now.AddDays(-30),
-                now.AddDays(-30)),
-            StoredFileRecord.Create(
-                "file_recent",
-                "org-001",
-                "prod",
-                "AppHub",
-                "ApplicationPackage",
-                "app-42",
-                "application-package",
-                "recent.zip",
-                "application/zip",
-                5,
-                null,
-                "org-001/file_recent",
-                "clean",
-                "available",
-                now,
-                now));
-        await dbContext.SaveChangesAsync();
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["FileStorage:PurposePolicies:application-package:RetentionSeconds"] = "3600",
-                ["FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds"] = "60"
-            })
-            .Build();
-        var collector = new PostgreSqlFileStorageGarbageCollector(
-            dbContext,
-            new TestTusStoreAccessor(CreateTusStore(CreateTempDirectory())),
-            configuration);
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            var now = DateTimeOffset.UtcNow;
+            AddUploadSession(dbContext, "ups_old", "file_old", now.AddDays(-30), now.AddDays(-29), completed: true);
+            AddUploadSession(dbContext, "ups_recent", "file_recent", now, now.AddMinutes(15), completed: true);
+            dbContext.StoredFiles.AddRange(
+                StoredFileRecord.Create(
+                    "file_old",
+                    "org-001",
+                    "prod",
+                    "AppHub",
+                    "ApplicationPackage",
+                    "app-42",
+                    "application-package",
+                    "old.zip",
+                    "application/zip",
+                    5,
+                    null,
+                    "org-001/file_old",
+                    "clean",
+                    "available",
+                    now.AddDays(-30),
+                    now.AddDays(-30)),
+                StoredFileRecord.Create(
+                    "file_recent",
+                    "org-001",
+                    "prod",
+                    "AppHub",
+                    "ApplicationPackage",
+                    "app-42",
+                    "application-package",
+                    "recent.zip",
+                    "application/zip",
+                    5,
+                    null,
+                    "org-001/file_recent",
+                    "clean",
+                    "available",
+                    now,
+                    now));
+            dbContext.DownloadGrants.AddRange(
+                DownloadGrantRecord.Create("dgr_old", "file_old", "org-001", "prod", "server-proxy", now, now.AddMinutes(10)),
+                DownloadGrantRecord.Create("dgr_recent", "file_recent", "org-001", "prod", "server-proxy", now, now.AddMinutes(10)));
+            await dbContext.SaveChangesAsync();
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:PurposePolicies:application-package:RetentionSeconds"] = "3600",
+                    ["FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds"] = "60"
+                })
+                .Build();
+            var store = CreateTusStore(rootPath);
+            await WriteTusBytesAsync(store, "ups_old");
+            await WriteTusBytesAsync(store, "ups_recent");
+            var collector = new PostgreSqlFileStorageGarbageCollector(
+                dbContext,
+                new TestTusStoreAccessor(store),
+                configuration);
 
-        var softDelete = await collector.CollectAsync(CancellationToken.None);
-        var oldFile = await dbContext.StoredFiles.SingleAsync(x => x.FileId == "file_old");
-        oldFile.MarkDeleted(now.AddMinutes(-2), "retention-expired");
-        await dbContext.SaveChangesAsync();
-        var physicalDelete = await collector.CollectAsync(CancellationToken.None);
+            var softDelete = await collector.CollectAsync(CancellationToken.None);
+            var oldFile = await dbContext.StoredFiles.SingleAsync(x => x.FileId == "file_old");
+            oldFile.MarkDeleted(now.AddMinutes(-2), "retention-expired");
+            await dbContext.SaveChangesAsync();
+            var physicalDelete = await collector.CollectAsync(CancellationToken.None);
 
-        Assert.Equal(1, softDelete.FormalFilesSoftDeleted);
-        Assert.Equal("deleted", oldFile.Status);
-        Assert.NotNull(oldFile.DeletedAtUtc);
-        Assert.Equal(1, physicalDelete.FormalFilesPhysicallyDeleted);
-        Assert.Equal(["file_recent"], await dbContext.StoredFiles.Select(x => x.FileId).ToArrayAsync());
+            Assert.Equal(1, softDelete.FormalFilesSoftDeleted);
+            Assert.Equal("deleted", oldFile.Status);
+            Assert.NotNull(oldFile.DeletedAtUtc);
+            Assert.Equal(1, physicalDelete.FormalFilesPhysicallyDeleted);
+            Assert.Equal(1, physicalDelete.LocalTusFilesRemoved);
+            Assert.False(store.Exists("ups_old"));
+            Assert.True(store.Exists("ups_recent"));
+            Assert.Equal(["file_recent"], await dbContext.StoredFiles.OrderBy(x => x.FileId).Select(x => x.FileId).ToArrayAsync());
+            Assert.Equal(["ups_recent"], await dbContext.UploadSessions.OrderBy(x => x.UploadSessionId).Select(x => x.UploadSessionId).ToArrayAsync());
+            Assert.Equal(["dgr_recent"], await dbContext.DownloadGrants.OrderBy(x => x.DownloadGrantId).Select(x => x.DownloadGrantId).ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
     }
 
     [Fact]

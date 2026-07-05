@@ -52,6 +52,8 @@ public sealed class LoggingFileStorageSecurityAlertSink(ILogger<LoggingFileStora
 
 internal sealed class LocalEicarFileContentScanner : IFileContentScanner
 {
+    private const int MaxSignatureScanBytes = 64 * 1024;
+
     private static readonly byte[][] MalwareTestSignatures =
     [
         Encoding.ASCII.GetBytes("EICAR-STANDARD-ANTIVIRUS-TEST-FILE"),
@@ -60,12 +62,18 @@ internal sealed class LocalEicarFileContentScanner : IFileContentScanner
 
     public async Task<FileContentScanResult> ScanAsync(Stream content, CancellationToken cancellationToken)
     {
-        using var buffer = new MemoryStream();
-        await content.CopyToAsync(buffer, cancellationToken);
-        var bytes = buffer.ToArray();
-        return MalwareTestSignatures.Any(signature => bytes.AsSpan().IndexOf(signature) >= 0)
-            ? FileContentScanResult.Malware("Malware test signature detected.")
-            : FileContentScanResult.Clean;
+        var buffer = new byte[MaxSignatureScanBytes];
+        var read = await content.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, cancellationToken);
+        var scannedBytes = buffer.AsSpan(0, read);
+        foreach (var signature in MalwareTestSignatures)
+        {
+            if (scannedBytes.IndexOf(signature) >= 0)
+            {
+                return FileContentScanResult.Malware("Malware test signature detected.");
+            }
+        }
+
+        return FileContentScanResult.Clean;
     }
 }
 
