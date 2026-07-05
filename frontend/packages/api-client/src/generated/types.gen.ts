@@ -555,6 +555,22 @@ export type NervIipPlatformGatewayWebEndpointsFilesConsoleListFilesRequest = {
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsFileStorageFileStorageUsageResponse | null;
+};
+
+export type NervIipContractsFileStorageFileStorageUsageResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    filePurpose?: string | null;
+    usedBytes?: number;
+    quotaBytes?: number | null;
+};
+
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsFileStorageDownloadGrantResponse | null;
 };
@@ -1529,6 +1545,35 @@ export type ListConsoleFilesResponses = {
 };
 
 export type ListConsoleFilesResponse = ListConsoleFilesResponses[keyof ListConsoleFilesResponses];
+
+export type GetConsoleFileStorageUsageData = {
+    body?: never;
+    path?: never;
+    query?: {
+        filePurpose?: string | null;
+    };
+    url: '/api/console/v1/files/usage';
+};
+
+export type GetConsoleFileStorageUsageErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleFileStorageUsageResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse;
+};
+
+export type GetConsoleFileStorageUsageResponse = GetConsoleFileStorageUsageResponses[keyof GetConsoleFileStorageUsageResponses];
 
 export type GetConsoleFileMetadataData = {
     body?: never;

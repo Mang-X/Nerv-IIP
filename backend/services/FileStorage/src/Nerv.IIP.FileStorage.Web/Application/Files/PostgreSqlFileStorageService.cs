@@ -47,6 +47,33 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<CreateUploadSessionResponse>.BadRequest("Upload session request is invalid.");
         }
 
+        var declaredType = FileStoragePurposePolicies.ValidateDeclaredType(
+            request.FilePurpose,
+            request.FileName,
+            request.ContentType,
+            configuration);
+        if (!declaredType.IsAllowed)
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.BadRequest(declaredType.Message!);
+        }
+
+        var usedBytes = await CalculateUsedBytesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            cancellationToken);
+        var quota = FileStoragePurposePolicies.CheckQuota(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            request.ExpectedSizeBytes,
+            usedBytes,
+            configuration);
+        if (!quota.IsAllowed)
+        {
+            return FileStorageResult<CreateUploadSessionResponse>.Conflict("File storage quota would be exceeded.");
+        }
+
         var now = DateTimeOffset.UtcNow;
         var uploadSessionId = NewId("ups");
         var fileId = NewId("file");
@@ -122,6 +149,17 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         if (tusValidation is not null)
         {
             return FileStorageResult<FileMetadataResponse>.Failure(tusValidation.StatusCode, tusValidation.Message);
+        }
+
+        if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
+                session.FileName,
+                session.ContentType,
+                session.Provider,
+                session.UploadSessionId,
+                tusStoreAccessor,
+                cancellationToken))
+        {
+            return FileStorageResult<FileMetadataResponse>.BadRequest("Uploaded content does not match the declared file type.");
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -210,6 +248,32 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             .ToArrayAsync(cancellationToken);
 
         return FileStorageResult<FileListResponse>.Ok(new FileListResponse(total, items));
+    }
+
+    public async Task<FileStorageResult<FileStorageUsageResponse>> GetUsageAsync(
+        FileStorageUsageRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.OrganizationId) || string.IsNullOrWhiteSpace(request.EnvironmentId))
+        {
+            return FileStorageResult<FileStorageUsageResponse>.BadRequest("OrganizationId and EnvironmentId are required.");
+        }
+
+        var usedBytes = await CalculateUsedBytesAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            cancellationToken);
+        var quota = request.FilePurpose is null
+            ? FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, string.Empty, 0, usedBytes, configuration).MaxBytes
+            : FileStoragePurposePolicies.CheckQuota(request.OrganizationId, request.EnvironmentId, request.FilePurpose, 0, usedBytes, configuration).MaxBytes;
+
+        return FileStorageResult<FileStorageUsageResponse>.Ok(new FileStorageUsageResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.FilePurpose,
+            usedBytes,
+            quota));
     }
 
     public async Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
@@ -370,5 +434,38 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
     private static string BuildObjectKey(string organizationId, string fileId)
     {
         return $"{organizationId}/{fileId}";
+    }
+
+    private async Task<long> CalculateUsedBytesAsync(
+        string organizationId,
+        string environmentId,
+        string? filePurpose,
+        CancellationToken cancellationToken)
+    {
+        var storedBytes = dbContext.StoredFiles
+            .Where(file => file.OrganizationId == organizationId
+                && file.EnvironmentId == environmentId
+                && file.Status != "deleted");
+        if (!string.IsNullOrWhiteSpace(filePurpose))
+        {
+            storedBytes = storedBytes.Where(file => file.FilePurpose == filePurpose);
+        }
+
+        var storedTotal = await storedBytes.SumAsync(file => file.SizeBytes, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var reservedBytes = dbContext.UploadSessions
+            .Where(session => !session.Completed
+                && session.ExpiresAtUtc > now
+                && session.OrganizationId == organizationId
+                && session.EnvironmentId == environmentId);
+        if (!string.IsNullOrWhiteSpace(filePurpose))
+        {
+            reservedBytes = reservedBytes.Where(session => session.FilePurpose == filePurpose);
+        }
+
+        var reservedTotal = await reservedBytes.SumAsync(session => session.ExpectedSizeBytes, cancellationToken);
+
+        return storedTotal + reservedTotal;
     }
 }

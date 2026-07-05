@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +8,7 @@ using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
+using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
@@ -65,6 +67,92 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task CreateUploadSession_DisallowedContentTypeOrExtension_ReturnsBadRequestWithoutPersisting()
+    {
+        await using var dbContext = CreateDbContext();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:PurposePolicies:application-package:AllowedContentTypes:0"] = "application/zip",
+                ["FileStorage:PurposePolicies:application-package:AllowedExtensions:0"] = ".zip",
+                ["FileStorage:PurposePolicies:application-package:BlockedExtensions:0"] = ".ps1"
+            })
+            .Build();
+        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var request = CreateUploadRequest() with
+        {
+            FileName = "install.ps1",
+            ContentType = "text/plain"
+        };
+
+        var result = await service.CreateUploadSessionAsync(request, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+        Assert.Equal("File type is not allowed for purpose 'application-package'.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateUploadSession_OverOrganizationPurposeQuota_ReturnsConflictWithoutPersisting()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.StoredFiles.Add(StoredFileRecord.Create(
+            "file_existing",
+            "org-001",
+            "prod",
+            "AppHub",
+            "ApplicationPackage",
+            "app-42",
+            "application-package",
+            "existing.zip",
+            "application/zip",
+            4096,
+            null,
+            "org-001/file_existing",
+            "clean",
+            "available",
+            DateTimeOffset.UtcNow.AddMinutes(-10),
+            DateTimeOffset.UtcNow.AddMinutes(-10)));
+        await dbContext.SaveChangesAsync();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Quotas:OrganizationPurpose:org-001:prod:application-package:MaxBytes"] = "4096"
+            })
+            .Build();
+        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+
+        var result = await service.CreateUploadSessionAsync(CreateUploadRequest() with { ExpectedSizeBytes = 1 }, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, result.StatusCode);
+        Assert.Equal("File storage quota would be exceeded.", result.Error?.Message);
+        Assert.Empty(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CreateUploadSession_CountsActiveUploadReservationsForQuota()
+    {
+        await using var dbContext = CreateDbContext();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:Quotas:OrganizationPurpose:org-001:prod:application-package:MaxBytes"] = "4096"
+            })
+            .Build();
+        var service = new PostgreSqlFileStorageService(dbContext, new ServerProxyUploadProvider(), configuration: configuration);
+        var first = await service.CreateUploadSessionAsync(CreateUploadRequest(), CancellationToken.None);
+        Assert.Equal(StatusCodes.Status200OK, first.StatusCode);
+
+        var second = await service.CreateUploadSessionAsync(
+            CreateUploadRequest() with { ExpectedSizeBytes = 1 },
+            CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status409Conflict, second.StatusCode);
+        Assert.Equal("File storage quota would be exceeded.", second.Error?.Message);
+        Assert.Single(await dbContext.UploadSessions.ToListAsync());
+    }
+
+    [Fact]
     public async Task CompleteUploadSession_MarksSessionCompletedAndInsertsStoredFileRecord()
     {
         await using var dbContext = CreateDbContext();
@@ -97,6 +185,123 @@ public sealed class FileStoragePostgreSqlServiceTests
         Assert.Equal("clean", storedFile.ScanStatus);
         Assert.Equal("available", storedFile.Status);
         AssertObjectKeyIsNotExposed(result.Value);
+    }
+
+    [Fact]
+    public async Task CompleteUploadSession_TusMagicMismatch_ReturnsBadRequestWithoutCompleting()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            var store = CreateTusStore(rootPath);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:PurposePolicies:application-package:AllowedContentTypes:0"] = "application/zip",
+                    ["FileStorage:PurposePolicies:application-package:AllowedExtensions:0"] = ".zip"
+                })
+                .Build();
+            var service = new PostgreSqlFileStorageService(
+                dbContext,
+                new TusUploadProvider(),
+                new TestTusStoreAccessor(store),
+                configuration);
+            var created = (await service.CreateUploadSessionAsync(
+                CreateUploadRequest() with { ExpectedSizeBytes = 9, Checksum = null },
+                CancellationToken.None)).Value!;
+            await WriteTusBytesAsync(store, created.UploadSessionId, "not-a-zip"u8.ToArray());
+
+            var result = await service.CompleteUploadSessionAsync(
+                created.UploadSessionId,
+                new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 9),
+                CancellationToken.None);
+
+            Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+            Assert.Equal("Uploaded content does not match the declared file type.", result.Error?.Message);
+            Assert.False((await dbContext.UploadSessions.SingleAsync()).Completed);
+            Assert.Empty(await dbContext.StoredFiles.ToArrayAsync());
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
+    }
+
+    [Fact]
+    public async Task Scanner_MarksEicarFileAsMalwareAndDownloadGrantCannotBeRedeemed()
+    {
+        var rootPath = CreateTempDirectory();
+        try
+        {
+            await using var dbContext = CreateDbContext();
+            var store = CreateTusStore(rootPath);
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:Scanning:Enabled"] = "true",
+                    ["FileStorage:Scanning:Adapter"] = "local-eicar",
+                    ["FileStorage:Scanning:UnavailablePolicy"] = "block"
+                })
+                .Build();
+            var eicarBytes = Encoding.ASCII.GetBytes("NERV-IIP-MALWARE-TEST-FILE");
+            AddUploadSession(dbContext, "ups_eicar", "file_eicar", DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddMinutes(5), completed: true);
+            dbContext.StoredFiles.Add(StoredFileRecord.Create(
+                "file_eicar",
+                "org-001",
+                "prod",
+                "AppHub",
+                "ApplicationPackage",
+                "app-42",
+                "attachment",
+                "eicar.txt",
+                "text/plain",
+                eicarBytes.Length,
+                null,
+                "org-001/file_eicar",
+                "pending",
+                "available",
+                DateTimeOffset.UtcNow.AddMinutes(-5),
+                DateTimeOffset.UtcNow.AddMinutes(-4)));
+            await dbContext.SaveChangesAsync();
+            var writtenOffset = await WriteTusBytesAsync(store, "ups_eicar", eicarBytes);
+            Assert.Equal(eicarBytes.Length, writtenOffset);
+            Assert.Equal(eicarBytes.Length, store.GetOffset("ups_eicar"));
+
+            var alertSink = new CapturingSecurityAlertSink();
+            var scanner = new PostgreSqlFileStorageScanner(
+                dbContext,
+                new TestTusStoreAccessor(store),
+                configuration,
+                alertSink,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<PostgreSqlFileStorageScanner>.Instance);
+            var scanResult = await scanner.ScanPendingFilesAsync(CancellationToken.None);
+            var service = new PostgreSqlFileStorageService(
+                dbContext,
+                new TusUploadProvider(),
+                new TestTusStoreAccessor(store),
+                configuration);
+            var grant = await service.CreateDownloadGrantAsync("file_eicar", new CreateDownloadGrantRequest("org-001", "prod"), CancellationToken.None);
+            var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(grant.Value!.Download.Url.Split('/').Last(), "org-001", "prod", CancellationToken.None);
+            var file = await dbContext.StoredFiles.SingleAsync();
+
+            Assert.True(
+                scanResult.MalwareFiles == 1,
+                $"Expected one malware file, got clean={scanResult.CleanFiles}, malware={scanResult.MalwareFiles}, failed={scanResult.FailedFiles}, detail={file.ScanDetail}.");
+            Assert.Equal("malware", file.ScanStatus);
+            Assert.NotNull(file.ScannedAtUtc);
+            Assert.Contains("Malware test signature", file.ScanDetail, StringComparison.OrdinalIgnoreCase);
+            Assert.Null(uploadSessionId);
+            var alert = Assert.Single(alertSink.Intents);
+            Assert.Equal("file_eicar", alert.FileId);
+            Assert.Equal("org-001", alert.OrganizationId);
+            Assert.Equal("prod", alert.EnvironmentId);
+            Assert.Equal("attachment", alert.FilePurpose);
+        }
+        finally
+        {
+            DeleteTempDirectory(rootPath);
+        }
     }
 
     [Fact]
@@ -478,6 +683,72 @@ public sealed class FileStoragePostgreSqlServiceTests
     }
 
     [Fact]
+    public async Task GarbageCollector_SoftDeletesExpiredFormalFilesThenPhysicallyRemovesAfterGrace()
+    {
+        await using var dbContext = CreateDbContext();
+        var now = DateTimeOffset.UtcNow;
+        dbContext.StoredFiles.AddRange(
+            StoredFileRecord.Create(
+                "file_old",
+                "org-001",
+                "prod",
+                "AppHub",
+                "ApplicationPackage",
+                "app-42",
+                "application-package",
+                "old.zip",
+                "application/zip",
+                5,
+                null,
+                "org-001/file_old",
+                "clean",
+                "available",
+                now.AddDays(-30),
+                now.AddDays(-30)),
+            StoredFileRecord.Create(
+                "file_recent",
+                "org-001",
+                "prod",
+                "AppHub",
+                "ApplicationPackage",
+                "app-42",
+                "application-package",
+                "recent.zip",
+                "application/zip",
+                5,
+                null,
+                "org-001/file_recent",
+                "clean",
+                "available",
+                now,
+                now));
+        await dbContext.SaveChangesAsync();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["FileStorage:PurposePolicies:application-package:RetentionSeconds"] = "3600",
+                ["FileStorage:GarbageCollection:PhysicalDeleteGraceSeconds"] = "60"
+            })
+            .Build();
+        var collector = new PostgreSqlFileStorageGarbageCollector(
+            dbContext,
+            new TestTusStoreAccessor(CreateTusStore(CreateTempDirectory())),
+            configuration);
+
+        var softDelete = await collector.CollectAsync(CancellationToken.None);
+        var oldFile = await dbContext.StoredFiles.SingleAsync(x => x.FileId == "file_old");
+        oldFile.MarkDeleted(now.AddMinutes(-2), "retention-expired");
+        await dbContext.SaveChangesAsync();
+        var physicalDelete = await collector.CollectAsync(CancellationToken.None);
+
+        Assert.Equal(1, softDelete.FormalFilesSoftDeleted);
+        Assert.Equal("deleted", oldFile.Status);
+        Assert.NotNull(oldFile.DeletedAtUtc);
+        Assert.Equal(1, physicalDelete.FormalFilesPhysicallyDeleted);
+        Assert.Equal(["file_recent"], await dbContext.StoredFiles.Select(x => x.FileId).ToArrayAsync());
+    }
+
+    [Fact]
     public async Task CreateDownloadGrant_InsertsDownloadGrantRecord()
     {
         await using var dbContext = CreateDbContext();
@@ -604,6 +875,12 @@ public sealed class FileStoragePostgreSqlServiceTests
         await store.AppendAsync(uploadSessionId, 0, stream, CancellationToken.None);
     }
 
+    private static async Task<long> WriteTusBytesAsync(LocalTusFileStore store, string uploadSessionId, byte[] bytes)
+    {
+        await using var stream = new MemoryStream(bytes);
+        return await store.AppendAsync(uploadSessionId, 0, stream, CancellationToken.None);
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), $"nerv-filestorage-gc-{Guid.NewGuid():N}");
@@ -625,6 +902,19 @@ public sealed class FileStoragePostgreSqlServiceTests
         {
             store = localStore;
             return true;
+        }
+    }
+
+    private sealed class CapturingSecurityAlertSink : IFileStorageSecurityAlertSink
+    {
+        private readonly List<FileStorageSecurityAlertIntent> intents = [];
+
+        public IReadOnlyCollection<FileStorageSecurityAlertIntent> Intents => intents;
+
+        public Task PublishMalwareDetectedAsync(FileStorageSecurityAlertIntent intent, CancellationToken cancellationToken)
+        {
+            intents.Add(intent);
+            return Task.CompletedTask;
         }
     }
 

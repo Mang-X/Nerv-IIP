@@ -22,7 +22,10 @@ if (usePostgreSql)
 {
     builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
     builder.Services.AddScoped<PostgreSqlFileStorageGarbageCollector>();
+    builder.Services.AddScoped<PostgreSqlFileStorageScanner>();
+    builder.Services.AddScoped<IFileStorageSecurityAlertSink, LoggingFileStorageSecurityAlertSink>();
     builder.Services.AddHostedService<FileStorageGarbageCollectionHostedService>();
+    builder.Services.AddHostedService<FileStorageScanHostedService>();
 }
 else
 {

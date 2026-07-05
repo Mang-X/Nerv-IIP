@@ -7,7 +7,9 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 public sealed record FileStorageGarbageCollectionResult(
     int ExpiredUploadSessionsRemoved,
     int ExpiredDownloadGrantsRemoved,
-    int LocalTusFilesRemoved);
+    int LocalTusFilesRemoved,
+    int FormalFilesSoftDeleted = 0,
+    int FormalFilesPhysicallyDeleted = 0);
 
 public sealed class PostgreSqlFileStorageGarbageCollector(
     ApplicationDbContext dbContext,
@@ -26,6 +28,32 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
 
         dbContext.UploadSessions.RemoveRange(expiredUploadSessions);
         dbContext.DownloadGrants.RemoveRange(expiredDownloadGrants);
+        var physicalDeleteGrace = FileStoragePurposePolicies.ResolvePhysicalDeleteGrace(configuration);
+        var softDeleted = 0;
+        var activeFiles = await dbContext.StoredFiles
+            .Where(x => x.Status == FileStorageScanPolicy.Available)
+            .ToArrayAsync(cancellationToken);
+        foreach (var file in activeFiles)
+        {
+            var retentionSeconds = FileStoragePurposePolicies.ResolveRetentionSeconds(file.FilePurpose, configuration);
+            if (retentionSeconds is null || retentionSeconds.Value < 0)
+            {
+                continue;
+            }
+
+            if (file.CompletedAtUtc.AddSeconds(retentionSeconds.Value) <= now)
+            {
+                file.MarkDeleted(now, "retention-expired", physicalDeleteGrace);
+                softDeleted++;
+            }
+        }
+
+        var physicalDeleteFiles = await dbContext.StoredFiles
+            .Where(x => x.Status == "deleted"
+                && x.PhysicalDeleteAfterUtc != null
+                && x.PhysicalDeleteAfterUtc <= now)
+            .ToArrayAsync(cancellationToken);
+        dbContext.StoredFiles.RemoveRange(physicalDeleteFiles);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var localTusFilesRemoved = 0;
@@ -51,7 +79,9 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
         return new FileStorageGarbageCollectionResult(
             expiredUploadSessions.Length,
             expiredDownloadGrants.Length,
-            localTusFilesRemoved);
+            localTusFilesRemoved,
+            softDeleted,
+            physicalDeleteFiles.Length);
     }
 
     private static TimeSpan ResolveOrphanGracePeriod(IConfiguration? configuration)
@@ -86,16 +116,25 @@ public sealed class FileStorageGarbageCollectionHostedService(
             using var scope = scopeFactory.CreateScope();
             var collector = scope.ServiceProvider.GetRequiredService<PostgreSqlFileStorageGarbageCollector>();
             var result = await collector.CollectAsync(cancellationToken);
-            if (result is { ExpiredUploadSessionsRemoved: 0, ExpiredDownloadGrantsRemoved: 0, LocalTusFilesRemoved: 0 })
+            if (result is
+                {
+                    ExpiredUploadSessionsRemoved: 0,
+                    ExpiredDownloadGrantsRemoved: 0,
+                    LocalTusFilesRemoved: 0,
+                    FormalFilesSoftDeleted: 0,
+                    FormalFilesPhysicallyDeleted: 0
+                })
             {
                 return;
             }
 
             logger.LogInformation(
-                "FileStorage garbage collection removed {UploadSessions} expired upload sessions, {DownloadGrants} expired download grants, and {LocalTusFiles} local tus files.",
+                "FileStorage garbage collection removed {UploadSessions} expired upload sessions, {DownloadGrants} expired download grants, {LocalTusFiles} local tus files, soft-deleted {SoftDeletedFiles} formal files, and physically removed {PhysicalDeletedFiles} formal files.",
                 result.ExpiredUploadSessionsRemoved,
                 result.ExpiredDownloadGrantsRemoved,
-                result.LocalTusFilesRemoved);
+                result.LocalTusFilesRemoved,
+                result.FormalFilesSoftDeleted,
+                result.FormalFilesPhysicallyDeleted);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
