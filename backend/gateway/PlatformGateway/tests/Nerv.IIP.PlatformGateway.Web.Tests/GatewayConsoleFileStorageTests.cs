@@ -121,6 +121,31 @@ public sealed class GatewayConsoleFileStorageTests
     }
 
     [Fact]
+    public async Task Get_file_storage_usage_forwards_scope_and_requires_read_permission()
+    {
+        var files = new FakeGatewayFileStorageClient();
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        await using var factory = CreateFactory(files, auth);
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/files/usage?filePurpose=application-package");
+        AddTenantHeaders(request);
+
+        var response = await factory.CreateClient().SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<FileStorageUsageResponse>(response);
+        Assert.Equal("org-001", body.OrganizationId);
+        Assert.Equal("env-dev", body.EnvironmentId);
+        Assert.Equal("application-package", body.FilePurpose);
+        Assert.Equal(42, body.UsedBytes);
+        Assert.NotNull(files.LastUsageRequest);
+        Assert.Equal("org-001", files.LastUsageRequest.OrganizationId);
+        Assert.Equal("env-dev", files.LastUsageRequest.EnvironmentId);
+        Assert.Equal("application-package", files.LastUsageRequest.FilePurpose);
+        Assert.Equal(GatewayPermissions.FilesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("file-usage", auth.LastRequirement.ResourceType);
+    }
+
+    [Fact]
     public async Task Create_download_grant_forwards_file_id_and_requires_download_grant_permission()
     {
         var files = new FakeGatewayFileStorageClient();
@@ -466,6 +491,7 @@ public sealed class GatewayConsoleFileStorageTests
         public string? LastCompleteUploadSessionId { get; private set; }
         public string? LastMetadataFileId { get; private set; }
         public ListFilesRequest? LastListRequest { get; private set; }
+        public FileStorageUsageRequest? LastUsageRequest { get; private set; }
         public string? LastDownloadGrantFileId { get; private set; }
         public string? LastTusHeadUploadSessionId { get; private set; }
         public string? LastTusPatchUploadSessionId { get; private set; }
@@ -511,6 +537,18 @@ public sealed class GatewayConsoleFileStorageTests
             ThrowIfConfigured();
             LastListRequest = request;
             return Task.FromResult(new FileListResponse(1, [FileMetadata()]));
+        }
+
+        public Task<FileStorageUsageResponse> GetUsageAsync(FileStorageUsageRequest request, CancellationToken cancellationToken)
+        {
+            ThrowIfConfigured();
+            LastUsageRequest = request;
+            return Task.FromResult(new FileStorageUsageResponse(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.FilePurpose,
+                42,
+                4096));
         }
 
         public Task<DownloadGrantResponse> CreateDownloadGrantAsync(

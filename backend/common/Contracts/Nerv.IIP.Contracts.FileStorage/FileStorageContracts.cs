@@ -23,6 +23,11 @@ public sealed record CompleteUploadSessionRequest(
 
 public sealed record CreateDownloadGrantRequest(string OrganizationId, string EnvironmentId);
 
+public sealed record FileStorageUsageRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? FilePurpose = null);
+
 public sealed record ListFilesRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -58,6 +63,13 @@ public sealed record FileMetadataResponse(
     DateTimeOffset CompletedAtUtc);
 
 public sealed record FileListResponse(int Total, IReadOnlyList<FileMetadataResponse> Items);
+
+public sealed record FileStorageUsageResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string? FilePurpose,
+    long UsedBytes,
+    long? QuotaBytes);
 
 public sealed record DownloadGrantResponse(
     string FileId,

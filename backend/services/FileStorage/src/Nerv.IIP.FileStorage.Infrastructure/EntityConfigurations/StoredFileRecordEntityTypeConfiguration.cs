@@ -77,6 +77,13 @@ public sealed class StoredFileRecordEntityTypeConfiguration : IEntityTypeConfigu
             .IsRequired()
             .HasMaxLength(32)
             .HasComment("Malware or content scan status for the stored file.");
+        builder.Property(x => x.ScannedAtUtc)
+            .HasColumnName("scanned_at_utc")
+            .HasComment("UTC timestamp when malware or content scanning last completed.");
+        builder.Property(x => x.ScanDetail)
+            .HasColumnName("scan_detail")
+            .HasMaxLength(512)
+            .HasComment("Scanner result summary or degradation reason produced by FileStorage scanning.");
         builder.Property(x => x.Status)
             .HasColumnName("status")
             .IsRequired()
@@ -88,9 +95,21 @@ public sealed class StoredFileRecordEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.CompletedAtUtc)
             .HasColumnName("completed_at_utc")
             .HasComment("UTC timestamp when the file became available.");
+        builder.Property(x => x.DeletedAtUtc)
+            .HasColumnName("deleted_at_utc")
+            .HasComment("UTC timestamp when FileStorage soft-deleted the file metadata.");
+        builder.Property(x => x.PhysicalDeleteAfterUtc)
+            .HasColumnName("physical_delete_after_utc")
+            .HasComment("UTC timestamp after which FileStorage may physically remove file metadata and bytes.");
+        builder.Property(x => x.DeletionReason)
+            .HasColumnName("deletion_reason")
+            .HasMaxLength(256)
+            .HasComment("Reason FileStorage marked the file deleted.");
 
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.OwnerService, x.OwnerType, x.OwnerId });
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.CompletedAtUtc });
+        builder.HasIndex(x => new { x.ScanStatus, x.Status });
+        builder.HasIndex(x => new { x.Status, x.PhysicalDeleteAfterUtc });
         builder.HasIndex(x => x.ObjectKey).IsUnique();
     }
 }

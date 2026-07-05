@@ -97,6 +97,7 @@ public sealed class LocalTusFileStore
 
             file.Seek(0, SeekOrigin.End);
             await content.CopyToAsync(file, cancellationToken);
+            file.Flush(flushToDisk: true);
             return file.Length;
         }
         finally
