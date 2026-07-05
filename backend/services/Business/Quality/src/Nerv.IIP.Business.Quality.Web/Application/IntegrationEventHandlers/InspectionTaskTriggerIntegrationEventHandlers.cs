@@ -346,6 +346,11 @@ internal static class InspectionTaskGeneration
             return;
         }
 
+        var pendingTasks = dbContext.ChangeTracker.Entries<InspectionTask>()
+            .Where(x => x.State == EntityState.Added)
+            .Select(x => x.Entity)
+            .ToArray();
+
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -353,7 +358,51 @@ internal static class InspectionTaskGeneration
         catch (DbUpdateException ex) when (IsDuplicateInspectionTaskConflict(ex))
         {
             dbContext.ChangeTracker.Clear();
+            await SavePendingInspectionTasksIndividuallyAsync(dbContext, pendingTasks, cancellationToken);
         }
+    }
+
+    private static async Task SavePendingInspectionTasksIndividuallyAsync(
+        ApplicationDbContext dbContext,
+        IReadOnlyCollection<InspectionTask> pendingTasks,
+        CancellationToken cancellationToken)
+    {
+        foreach (var task in pendingTasks)
+        {
+            if (await TaskAlreadyExistsAsync(dbContext, task, cancellationToken))
+            {
+                continue;
+            }
+
+            dbContext.InspectionTasks.Add(task);
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsDuplicateInspectionTaskConflict(ex))
+            {
+                dbContext.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private static Task<bool> TaskAlreadyExistsAsync(
+        ApplicationDbContext dbContext,
+        InspectionTask task,
+        CancellationToken cancellationToken)
+    {
+        return dbContext.InspectionTasks.AnyAsync(
+            x =>
+                x.OrganizationId == task.OrganizationId &&
+                x.EnvironmentId == task.EnvironmentId &&
+                (x.TriggerIdempotencyKey == task.TriggerIdempotencyKey ||
+                    (x.SourceType == task.SourceType &&
+                     x.SourceService == task.SourceService &&
+                     x.SourceDocumentId == task.SourceDocumentId &&
+                     x.SourceDocumentLineId == task.SourceDocumentLineId &&
+                     x.SkuCode == task.SkuCode)),
+            cancellationToken);
     }
 
     private static bool IsDuplicateInspectionTaskConflict(DbUpdateException exception)
