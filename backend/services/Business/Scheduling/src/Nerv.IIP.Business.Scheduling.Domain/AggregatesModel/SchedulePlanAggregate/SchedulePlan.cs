@@ -113,6 +113,55 @@ public sealed record GeneratedUnscheduledOperationSnapshot(
     ScheduleConflictReasonCode ReasonCode,
     string Message);
 
+public sealed record SchedulePlanInvalidatedSnapshot(
+    string PlanId,
+    string ProblemId,
+    int ContractVersion,
+    string AlgorithmVersion,
+    string ProblemFingerprint,
+    SchedulePlanLifecycleStatus Status,
+    IReadOnlyCollection<SchedulePlanInvalidatedOperationSnapshot> AffectedOperations)
+{
+    public static SchedulePlanInvalidatedSnapshot FromPlan(
+        SchedulePlan plan,
+        IReadOnlyCollection<SchedulePlanAssignment> affectedOperations)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(affectedOperations);
+
+        return new SchedulePlanInvalidatedSnapshot(
+            plan.PlanId,
+            plan.ProblemId,
+            plan.ContractVersion,
+            plan.AlgorithmVersion,
+            plan.ProblemFingerprint,
+            plan.Status,
+            affectedOperations
+                .OrderBy(x => x.StartUtc)
+                .ThenBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationSequence)
+                .ThenBy(x => x.OperationId, StringComparer.Ordinal)
+                .Select(x => new SchedulePlanInvalidatedOperationSnapshot(
+                    x.WorkOrderId,
+                    x.OperationId,
+                    x.OperationSequence,
+                    x.ResourceId,
+                    x.WorkCenterId,
+                    x.StartUtc,
+                    x.EndUtc))
+                .ToArray());
+    }
+}
+
+public sealed record SchedulePlanInvalidatedOperationSnapshot(
+    string WorkOrderId,
+    string OperationId,
+    int OperationSequence,
+    string ResourceId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
+
 public sealed class ScheduleProblemSnapshot : Entity<ScheduleProblemSnapshotId>
 {
     private ScheduleProblemSnapshot()
@@ -422,9 +471,10 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
         string? affectedOperationId,
         string? affectedSkuCode,
         DateTimeOffset occurredAtUtc,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        SchedulePlanInvalidatedSnapshot? planSnapshot = null)
     {
-        return new SchedulePlanInvalidation(
+        var invalidation = new SchedulePlanInvalidation(
             organizationId,
             environmentId,
             planId,
@@ -438,6 +488,12 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
             affectedSkuCode,
             occurredAtUtc,
             recordedAtUtc);
+        if (planSnapshot is not null)
+        {
+            invalidation.AddDomainEvent(new SchedulePlanInvalidatedDomainEvent(invalidation, planSnapshot));
+        }
+
+        return invalidation;
     }
 
     private static string? Optional(string? value)

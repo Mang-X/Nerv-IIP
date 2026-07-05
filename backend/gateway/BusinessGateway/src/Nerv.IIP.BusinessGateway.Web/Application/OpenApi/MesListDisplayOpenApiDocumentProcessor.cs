@@ -33,6 +33,7 @@ public sealed class MesListDisplayOpenApiDocumentProcessor : IDocumentProcessor
         "scrapAccepted",
         "scrapped",
         "requested",
+        "scheduleInvalidated",
         "started",
         "warning",
     ];

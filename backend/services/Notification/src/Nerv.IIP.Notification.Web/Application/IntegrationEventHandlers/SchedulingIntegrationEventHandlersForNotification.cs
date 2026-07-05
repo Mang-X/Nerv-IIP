@@ -123,3 +123,102 @@ public sealed class ScheduleConflictDetectedIntegrationEventHandlerForNotificati
         };
     }
 }
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent", ConsumerName)]
+public sealed class SchedulePlanInvalidatedIntegrationEventHandlerForNotification(
+    ISender sender,
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    IConfiguration configuration,
+    TimeProvider timeProvider)
+    : IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "notification.scheduling-plan-invalidated";
+
+    private readonly IntegrationEventConsumerGuard<SchedulePlanInvalidatedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            SchedulingIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload
+            ?? throw new KnownException("Schedule invalidation payload is required.");
+        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
+        var organizationId = Required(integrationEvent.OrganizationId, "Integration event organization is required.");
+        var environmentId = Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
+        var dedupeKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var planId = Required(payload.PlanId, "Schedule plan id is required.");
+        var reasonCode = Required(payload.ReasonCode, "Schedule invalidation reason is required.");
+        var operationCount = payload.AffectedOperations.Count;
+        var resourceSummary = payload.AffectedResourceIds.Count == 0
+            ? "no specific resource"
+            : string.Join(", ", payload.AffectedResourceIds);
+        var recipientRefs = configuration.GetSection("Scheduling:InvalidationNotification:RecipientRefs").Get<string[]>() ?? [];
+        recipientRefs = recipientRefs
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (recipientRefs.Length == 0)
+        {
+            recipientRefs = ["role:production-planner"];
+        }
+
+        if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
+            dbContext,
+            ConsumerName,
+            integrationEvent,
+            timeProvider.GetUtcNow(),
+            cancellationToken))
+        {
+            return;
+        }
+
+        var request = new SubmitNotificationIntentRequest(
+            SourceService: sourceService,
+            SourceEventType: eventType,
+            SourceEventId: eventId,
+            IntentType: NotificationContractConstants.IntentTypeTask,
+            Severity: NotificationContractConstants.SeverityWarning,
+            DedupeKey: dedupeKey,
+            Resource: new NotificationResourceRef("schedule-plan", planId, null),
+            Title: "Schedule plan invalidated",
+            Summary: $"Schedule plan {planId} was invalidated by {reasonCode}; {operationCount} operation(s), resources: {resourceSummary}.",
+            SuggestedRecipientRefs: recipientRefs);
+
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+    }
+
+    private static string Required(string? value, string message)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new KnownException(message);
+        }
+
+        return value;
+    }
+}

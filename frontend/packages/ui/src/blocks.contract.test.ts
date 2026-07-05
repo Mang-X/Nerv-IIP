@@ -28,6 +28,7 @@ describe('@nerv-iip/ui FE-2 block library exports', () => {
     expect(ui.resolveStatus('running')).toEqual({ label: '执行中', tone: 'info' })
     expect(ui.resolveStatus('ready')).toEqual({ label: '可开工', tone: 'success' })
     expect(ui.resolveStatus('blocked')).toEqual({ label: '阻塞', tone: 'danger' })
+    expect(ui.resolveStatus('ScheduleInvalidated')).toEqual({ label: '排程已失效', tone: 'warning' })
     expect(ui.resolveStatus('').tone).toBe('neutral')
   })
 })

@@ -31,6 +31,7 @@ public sealed class MesCapSubscriptionTests
     private const string AssetUnavailableTopic = "Nerv.IIP.Contracts.Maintenance.AssetUnavailableIntegrationEvent";
     private const string AssetRestoredTopic = "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent";
     private const string SchedulePlanReleasedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanReleasedIntegrationEvent";
+    private const string SchedulePlanInvalidatedTopic = "Nerv.IIP.Contracts.Scheduling.SchedulePlanInvalidatedIntegrationEvent";
     private const string NcrDispositionDecidedTopic = "Nerv.IIP.Contracts.Quality.NcrDispositionDecidedIntegrationEvent";
     private const string InspectionResultTopic = "Nerv.IIP.Contracts.Quality.InspectionResultIntegrationEvent";
     private const string StockMovementPostedTopic = "Nerv.IIP.Contracts.Inventory.StockMovementPostedIntegrationEvent";
@@ -61,6 +62,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanInvalidatedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
@@ -92,6 +94,7 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, AssetRestoredTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanReleasedTopic));
+        Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SchedulePlanInvalidatedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, NcrDispositionDecidedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, InspectionResultTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
@@ -117,6 +120,9 @@ public sealed class MesCapSubscriptionTests
             descriptor.Lifetime == ServiceLifetime.Scoped);
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 

@@ -36,6 +36,8 @@
     <ProjectReference Include="..\..\services\Business\Inventory\src\Nerv.IIP.Business.Inventory.Web\Nerv.IIP.Business.Inventory.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\IndustrialTelemetry\src\Nerv.IIP.Business.IndustrialTelemetry.Web\Nerv.IIP.Business.IndustrialTelemetry.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" />
+    <ProjectReference Include="..\..\services\Business\Scheduling\src\Nerv.IIP.Business.Scheduling.Web\Nerv.IIP.Business.Scheduling.Web.csproj" />
+    <ProjectReference Include="..\..\services\Notification\src\Nerv.IIP.Notification.Web\Nerv.IIP.Notification.Web.csproj" />
   </ItemGroup>
 
 </Project>

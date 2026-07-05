@@ -159,6 +159,71 @@ public sealed class SchedulePlanReleasedIntegrationEventConverter(
     }
 }
 
+public sealed class SchedulePlanInvalidatedIntegrationEventConverter(
+    TimeProvider timeProvider,
+    ISchedulingIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<SchedulePlanInvalidatedDomainEvent, SchedulePlanInvalidatedIntegrationEvent>
+{
+    public SchedulePlanInvalidatedIntegrationEvent Convert(SchedulePlanInvalidatedDomainEvent domainEvent)
+    {
+        var invalidation = domainEvent.Invalidation;
+        var plan = domainEvent.Plan;
+        var affectedResourceIds = plan.AffectedOperations
+            .SelectMany(x => new[] { x.ResourceId, x.WorkCenterId })
+            .Append(invalidation.AffectedResourceId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var context = contextAccessor.GetContext();
+        var envelope = Envelope(
+            SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            invalidation.OrganizationId,
+            invalidation.EnvironmentId,
+            EventIds.Idempotency(
+                "schedule-plan-invalidated",
+                invalidation.OrganizationId,
+                invalidation.EnvironmentId,
+                invalidation.PlanId,
+                invalidation.SourceEventId),
+            new SchedulePlanInvalidatedPayload(
+                plan.PlanId,
+                plan.ProblemId,
+                plan.ContractVersion,
+                plan.AlgorithmVersion,
+                plan.ProblemFingerprint,
+                Status(plan.Status),
+                invalidation.ReasonCode,
+                invalidation.SourceEventType,
+                invalidation.SourceEventId,
+                affectedResourceIds,
+                plan.AffectedOperations.Select(x => new SchedulePlanAffectedOperationPayload(
+                    x.WorkOrderId,
+                    x.OperationId,
+                    x.OperationSequence,
+                    x.ResourceId,
+                    x.WorkCenterId,
+                    x.StartUtc,
+                    x.EndUtc)).ToArray()),
+            timeProvider,
+            context);
+        return new SchedulePlanInvalidatedIntegrationEvent(
+            envelope.EventId,
+            envelope.EventType,
+            envelope.EventVersion,
+            envelope.OccurredAtUtc,
+            envelope.SourceService,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.OrganizationId,
+            envelope.EnvironmentId,
+            envelope.Actor,
+            envelope.IdempotencyKey,
+            envelope.Payload);
+    }
+}
+
 internal static class SchedulingIntegrationEventConverterHelpers
 {
     public static SchedulingIntegrationEvent<SchedulePlanLifecyclePayload> PlanLifecycleEnvelope(
