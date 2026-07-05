@@ -24,6 +24,15 @@ public sealed class QualityHoldContextEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.DispositionReason).HasColumnName("disposition_reason").HasMaxLength(500).HasComment("Optional Quality disposition or rejection reason for the hold context.");
         builder.Property(x => x.RecordedAtUtc).HasColumnName("recorded_at_utc").IsRequired().HasComment("UTC time when the latest Quality inspection result was recorded.");
         builder.Property(x => x.Active).HasColumnName("active").IsRequired().HasComment("Whether this Quality context currently blocks MES release or operation start.");
+        builder.Property(x => x.HeldInspectionRecordId).HasColumnName("held_inspection_record_id").HasMaxLength(100).HasComment("Quality inspection record id that originally activated the current or historical hold.");
+        builder.Property(x => x.HoldReason).HasColumnName("hold_reason").HasMaxLength(500).HasComment("Reason captured when the Quality hold was activated.");
+        builder.Property(x => x.HeldAtUtc).HasColumnName("held_at_utc").HasComment("UTC time when the Quality hold was activated.");
+        builder.Property(x => x.HeldBy).HasColumnName("held_by").HasMaxLength(100).HasComment("Quality actor or system source that activated the hold.");
+        builder.Property(x => x.ReleaseInspectionRecordId).HasColumnName("release_inspection_record_id").HasMaxLength(100).HasComment("Quality inspection record id that released the hold when release came from inspection results.");
+        builder.Property(x => x.ReleaseReason).HasColumnName("release_reason").HasMaxLength(500).HasComment("Reason recorded when the Quality hold was released.");
+        builder.Property(x => x.ReleasedAtUtc).HasColumnName("released_at_utc").HasComment("UTC time when the Quality hold was released.");
+        builder.Property(x => x.ReleasedBy).HasColumnName("released_by").HasMaxLength(100).HasComment("Quality actor, system source or supervisor that released the hold.");
+        builder.Property(x => x.ReleaseSource).HasColumnName("release_source").HasMaxLength(100).HasComment("Release source such as quality inspection event type or manual-force-release.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })
