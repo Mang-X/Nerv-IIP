@@ -111,6 +111,7 @@ builder.Services.AddScoped<ApprovalActionRecordedIntegrationEventHandlerForNotif
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && autoMigrate)

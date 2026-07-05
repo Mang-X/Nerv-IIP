@@ -15,6 +15,8 @@ public sealed record WorkOrderCompletedDomainEvent(WorkOrder WorkOrder, DateTime
 
 public sealed record WorkOrderClosedDomainEvent(WorkOrder WorkOrder, DateTimeOffset ClosedAtUtc) : IDomainEvent;
 
+public sealed record OperationTaskCompletedDomainEvent(OperationTask OperationTask) : IDomainEvent;
+
 public sealed record WorkOrderCancelledDomainEvent(
     WorkOrder WorkOrder,
     DateTimeOffset CancelledAtUtc,

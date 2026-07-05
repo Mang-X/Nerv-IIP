@@ -119,6 +119,75 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
     }
 }
 
+public sealed class FinishedGoodsReceiptRequestedForQualityIntegrationEventConverter
+    : IIntegrationEventConverter<FinishedGoodsReceiptRequestedDomainEvent, FinishedGoodsReceiptRequestedIntegrationEvent>
+{
+    public FinishedGoodsReceiptRequestedIntegrationEvent Convert(FinishedGoodsReceiptRequestedDomainEvent domainEvent)
+    {
+        var request = domainEvent.FinishedGoodsReceiptRequest;
+        var occurredAtUtc = DateTimeOffset.UtcNow;
+        return new FinishedGoodsReceiptRequestedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.FinishedGoodsReceiptRequested,
+            MesIntegrationEventVersions.V1,
+            occurredAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            domainEvent.IdempotencyKey,
+            request.RequestNo,
+            request.OrganizationId,
+            request.EnvironmentId,
+            "system:mes",
+            EventIds.Idempotency("finished-goods-receipt-quality", request.OrganizationId, request.EnvironmentId, request.RequestNo),
+            new FinishedGoodsReceiptRequestedPayload(
+                request.RequestNo,
+                request.WorkOrderId,
+                request.SkuId,
+                domainEvent.Quantity,
+                request.UomCode,
+                request.ProducedLotNo,
+                request.SerialNo,
+                occurredAtUtc));
+    }
+}
+
+public sealed class OperationTaskCompletedIntegrationEventConverter
+    : IIntegrationEventConverter<OperationTaskCompletedDomainEvent, OperationTaskCompletedIntegrationEvent>
+{
+    public OperationTaskCompletedIntegrationEvent Convert(OperationTaskCompletedDomainEvent domainEvent)
+    {
+        var task = domainEvent.OperationTask;
+        var completedAtUtc = task.ExistingEndUtc ?? DateTimeOffset.UtcNow;
+        var idempotencyKey = EventIds.Idempotency(
+            "operation-task-completed",
+            task.OrganizationId,
+            task.EnvironmentId,
+            task.OperationTaskId,
+            completedAtUtc.ToString("O", CultureInfo.InvariantCulture));
+        return new OperationTaskCompletedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.OperationTaskCompleted,
+            MesIntegrationEventVersions.V1,
+            completedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            task.WorkOrderId,
+            task.OrganizationId,
+            task.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new OperationTaskCompletedPayload(
+                task.WorkOrderId,
+                task.OperationTaskId,
+                task.SkuCode,
+                task.OperationSequence,
+                task.WorkCenterId,
+                task.PlannedQuantity,
+                task.UomCode,
+                task.RequiresQualityInspection,
+                completedAtUtc));
+    }
+}
+
 public sealed class MaterialIssueRequestedIntegrationEventConverter
     : IIntegrationEventConverter<MaterialIssueRequestedDomainEvent, InventoryMovementRequestedIntegrationEvent>
 {

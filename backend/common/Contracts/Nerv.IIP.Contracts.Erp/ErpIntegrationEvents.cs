@@ -1,6 +1,6 @@
 using Nerv.IIP.Contracts.IntegrationEvents;
 
-namespace Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+namespace Nerv.IIP.Contracts.Erp;
 
 public static class ErpIntegrationEventTypes
 {
@@ -12,6 +12,11 @@ public static class ErpIntegrationEventTypes
     public const string AccountReceivableCreated = "erp.AccountReceivableCreated";
     public const string CostCandidateCreated = "erp.CostCandidateCreated";
     public const string JournalVoucherPosted = "erp.JournalVoucherPosted";
+}
+
+public static class ErpIntegrationEventVersions
+{
+    public const int V1 = 1;
 }
 
 public static class ErpIntegrationEventSources
@@ -59,6 +64,16 @@ public sealed record PurchaseReceiptRecordedPayload(
     string PurchaseOrderNo,
     string SupplierCode,
     string SiteCode,
+    string QualityStatus,
+    IReadOnlyCollection<PurchaseReceiptRecordedLinePayload>? Lines = null);
+
+public sealed record PurchaseReceiptRecordedLinePayload(
+    string LineReference,
+    string SkuCode,
+    string UomCode,
+    string? LocationCode,
+    string? LotNo,
+    decimal ReceivedQuantity,
     string QualityStatus);
 
 public sealed record PurchaseReceiptRecordedIntegrationEvent(

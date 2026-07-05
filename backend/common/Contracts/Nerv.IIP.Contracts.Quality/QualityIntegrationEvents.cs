@@ -11,6 +11,7 @@ public static class QualityIntegrationEventTypes
     public const string NcrOpened = "quality.NcrOpened";
     public const string DispositionDecided = "quality.DispositionDecided";
     public const string NcrClosed = "quality.NcrClosed";
+    public const string InspectionTaskOverdue = "quality.InspectionTaskOverdue";
 }
 
 public static class QualityIntegrationEventVersions
@@ -132,6 +133,33 @@ public sealed record InspectionResultIntegrationEvent(
 {
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
+
+public sealed record InspectionTaskOverdueIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    InspectionTaskOverduePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record InspectionTaskOverduePayload(
+    string InspectionTaskId,
+    string SourceType,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string SkuCode,
+    DateTimeOffset DueAtUtc,
+    DateTimeOffset RemindedAtUtc);
 
 public sealed record InspectionResultPayload(
     string InspectionRecordId,
