@@ -245,12 +245,14 @@ public sealed class CreatePickingTaskCommandHandler(
                 cancellationToken);
             if (fefo.Allocations.Count != 1)
             {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
                 throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
             }
 
             var allocation = fefo.Allocations.Single();
             if (allocation.ReservedQuantity != quantity)
             {
+                await ReleaseRejectedFefoAllocationsAsync(inventoryReservationClient, fefo, cancellationToken);
                 throw new KnownException("Inventory FEFO reservation split the picking line; WMS split-pick execution is outside the current issue scope.");
             }
 
@@ -277,6 +279,19 @@ public sealed class CreatePickingTaskCommandHandler(
                 quantity),
             cancellationToken);
         return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
+    }
+
+    private static async Task ReleaseRejectedFefoAllocationsAsync(
+        IWmsInventoryReservationClient inventoryReservationClient,
+        WmsInventoryFefoReservationResult fefo,
+        CancellationToken cancellationToken)
+    {
+        foreach (var allocation in fefo.Allocations)
+        {
+            await inventoryReservationClient.ReleaseAsync(
+                new WmsInventoryReservationReleaseRequest(allocation.ReservationId, allocation.ReservedQuantity),
+                cancellationToken);
+        }
     }
 }
 

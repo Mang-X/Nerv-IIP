@@ -65,8 +65,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         BatchTrackingPolicy = Required(batchTrackingPolicy);
         SerialTrackingPolicy = Required(serialTrackingPolicy);
         ShelfLifePolicyCode = Optional(shelfLifePolicyCode);
-        ShelfLifeDays = NonNegativeDays(shelfLifeDays, nameof(shelfLifeDays));
-        NearExpiryThresholdDays = NonNegativeDays(nearExpiryThresholdDays, nameof(nearExpiryThresholdDays));
+        ValidateShelfLifePolicy(shelfLifeDays, nearExpiryThresholdDays);
+        ShelfLifeDays = shelfLifeDays;
+        NearExpiryThresholdDays = nearExpiryThresholdDays;
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
@@ -275,8 +276,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         BatchTrackingPolicy = Required(batchTrackingPolicy);
         SerialTrackingPolicy = Required(serialTrackingPolicy);
         ShelfLifePolicyCode = Optional(shelfLifePolicyCode);
-        ShelfLifeDays = NonNegativeDays(shelfLifeDays, nameof(shelfLifeDays));
-        NearExpiryThresholdDays = NonNegativeDays(nearExpiryThresholdDays, nameof(nearExpiryThresholdDays));
+        ValidateShelfLifePolicy(shelfLifeDays, nearExpiryThresholdDays);
+        ShelfLifeDays = shelfLifeDays;
+        NearExpiryThresholdDays = nearExpiryThresholdDays;
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
@@ -358,12 +360,6 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     private static string UomOrBase(string? value, string baseUomCode)
     {
         return string.IsNullOrWhiteSpace(value) ? baseUomCode : value.Trim();
-    }
-
-    private static int? NonNegativeDays(int? value, string parameterName)
-    {
-        ValidateNonNegative(value, parameterName);
-        return value;
     }
 
     private void SetPlanningProfile(
@@ -458,6 +454,22 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         if (value < 0)
         {
             throw new ArgumentOutOfRangeException(parameterName, "Value cannot be negative.");
+        }
+    }
+
+    private static void ValidateShelfLifePolicy(int? shelfLifeDays, int? nearExpiryThresholdDays)
+    {
+        if (shelfLifeDays.HasValue && shelfLifeDays.Value <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shelfLifeDays), "Shelf life days must be positive when provided.");
+        }
+
+        ValidateNonNegative(nearExpiryThresholdDays, nameof(nearExpiryThresholdDays));
+        if (shelfLifeDays.HasValue
+            && nearExpiryThresholdDays.HasValue
+            && nearExpiryThresholdDays.Value > shelfLifeDays.Value)
+        {
+            throw new ArgumentOutOfRangeException(nameof(nearExpiryThresholdDays), "Near-expiry threshold days cannot exceed shelf life days.");
         }
     }
 }

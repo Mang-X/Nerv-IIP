@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
+using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
@@ -57,12 +58,14 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).NotEqual(0);
         RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0).When(x => x.UnitCost is not null);
-        RuleFor(x => x.ShelfLifeDays).GreaterThan(0).When(x => x.ShelfLifeDays is not null);
+        RuleFor(x => x.ShelfLifeDays).GreaterThan(0).LessThanOrEqualTo(3660).When(x => x.ShelfLifeDays is not null);
         RuleFor(x => x.ExpiryDate).GreaterThanOrEqualTo(x => x.ProductionDate!.Value).When(x => x.ProductionDate is not null && x.ExpiryDate is not null);
     }
 }
 
-public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbContext)
+public sealed class PostStockMovementCommandHandler(
+    ApplicationDbContext dbContext,
+    IInventorySkuExpiryPolicyProvider? skuExpiryPolicyProvider = null)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -75,6 +78,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
+        request = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
         var movement = CreateMovementOrReject(request);
         var existingMovement = await dbContext.StockMovements.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
@@ -146,6 +150,28 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         }
 
         return new PostStockMovementResult(applied.Id, ledger.OnHandQuantity, ledger.AvailableQuantity);
+    }
+
+    private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
+        PostStockMovementCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (request.ProductionDate is null
+            || request.ExpiryDate is not null
+            || request.ShelfLifeDays is not null
+            || skuExpiryPolicyProvider is null)
+        {
+            return request;
+        }
+
+        var policy = await skuExpiryPolicyProvider.GetAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            cancellationToken);
+        return policy?.ShelfLifeDays is > 0
+            ? request with { ShelfLifeDays = policy.ShelfLifeDays }
+            : request;
     }
 
     private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
@@ -241,7 +267,22 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     private static DateOnly? DeriveExpiryDate(DateOnly? productionDate, int? shelfLifeDays)
     {
-        return productionDate is null || shelfLifeDays is null ? null : productionDate.Value.AddDays(shelfLifeDays.Value);
+        if (productionDate is null || shelfLifeDays is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return productionDate.Value.AddDays(shelfLifeDays.Value);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                "Shelf life days cannot derive an expiry date within the supported date range.",
+                exception);
+        }
     }
 
     private static DateOnly GetBusinessDate(PostStockMovementCommand request)

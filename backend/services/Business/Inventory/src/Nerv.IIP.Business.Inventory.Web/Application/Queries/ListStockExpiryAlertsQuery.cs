@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Queries;
 
@@ -9,7 +10,7 @@ public sealed record ListStockExpiryAlertsQuery(
     string? SkuCode = null,
     string? LocationCode = null,
     DateOnly? AsOfDate = null,
-    int NearExpiryThresholdDays = 30,
+    int? NearExpiryThresholdDays = null,
     bool IncludeZeroAvailable = false) : IQuery<StockExpiryAlertsResponse>;
 
 public sealed record StockExpiryAlertsResponse(IReadOnlyCollection<StockExpiryAlertLineResponse> Items);
@@ -42,11 +43,13 @@ public sealed class ListStockExpiryAlertsQueryValidator : AbstractValidator<List
         RuleFor(x => x.SiteCode).RequiredInventoryCode(100);
         RuleFor(x => x.SkuCode).OptionalInventoryCode(100);
         RuleFor(x => x.LocationCode).OptionalInventoryCode(100);
-        RuleFor(x => x.NearExpiryThresholdDays).GreaterThanOrEqualTo(0).LessThanOrEqualTo(3660);
+        RuleFor(x => x.NearExpiryThresholdDays).GreaterThanOrEqualTo(0).LessThanOrEqualTo(3660).When(x => x.NearExpiryThresholdDays is not null);
     }
 }
 
-public sealed class ListStockExpiryAlertsQueryHandler(ApplicationDbContext dbContext)
+public sealed class ListStockExpiryAlertsQueryHandler(
+    ApplicationDbContext dbContext,
+    IInventorySkuExpiryPolicyProvider? skuExpiryPolicyProvider = null)
     : IQueryHandler<ListStockExpiryAlertsQuery, StockExpiryAlertsResponse>
 {
     public const int MaxResultLines = 1000;
@@ -54,7 +57,8 @@ public sealed class ListStockExpiryAlertsQueryHandler(ApplicationDbContext dbCon
     public async Task<StockExpiryAlertsResponse> Handle(ListStockExpiryAlertsQuery request, CancellationToken cancellationToken)
     {
         var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        var nearExpiryDate = asOfDate.AddDays(request.NearExpiryThresholdDays);
+        var nearExpiryThresholdDays = await ResolveNearExpiryThresholdDaysAsync(request, cancellationToken);
+        var nearExpiryDate = asOfDate.AddDays(nearExpiryThresholdDays);
         var query = dbContext.StockLedgers
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -108,10 +112,33 @@ public sealed class ListStockExpiryAlertsQueryHandler(ApplicationDbContext dbCon
                 expiryDate,
                 daysUntilExpiry,
                 daysUntilExpiry < 0,
-                daysUntilExpiry >= 0 && daysUntilExpiry <= request.NearExpiryThresholdDays,
+                daysUntilExpiry >= 0 && daysUntilExpiry <= nearExpiryThresholdDays,
                 x.OnHandQuantity,
                 x.ReservedQuantity,
                 x.AvailableQuantity);
         }).ToList());
+    }
+
+    private async Task<int> ResolveNearExpiryThresholdDaysAsync(ListStockExpiryAlertsQuery request, CancellationToken cancellationToken)
+    {
+        if (request.NearExpiryThresholdDays is not null)
+        {
+            return request.NearExpiryThresholdDays.Value;
+        }
+
+        if (skuExpiryPolicyProvider is not null && !string.IsNullOrWhiteSpace(request.SkuCode))
+        {
+            var policy = await skuExpiryPolicyProvider.GetAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.SkuCode,
+                cancellationToken);
+            if (policy?.NearExpiryThresholdDays is >= 0)
+            {
+                return policy.NearExpiryThresholdDays.Value;
+            }
+        }
+
+        return 30;
     }
 }

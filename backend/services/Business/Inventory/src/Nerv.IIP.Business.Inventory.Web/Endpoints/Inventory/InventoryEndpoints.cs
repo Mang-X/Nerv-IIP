@@ -34,6 +34,16 @@ public abstract class InventoryEndpoint<TRequest, TResponse> : Endpoint<TRequest
         Tags("Business Inventory");
         Policies(contract.AuthorizationPolicy);
     }
+
+    protected bool HasInventoryPermission(string permissionCode)
+    {
+        return User.Claims.Any(claim =>
+            (claim.Type == "permission"
+                || claim.Type == "permissions"
+                || claim.Type == "permissionCodes")
+            && claim.Value.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Contains(permissionCode, StringComparer.Ordinal));
+    }
 }
 
 public sealed record CreateOrUpdateStockLocationRequest(
@@ -176,7 +186,7 @@ public sealed record StockExpiryAlertsRequest(
     string? SkuCode = null,
     string? LocationCode = null,
     DateOnly? AsOfDate = null,
-    int NearExpiryThresholdDays = 30,
+    int? NearExpiryThresholdDays = null,
     bool IncludeZeroAvailable = false);
 
 public sealed record ReleaseStockReservationRequest(StockReservationId ReservationId, decimal Quantity);
@@ -261,7 +271,7 @@ public sealed class PostStockMovementEndpoint(ISender sender)
             req.ShelfLifeDays,
             req.AsOfDate,
             req.AllowExpiredStock,
-            req.ExpiryOverridePermissionGranted), ct);
+            HasInventoryPermission(InventoryPermissionCodes.ExpiredStockOverride)), ct);
         await Send.OkAsync(new PostStockMovementResponse(result.MovementId.ToString(), result.OnHandQuantity, result.AvailableQuantity).AsResponseData(), cancellation: ct);
     }
 }
@@ -323,7 +333,7 @@ public sealed class ReserveStockEndpoint(ISender sender)
             req.ExpiryDate,
             req.AsOfDate,
             req.AllowExpiredStock,
-            req.ExpiryOverridePermissionGranted), ct);
+            HasInventoryPermission(InventoryPermissionCodes.ExpiredStockOverride)), ct);
         await Send.OkAsync(new ReserveStockResponse(result.ReservationId.ToString(), result.ReservedQuantity, result.AvailableQuantity, result.LotNo, result.ProductionDate, result.ExpiryDate).AsResponseData(), cancellation: ct);
     }
 }
@@ -355,7 +365,7 @@ public sealed class ReserveFefoStockEndpoint(ISender sender)
             req.LocationCode,
             req.AsOfDate,
             req.AllowExpiredStock,
-            req.ExpiryOverridePermissionGranted), ct);
+            HasInventoryPermission(InventoryPermissionCodes.ExpiredStockOverride)), ct);
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

@@ -185,12 +185,17 @@ public sealed class ReserveFefoStockCommandValidator : AbstractValidator<Reserve
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.IdempotencyKey)
+            .Must(x => !x.Contains(":part-", StringComparison.Ordinal))
+            .WithMessage("FEFO reservation idempotency key cannot contain the reserved ':part-' suffix.");
     }
 }
 
 public sealed class ReserveFefoStockCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<ReserveFefoStockCommand, ReserveFefoStockResult>
 {
+    private const int MaxFefoCandidateLedgers = 1000;
+
     public async Task<ReserveFefoStockResult> Handle(ReserveFefoStockCommand request, CancellationToken cancellationToken)
     {
         var existing = await dbContext.StockReservations
@@ -218,7 +223,7 @@ public sealed class ReserveFefoStockCommandHandler(ApplicationDbContext dbContex
                     x.SerialNo,
                     x.ProductionDate,
                     x.ExpiryDate,
-                    x.OpenQuantity,
+                    x.ReservedQuantity,
                     0m)).ToList(),
                 existingQuantity);
         }
@@ -253,8 +258,12 @@ public sealed class ReserveFefoStockCommandHandler(ApplicationDbContext dbContex
             .ThenBy(x => x.UpdatedAtUtc)
             .ThenBy(x => x.LocationCode)
             .ThenBy(x => x.LotNo)
-            .Take(100)
+            .Take(MaxFefoCandidateLedgers + 1)
             .ToListAsync(cancellationToken);
+        if (ledgers.Count > MaxFefoCandidateLedgers)
+        {
+            throw new KnownException($"FEFO reservation found more than {MaxFefoCandidateLedgers} candidate ledger lines. Add SKU, location or owner filters to narrow the request.");
+        }
 
         var remaining = request.Quantity;
         var allocations = new List<ReserveFefoStockAllocationResult>();

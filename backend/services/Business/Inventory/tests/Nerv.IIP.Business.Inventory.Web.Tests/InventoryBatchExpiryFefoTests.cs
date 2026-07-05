@@ -1,11 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MediatR;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using NetCorePal.Extensions.Primitives;
 
@@ -30,6 +34,38 @@ public sealed class InventoryBatchExpiryFefoTests
         Assert.Equal(new DateOnly(2026, 10, 1), ledger.ExpiryDate);
         Assert.Equal(ledger.ProductionDate, movement.ProductionDate);
         Assert.Equal(ledger.ExpiryDate, movement.ExpiryDate);
+    }
+
+    [Fact]
+    public async Task Inbound_movement_derives_expiry_from_sku_shelf_life_policy_when_request_omits_it()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(
+            dbContext,
+            new FakeSkuExpiryPolicyProvider(new InventorySkuExpiryPolicy(90, null)));
+
+        await handler.Handle(new PostStockMovementCommand(
+            "org-001",
+            "env-dev",
+            "inbound",
+            "wms",
+            "IN-SKU-POLICY",
+            "LINE-001",
+            "idem-in-sku-policy",
+            "SKU-FEFO",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-SKU-POLICY",
+            null,
+            "qualified",
+            "company",
+            "owner-001",
+            5m,
+            ProductionDate: new DateOnly(2026, 7, 1)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(new DateOnly(2026, 9, 29), dbContext.StockLedgers.Single().ExpiryDate);
     }
 
     [Fact]
@@ -99,6 +135,74 @@ public sealed class InventoryBatchExpiryFefoTests
     }
 
     [Fact]
+    public async Task Fefo_reservation_does_not_report_shortage_after_first_100_candidate_batches()
+    {
+        await using var dbContext = CreateContext();
+        for (var index = 1; index <= 101; index++)
+        {
+            await SeedLedgerAsync(dbContext, $"LOT-{index:000}", Today.AddDays(index), 1m);
+        }
+
+        var handler = new ReserveFefoStockCommandHandler(dbContext);
+
+        var result = await handler.Handle(new ReserveFefoStockCommand(
+            "org-001",
+            "env-dev",
+            "wms",
+            "OUT-FEFO-101",
+            "LINE-001",
+            "idem-fefo-101",
+            "SKU-FEFO",
+            "kg",
+            "SITE-01",
+            "qualified",
+            "company",
+            "owner-001",
+            101m,
+            AsOfDate: Today), CancellationToken.None);
+
+        Assert.Equal(101m, result.ReservedQuantity);
+        Assert.Equal(101, result.Allocations.Count);
+        Assert.Equal("LOT-101", result.Allocations.Last().LotNo);
+    }
+
+    [Fact]
+    public async Task Fefo_idempotency_replay_returns_original_reserved_quantity_after_partial_allocation()
+    {
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-FEFO", Today.AddDays(30), 5m);
+        var handler = new ReserveFefoStockCommandHandler(dbContext);
+        var command = new ReserveFefoStockCommand(
+            "org-001",
+            "env-dev",
+            "wms",
+            "OUT-FEFO-REPLAY",
+            "LINE-001",
+            "idem-fefo-replay",
+            "SKU-FEFO",
+            "kg",
+            "SITE-01",
+            "qualified",
+            "company",
+            "owner-001",
+            4m,
+            AsOfDate: Today);
+
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var ledger = dbContext.StockLedgers.Single(x => x.LotNo == "LOT-FEFO");
+        var reservation = dbContext.StockReservations.Single();
+        ledger.AllocateReservation(reservation, 1m);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        var allocation = Assert.Single(replay.Allocations);
+        Assert.Equal(4m, allocation.ReservedQuantity);
+        Assert.Equal(4m, replay.ReservedQuantity);
+    }
+
+    [Fact]
     public async Task Expiry_alert_query_marks_near_expiry_and_expired_batches()
     {
         await using var dbContext = CreateContext();
@@ -117,6 +221,84 @@ public sealed class InventoryBatchExpiryFefoTests
         Assert.Contains(result.Items, x => x.LotNo == "LOT-EXPIRED" && x.IsExpired && x.DaysUntilExpiry == -4);
         Assert.Contains(result.Items, x => x.LotNo == "LOT-NEAR" && !x.IsExpired && x.IsNearExpiry && x.DaysUntilExpiry == 7);
         Assert.DoesNotContain(result.Items, x => x.LotNo == "LOT-FRESH" && x.IsNearExpiry);
+    }
+
+    [Fact]
+    public async Task Expiry_alert_query_uses_sku_near_expiry_policy_when_threshold_is_not_explicit()
+    {
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-SKU-THRESHOLD", Today.AddDays(45), 4m);
+        var handler = new ListStockExpiryAlertsQueryHandler(
+            dbContext,
+            new FakeSkuExpiryPolicyProvider(new InventorySkuExpiryPolicy(null, 60)));
+
+        var result = await handler.Handle(new ListStockExpiryAlertsQuery(
+            "org-001",
+            "env-dev",
+            "SITE-01",
+            SkuCode: "SKU-FEFO",
+            AsOfDate: Today), CancellationToken.None);
+
+        var alert = Assert.Single(result.Items);
+        Assert.True(alert.IsNearExpiry);
+        Assert.Equal(45, alert.DaysUntilExpiry);
+    }
+
+    [Fact]
+    public async Task Expired_stock_blocking_moves_available_expired_quantity_to_blocked_status_with_batch_dates()
+    {
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-BLOCK", new DateOnly(2026, 7, 1), 5m);
+        var ledger = dbContext.StockLedgers.Single();
+        var reservation = StockReservation.Reserve(ledger, "wms", "OUT-BLOCK", "LINE-001", "idem-block-res", 2m);
+        ledger.Reserve(reservation);
+        dbContext.StockReservations.Add(reservation);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var service = new ExpiredStockBlockingService(
+            dbContext,
+            Options.Create(new ExpiredStockBlockingOptions { Enabled = true }));
+
+        var count = await service.BlockExpiredAvailableStockAsync(Today, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(1, count);
+        Assert.Equal(2m, ledger.OnHandQuantity);
+        Assert.Equal(2m, ledger.ReservedQuantity);
+        var blocked = Assert.Single(dbContext.StockLedgers, x => x.QualityStatus == "blocked");
+        Assert.Equal(3m, blocked.OnHandQuantity);
+        Assert.Equal(new DateOnly(2026, 6, 1), blocked.ProductionDate);
+        Assert.Equal(new DateOnly(2026, 7, 1), blocked.ExpiryDate);
+    }
+
+    [Fact]
+    public async Task Inbound_movement_rejects_shelf_life_that_overflows_date_range_as_business_error()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+
+        var exception = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            handler.Handle(new PostStockMovementCommand(
+                "org-001",
+                "env-dev",
+                "inbound",
+                "wms",
+                "IN-OVERFLOW",
+                "LINE-001",
+                "idem-in-overflow",
+                "SKU-FEFO",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-OVERFLOW",
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                5m,
+                ProductionDate: new DateOnly(9999, 12, 30),
+                ShelfLifeDays: 10), CancellationToken.None));
+
+        Assert.Contains("shelf life", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task SeedLedgerAsync(ApplicationDbContext dbContext, string lotNo, DateOnly expiryDate, decimal quantity)
@@ -273,6 +455,18 @@ public sealed class InventoryBatchExpiryFefoTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("This test mediator does not support streams.");
+        }
+    }
+
+    private sealed class FakeSkuExpiryPolicyProvider(InventorySkuExpiryPolicy policy) : IInventorySkuExpiryPolicyProvider
+    {
+        public Task<InventorySkuExpiryPolicy?> GetAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<InventorySkuExpiryPolicy?>(policy);
         }
     }
 }
