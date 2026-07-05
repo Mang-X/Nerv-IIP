@@ -18,7 +18,8 @@ withDefaults(
 )
 
 const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
-const now = useNow()
+// 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发布局重算（大屏常驻页）
+const now = useNow({ interval: 1000 })
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')

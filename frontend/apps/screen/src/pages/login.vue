@@ -12,7 +12,8 @@ const account = ref('')
 const password = ref('')
 const loading = ref(false)
 
-const now = useNow()
+// 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发重算
+const now = useNow({ interval: 1000 })
 function pad(n: number) {
   return String(n).padStart(2, '0')
 }
