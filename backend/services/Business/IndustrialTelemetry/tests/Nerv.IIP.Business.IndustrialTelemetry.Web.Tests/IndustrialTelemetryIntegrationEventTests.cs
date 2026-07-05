@@ -22,6 +22,37 @@ public sealed class IndustrialTelemetryIntegrationEventTests
     }
 
     [Fact]
+    public void Device_state_changed_idempotency_key_distinguishes_distinct_source_scoped_snapshots()
+    {
+        var first = DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "running",
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            "shared-seq-001",
+            "SCADA-A",
+            "opc-ua-cell-01");
+        var differentConnector = DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "faulted",
+            DateTimeOffset.Parse("2026-07-05T08:01:00Z"),
+            "shared-seq-001",
+            "SCADA-A",
+            "opc-ua-cell-02");
+
+        var firstEvent = new DeviceStateChangedIntegrationEventConverter().Convert(new DeviceStateChangedDomainEvent(first));
+        var differentConnectorEvent = new DeviceStateChangedIntegrationEventConverter().Convert(new DeviceStateChangedDomainEvent(differentConnector));
+
+        Assert.NotEqual(first.Id, differentConnector.Id);
+        Assert.NotEqual(firstEvent.IdempotencyKey, differentConnectorEvent.IdempotencyKey);
+        Assert.EndsWith(first.Id.Id.ToString("D"), firstEvent.IdempotencyKey, StringComparison.Ordinal);
+        Assert.EndsWith(differentConnector.Id.Id.ToString("D"), differentConnectorEvent.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Alarm_events_serialize_required_event_types()
     {
         var alarm = AlarmEvent.Raise(
