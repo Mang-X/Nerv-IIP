@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
@@ -102,6 +103,53 @@ public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePla
             timeProvider,
             integrationEvent,
             SchedulingPlanInvalidationReasons.EquipmentRestored,
+            integrationEvent.Payload.DeviceAssetId,
+            logger,
+            cancellationToken);
+    }
+}
+
+[IntegrationEventConsumer("Nerv.IIP.Contracts.IndustrialTelemetry.DeviceStateChangedIntegrationEvent", ConsumerName)]
+public sealed class DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+    ApplicationDbContext dbContext,
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    TimeProvider timeProvider,
+    ILogger<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans> logger)
+    : IIntegrationEventHandler<DeviceStateChangedIntegrationEvent>, ICapSubscribe
+{
+    public const string ConsumerName = "business-scheduling.device-state-changed";
+
+    private readonly IntegrationEventConsumerGuard<DeviceStateChangedIntegrationEvent> consumerGuard = new(
+        new IntegrationEventEnvelopeValidator(),
+        deadLetterStore,
+        new IntegrationEventConsumerOptions(
+            ConsumerName,
+            IndustrialTelemetryIntegrationEventTypes.DeviceStateChanged,
+            IndustrialTelemetryIntegrationEventVersions.V1));
+
+    public async Task HandleAsync(DeviceStateChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        await consumerGuard.HandleAsync(integrationEvent, HandleValidEventAsync, cancellationToken);
+    }
+
+    [CapSubscribe("Nerv.IIP.Contracts.IndustrialTelemetry.DeviceStateChangedIntegrationEvent", Group = ConsumerName)]
+    public Task HandleCapAsync(DeviceStateChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        return HandleAsync(integrationEvent, cancellationToken);
+    }
+
+    private async Task HandleValidEventAsync(DeviceStateChangedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    {
+        if (!await SchedulingProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
+            dbContext,
+            timeProvider,
+            integrationEvent,
+            SchedulingPlanInvalidationReasons.DeviceStateChanged,
             integrationEvent.Payload.DeviceAssetId,
             logger,
             cancellationToken);

@@ -18,6 +18,7 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Queries;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.DistributedLocks;
@@ -134,6 +135,30 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.ActiveAlarm && x.SourceType == EquipmentRuntimeSourceType.Alarm);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
         Assert.Contains(response.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.SourceStale && x.SourceType == EquipmentRuntimeSourceType.StaleSource);
+    }
+
+    [Fact]
+    public async Task Runtime_availability_reflects_running_to_faulted_state_change_as_device_state_unavailable()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-STATE-690", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-001");
+        await PostSampleAsync(client, "DEV-STATE-690", "faulted", new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-002");
+
+        var response = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/DEV-STATE-690/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T08:30:00Z&freshnessMaxAgeMinutes=60",
+            EquipmentRuntimeJson.Options);
+
+        Assert.NotNull(response?.Data);
+        var window = Assert.Single(response.Data.Items, x =>
+            x.DeviceAssetId == "DEV-STATE-690"
+            && x.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Unavailable
+            && x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable
+            && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), window.StartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero), window.EndUtc);
     }
 
     [Fact]
@@ -591,6 +616,24 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Device_state_changed_event_is_published_only_when_current_state_value_changes()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "running", new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-001");
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "running", new DateTimeOffset(2026, 6, 1, 10, 1, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-002");
+        await PostSampleAsync(client, "DEV-STATE-EVENT", "faulted", new DateTimeOffset(2026, 6, 1, 10, 2, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "event-state-003");
+
+        var stateEvents = factory.PublishedEvents.OfType<DeviceStateChangedIntegrationEvent>().ToArray();
+
+        Assert.Equal(2, stateEvents.Length);
+        Assert.Equal(new[] { "running", "faulted" }, stateEvents.Select(x => x.Payload.CurrentState).ToArray());
+        Assert.Equal(new[] { "event-state-001", "event-state-003" }, stateEvents.Select(x => x.Payload.SourceSequence).ToArray());
+    }
+
+    [Fact]
     public async Task Telemetry_sample_source_sequence_is_trimmed_before_dedupe_lookup()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
@@ -858,6 +901,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
             .AddEntityFrameworkInMemoryDatabase()
             .BuildServiceProvider();
 
+        public IReadOnlyList<object> PublishedEvents => Services.GetRequiredService<CapturingIntegrationEventPublisher>().PublishedEvents;
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
@@ -870,7 +915,8 @@ public sealed class IndustrialTelemetryEndpointContractTests
                 services.RemoveAll<IDistributedLock>();
                 services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddInMemoryDistributedLock();
-                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<CapturingIntegrationEventPublisher>();
+                services.AddSingleton<IIntegrationEventPublisher>(provider => provider.GetRequiredService<CapturingIntegrationEventPublisher>());
                 services.AddDbContext<ApplicationDbContext>(options =>
                     options
                         .UseInMemoryDatabase(databaseName)
@@ -889,10 +935,29 @@ public sealed class IndustrialTelemetryEndpointContractTests
         }
     }
 
-    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    private sealed class CapturingIntegrationEventPublisher : IIntegrationEventPublisher
     {
+        private readonly List<object> publishedEvents = [];
+        private readonly object syncRoot = new();
+
+        public IReadOnlyList<object> PublishedEvents
+        {
+            get
+            {
+                lock (syncRoot)
+                {
+                    return publishedEvents.ToArray();
+                }
+            }
+        }
+
         Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
         {
+            lock (syncRoot)
+            {
+                publishedEvents.Add(integrationEvent!);
+            }
+
             return Task.CompletedTask;
         }
     }

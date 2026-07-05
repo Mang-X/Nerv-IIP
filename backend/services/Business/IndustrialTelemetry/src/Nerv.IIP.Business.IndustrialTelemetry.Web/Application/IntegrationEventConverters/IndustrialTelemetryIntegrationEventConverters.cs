@@ -21,7 +21,7 @@ public sealed class DeviceStateChangedIntegrationEventConverter
             snapshot.OrganizationId,
             snapshot.EnvironmentId,
             "system:industrial-telemetry",
-            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}",
+            $"industrialTelemetry:device-state:{snapshot.OrganizationId}:{snapshot.EnvironmentId}:{snapshot.DeviceAssetId}:{snapshot.SourceSequence}:{snapshot.Id.Id:D}",
             new DeviceStateChangedPayload(
                 snapshot.Id.Id.ToString("D"),
                 snapshot.DeviceAssetId,
