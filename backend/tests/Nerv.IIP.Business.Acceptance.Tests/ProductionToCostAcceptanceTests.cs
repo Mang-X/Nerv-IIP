@@ -48,6 +48,9 @@ public sealed class ProductionToCostAcceptanceTests
             new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests", "createBusinessMesFinishedGoodsReceiptRequest"),
             chain.RequiredEndpoints);
         Assert.Contains(
+            new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", "retryBusinessMesFinishedGoodsReceiptInventoryPosting"),
+            chain.RequiredEndpoints);
+        Assert.Contains(
             new EndpointSurface("BusinessErp", "GET", "/api/business/v1/erp/finance/cost-candidates/by-source", "getErpCostCandidateBySourceDocument"),
             chain.RequiredEndpoints);
     }

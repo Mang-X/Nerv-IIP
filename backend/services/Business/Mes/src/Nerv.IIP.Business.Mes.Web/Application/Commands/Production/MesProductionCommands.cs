@@ -454,6 +454,12 @@ public sealed record CreateFinishedGoodsReceiptRequestCommand(
     string? ProducedLotNo = null,
     string? SerialNo = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
 
+public sealed record RetryFinishedGoodsReceiptInventoryPostingCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string RequestNo,
+    string IdempotencyKey) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
+
 public sealed class CreateFinishedGoodsReceiptRequestCommandValidator : AbstractValidator<CreateFinishedGoodsReceiptRequestCommand>
 {
     public CreateFinishedGoodsReceiptRequestCommandValidator()
@@ -525,6 +531,18 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             throw new KnownException($"完工入库引用的产出批次不存在，ProducedLotNo = {request.ProducedLotNo}");
         }
 
+        // MES receipt creation is a low-concurrency operator workflow; strict cross-command serialization would need a separate DB lock/constraint design.
+        var activeReceiptQuantity = await ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId)
+            .SumAsync(x => x.Quantity, cancellationToken);
+        if (activeReceiptQuantity + request.Quantity > workOrder.CompletedQuantity + FinishedGoodsReceiptRequest.QuantityTolerance)
+        {
+            throw new KnownException($"累计完工入库申请数量超过工单完工数量，WorkOrderId = {request.WorkOrderId}");
+        }
+
         var receiptRequest = FinishedGoodsReceiptRequest.Create(
             request.OrganizationId,
             request.EnvironmentId,
@@ -540,5 +558,58 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
         await Task.CompletedTask;
         return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);
+    }
+
+    public static IQueryable<FinishedGoodsReceiptRequest> ActiveReceiptRequestsForWorkOrder(
+        IQueryable<FinishedGoodsReceiptRequest> receiptRequests,
+        string organizationId,
+        string environmentId,
+        string workOrderId)
+    {
+        return receiptRequests.Where(x =>
+            x.OrganizationId == organizationId &&
+            x.EnvironmentId == environmentId &&
+            x.WorkOrderId == workOrderId &&
+            x.Status != FinishedGoodsReceiptRequest.CancelledStatus);
+    }
+}
+
+public sealed class RetryFinishedGoodsReceiptInventoryPostingCommandValidator
+    : AbstractValidator<RetryFinishedGoodsReceiptInventoryPostingCommand>
+{
+    public RetryFinishedGoodsReceiptInventoryPostingCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.RequestNo).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(200);
+    }
+}
+
+public sealed class RetryFinishedGoodsReceiptInventoryPostingCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RetryFinishedGoodsReceiptInventoryPostingCommand, FinishedGoodsReceiptRequestCommandResult>
+{
+    public async Task<FinishedGoodsReceiptRequestCommandResult> Handle(
+        RetryFinishedGoodsReceiptInventoryPostingCommand request,
+        CancellationToken cancellationToken)
+    {
+        var receipt = await dbContext.FinishedGoodsReceiptRequests.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.RequestNo == request.RequestNo,
+            cancellationToken)
+            ?? throw new KnownException($"未找到完工入库申请，RequestNo = {request.RequestNo}");
+
+        try
+        {
+            receipt.RetryInventoryPosting(request.IdempotencyKey);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new KnownException(exception.Message);
+        }
+
+        await Task.CompletedTask;
+        return new FinishedGoodsReceiptRequestCommandResult(receipt.Id, receipt.RequestNo);
     }
 }

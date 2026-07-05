@@ -60,8 +60,9 @@ public sealed class MesIntegrationEventTests
             null,
             12.34m);
 
+        var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
         var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
-            .Convert(new FinishedGoodsReceiptRequestedDomainEvent(request));
+            .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);
@@ -87,8 +88,9 @@ public sealed class MesIntegrationEventTests
             DateTimeOffset.Parse("2026-06-15T09:00:00Z"),
             "LOT-FG-001");
 
+        var domainEvent = Assert.IsType<FinishedGoodsReceiptRequestedDomainEvent>(request.GetDomainEvents().Single());
         var integrationEvent = new FinishedGoodsReceiptRequestedIntegrationEventConverter()
-            .Convert(new FinishedGoodsReceiptRequestedDomainEvent(request));
+            .Convert(domainEvent);
 
         Assert.Equal(InventoryIntegrationEventTypes.InventoryMovementRequested, integrationEvent.EventType);
         Assert.Equal("inbound", integrationEvent.Payload.MovementType);

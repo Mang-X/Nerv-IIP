@@ -101,12 +101,11 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
     {
         var request = domainEvent.FinishedGoodsReceiptRequest;
         var occurredAtUtc = DateTimeOffset.UtcNow;
-        var idempotencyKey = EventIds.Idempotency("finished-goods-receipt", request.OrganizationId, request.EnvironmentId, request.RequestNo);
         return ProductionMaterialConsumedIntegrationEventConverter.NewInventoryMovementRequested(
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
-            idempotencyKey,
+            domainEvent.IdempotencyKey,
             request.RequestNo,
             request.WorkOrderId,
             request.SkuId,
@@ -114,7 +113,7 @@ public sealed class FinishedGoodsReceiptRequestedIntegrationEventConverter
             "finished-goods",
             "receiving",
             request.ProducedLotNo,
-            request.Quantity,
+            domainEvent.Quantity,
             occurredAtUtc,
             request.UnitCost);
     }
