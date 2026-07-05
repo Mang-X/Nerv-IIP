@@ -274,7 +274,8 @@ internal static class SchedulingPlanInvalidationService
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedResourceId = Required(affectedResourceId, nameof(affectedResourceId));
-        var planIds = await dbContext.SchedulePlans
+        var plans = await dbContext.SchedulePlans
+            .Include(x => x.Assignments)
             .Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
@@ -282,10 +283,8 @@ internal static class SchedulingPlanInvalidationService
                 x.Assignments.Any(assignment =>
                     assignment.ResourceId == normalizedResourceId ||
                     assignment.WorkCenterId == normalizedResourceId))
-            .Select(x => x.PlanId)
-            .Distinct()
             .ToArrayAsync(cancellationToken);
-        if (planIds.Length == 0)
+        if (plans.Length == 0)
         {
             logger.LogInformation(
                 "Scheduling input change {EventType} for resource {AffectedResourceId} matched no generated schedule plan in {OrganizationId}/{EnvironmentId}.",
@@ -300,7 +299,7 @@ internal static class SchedulingPlanInvalidationService
             timeProvider,
             integrationEvent,
             reasonCode,
-            planIds,
+            plans,
             affectedResourceId: normalizedResourceId,
             affectedWorkOrderId: null,
             affectedOperationId: null,
@@ -319,7 +318,8 @@ internal static class SchedulingPlanInvalidationService
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedSource = Required(sourceDocumentId, nameof(sourceDocumentId));
-        var planIds = await dbContext.SchedulePlans
+        var plans = await dbContext.SchedulePlans
+            .Include(x => x.Assignments)
             .Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
@@ -327,8 +327,6 @@ internal static class SchedulingPlanInvalidationService
                 x.Assignments.Any(assignment =>
                     assignment.WorkOrderId == normalizedSource ||
                     assignment.OperationId == normalizedSource))
-            .Select(x => x.PlanId)
-            .Distinct()
             .ToArrayAsync(cancellationToken);
 
         await AddInvalidationsAsync(
@@ -336,7 +334,7 @@ internal static class SchedulingPlanInvalidationService
             timeProvider,
             integrationEvent,
             reasonCode,
-            planIds,
+            plans,
             affectedResourceId: null,
             affectedWorkOrderId: normalizedSource,
             affectedOperationId: null,
@@ -354,13 +352,12 @@ internal static class SchedulingPlanInvalidationService
         CancellationToken cancellationToken = default)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
-        var planIds = await dbContext.SchedulePlans
+        var plans = await dbContext.SchedulePlans
+            .Include(x => x.Assignments)
             .Where(x =>
                 x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
                 x.Status == SchedulePlanLifecycleStatus.Generated)
-            .Select(x => x.PlanId)
-            .Distinct()
             .ToArrayAsync(cancellationToken);
 
         await AddInvalidationsAsync(
@@ -368,7 +365,7 @@ internal static class SchedulingPlanInvalidationService
             timeProvider,
             integrationEvent,
             reasonCode,
-            planIds,
+            plans,
             affectedResourceId: null,
             affectedWorkOrderId: affectedWorkOrderId,
             affectedOperationId: null,
@@ -381,7 +378,7 @@ internal static class SchedulingPlanInvalidationService
         TimeProvider timeProvider,
         TIntegrationEvent integrationEvent,
         string reasonCode,
-        IReadOnlyCollection<string> planIds,
+        IReadOnlyCollection<SchedulePlan> plans,
         string? affectedResourceId,
         string? affectedWorkOrderId,
         string? affectedOperationId,
@@ -389,7 +386,7 @@ internal static class SchedulingPlanInvalidationService
         CancellationToken cancellationToken)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
-        if (planIds.Count == 0)
+        if (plans.Count == 0)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
@@ -406,12 +403,19 @@ internal static class SchedulingPlanInvalidationService
         var existing = existingPlanIds.ToHashSet(StringComparer.Ordinal);
         var recordedAtUtc = timeProvider.GetUtcNow();
 
-        foreach (var planId in planIds.Where(x => !existing.Contains(x)).Order(StringComparer.Ordinal))
+        foreach (var plan in plans
+                     .Where(x => !existing.Contains(x.PlanId))
+                     .OrderBy(x => x.PlanId, StringComparer.Ordinal))
         {
+            var affectedOperations = SelectAffectedOperations(
+                plan,
+                affectedResourceId,
+                affectedWorkOrderId,
+                affectedOperationId);
             dbContext.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                planId,
+                plan.PlanId,
                 integrationEvent.EventId,
                 integrationEvent.EventType,
                 integrationEvent.SourceService,
@@ -421,10 +425,41 @@ internal static class SchedulingPlanInvalidationService
                 affectedOperationId,
                 affectedSkuCode,
                 integrationEvent.OccurredAtUtc,
-                recordedAtUtc));
+                recordedAtUtc,
+                SchedulePlanInvalidatedSnapshot.FromPlan(plan, affectedOperations)));
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static IReadOnlyCollection<SchedulePlanAssignment> SelectAffectedOperations(
+        SchedulePlan plan,
+        string? affectedResourceId,
+        string? affectedWorkOrderId,
+        string? affectedOperationId)
+    {
+        var assignments = plan.Assignments.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(affectedResourceId))
+        {
+            var normalized = affectedResourceId.Trim();
+            assignments = assignments.Where(x =>
+                string.Equals(x.ResourceId, normalized, StringComparison.Ordinal) ||
+                string.Equals(x.WorkCenterId, normalized, StringComparison.Ordinal));
+        }
+        else if (!string.IsNullOrWhiteSpace(affectedOperationId))
+        {
+            var normalized = affectedOperationId.Trim();
+            assignments = assignments.Where(x => string.Equals(x.OperationId, normalized, StringComparison.Ordinal));
+        }
+        else if (!string.IsNullOrWhiteSpace(affectedWorkOrderId))
+        {
+            var normalized = affectedWorkOrderId.Trim();
+            assignments = assignments.Where(x => string.Equals(x.WorkOrderId, normalized, StringComparison.Ordinal));
+        }
+
+        var selected = assignments.ToArray();
+        return selected.Length == 0 ? plan.Assignments.ToArray() : selected;
     }
 
     private static string Required(string value, string parameterName)

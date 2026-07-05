@@ -76,6 +76,44 @@ public sealed class SchedulingIntegrationEventTests
     }
 
     [Fact]
+    public void Schedule_plan_invalidated_event_uses_required_name_reason_and_affected_operations()
+    {
+        var plan = CreatePlan();
+        var invalidation = SchedulePlanInvalidation.Create(
+            "org-001",
+            "env-dev",
+            "plan-001",
+            "maintenance-event-001",
+            "maintenance.AssetUnavailable",
+            "maintenance",
+            SchedulingPlanInvalidationReasons.EquipmentUnavailable,
+            "res-001",
+            null,
+            null,
+            null,
+            new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+            FixedNow);
+        var snapshot = SchedulePlanInvalidatedSnapshot.FromPlan(
+            plan,
+            [plan.Assignments.Single()]);
+
+        var integrationEvent = new SchedulePlanInvalidatedIntegrationEventConverter(
+                new FixedTimeProvider(FixedNow),
+                new StubSchedulingIntegrationEventContextAccessor())
+            .Convert(new SchedulePlanInvalidatedDomainEvent(invalidation, snapshot));
+
+        Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, integrationEvent.EventType);
+        Assert.Equal("plan-001", integrationEvent.Payload.PlanId);
+        Assert.Equal("problem-001", integrationEvent.Payload.ProblemId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.EquipmentUnavailable, integrationEvent.Payload.ReasonCode);
+        Assert.Equal("maintenance.AssetUnavailable", integrationEvent.Payload.SourceEventType);
+        Assert.Equal("maintenance-event-001", integrationEvent.Payload.SourceEventId);
+        Assert.Contains("res-001", integrationEvent.Payload.AffectedResourceIds);
+        Assert.Contains("wc-001", integrationEvent.Payload.AffectedResourceIds);
+        Assert.Contains(integrationEvent.Payload.AffectedOperations, x => x.WorkOrderId == "wo-001" && x.OperationId == "op-001");
+    }
+
+    [Fact]
     public void Schedule_plan_event_propagates_correlation_causation_and_actor_context()
     {
         var plan = CreatePlan();

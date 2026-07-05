@@ -14,6 +14,8 @@ public static class MesIntegrationEventConsumerRegistrationExtensions
         services.AddScoped<QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext>();
         services.AddScoped<StockMovementPostedIntegrationEventHandlerForMarkMesReceiptPosted>();
         services.AddScoped<StockMovementPostingFailedIntegrationEventHandlerForMarkMesRequestFailed>();
+        services.AddScoped<SchedulePlanReleasedIntegrationEventHandlerForDispatch>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated>();
         return services;
     }
 }

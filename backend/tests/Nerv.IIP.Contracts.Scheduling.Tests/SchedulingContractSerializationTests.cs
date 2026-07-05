@@ -53,6 +53,57 @@ public class SchedulingContractSerializationTests
             && x.HasConflict
             && x.ConflictReasonCode == ScheduleConflictReasonCodeContract.DueDate);
     }
+
+    [Fact]
+    public void Schedule_plan_invalidated_event_round_trips_reason_resources_and_operations()
+    {
+        var integrationEvent = new SchedulePlanInvalidatedIntegrationEvent(
+            EventId: "evt-schedule-invalidated-001",
+            EventType: SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            EventVersion: SchedulingIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-01T09:00:00Z"),
+            SourceService: SchedulingIntegrationEventSources.BusinessScheduling,
+            CorrelationId: "corr-scheduling-001",
+            CausationId: "maintenance-event-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-dev",
+            Actor: "system:business-scheduling",
+            IdempotencyKey: "scheduling:schedule-plan-invalidated:org-001:env-dev:plan-001:maintenance-event-001",
+            Payload: new SchedulePlanInvalidatedPayload(
+                PlanId: "plan-001",
+                ProblemId: "problem-001",
+                ContractVersion: 1,
+                AlgorithmVersion: "aps-lite-v1",
+                ProblemFingerprint: "fingerprint-001",
+                PlanStatus: "generated",
+                ReasonCode: "equipmentUnavailable",
+                SourceEventType: "maintenance.AssetUnavailable",
+                SourceEventId: "maintenance-event-001",
+                AffectedResourceIds: ["DEV-OIL-01"],
+                AffectedOperations:
+                [
+                    new SchedulePlanAffectedOperationPayload(
+                        WorkOrderId: "WO-APS-001",
+                        OperationId: "OP-10",
+                        OperationSequence: 10,
+                        ResourceId: "DEV-OIL-01",
+                        WorkCenterId: "WC-OIL",
+                        StartUtc: DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        EndUtc: DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+                ]));
+
+        var json = JsonSerializer.Serialize(integrationEvent, SchedulingJson.Options);
+        var roundTrip = JsonSerializer.Deserialize<SchedulePlanInvalidatedIntegrationEvent>(json, SchedulingJson.Options);
+
+        Assert.NotNull(roundTrip);
+        Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, roundTrip!.EventType);
+        Assert.Equal("equipmentUnavailable", roundTrip.Payload.ReasonCode);
+        Assert.Equal("maintenance.AssetUnavailable", roundTrip.Payload.SourceEventType);
+        Assert.Equal("DEV-OIL-01", Assert.Single(roundTrip.Payload.AffectedResourceIds));
+        Assert.Equal("OP-10", Assert.Single(roundTrip.Payload.AffectedOperations).OperationId);
+        Assert.Contains("\"reasonCode\":\"equipmentUnavailable\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"affectedResourceIds\":[\"DEV-OIL-01\"]", json, StringComparison.Ordinal);
+    }
 }
 
 internal static class SchedulingContractSamples

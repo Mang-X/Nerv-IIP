@@ -353,6 +353,42 @@ public sealed class OperationTaskFailedNotificationConsumerTests
     }
 
     [Fact]
+    public async Task Handle_schedule_plan_invalidated_creates_planner_reschedule_task_once()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(new Dictionary<string, string?>
+        {
+            ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
+        });
+        var integrationEvent = CreateSchedulePlanInvalidatedEvent(
+            "event-schedule-invalidated",
+            "scheduling-invalidated:plan-001:maintenance-event-001");
+
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents
+            .Include(x => x.Messages)
+            .Include(x => x.Tasks)
+            .SingleAsync();
+        var processed = await dbContext.ProcessedIntegrationEvents.SingleAsync();
+
+        Assert.Equal("business-scheduling", intent.SourceService);
+        Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, intent.SourceEventType);
+        Assert.Equal("event-schedule-invalidated", intent.SourceEventId);
+        Assert.Equal(NotificationIntentTypes.Task, intent.IntentType);
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+        Assert.Equal("schedule-plan", intent.ResourceType);
+        Assert.Equal("plan-001", intent.ResourceId);
+        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Single(intent.Tasks);
+        Assert.Contains("equipmentUnavailable", intent.Summary, StringComparison.Ordinal);
+        Assert.Equal(SchedulePlanInvalidatedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
+        Assert.Equal("scheduling-invalidated:plan-001:maintenance-event-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Handle_schedule_conflict_detected_rejects_missing_severity_without_marking_processed()
     {
         using var factory = new NotificationConsumerWebApplicationFactory();
@@ -571,6 +607,16 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         using var scope = factory.Services.CreateScope();
         IIntegrationEventHandler<ScheduleConflictDetectedIntegrationEvent> handler =
             ActivatorUtilities.CreateInstance<ScheduleConflictDetectedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+    }
+
+    private static async Task HandleSchedulePlanInvalidatedAsync(
+        NotificationConsumerWebApplicationFactory factory,
+        SchedulePlanInvalidatedIntegrationEvent integrationEvent)
+    {
+        using var scope = factory.Services.CreateScope();
+        IIntegrationEventHandler<SchedulePlanInvalidatedIntegrationEvent> handler =
+            ActivatorUtilities.CreateInstance<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>(scope.ServiceProvider);
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
@@ -829,6 +875,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 WorkOrderId: workOrderId!,
                 OperationId: "op-001",
                 ResourceId: "res-001"));
+    }
+
+    private static SchedulePlanInvalidatedIntegrationEvent CreateSchedulePlanInvalidatedEvent(
+        string eventId,
+        string idempotencyKey)
+    {
+        return new SchedulePlanInvalidatedIntegrationEvent(
+            EventId: eventId,
+            EventType: SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            EventVersion: SchedulingIntegrationEventVersions.V1,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-06-21T09:05:00Z"),
+            SourceService: SchedulingIntegrationEventSources.BusinessScheduling,
+            CorrelationId: $"corr-{eventId}",
+            CausationId: "maintenance-event-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-scheduling",
+            IdempotencyKey: idempotencyKey,
+            Payload: new SchedulePlanInvalidatedPayload(
+                PlanId: "plan-001",
+                ProblemId: "problem-001",
+                ContractVersion: 1,
+                AlgorithmVersion: "aps-lite-v1",
+                ProblemFingerprint: "fingerprint-001",
+                PlanStatus: "generated",
+                ReasonCode: "equipmentUnavailable",
+                SourceEventType: "maintenance.AssetUnavailable",
+                SourceEventId: "maintenance-event-001",
+                AffectedResourceIds: ["DEV-OIL-01"],
+                AffectedOperations:
+                [
+                    new SchedulePlanAffectedOperationPayload(
+                        WorkOrderId: "WO-APS-001",
+                        OperationId: "OP-10",
+                        OperationSequence: 10,
+                        ResourceId: "DEV-OIL-01",
+                        WorkCenterId: "WC-OIL",
+                        StartUtc: DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        EndUtc: DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+                ]));
     }
 
     private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>

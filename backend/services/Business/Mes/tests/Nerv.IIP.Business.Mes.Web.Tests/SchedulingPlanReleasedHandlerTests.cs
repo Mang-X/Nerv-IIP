@@ -424,6 +424,55 @@ public sealed class SchedulingPlanReleasedHandlerTests
         Assert.Contains("WO-APS-001", deadLetter.FailureMessage, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task SchedulePlanInvalidatedHandler_MarksAffectedQueuedOperationTaskAsScheduleInvalidatedOnce()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var options = CreateDbContextOptions($"mes-scheduling-invalidated-{Guid.CreateVersion7():N}", databaseRoot);
+        await using (var dbContext = CreateDbContext(options))
+        {
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "FG-APS",
+                "PV-001",
+                1m,
+                10,
+                DateTimeOffset.Parse("2026-06-02T16:00:00Z"),
+                "PCS",
+                null));
+            dbContext.OperationTasks.Add(OperationTask.Queue(
+                "org-001",
+                "env-dev",
+                "WO-APS-001",
+                "OP-10",
+                10,
+                "WC-OIL",
+                [],
+                DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                TimeSpan.FromMinutes(90)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using (var dbContext = CreateDbContext(options))
+        {
+            var handler = new SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
+                dbContext,
+                new InMemoryIntegrationEventDeadLetterStore());
+            var integrationEvent = CreateInvalidatedEvent();
+
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        var task = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-10");
+        Assert.Equal(OperationTaskLifecycleStatus.ScheduleInvalidated, task.Status);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
     private static SchedulePlanReleasedIntegrationEvent CreateReleasedEvent(
         params SchedulePlanAffectedOperationPayload[] affectedOperations)
     {
@@ -462,6 +511,43 @@ public sealed class SchedulingPlanReleasedHandlerTests
                 "fingerprint-001",
                 "released",
                 affectedOperations));
+    }
+
+    private static SchedulePlanInvalidatedIntegrationEvent CreateInvalidatedEvent()
+    {
+        return new SchedulePlanInvalidatedIntegrationEvent(
+            "evt-scheduling-invalidated-001",
+            SchedulingIntegrationEventTypes.SchedulePlanInvalidated,
+            SchedulingIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-06-01T09:00:00Z"),
+            SchedulingIntegrationEventSources.BusinessScheduling,
+            "corr-001",
+            "maintenance-event-001",
+            "org-001",
+            "env-dev",
+            "scheduling",
+            "scheduling:schedule-plan-invalidated:org-001:env-dev:plan-001:maintenance-event-001",
+            new SchedulePlanInvalidatedPayload(
+                "plan-001",
+                "problem-001",
+                1,
+                "aps-lite-v1",
+                "fingerprint-001",
+                "generated",
+                "equipmentUnavailable",
+                "maintenance.AssetUnavailable",
+                "maintenance-event-001",
+                ["DEV-OIL-01"],
+                [
+                    new SchedulePlanAffectedOperationPayload(
+                        "WO-APS-001",
+                        "OP-10",
+                        10,
+                        "DEV-OIL-01",
+                        "WC-OIL",
+                        DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
+                        DateTimeOffset.Parse("2026-06-01T13:30:00Z"))
+                ]));
     }
 
     private static ApplicationDbContext CreateDbContext()

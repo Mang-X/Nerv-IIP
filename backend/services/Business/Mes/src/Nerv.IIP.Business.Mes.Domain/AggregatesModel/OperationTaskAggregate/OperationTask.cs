@@ -7,6 +7,7 @@ public enum OperationTaskLifecycleStatus
     Queued,
     InProgress,
     Paused,
+    ScheduleInvalidated,
     Completed,
     Cancelled,
 }
@@ -152,6 +153,16 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         ExistingEndUtc = null;
     }
 
+    public void MarkScheduleInvalidated()
+    {
+        if (Status is OperationTaskLifecycleStatus.Completed or OperationTaskLifecycleStatus.Cancelled)
+        {
+            return;
+        }
+
+        Status = OperationTaskLifecycleStatus.ScheduleInvalidated;
+    }
+
     public void Pause(DateTimeOffset pausedAtUtc)
     {
         if (Status != OperationTaskLifecycleStatus.InProgress)
@@ -264,6 +275,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DurationTicks = (plannedEndUtc - plannedStartUtc).Ticks;
         DeviceAssetId = NormalizeOptional(deviceAssetId);
         AssignedAtUtc = assignedAtUtc;
+        if (Status == OperationTaskLifecycleStatus.ScheduleInvalidated)
+        {
+            Status = OperationTaskLifecycleStatus.Queued;
+        }
     }
 
     private static string NormalizeAlternatives(IReadOnlyCollection<string> values)
