@@ -1053,6 +1053,54 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     }
 }
 
+public sealed record PromoteScheduledEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly BusinessDate) : ICommand<bool>;
+
+public sealed class PromoteScheduledEngineeringChangeCommandHandler(
+    ApplicationDbContext dbContext,
+    IEngineeringBomRepository engineeringBomRepository,
+    IManufacturingBomRepository manufacturingBomRepository,
+    IRoutingRepository routingRepository,
+    IProductionVersionRepository productionVersionRepository)
+    : ICommandHandler<PromoteScheduledEngineeringChangeCommand, bool>
+{
+    public async Task<bool> Handle(PromoteScheduledEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges
+            .Include(x => x.AffectedVersions)
+            .SingleOrDefaultAsync(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.ChangeNumber == request.ChangeNumber,
+                cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+        if (change.Status != EngineeringVersionStatus.Scheduled ||
+            !change.EffectiveDate.HasValue ||
+            change.EffectiveDate.Value > request.BusinessDate)
+        {
+            return false;
+        }
+
+        var effectiveDate = change.EffectiveDate.Value;
+        var resolver = new ScheduledEngineeringChangeArchiveResolver(
+            engineeringBomRepository,
+            manufacturingBomRepository,
+            routingRepository,
+            productionVersionRepository);
+        var archiveActions = await resolver.ResolveArchiveActionsAsync(change, cancellationToken);
+        foreach (var archive in archiveActions)
+        {
+            archive(change.ChangeNumber, effectiveDate);
+        }
+
+        ProductEngineeringReleaseValidation.AsKnownException(() => change.Release(effectiveDate));
+        return true;
+    }
+}
+
 public sealed record CancelScheduledEngineeringChangeCommand(
     string OrganizationId,
     string EnvironmentId,

@@ -6,8 +6,12 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
@@ -16,15 +20,18 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingB
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
+using Nerv.IIP.Business.ProductEngineering.Domain.DomainEvents;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
+using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
 
@@ -1673,12 +1680,73 @@ public sealed class ProductEngineeringReleaseApiContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+        var promoted = await new PromoteScheduledEngineeringChangeCommandHandler(
+                dbContext,
+                new EngineeringBomRepository(dbContext),
+                new ManufacturingBomRepository(dbContext),
+                new RoutingRepository(dbContext),
+                new ProductionVersionRepository(dbContext))
+            .Handle(new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-DUE", new DateOnly(2026, 6, 3)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.True(promoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Scheduled_release_scanner_dispatches_due_changes_through_sender()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var dueChange = EngineeringChange.Open("org-001", "env-dev", "ECO-SCAN-DUE", "Due scan")
+            .Affect("engineering-bom", "EBOM-SCAN:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        dueChange.Schedule(new DateOnly(2026, 6, 3));
+        var futureChange = EngineeringChange.Open("org-001", "env-dev", "ECO-SCAN-FUTURE", "Future scan")
+            .Affect("engineering-bom", "EBOM-SCAN:B")
+            .Approve(Guid.NewGuid().ToString("D"));
+        futureChange.Schedule(new DateOnly(2026, 6, 4));
+        dbContext.EngineeringChanges.AddRange(dueChange, futureChange);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var sender = new RecordingPromotionSender();
+
+        var promoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(sender),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
             .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
 
         Assert.Equal(1, promoted);
-        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
-        Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+        Assert.Equal(
+            new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-SCAN-DUE", new DateOnly(2026, 6, 3)),
+            Assert.Single(sender.Commands));
+    }
+
+    [Fact]
+    public async Task Scheduled_release_scanner_dispatches_through_unit_of_work_pipeline_to_publish_release_domain_event()
+    {
+        await using var provider = CreateInMemoryProviderWithUnitOfWork();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DISPATCHED", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        ebom.ClearDomainEvents();
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-DISPATCHED", "EBOM-DISPATCHED:A", new DateOnly(2026, 6, 3));
+
+        var promoted = await scope.ServiceProvider.GetRequiredService<EngineeringChangeScheduledReleaseService>()
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        var releasedEvent = Assert.Single(scope.ServiceProvider.GetRequiredService<EngineeringChangeReleasedDomainEventRecorder>().Events);
+        var integrationEvent = Assert.IsType<EngineeringChangeReleasedIntegrationEvent>(
+            Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>().Published));
+        Assert.Equal(1, promoted);
+        Assert.Equal("ECO-DISPATCHED", releasedEvent.Change.ChangeNumber);
+        Assert.Equal("ECO-DISPATCHED", integrationEvent.Payload.ChangeNumber);
     }
 
     [Fact]
@@ -1698,7 +1766,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
             new CancelScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-CANCEL", "operator cancelled"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+        var promoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(new RecordingPromotionSender(false)),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
             .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
 
         Assert.Equal(0, promoted);
@@ -1723,13 +1794,22 @@ public sealed class ProductEngineeringReleaseApiContractTests
             new RescheduleEngineeringChangeCommand("org-001", "env-dev", "ECO-RESCHEDULE", new DateOnly(2026, 6, 10), "supplier delay"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var earlyPromoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+        var earlyPromoted = await new EngineeringChangeScheduledReleaseService(
+                dbContext,
+                CreateScopeFactoryWithSender(new RecordingPromotionSender(false)),
+                NullLogger<EngineeringChangeScheduledReleaseService>.Instance)
             .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
-        var duePromoted = await new EngineeringChangeScheduledReleaseService(dbContext)
-            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 10), CancellationToken.None);
+        var duePromoted = await new PromoteScheduledEngineeringChangeCommandHandler(
+                dbContext,
+                new EngineeringBomRepository(dbContext),
+                new ManufacturingBomRepository(dbContext),
+                new RoutingRepository(dbContext),
+                new ProductionVersionRepository(dbContext))
+            .Handle(new PromoteScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-RESCHEDULE", new DateOnly(2026, 6, 10)), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(0, earlyPromoted);
-        Assert.Equal(1, duePromoted);
+        Assert.True(duePromoted);
         Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
         Assert.Equal(new DateOnly(2026, 6, 10), Assert.Single(dbContext.EngineeringChanges).EffectiveDate);
     }
@@ -1737,7 +1817,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [Fact]
     public async Task Scheduled_release_promotion_isolates_failed_changes_for_next_retry()
     {
-        await using var provider = CreateInMemoryProvider();
+        await using var provider = CreateInMemoryProviderWithUnitOfWork();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var validBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-VALID", "A", "ENG-3000")
@@ -1756,9 +1836,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
         dbContext.AddRange(validBom, draftBom, validChange, retryChange);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+        var promoted = await scope.ServiceProvider.GetRequiredService<EngineeringChangeScheduledReleaseService>()
             .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
 
+        dbContext.ChangeTracker.Clear();
         var persistedValidBom = await dbContext.EngineeringBoms.SingleAsync(x => x.BomCode == "EBOM-VALID", CancellationToken.None);
         var persistedValidChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-VALID", CancellationToken.None);
         var persistedRetryChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-RETRY", CancellationToken.None);
@@ -2288,11 +2369,50 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
     private static ServiceProvider CreateInMemoryProvider()
     {
+        var databaseName = $"product-engineering-release-contract-{Guid.NewGuid():N}";
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"product-engineering-release-contract-{Guid.NewGuid():N}"));
+            options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static ServiceProvider CreateInMemoryProviderWithUnitOfWork()
+    {
+        var databaseName = $"product-engineering-release-contract-uow-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<EngineeringChangeReleasedDomainEventRecorder>();
+        services.AddSingleton<INotificationHandler<EngineeringChangeReleasedDomainEvent>>(serviceProvider =>
+            serviceProvider.GetRequiredService<EngineeringChangeReleasedDomainEventRecorder>());
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddScoped<IProductEngineeringIntegrationEventContextAccessor, StubProductEngineeringIntegrationEventContextAccessor>();
+        services.AddScoped<EngineeringChangeReleasedIntegrationEventConverter>();
+        services.AddScoped<EngineeringChangeScheduledReleaseService>();
+        services.AddScoped<IEngineeringBomRepository, EngineeringBomRepository>();
+        services.AddScoped<IManufacturingBomRepository, ManufacturingBomRepository>();
+        services.AddScoped<IRoutingRepository, RoutingRepository>();
+        services.AddScoped<IProductionVersionRepository, ProductionVersionRepository>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .RegisterServicesFromAssembly(typeof(ProductEngineeringReleaseApiContractTests).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options
+                .UseInMemoryDatabase(databaseName)
+                .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        return services.BuildServiceProvider();
+    }
+
+    private static IServiceScopeFactory CreateScopeFactoryWithSender(ISender sender)
+    {
+        return new ServiceCollection()
+            .AddSingleton(sender)
+            .BuildServiceProvider()
+            .GetRequiredService<IServiceScopeFactory>();
     }
 
     private static async Task ScheduleEngineeringChangeAsync(ApplicationDbContext dbContext, string changeNumber, string versionId, DateOnly effectiveDate)
@@ -2402,6 +2522,83 @@ public sealed class ProductEngineeringReleaseApiContractTests
     private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
     {
         public DateOnly GetBusinessDate() => businessDate;
+    }
+
+    private sealed class EngineeringChangeReleasedDomainEventRecorder
+        : INotificationHandler<EngineeringChangeReleasedDomainEvent>
+    {
+        public List<EngineeringChangeReleasedDomainEvent> Events { get; } = [];
+
+        public Task Handle(EngineeringChangeReleasedDomainEvent notification, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Events.Add(notification);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public List<object> Published { get; } = [];
+
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Published.Add(integrationEvent!);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubProductEngineeringIntegrationEventContextAccessor
+        : IProductEngineeringIntegrationEventContextAccessor
+    {
+        public ProductEngineeringIntegrationEventContext GetContext()
+        {
+            return new ProductEngineeringIntegrationEventContext("corr-001", "cause-001", "system:test");
+        }
+    }
+
+    private sealed class RecordingPromotionSender(bool result = true) : ISender
+    {
+        public List<PromoteScheduledEngineeringChangeCommand> Commands { get; } = [];
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Commands.Add(Assert.IsType<PromoteScheduledEngineeringChangeCommand>(request));
+            return Task.FromResult((TResponse)(object)result);
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Only request/response commands are supported.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Only typed commands are supported.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Streams are not supported.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            throw new NotSupportedException("Streams are not supported.");
+        }
     }
 
     private sealed class RecordingMasterDataReferenceValidator(params (string ResourceType, string Code)[] activeReferences)

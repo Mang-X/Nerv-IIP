@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MediatR;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingBomAggregate;
@@ -104,11 +105,12 @@ public sealed class UtcProductEngineeringBusinessDateProvider : IProductEngineer
 
 public sealed class EngineeringChangeScheduledReleaseService(
     ApplicationDbContext dbContext,
+    IServiceScopeFactory scopeFactory,
     ILogger<EngineeringChangeScheduledReleaseService>? logger = null)
 {
     public async Task<int> PromoteDueReleasesAsync(DateOnly businessDate, CancellationToken cancellationToken)
     {
-        var dueChangeIds = await dbContext.EngineeringChanges
+        var dueChanges = await dbContext.EngineeringChanges
             .Where(x =>
                 x.Status == EngineeringVersionStatus.Scheduled &&
                 x.EffectiveDate.HasValue &&
@@ -117,46 +119,36 @@ public sealed class EngineeringChangeScheduledReleaseService(
             .ThenBy(x => x.EnvironmentId)
             .ThenBy(x => x.EffectiveDate)
             .ThenBy(x => x.ChangeNumber)
-            .Select(x => x.Id)
+            .Select(x => new
+            {
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.ChangeNumber
+            })
             .ToArrayAsync(cancellationToken);
-        if (dueChangeIds.Length == 0)
+        if (dueChanges.Length == 0)
         {
             return 0;
         }
 
-        var resolver = new ScheduledEngineeringChangeArchiveResolver(
-            new EngineeringBomRepository(dbContext),
-            new ManufacturingBomRepository(dbContext),
-            new RoutingRepository(dbContext),
-            new ProductionVersionRepository(dbContext));
         var promoted = 0;
-        foreach (var changeId in dueChangeIds)
+        foreach (var change in dueChanges)
         {
-            EngineeringChange? change = null;
             try
             {
-                change = await dbContext.EngineeringChanges
-                    .Include(x => x.AffectedVersions)
-                    .SingleOrDefaultAsync(x =>
-                        x.Id == changeId &&
-                        x.Status == EngineeringVersionStatus.Scheduled,
-                        cancellationToken);
-                if (change is null)
+                using var scope = scopeFactory.CreateScope();
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                var wasPromoted = await sender.Send(
+                    new PromoteScheduledEngineeringChangeCommand(
+                        change.OrganizationId,
+                        change.EnvironmentId,
+                        change.ChangeNumber,
+                        businessDate),
+                    cancellationToken);
+                if (wasPromoted)
                 {
-                    continue;
+                    promoted++;
                 }
-
-                var effectiveDate = change.EffectiveDate ?? businessDate;
-                var archiveActions = await resolver.ResolveArchiveActionsAsync(change, cancellationToken);
-                foreach (var archive in archiveActions)
-                {
-                    archive(change.ChangeNumber, effectiveDate);
-                }
-
-                ProductEngineeringReleaseValidation.AsKnownException(() => change.Release(effectiveDate));
-                await dbContext.SaveChangesAsync(cancellationToken);
-                promoted++;
-                dbContext.ChangeTracker.Clear();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -164,13 +156,12 @@ public sealed class EngineeringChangeScheduledReleaseService(
             }
             catch (Exception ex)
             {
-                dbContext.ChangeTracker.Clear();
                 logger?.LogError(
                     ex,
                     "ProductEngineering scheduled engineering change release failed for {OrganizationId}/{EnvironmentId}/{ChangeNumber}; it will be retried on the next tick.",
-                    change?.OrganizationId,
-                    change?.EnvironmentId,
-                    change?.ChangeNumber);
+                    change.OrganizationId,
+                    change.EnvironmentId,
+                    change.ChangeNumber);
             }
         }
 
