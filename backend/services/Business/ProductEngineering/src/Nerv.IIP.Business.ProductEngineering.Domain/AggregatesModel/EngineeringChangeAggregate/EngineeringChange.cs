@@ -84,7 +84,7 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
 
     public void Release(DateOnly effectiveDate)
     {
-        EnsureDraft();
+        EnsureReleaseReady();
         if (string.IsNullOrWhiteSpace(ApprovalReferenceId))
         {
             throw new InvalidOperationException("Engineering change requires an approval reference before release.");
@@ -101,11 +101,59 @@ public sealed class EngineeringChange : Entity<EngineeringChangeId>, IAggregateR
         AddDomainEvent(new EngineeringChangeReleasedDomainEvent(this));
     }
 
+    public void Schedule(DateOnly effectiveDate)
+    {
+        EnsureDraft();
+        if (string.IsNullOrWhiteSpace(ApprovalReferenceId))
+        {
+            throw new InvalidOperationException("Engineering change requires an approval reference before scheduling.");
+        }
+
+        if (affectedVersions.Count == 0)
+        {
+            throw new InvalidOperationException("Engineering change requires at least one affected version before scheduling.");
+        }
+
+        Status = EngineeringVersionStatus.Scheduled;
+        EffectiveDate = effectiveDate;
+        Touch();
+    }
+
+    public void Reschedule(DateOnly effectiveDate)
+    {
+        EnsureScheduled();
+        EffectiveDate = effectiveDate;
+        Touch();
+    }
+
+    public void CancelScheduled()
+    {
+        EnsureScheduled();
+        Status = EngineeringVersionStatus.Cancelled;
+        Touch();
+    }
+
+    private void EnsureReleaseReady()
+    {
+        if (Status != EngineeringVersionStatus.Draft && Status != EngineeringVersionStatus.Scheduled)
+        {
+            throw new InvalidOperationException("Engineering change can only be released from draft or scheduled status.");
+        }
+    }
+
     private void EnsureDraft()
     {
         if (Status != EngineeringVersionStatus.Draft)
         {
             throw new InvalidOperationException("Released engineering change cannot be changed directly.");
+        }
+    }
+
+    private void EnsureScheduled()
+    {
+        if (Status != EngineeringVersionStatus.Scheduled)
+        {
+            throw new InvalidOperationException("Only scheduled engineering changes can be changed by this operation.");
         }
     }
 

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringBomAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.EngineeringDocumentAggregate;
@@ -6,7 +7,9 @@ using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ManufacturingB
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.ProductionVersionAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.RoutingAggregate;
 using Nerv.IIP.Business.ProductEngineering.Domain.AggregatesModel.StandardOperationAggregate;
+using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.ServiceAuth;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -747,11 +750,13 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
     IRoutingRepository routingRepository,
     IProductionVersionRepository productionVersionRepository,
     IEngineeringApprovalVerifier? approvalVerifier = null,
-    ProductEngineeringCodingService? codingService = null)
+    ProductEngineeringCodingService? codingService = null,
+    IProductEngineeringBusinessDateProvider? businessDateProvider = null)
     : ICommandHandler<ReleaseEngineeringChangeCommand, EntityCommandResult>
 {
     private readonly ProductEngineeringCodingService _codingService = codingService ?? new ProductEngineeringCodingService();
     private readonly IEngineeringApprovalVerifier _approvalVerifier = approvalVerifier ?? new RejectingEngineeringApprovalVerifier();
+    private readonly IProductEngineeringBusinessDateProvider _businessDateProvider = businessDateProvider ?? UtcProductEngineeringBusinessDateProvider.Instance;
 
     public async Task<EntityCommandResult> Handle(ReleaseEngineeringChangeCommand request, CancellationToken cancellationToken)
     {
@@ -785,10 +790,17 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
             change.Affect(affectedVersion.VersionKind, affectedVersion.VersionId, affectedVersion.SupersededByVersionId);
         }
 
-        change.Release(request.EffectiveDate);
-        foreach (var archive in affectedVersions)
+        if (request.EffectiveDate > _businessDateProvider.GetBusinessDate())
         {
-            archive(change.ChangeNumber, request.EffectiveDate);
+            change.Schedule(request.EffectiveDate);
+        }
+        else
+        {
+            change.Release(request.EffectiveDate);
+            foreach (var archive in affectedVersions)
+            {
+                archive(change.ChangeNumber, request.EffectiveDate);
+            }
         }
 
         await repository.AddAsync(change, cancellationToken);
@@ -1038,6 +1050,73 @@ public sealed class ReleaseEngineeringChangeCommandHandler(
         {
             throw new KnownException($"Successor production version '{successor.Id.Id:D}' must be active for the same SKU before it can supersede '{versionId}'.");
         }
+    }
+}
+
+public sealed record CancelScheduledEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason) : ICommand;
+
+public sealed class CancelScheduledEngineeringChangeCommandValidator : AbstractValidator<CancelScheduledEngineeringChangeCommand>
+{
+    public CancelScheduledEngineeringChangeCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class CancelScheduledEngineeringChangeCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<CancelScheduledEngineeringChangeCommand>
+{
+    public async Task Handle(CancelScheduledEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            x.ChangeNumber == request.ChangeNumber,
+            cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+
+        ProductEngineeringReleaseValidation.AsKnownException(change.CancelScheduled);
+    }
+}
+
+public sealed record RescheduleEngineeringChangeCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason) : ICommand;
+
+public sealed class RescheduleEngineeringChangeCommandValidator : AbstractValidator<RescheduleEngineeringChangeCommand>
+{
+    public RescheduleEngineeringChangeCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class RescheduleEngineeringChangeCommandHandler(ApplicationDbContext dbContext)
+    : ICommandHandler<RescheduleEngineeringChangeCommand>
+{
+    public async Task Handle(RescheduleEngineeringChangeCommand request, CancellationToken cancellationToken)
+    {
+        var change = await dbContext.EngineeringChanges.SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            x.ChangeNumber == request.ChangeNumber,
+            cancellationToken)
+            ?? throw new KnownException($"Engineering change '{request.ChangeNumber}' was not found.");
+
+        ProductEngineeringReleaseValidation.AsKnownException(() => change.Reschedule(request.EffectiveDate));
     }
 }
 

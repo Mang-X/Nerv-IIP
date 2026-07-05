@@ -681,6 +681,58 @@ public sealed class ReleaseBusinessConsoleEngineeringChangeEndpoint(
 }
 
 [Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/engineering-changes/cancel-scheduled")]
+[BusinessGatewayOperationId("cancelScheduledBusinessConsoleEngineeringChange")]
+public sealed class CancelScheduledBusinessConsoleEngineeringChangeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCancelScheduledEngineeringChangeRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => "engineering-change";
+
+    protected override string? ResourceId(BusinessConsoleCancelScheduledEngineeringChangeRequest request) => request.ChangeNumber;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.CancelScheduledEngineeringChangeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
+[HttpPost("/api/business-console/v1/engineering/engineering-changes/reschedule")]
+[BusinessGatewayOperationId("rescheduleBusinessConsoleEngineeringChange")]
+public sealed class RescheduleBusinessConsoleEngineeringChangeEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessProductEngineeringClient engineering,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRescheduleEngineeringChangeRequest, BusinessConsoleEngineeringEntityResponse>(
+        auth,
+        BusinessGatewayPermissions.EngineeringChangesManage)
+{
+    protected override string OrganizationId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleRescheduleEngineeringChangeRequest request) => "engineering-change";
+
+    protected override string? ResourceId(BusinessConsoleRescheduleEngineeringChangeRequest request) => request.ChangeNumber;
+
+    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        engineering.RescheduleEngineeringChangeAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Product Engineering")]
 [HttpPost("/api/business-console/v1/engineering/engineering-changes/impact-preview")]
 [BusinessGatewayOperationId("previewBusinessConsoleEngineeringChangeImpact")]
 public sealed class PreviewBusinessConsoleEngineeringChangeImpactEndpoint(
@@ -1053,6 +1105,28 @@ public sealed class BusinessConsoleReleaseEngineeringChangeRequestValidator : Va
             version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
             version.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
         });
+    }
+}
+
+public sealed class BusinessConsoleCancelScheduledEngineeringChangeRequestValidator : Validator<BusinessConsoleCancelScheduledEngineeringChangeRequest>
+{
+    public BusinessConsoleCancelScheduledEngineeringChangeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+    }
+}
+
+public sealed class BusinessConsoleRescheduleEngineeringChangeRequestValidator : Validator<BusinessConsoleRescheduleEngineeringChangeRequest>
+{
+    public BusinessConsoleRescheduleEngineeringChangeRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ChangeNumber).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 

@@ -9,7 +9,9 @@ public enum EngineeringVersionStatus
 {
     Draft,
     Published,
-    Archived
+    Archived,
+    Scheduled,
+    Cancelled
 }
 
 public static class ProductionVersionStatus

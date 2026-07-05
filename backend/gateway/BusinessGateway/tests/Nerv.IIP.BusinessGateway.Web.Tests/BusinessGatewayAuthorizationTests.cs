@@ -835,6 +835,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/engineering-changes/ECO-001", BusinessGatewayPermissions.EngineeringChangesRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/release", BusinessGatewayPermissions.EngineeringChangesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled", BusinessGatewayPermissions.EngineeringChangesManage);
+        routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/engineering-changes/reschedule", BusinessGatewayPermissions.EngineeringChangesManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/engineering/production-versions", BusinessGatewayPermissions.EngineeringProductionVersionsManage);
         routes.Add(HttpMethod.Put, "/api/business-console/v1/engineering/production-versions/pv-001", BusinessGatewayPermissions.EngineeringProductionVersionsManage);

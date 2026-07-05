@@ -21,6 +21,7 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Auth;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Queries;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
@@ -36,7 +37,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
     {
         var contracts = ProductEngineeringEndpointContracts.All;
 
-        Assert.Equal(24, contracts.Count);
+        Assert.Equal(26, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/documents/{documentNumber}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.DocumentsRead);
@@ -47,6 +48,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/manufacturing-boms/release" && x.PermissionCode == EngineeringPermissionCodes.BomsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/routings/release" && x.PermissionCode == EngineeringPermissionCodes.RoutingsManage);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/release" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/cancel-scheduled" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/engineering/engineering-changes/reschedule" && x.PermissionCode == EngineeringPermissionCodes.ChangesManage);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/{bomCode}/{revision}" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/engineering/engineering-boms/explosion" && x.PermissionCode == EngineeringPermissionCodes.BomsRead);
@@ -114,6 +117,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
     [InlineData(typeof(ReleaseRoutingEndpoint))]
     [InlineData(typeof(GetRoutingEndpoint))]
     [InlineData(typeof(ReleaseEngineeringChangeEndpoint))]
+    [InlineData(typeof(CancelScheduledEngineeringChangeEndpoint))]
+    [InlineData(typeof(RescheduleEngineeringChangeEndpoint))]
     [InlineData(typeof(ListEngineeringChangesEndpoint))]
     [InlineData(typeof(GetEngineeringChangeEndpoint))]
     [InlineData(typeof(ListEngineeringBomsEndpoint))]
@@ -1596,6 +1601,174 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Future_release_engineering_change_schedules_without_archiving_or_raising_release_event()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-FUTURE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        ebom.ClearDomainEvents();
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var approvalVerifier = new RecordingApprovalVerifier();
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            approvalVerifier,
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-FUTURE",
+                "Future EBOM switch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 3),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-FUTURE:A")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var change = Assert.Single(dbContext.EngineeringChanges);
+        Assert.Equal(EngineeringVersionStatus.Scheduled, change.Status);
+        Assert.Equal(new DateOnly(2026, 6, 3), change.EffectiveDate);
+        Assert.Empty(change.GetDomainEvents());
+        Assert.Equal(EngineeringVersionStatus.Published, ebom.Status);
+        Assert.Equal("ECO-FUTURE", approvalVerifier.Calls.Single().ChangeNumber);
+    }
+
+    [Fact]
+    public async Task Scheduled_engineering_change_promotes_due_release_and_archives_affected_versions()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DUE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(new DateOnly(2026, 6, 1)));
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                "ECO-DUE",
+                "Due EBOM switch",
+                Guid.NewGuid().ToString("D"),
+                new DateOnly(2026, 6, 3),
+                [new AffectedVersionCommand("engineering-bom", "EBOM-DUE:A")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        Assert.Equal(1, promoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Cancel_scheduled_engineering_change_leaves_affected_versions_visible_to_downstream()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-CANCEL", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-CANCEL", "EBOM-CANCEL:A", new DateOnly(2026, 6, 3));
+
+        await new CancelScheduledEngineeringChangeCommandHandler(dbContext).Handle(
+            new CancelScheduledEngineeringChangeCommand("org-001", "env-dev", "ECO-CANCEL", "operator cancelled"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        Assert.Equal(0, promoted);
+        Assert.Equal(EngineeringVersionStatus.Published, ebom.Status);
+        Assert.Equal(EngineeringVersionStatus.Cancelled, Assert.Single(dbContext.EngineeringChanges).Status);
+    }
+
+    [Fact]
+    public async Task Reschedule_engineering_change_uses_new_effective_date_for_promotion()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var ebom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-RESCHEDULE", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        ebom.Release(new DateOnly(2026, 6, 1));
+        dbContext.EngineeringBoms.Add(ebom);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await ScheduleEngineeringChangeAsync(dbContext, "ECO-RESCHEDULE", "EBOM-RESCHEDULE:A", new DateOnly(2026, 6, 3));
+
+        await new RescheduleEngineeringChangeCommandHandler(dbContext).Handle(
+            new RescheduleEngineeringChangeCommand("org-001", "env-dev", "ECO-RESCHEDULE", new DateOnly(2026, 6, 10), "supplier delay"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var earlyPromoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+        var duePromoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 10), CancellationToken.None);
+
+        Assert.Equal(0, earlyPromoted);
+        Assert.Equal(1, duePromoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, ebom.Status);
+        Assert.Equal(new DateOnly(2026, 6, 10), Assert.Single(dbContext.EngineeringChanges).EffectiveDate);
+    }
+
+    [Fact]
+    public async Task Scheduled_release_promotion_isolates_failed_changes_for_next_retry()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var validBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-VALID", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        validBom.Release(new DateOnly(2026, 6, 1));
+        var draftBom = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DRAFT-RETRY", "A", "ENG-3000")
+            .AddLine("ENG-3001", 1m, "EA");
+        var validChange = EngineeringChange.Open("org-001", "env-dev", "ECO-VALID", "Due valid change")
+            .Affect("engineering-bom", "EBOM-VALID:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        validChange.Schedule(new DateOnly(2026, 6, 3));
+        var retryChange = EngineeringChange.Open("org-001", "env-dev", "ECO-RETRY", "Due invalid change")
+            .Affect("engineering-bom", "EBOM-DRAFT-RETRY:A")
+            .Approve(Guid.NewGuid().ToString("D"));
+        retryChange.Schedule(new DateOnly(2026, 6, 3));
+        dbContext.AddRange(validBom, draftBom, validChange, retryChange);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promoted = await new EngineeringChangeScheduledReleaseService(dbContext)
+            .PromoteDueReleasesAsync(new DateOnly(2026, 6, 3), CancellationToken.None);
+
+        var persistedValidBom = await dbContext.EngineeringBoms.SingleAsync(x => x.BomCode == "EBOM-VALID", CancellationToken.None);
+        var persistedValidChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-VALID", CancellationToken.None);
+        var persistedRetryChange = await dbContext.EngineeringChanges.SingleAsync(x => x.ChangeNumber == "ECO-RETRY", CancellationToken.None);
+        Assert.Equal(1, promoted);
+        Assert.Equal(EngineeringVersionStatus.Archived, persistedValidBom.Status);
+        Assert.Equal(EngineeringVersionStatus.Published, persistedValidChange.Status);
+        Assert.Equal(EngineeringVersionStatus.Scheduled, persistedRetryChange.Status);
+    }
+
+    [Fact]
     public async Task Release_engineering_change_records_supersede_successor_version()
     {
         await using var provider = CreateInMemoryProvider();
@@ -2122,6 +2295,29 @@ public sealed class ProductEngineeringReleaseApiContractTests
         return services.BuildServiceProvider();
     }
 
+    private static async Task ScheduleEngineeringChangeAsync(ApplicationDbContext dbContext, string changeNumber, string versionId, DateOnly effectiveDate)
+    {
+        var handler = new ReleaseEngineeringChangeCommandHandler(
+            new EngineeringChangeRepository(dbContext),
+            new EngineeringBomRepository(dbContext),
+            new ManufacturingBomRepository(dbContext),
+            new RoutingRepository(dbContext),
+            new ProductionVersionRepository(dbContext),
+            new RecordingApprovalVerifier(),
+            businessDateProvider: new FixedBusinessDateProvider(effectiveDate.AddDays(-1)));
+        await handler.Handle(
+            new ReleaseEngineeringChangeCommand(
+                "org-001",
+                "env-dev",
+                changeNumber,
+                "Schedule engineering change",
+                Guid.NewGuid().ToString("D"),
+                effectiveDate,
+                [new AffectedVersionCommand("engineering-bom", versionId)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+    }
+
     private static bool IsValidationFailureFor(FluentValidation.Results.ValidationFailure failure, string propertyName)
     {
         return NormalizeValidationPropertyName(failure.PropertyName) == NormalizeValidationPropertyName(propertyName);
@@ -2201,6 +2397,11 @@ public sealed class ProductEngineeringReleaseApiContractTests
 
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class FixedBusinessDateProvider(DateOnly businessDate) : IProductEngineeringBusinessDateProvider
+    {
+        public DateOnly GetBusinessDate() => businessDate;
     }
 
     private sealed class RecordingMasterDataReferenceValidator(params (string ResourceType, string Code)[] activeReferences)
