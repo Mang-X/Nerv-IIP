@@ -273,17 +273,15 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return existingState.Id;
         }
 
-        var stateCandidates = await dbContext.DeviceStateSnapshots
+        var latestState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId)
-            .Select(x => new LatestDeviceStateSnapshot(x.State, x.OccurredAtUtc, x.RecordedAtUtc, x.SourceSequence))
-            .ToListAsync(cancellationToken);
-        var latestState = stateCandidates
-            .OrderByDescending(x => x.OccurredAtUtc)
-            .ThenByDescending(x => x.RecordedAtUtc)
+            .OrderByDescending(x => x.OccurredAtUnixTimeMilliseconds)
+            .ThenByDescending(x => x.RecordedAtUnixTimeMilliseconds)
             .ThenByDescending(x => x.SourceSequence)
-            .FirstOrDefault();
+            .Select(x => new LatestDeviceStateSnapshot(x.State, x.OccurredAtUnixTimeMilliseconds))
+            .FirstOrDefaultAsync(cancellationToken);
         if (ShouldPublishDeviceStateChanged(incoming, latestState))
         {
             incoming.RaiseStateChangedEvent();
@@ -302,7 +300,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return true;
         }
 
-        if (incoming.OccurredAtUtc < latestState.OccurredAtUtc)
+        if (incoming.OccurredAtUnixTimeMilliseconds < latestState.OccurredAtUnixTimeMilliseconds)
         {
             return false;
         }
@@ -312,9 +310,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
     private sealed record LatestDeviceStateSnapshot(
         string State,
-        DateTimeOffset OccurredAtUtc,
-        DateTimeOffset RecordedAtUtc,
-        string SourceSequence);
+        long OccurredAtUnixTimeMilliseconds);
 
     private async Task EvaluateAlarmRulesAsync(
         RecordTelemetrySampleCommand request,
