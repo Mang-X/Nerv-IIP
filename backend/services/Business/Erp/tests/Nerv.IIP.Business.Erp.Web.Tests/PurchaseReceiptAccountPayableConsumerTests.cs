@@ -4,9 +4,9 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;

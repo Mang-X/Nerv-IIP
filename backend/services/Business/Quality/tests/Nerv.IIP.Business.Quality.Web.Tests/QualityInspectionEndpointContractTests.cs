@@ -26,6 +26,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionTasks;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
@@ -42,7 +43,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(6, contracts.Count);
+        Assert.Equal(8, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-plans"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
@@ -67,6 +68,14 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-records"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "listBusinessQualityInspectionRecords");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/inspection-tasks"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "listBusinessQualityInspectionTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
+            && x.OperationId == "createBusinessQualityInspectionRecordFromTask");
     }
 
     [Fact]
@@ -94,6 +103,8 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(CreateInspectionRecordEndpoint))]
     [InlineData(typeof(OpenNcrFromInspectionEndpoint))]
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
+    [InlineData(typeof(ListInspectionTasksEndpoint))]
+    [InlineData(typeof(CreateInspectionRecordFromTaskEndpoint))]
     public void Inspection_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType

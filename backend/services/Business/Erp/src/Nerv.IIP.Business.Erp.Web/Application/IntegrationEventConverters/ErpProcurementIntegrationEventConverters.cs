@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
-using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
 
@@ -60,11 +60,22 @@ public sealed class PurchaseReceiptRecordedIntegrationEventConverter
             receipt.PurchaseOrderNo,
             receipt.SupplierCode,
             receipt.SiteCode,
-            receipt.QualityStatus);
+            receipt.QualityStatus,
+            receipt.Lines
+                .OrderBy(x => x.PurchaseOrderLineNo, StringComparer.Ordinal)
+                .Select(x => new PurchaseReceiptRecordedLinePayload(
+                    x.PurchaseOrderLineNo,
+                    x.SkuCode,
+                    x.UomCode,
+                    x.LocationCode,
+                    x.LotNo,
+                    x.ReceivedQuantity,
+                    x.QualityStatus))
+                .ToArray());
         return new PurchaseReceiptRecordedIntegrationEvent(
             EventIds.New(),
             ErpIntegrationEventTypes.PurchaseReceiptRecorded,
-            1,
+            ErpIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
             "system:erp",
@@ -131,7 +142,7 @@ internal static class ErpIntegrationEventConverterHelpers
         return new ErpIntegrationEvent<TPayload>(
             EventIds.New(),
             eventType,
-            1,
+            ErpIntegrationEventVersions.V1,
             DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
             "system:erp",

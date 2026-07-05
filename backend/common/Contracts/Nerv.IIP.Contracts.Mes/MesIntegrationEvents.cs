@@ -7,6 +7,8 @@ public static class MesIntegrationEventTypes
     public const string WorkOrderReleased = "mes.WorkOrderReleased";
     public const string WorkOrderCompleted = "mes.WorkOrderCompleted";
     public const string WorkOrderClosed = "mes.WorkOrderClosed";
+    public const string OperationTaskCompleted = "mes.OperationTaskCompleted";
+    public const string FinishedGoodsReceiptRequested = "mes.FinishedGoodsReceiptRequested";
 }
 
 public static class MesIntegrationEventVersions
@@ -97,3 +99,57 @@ public sealed record WorkOrderClosedPayload(
     decimal GoodQuantity,
     decimal ScrapQuantity,
     DateTimeOffset ClosedAtUtc);
+
+public sealed record OperationTaskCompletedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    OperationTaskCompletedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record OperationTaskCompletedPayload(
+    string WorkOrderId,
+    string OperationTaskId,
+    string SkuCode,
+    int OperationSequence,
+    string WorkCenterId,
+    decimal GoodQuantity,
+    bool RequiresQualityInspection,
+    DateTimeOffset CompletedAtUtc);
+
+public sealed record FinishedGoodsReceiptRequestedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    FinishedGoodsReceiptRequestedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record FinishedGoodsReceiptRequestedPayload(
+    string RequestNo,
+    string WorkOrderId,
+    string SkuCode,
+    decimal Quantity,
+    string UomCode,
+    string? ProducedLotNo,
+    string? SerialNo,
+    DateTimeOffset RequestedAtUtc);

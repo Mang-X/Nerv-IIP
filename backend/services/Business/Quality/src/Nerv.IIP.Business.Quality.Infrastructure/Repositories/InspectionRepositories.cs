@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 
 namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
@@ -75,6 +76,58 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.SourceService == normalizedSourceService
                 && x.SkuCode == normalizedSkuCode
                 && x.SourceDocumentId == normalizedSourceDocumentId,
+            cancellationToken);
+    }
+}
+
+public interface IInspectionTaskRepository : IRepository<InspectionTask, InspectionTaskId>
+{
+    new Task<InspectionTask?> GetAsync(
+        InspectionTaskId id,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsForSourceAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        string? sourceDocumentLineId,
+        string skuCode,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class InspectionTaskRepository(ApplicationDbContext context)
+    : RepositoryBase<InspectionTask, InspectionTaskId, ApplicationDbContext>(context), IInspectionTaskRepository
+{
+    public new Task<InspectionTask?> GetAsync(InspectionTaskId id, CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionTasks.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+    }
+
+    public Task<bool> ExistsForSourceAsync(
+        string organizationId,
+        string environmentId,
+        string sourceType,
+        string sourceService,
+        string sourceDocumentId,
+        string? sourceDocumentLineId,
+        string skuCode,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedDocumentId = sourceDocumentId.Trim();
+        var normalizedLineId = string.IsNullOrWhiteSpace(sourceDocumentLineId) ? null : sourceDocumentLineId.Trim();
+        var normalizedSkuCode = skuCode.Trim();
+        return DbContext.InspectionTasks.AnyAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.SourceType == normalizedSourceType &&
+                x.SourceService == normalizedSourceService &&
+                x.SourceDocumentId == normalizedDocumentId &&
+                x.SourceDocumentLineId == normalizedLineId &&
+                x.SkuCode == normalizedSkuCode,
             cancellationToken);
     }
 }

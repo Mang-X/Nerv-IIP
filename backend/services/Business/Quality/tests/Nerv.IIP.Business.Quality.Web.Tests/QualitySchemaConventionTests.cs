@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Quality.Domain;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.QualityReasonAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
@@ -26,6 +27,7 @@ public sealed class QualitySchemaConventionTests
             typeof(InspectionPlanCharacteristic),
             typeof(InspectionRecord),
             typeof(InspectionResultLine),
+            typeof(InspectionTask),
             typeof(QualityReason),
         };
 
@@ -52,6 +54,9 @@ public sealed class QualitySchemaConventionTests
         AssertEntityHasIndex<QualityReason>(
             fixture.DbContext,
             [nameof(QualityReason.OrganizationId), nameof(QualityReason.EnvironmentId), nameof(QualityReason.GroupName), nameof(QualityReason.Enabled)]);
+        AssertEntityHasIndex<InspectionTask>(
+            fixture.DbContext,
+            [nameof(InspectionTask.OrganizationId), nameof(InspectionTask.EnvironmentId), nameof(InspectionTask.Status), nameof(InspectionTask.DueAtUtc)]);
     }
 
     [Fact]

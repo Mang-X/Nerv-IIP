@@ -119,6 +119,8 @@ public static class QualityInspectionEndpointContracts
         new(typeof(InspectionRecords.CreateInspectionRecordEndpoint), "POST", "/api/business/v1/quality/inspection-records", BusinessPermissionCodes.QualityInspectionRecordsCreate, "createBusinessQualityInspectionRecord"),
         new(typeof(InspectionRecords.OpenNcrFromInspectionEndpoint), "POST", "/api/business/v1/quality/inspection-records/{inspectionRecordId}/failures/ncr", BusinessPermissionCodes.QualityNcrManage, "openBusinessQualityNcrFromInspection"),
         new(typeof(InspectionRecords.ListInspectionRecordsEndpoint), "GET", "/api/business/v1/quality/inspection-records", BusinessPermissionCodes.QualityInspectionRecordsRead, "listBusinessQualityInspectionRecords"),
+        new(typeof(InspectionTasks.ListInspectionTasksEndpoint), "GET", "/api/business/v1/quality/inspection-tasks", BusinessPermissionCodes.QualityInspectionRecordsRead, "listBusinessQualityInspectionTasks"),
+        new(typeof(InspectionTasks.CreateInspectionRecordFromTaskEndpoint), "POST", "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record", BusinessPermissionCodes.QualityInspectionRecordsCreate, "createBusinessQualityInspectionRecordFromTask"),
     ];
 
     public static QualityEndpointContract Get<TEndpoint>()
