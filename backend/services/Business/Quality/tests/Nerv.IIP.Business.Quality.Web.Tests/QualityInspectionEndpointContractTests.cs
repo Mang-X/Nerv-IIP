@@ -213,7 +213,8 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateInspectionRecordCommand(
@@ -244,7 +245,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
 
         var recordId = await handler.Handle(
             new CreateInspectionRecordCommand(
@@ -289,7 +291,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
         var command = new CreateInspectionRecordCommand(
             "org-001",
             "env-dev",
@@ -322,7 +325,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
         var first = new CreateInspectionRecordCommand(
             "org-001",
             "env-dev",
@@ -356,6 +360,7 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
             new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext),
             sourceDocumentVerifier: new FixedInspectionSourceDocumentVerifier(
                 new InspectionSourceDocumentVerification(true, "SKU-OTHER", 5m)));
 

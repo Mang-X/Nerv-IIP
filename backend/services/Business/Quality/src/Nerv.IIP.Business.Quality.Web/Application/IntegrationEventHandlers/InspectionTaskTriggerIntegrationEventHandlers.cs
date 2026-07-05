@@ -53,7 +53,7 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
                 continue;
             }
 
-            await InspectionTaskGeneration.TryCreateTaskAsync(
+            await InspectionTaskGeneration.TryAddTaskAsync(
                 dbContext,
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
@@ -72,6 +72,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
                 triggerIdempotencyKey: $"{integrationEvent.IdempotencyKey}:{line.LineReference}",
                 cancellationToken);
         }
+
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
 }
 
@@ -107,7 +109,7 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 continue;
             }
 
-            await InspectionTaskGeneration.TryCreateTaskAsync(
+            await InspectionTaskGeneration.TryAddTaskAsync(
                 dbContext,
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
@@ -126,6 +128,8 @@ public sealed class ErpPurchaseReceiptRecordedIntegrationEventHandlerForCreateIn
                 triggerIdempotencyKey: $"{integrationEvent.IdempotencyKey}:{line.LineReference}",
                 cancellationToken);
         }
+
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
 }
 
@@ -159,7 +163,7 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             return;
         }
 
-        await InspectionTaskGeneration.TryCreateTaskAsync(
+        await InspectionTaskGeneration.TryAddTaskAsync(
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -168,8 +172,8 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             sourceDocumentId: payload.WorkOrderId,
             sourceDocumentLineId: payload.OperationTaskId,
             skuCode: payload.SkuCode,
-            quantity: payload.GoodQuantity,
-            uomCode: "pcs",
+            quantity: payload.PlannedQuantity,
+            uomCode: payload.UomCode,
             batchNo: null,
             serialNo: null,
             workCenterId: payload.WorkCenterId,
@@ -177,6 +181,7 @@ public sealed class MesOperationCompletedIntegrationEventHandlerForCreateInspect
             occurredAtUtc: integrationEvent.OccurredAtUtc,
             triggerIdempotencyKey: integrationEvent.IdempotencyKey,
             cancellationToken);
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
 }
 
@@ -205,7 +210,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
     private async Task HandleValidEventAsync(FinishedGoodsReceiptRequestedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
-        await InspectionTaskGeneration.TryCreateTaskAsync(
+        await InspectionTaskGeneration.TryAddTaskAsync(
             dbContext,
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -223,6 +228,7 @@ public sealed class MesFinishedGoodsReceiptRequestedIntegrationEventHandlerForCr
             occurredAtUtc: integrationEvent.OccurredAtUtc,
             triggerIdempotencyKey: integrationEvent.IdempotencyKey,
             cancellationToken);
+        await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
 }
 
@@ -242,7 +248,7 @@ internal static class InspectionTaskGeneration
         return !string.IsNullOrWhiteSpace(qualityStatus) && SkipStatuses.Contains(qualityStatus.Trim());
     }
 
-    public static async Task TryCreateTaskAsync(
+    public static async Task TryAddTaskAsync(
         ApplicationDbContext dbContext,
         string organizationId,
         string environmentId,
@@ -261,11 +267,41 @@ internal static class InspectionTaskGeneration
         string triggerIdempotencyKey,
         CancellationToken cancellationToken)
     {
-        if (quantity <= 0m ||
+        var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
+        var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
+        var normalizedSourceDocumentId = sourceDocumentId.Trim();
+        var normalizedSourceDocumentLineId = string.IsNullOrWhiteSpace(sourceDocumentLineId) ? null : sourceDocumentLineId.Trim();
+        var normalizedSkuCode = skuCode.Trim();
+        var normalizedTriggerIdempotencyKey = triggerIdempotencyKey.Trim();
+
+        if (quantity <= 0m
+            || dbContext.InspectionTasks.Local.Any(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.TriggerIdempotencyKey == normalizedTriggerIdempotencyKey)
+            || dbContext.InspectionTasks.Local.Any(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.SourceType == normalizedSourceType &&
+                x.SourceService == normalizedSourceService &&
+                x.SourceDocumentId == normalizedSourceDocumentId &&
+                x.SourceDocumentLineId == normalizedSourceDocumentLineId &&
+                x.SkuCode == normalizedSkuCode)
+            ||
             await dbContext.InspectionTasks.AnyAsync(
                 x => x.OrganizationId == organizationId &&
                     x.EnvironmentId == environmentId &&
-                    x.TriggerIdempotencyKey == triggerIdempotencyKey,
+                    x.TriggerIdempotencyKey == normalizedTriggerIdempotencyKey,
+                cancellationToken)
+            ||
+            await dbContext.InspectionTasks.AnyAsync(
+                x => x.OrganizationId == organizationId &&
+                    x.EnvironmentId == environmentId &&
+                    x.SourceType == normalizedSourceType &&
+                    x.SourceService == normalizedSourceService &&
+                    x.SourceDocumentId == normalizedSourceDocumentId &&
+                    x.SourceDocumentLineId == normalizedSourceDocumentLineId &&
+                    x.SkuCode == normalizedSkuCode,
                 cancellationToken))
         {
             return;
@@ -289,18 +325,43 @@ internal static class InspectionTaskGeneration
             organizationId,
             environmentId,
             plan.Id,
-            sourceType,
-            sourceService,
-            sourceDocumentId,
-            sourceDocumentLineId,
-            skuCode,
+            normalizedSourceType,
+            normalizedSourceService,
+            normalizedSourceDocumentId,
+            normalizedSourceDocumentLineId,
+            normalizedSkuCode,
             quantity,
             uomCode,
             batchNo,
             serialNo,
             occurredAtUtc,
             occurredAtUtc.AddHours(24),
-            triggerIdempotencyKey));
+            normalizedTriggerIdempotencyKey));
+    }
+
+    public static async Task SaveChangesIgnoreDuplicateTasksAsync(ApplicationDbContext dbContext, CancellationToken cancellationToken)
+    {
+        if (!dbContext.ChangeTracker.HasChanges())
+        {
+            return;
+        }
+
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsDuplicateInspectionTaskConflict(ex))
+        {
+            dbContext.ChangeTracker.Clear();
+        }
+    }
+
+    private static bool IsDuplicateInspectionTaskConflict(DbUpdateException exception)
+    {
+        var message = exception.InnerException?.Message ?? exception.Message;
+        return message.Contains("ux_inspection_tasks_scope_trigger_key", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("ux_inspection_tasks_scope_source_sku", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Task<InspectionPlan?> MatchPlanAsync(

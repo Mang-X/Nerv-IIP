@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
@@ -44,7 +45,31 @@ public sealed class QualityInspectionTaskNotificationConsumerTests
         }
     }
 
-    private static InspectionTaskOverdueIntegrationEvent CreateEvent()
+    [Fact]
+    public async Task Inspection_task_overdue_with_invalid_payload_is_dead_lettered_without_throwing()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var handler = ActivatorUtilities.CreateInstance<InspectionTaskOverdueIntegrationEventHandlerForNotification>(scope.ServiceProvider);
+            await ((IIntegrationEventHandler<InspectionTaskOverdueIntegrationEvent>)handler).HandleAsync(CreateEvent(skuCode: null!), CancellationToken.None);
+        }
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.NotificationIntents.ToListAsync());
+            var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+            var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+                InspectionTaskOverdueIntegrationEventHandlerForNotification.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending,
+                CancellationToken.None));
+            Assert.Equal("invalid-payload", deadLetter.FailureCode);
+        }
+    }
+
+    private static InspectionTaskOverdueIntegrationEvent CreateEvent(string? skuCode = "SKU-RM-1000")
     {
         return new InspectionTaskOverdueIntegrationEvent(
             "evt-quality-overdue-001",
@@ -64,7 +89,7 @@ public sealed class QualityInspectionTaskNotificationConsumerTests
                 "wms",
                 "IN-001",
                 "LINE-001",
-                "SKU-RM-1000",
+                skuCode!,
                 DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
                 DateTimeOffset.Parse("2026-07-05T09:00:00Z")));
     }

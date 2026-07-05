@@ -24,6 +24,9 @@ public sealed class MesQualityInspectionTriggerEventTests
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-07-05T07:30:00Z"),
             null,
+            skuCode: "SKU-FG-1000",
+            uomCode: "kg",
+            plannedQuantity: 12.5m,
             requiresQualityInspection: true);
         task.Complete(DateTimeOffset.Parse("2026-07-05T08:00:00Z"));
 
@@ -35,6 +38,10 @@ public sealed class MesQualityInspectionTriggerEventTests
         Assert.Equal("WO-001", integrationEvent.Payload.WorkOrderId);
         Assert.Equal("OP-10", integrationEvent.Payload.OperationTaskId);
         Assert.Equal("WC-MIX", integrationEvent.Payload.WorkCenterId);
+        Assert.Equal("SKU-FG-1000", integrationEvent.Payload.SkuCode);
+        Assert.Equal(12.5m, integrationEvent.Payload.PlannedQuantity);
+        Assert.Equal("kg", integrationEvent.Payload.UomCode);
+        Assert.Contains("2026-07-05T08:00:00.0000000", integrationEvent.IdempotencyKey);
     }
 
     [Fact]

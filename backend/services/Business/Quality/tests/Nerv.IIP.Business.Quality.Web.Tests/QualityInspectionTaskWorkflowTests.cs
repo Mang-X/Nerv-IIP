@@ -44,6 +44,21 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Wms_inbound_completed_deduplicates_duplicate_lines_before_save()
+    {
+        await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_deduplicates_duplicate_lines_before_save));
+        dbContext.InspectionPlans.Add(ActivePlan("PLAN-RCV-1000", "receiving", "SKU-RM-1000"));
+        await dbContext.SaveChangesAsync();
+        var handler = CreateWmsHandler(dbContext);
+
+        await handler.HandleAsync(WmsInboundCompletedWithDuplicateLines(), CancellationToken.None);
+
+        var task = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal("IN-DUP", task.SourceDocumentId);
+        Assert.Equal("DUP-LINE", task.SourceDocumentLineId);
+    }
+
+    [Fact]
     public async Task Wms_inbound_completed_skips_exempt_or_sampling_skipped_lines()
     {
         await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_skips_exempt_or_sampling_skipped_lines));
@@ -104,6 +119,58 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal("wms", record.SourceService);
         Assert.Equal("IN-001", record.SourceDocumentId);
         Assert.Equal("SKU-RM-1000", record.SkuCode);
+        var completedTask = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
+        Assert.Equal(recordId, completedTask.InspectionRecordId);
+    }
+
+    [Fact]
+    public async Task Create_regular_record_completes_matching_open_inspection_task()
+    {
+        await using var dbContext = CreateDbContext(nameof(Create_regular_record_completes_matching_open_inspection_task));
+        var plan = ActivePlan("PLAN-RCV-1000", "receiving", "SKU-RM-1000");
+        var task = InspectionTask.CreatePending(
+            "org-001",
+            "env-dev",
+            plan.Id,
+            "receiving",
+            "wms",
+            "IN-001",
+            "LINE-001",
+            "SKU-RM-1000",
+            10m,
+            "kg",
+            "LOT-001",
+            null,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "wms:inbound-completed:org-001:env-dev:IN-001:LINE-001");
+        dbContext.InspectionPlans.Add(plan);
+        dbContext.InspectionTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+        var handler = new CreateInspectionRecordCommandHandler(
+            new InspectionRecordRepository(dbContext),
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
+
+        var recordId = await handler.Handle(
+            new CreateInspectionRecordCommand(
+                "org-001",
+                "env-dev",
+                plan.Id,
+                "receiving",
+                "wms",
+                "IN-001",
+                "SKU-RM-1000",
+                10m,
+                "LOT-001",
+                null,
+                [new InspectionResultLineCommandInput("appearance", "ok", null, InspectionLineResults.Passed, null, null, [])],
+                null,
+                []),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
         var completedTask = await dbContext.InspectionTasks.SingleAsync();
         Assert.Equal(InspectionTaskStatuses.Completed, completedTask.Status);
         Assert.Equal(recordId, completedTask.InspectionRecordId);
@@ -317,7 +384,40 @@ public sealed class QualityInspectionTaskWorkflowTests
             "env-dev",
             "system:mes",
             "mes:operation-completed:org-001:env-dev:WO-001:OP-10",
-            new OperationTaskCompletedPayload("WO-001", "OP-10", "SKU-FG-1000", 10, "WC-MIX", 5m, requiresQualityInspection, DateTimeOffset.Parse("2026-07-05T08:00:00Z")));
+            new OperationTaskCompletedPayload("WO-001", "OP-10", "SKU-FG-1000", 10, "WC-MIX", 5m, "pcs", requiresQualityInspection, DateTimeOffset.Parse("2026-07-05T08:00:00Z")));
+    }
+
+    private static WmsIntegrationEvent WmsInboundCompletedWithDuplicateLines()
+    {
+        return new WmsIntegrationEvent(
+            "evt-wms-dup",
+            WmsIntegrationEventTypes.InboundOrderCompleted,
+            WmsIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-07-05T08:00:00Z"),
+            WmsIntegrationEventSources.BusinessWms,
+            "wms:inbound-completed:org-001:env-dev:IN-DUP",
+            "IN-DUP",
+            "org-001",
+            "env-dev",
+            "system:wms",
+            "wms:inbound-completed:org-001:env-dev:IN-DUP",
+            new WmsIntegrationPayload(
+                "IN-DUP",
+                null,
+                null,
+                null,
+                "SITE-01",
+                "STAGE-01",
+                null,
+                "Completed",
+                null,
+                null,
+                [
+                    new WmsIntegrationPayloadLine("DUP-LINE", "SKU-RM-1000", "kg", "SITE-01", "STAGE-01", 10m, "inspection-required"),
+                    new WmsIntegrationPayloadLine("DUP-LINE", "SKU-RM-1000", "kg", "SITE-01", "STAGE-01", 10m, "inspection-required")
+                ],
+                "purchase-receipt",
+                "PR-DUP"));
     }
 
     private static FinishedGoodsReceiptRequestedIntegrationEvent MesFinishedGoodsReceiptRequested()

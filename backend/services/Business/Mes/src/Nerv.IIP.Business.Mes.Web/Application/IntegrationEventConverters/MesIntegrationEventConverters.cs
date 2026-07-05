@@ -161,7 +161,8 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
             "operation-task-completed",
             task.OrganizationId,
             task.EnvironmentId,
-            task.OperationTaskId);
+            task.OperationTaskId,
+            completedAtUtc.ToString("O", CultureInfo.InvariantCulture));
         return new OperationTaskCompletedIntegrationEvent(
             $"evt-{Guid.CreateVersion7():N}",
             MesIntegrationEventTypes.OperationTaskCompleted,
@@ -181,6 +182,7 @@ public sealed class OperationTaskCompletedIntegrationEventConverter
                 task.OperationSequence,
                 task.WorkCenterId,
                 task.PlannedQuantity,
+                task.UomCode,
                 task.RequiresQualityInspection,
                 completedAtUtc));
     }

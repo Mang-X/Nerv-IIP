@@ -86,13 +86,12 @@ public interface IInspectionTaskRepository : IRepository<InspectionTask, Inspect
         InspectionTaskId id,
         CancellationToken cancellationToken = default);
 
-    Task<bool> ExistsForSourceAsync(
+    Task<InspectionTask?> FindOpenBySourceAsync(
         string organizationId,
         string environmentId,
         string sourceType,
         string sourceService,
         string sourceDocumentId,
-        string? sourceDocumentLineId,
         string skuCode,
         CancellationToken cancellationToken = default);
 }
@@ -105,30 +104,30 @@ public sealed class InspectionTaskRepository(ApplicationDbContext context)
         return DbContext.InspectionTasks.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
-    public Task<bool> ExistsForSourceAsync(
+    public Task<InspectionTask?> FindOpenBySourceAsync(
         string organizationId,
         string environmentId,
         string sourceType,
         string sourceService,
         string sourceDocumentId,
-        string? sourceDocumentLineId,
         string skuCode,
         CancellationToken cancellationToken = default)
     {
         var normalizedSourceType = sourceType.Trim().ToLowerInvariant();
         var normalizedSourceService = sourceService.Trim().ToLowerInvariant();
         var normalizedDocumentId = sourceDocumentId.Trim();
-        var normalizedLineId = string.IsNullOrWhiteSpace(sourceDocumentLineId) ? null : sourceDocumentLineId.Trim();
         var normalizedSkuCode = skuCode.Trim();
-        return DbContext.InspectionTasks.AnyAsync(
+        return DbContext.InspectionTasks
+            .Where(
             x => x.OrganizationId == organizationId &&
                 x.EnvironmentId == environmentId &&
                 x.SourceType == normalizedSourceType &&
                 x.SourceService == normalizedSourceService &&
                 x.SourceDocumentId == normalizedDocumentId &&
-                x.SourceDocumentLineId == normalizedLineId &&
-                x.SkuCode == normalizedSkuCode,
-            cancellationToken);
+                x.SkuCode == normalizedSkuCode &&
+                x.Status != InspectionTaskStatuses.Completed)
+            .OrderBy(x => x.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }
 

@@ -123,7 +123,8 @@ public sealed record OperationTaskCompletedPayload(
     string SkuCode,
     int OperationSequence,
     string WorkCenterId,
-    decimal GoodQuantity,
+    decimal PlannedQuantity,
+    string UomCode,
     bool RequiresQualityInspection,
     DateTimeOffset CompletedAtUtc);
 

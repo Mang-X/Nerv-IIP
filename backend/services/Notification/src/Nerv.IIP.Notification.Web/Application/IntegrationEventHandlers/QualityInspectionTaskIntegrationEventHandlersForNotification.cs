@@ -50,17 +50,21 @@ public sealed class InspectionTaskOverdueIntegrationEventHandlerForNotification(
         InspectionTaskOverdueIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload
-            ?? throw new KnownException("Quality inspection task overdue payload is required.");
-        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var organizationId = Required(integrationEvent.OrganizationId, "Integration event organization is required.");
-        var environmentId = Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
-        var dedupeKey = Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-        var inspectionTaskId = Required(payload.InspectionTaskId, "Inspection task id is required.");
-        var sourceDocumentId = Required(payload.SourceDocumentId, "Inspection task source document id is required.");
-        var skuCode = Required(payload.SkuCode, "Inspection task SKU code is required.");
+        var payload = integrationEvent.Payload;
+        if (!TryRequired(payload.InspectionTaskId, out var inspectionTaskId)
+            || !TryRequired(payload.SourceDocumentId, out var sourceDocumentId)
+            || !TryRequired(payload.SkuCode, out var skuCode))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "invalid-payload",
+                    "Quality inspection task overdue payload is missing required task, source document, or SKU fields."),
+                cancellationToken);
+            return;
+        }
+
         var recipientRefs = GetRecipientRefs(configuration);
 
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
@@ -74,28 +78,30 @@ public sealed class InspectionTaskOverdueIntegrationEventHandlerForNotification(
         }
 
         var request = new SubmitNotificationIntentRequest(
-            SourceService: sourceService,
-            SourceEventType: eventType,
-            SourceEventId: eventId,
+            SourceService: integrationEvent.SourceService,
+            SourceEventType: integrationEvent.EventType,
+            SourceEventId: integrationEvent.EventId,
             IntentType: NotificationContractConstants.IntentTypeTask,
             Severity: NotificationContractConstants.SeverityWarning,
-            DedupeKey: dedupeKey,
+            DedupeKey: integrationEvent.IdempotencyKey,
             Resource: new NotificationResourceRef("inspection-task", inspectionTaskId, null),
             Title: $"Inspection task overdue: {skuCode}",
             Summary: $"Inspection task {inspectionTaskId} for {payload.SourceType}/{payload.SourceService} document {sourceDocumentId} is overdue since {payload.DueAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 
-    private static string Required(string? value, string message)
+    private static bool TryRequired(string? value, out string required)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            required = string.Empty;
+            return false;
         }
 
-        return value.Trim();
+        required = value.Trim();
+        return true;
     }
 
     private static string[] GetRecipientRefs(IConfiguration configuration)
