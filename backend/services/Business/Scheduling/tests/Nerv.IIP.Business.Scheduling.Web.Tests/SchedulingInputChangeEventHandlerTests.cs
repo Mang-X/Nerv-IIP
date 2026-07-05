@@ -1,5 +1,7 @@
 using DotNetCore.CAP;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
@@ -14,6 +16,7 @@ using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
@@ -29,13 +32,10 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var publisher = new RecordingIntegrationEventPublisher();
         var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            publisher,
-            CreateInvalidatedEventConverter(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
             new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
 
         await handler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
@@ -50,7 +50,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
             Assert.Equal("maintenance.AssetUnavailable", invalidation.SourceEventType);
             Assert.Equal(FixedNow, invalidation.RecordedAtUtc);
         });
-        Assert.Equal(2, publisher.Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
+        Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
     }
 
     [Fact]
@@ -63,9 +64,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            new RecordingIntegrationEventPublisher(),
-            CreateInvalidatedEventConverter(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
             new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
@@ -86,13 +85,10 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         using var scope = provider.CreateScope();
         var logger = new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
-        var publisher = new RecordingIntegrationEventPublisher();
         var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            publisher,
-            CreateInvalidatedEventConverter(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
             logger);
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
@@ -103,11 +99,11 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
-        Assert.Empty(publisher.Published);
         Assert.Contains(logger.Messages, x =>
             x.LogLevel == LogLevel.Information &&
             x.Message.Contains("ASSET-NOT-MAPPED", StringComparison.Ordinal) &&
             x.Message.Contains("matched no schedule plan", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>().Published);
     }
 
     [Fact]
@@ -117,13 +113,10 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var publisher = new RecordingIntegrationEventPublisher();
         var handler = new AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            publisher,
-            CreateInvalidatedEventConverter(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
             new RecordingLogger<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>());
 
         await handler.HandleAsync(CreateAssetRestoredEvent(), CancellationToken.None);
@@ -137,7 +130,6 @@ public sealed class SchedulingInputChangeEventHandlerTests
             Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
             Assert.Equal("maintenance.AssetRestored", invalidation.SourceEventType);
         });
-        Assert.Equal(2, publisher.Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
     }
 
     [Fact]
@@ -150,9 +142,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            new RecordingIntegrationEventPublisher(),
-            CreateInvalidatedEventConverter());
+            scope.ServiceProvider.GetRequiredService<ISender>());
 
         await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
 
@@ -179,9 +169,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            new RecordingIntegrationEventPublisher(),
-            CreateInvalidatedEventConverter());
+            scope.ServiceProvider.GetRequiredService<ISender>());
 
         await handler.HandleAsync(CreateInspectionEvent(eventType), CancellationToken.None);
 
@@ -203,25 +191,25 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var publisher = new RecordingIntegrationEventPublisher();
         var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            publisher,
-            CreateInvalidatedEventConverter());
+            scope.ServiceProvider.GetRequiredService<ISender>());
 
         await handler.HandleAsync(
             CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceDocumentId: "OP-002"),
             CancellationToken.None);
 
-        var invalidatedEvents = publisher.Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().ToArray();
-        Assert.Equal(2, invalidatedEvents.Length);
-        Assert.All(invalidatedEvents, integrationEvent =>
+        var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations
+            .OrderBy(x => x.PlanId)
+            .ToArrayAsync();
+        Assert.Equal(2, invalidations.Length);
+        Assert.All(invalidations, invalidation =>
         {
-            var operation = Assert.Single(integrationEvent.Payload.AffectedOperations);
-            Assert.Equal("OP-002", operation.OperationId);
-            Assert.Contains("OP-002", integrationEvent.Payload.SourceEventId, StringComparison.Ordinal);
+            Assert.Equal("OP-002", invalidation.AffectedOperationId);
+            Assert.Null(invalidation.AffectedWorkOrderId);
+            Assert.Contains("OP-002", invalidation.SourceEventId, StringComparison.Ordinal);
         });
     }
 
@@ -235,9 +223,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            new RecordingIntegrationEventPublisher(),
-            CreateInvalidatedEventConverter());
+            scope.ServiceProvider.GetRequiredService<ISender>());
         var integrationEvent = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected) with
         {
             Payload = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected).Payload with
@@ -262,9 +248,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         var handler = new WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            new FixedTimeProvider(FixedNow),
-            new RecordingIntegrationEventPublisher(),
-            CreateInvalidatedEventConverter());
+            scope.ServiceProvider.GetRequiredService<ISender>());
         var integrationEvent = CreateWorkOrderReleasedEvent();
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -279,6 +263,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
             Assert.Equal("WO-NEW", invalidation.AffectedWorkOrderId);
             Assert.Equal("mes.WorkOrderReleased", invalidation.SourceEventType);
         });
+        Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
     }
 
     [Fact]
@@ -375,16 +361,20 @@ public sealed class SchedulingInputChangeEventHandlerTests
     {
         var services = new ServiceCollection();
         var databaseName = $"scheduling-events-{Guid.NewGuid():N}";
-        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<RecordingIntegrationEventPublisher>();
+        services.AddSingleton<IIntegrationEventPublisher>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingIntegrationEventPublisher>());
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddDbContext<ApplicationDbContext>(options => options
+            .UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
         return services.BuildServiceProvider();
-    }
-
-    private static SchedulePlanInvalidatedIntegrationEventConverter CreateInvalidatedEventConverter()
-    {
-        return new SchedulePlanInvalidatedIntegrationEventConverter(
-            new FixedTimeProvider(FixedNow),
-            new StubSchedulingIntegrationEventContextAccessor());
     }
 
     private static AssetUnavailableIntegrationEvent CreateAssetUnavailableEvent()
@@ -542,15 +532,13 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
     private sealed class RecordingIntegrationEventPublisher : IIntegrationEventPublisher
     {
-        public List<IIntegrationEventEnvelope> Published { get; } = [];
+        public List<object> Published { get; } = [];
 
-        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent,
+            CancellationToken cancellationToken)
         {
-            if (integrationEvent is IIntegrationEventEnvelope envelope)
-            {
-                Published.Add(envelope);
-            }
-
+            Published.Add(integrationEvent!);
             return Task.CompletedTask;
         }
     }

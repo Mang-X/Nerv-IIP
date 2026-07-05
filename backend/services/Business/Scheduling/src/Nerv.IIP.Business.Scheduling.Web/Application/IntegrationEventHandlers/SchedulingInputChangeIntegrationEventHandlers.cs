@@ -1,10 +1,8 @@
 using DotNetCore.CAP;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
-using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
-using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
@@ -12,7 +10,6 @@ using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
-using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 
@@ -20,9 +17,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider,
-    IIntegrationEventPublisher integrationEventPublisher,
-    SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
+    ISender sender,
     ILogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<AssetUnavailableIntegrationEvent>, ICapSubscribe
 {
@@ -55,10 +50,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
         }
 
         await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
+            sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.EquipmentUnavailable,
             integrationEvent.Payload.DeviceAssetId,
@@ -71,9 +63,7 @@ public sealed class AssetUnavailableIntegrationEventHandlerForInvalidateSchedule
 public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider,
-    IIntegrationEventPublisher integrationEventPublisher,
-    SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
+    ISender sender,
     ILogger<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans> logger)
     : IIntegrationEventHandler<AssetRestoredIntegrationEvent>, ICapSubscribe
 {
@@ -106,10 +96,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePla
         }
 
         await SchedulingPlanInvalidationService.InvalidateByResourceAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
+            sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.EquipmentRestored,
             integrationEvent.Payload.DeviceAssetId,
@@ -122,9 +109,7 @@ public sealed class AssetRestoredIntegrationEventHandlerForInvalidateSchedulePla
 public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider,
-    IIntegrationEventPublisher integrationEventPublisher,
-    SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter)
+    ISender sender)
     : IIntegrationEventHandler<StockAvailabilityChangedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.stock-availability-changed";
@@ -156,10 +141,7 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
         }
 
         await SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
+            sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.MaterialReadinessChanged,
             affectedSkuCode: integrationEvent.Payload.SkuCode,
@@ -171,9 +153,7 @@ public sealed class StockAvailabilityChangedIntegrationEventHandlerForInvalidate
 public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider,
-    IIntegrationEventPublisher integrationEventPublisher,
-    SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter)
+    ISender sender)
     : IIntegrationEventHandler<InspectionResultIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.quality-inspection-result";
@@ -221,10 +201,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
             : SchedulingPlanInvalidationReasons.QualityReleased;
 
         await SchedulingPlanInvalidationService.InvalidateByWorkOrderOrOperationAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
+            sender,
             integrationEvent,
             reason,
             integrationEvent.Payload.SourceDocumentId,
@@ -237,9 +214,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForInvalidateS
 public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider,
-    IIntegrationEventPublisher integrationEventPublisher,
-    SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter)
+    ISender sender)
     : IIntegrationEventHandler<WorkOrderReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-scheduling.work-order-released";
@@ -271,10 +246,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
         }
 
         await SchedulingPlanInvalidationService.InvalidateAllGeneratedPlansAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
+            sender,
             integrationEvent,
             SchedulingPlanInvalidationReasons.WorkOrderReleased,
             affectedWorkOrderId: integrationEvent.Payload.WorkOrderId,
@@ -286,10 +258,7 @@ public sealed class WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedul
 internal static class SchedulingPlanInvalidationService
 {
     public static async Task InvalidateByResourceAsync<TIntegrationEvent>(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider,
-        IIntegrationEventPublisher integrationEventPublisher,
-        SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
+        ISender sender,
         TIntegrationEvent integrationEvent,
         string reasonCode,
         string affectedResourceId,
@@ -298,17 +267,16 @@ internal static class SchedulingPlanInvalidationService
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedResourceId = Required(affectedResourceId, nameof(affectedResourceId));
-        var plans = await dbContext.SchedulePlans
-            .Include(x => x.Assignments)
-            .Where(x =>
-                x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                IsInvalidatableStatus(x.Status) &&
-                x.Assignments.Any(assignment =>
-                    assignment.ResourceId == normalizedResourceId ||
-                    assignment.WorkCenterId == normalizedResourceId))
-            .ToArrayAsync(cancellationToken);
-        if (plans.Length == 0)
+        var result = await sender.Send(
+            ToCommand(
+                integrationEvent,
+                reasonCode,
+                SchedulePlanInvalidationScope.Resource,
+                normalizedResourceId,
+                affectedWorkOrderId: null,
+                affectedSkuCode: null),
+            cancellationToken);
+        if (result.MatchedPlanCount == 0)
         {
             logger.LogInformation(
                 "Scheduling input change {EventType} for resource {AffectedResourceId} matched no schedule plan in {OrganizationId}/{EnvironmentId}.",
@@ -317,27 +285,10 @@ internal static class SchedulingPlanInvalidationService
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId);
         }
-
-        await AddInvalidationsAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
-            integrationEvent,
-            reasonCode,
-            plans,
-            affectedResourceId: normalizedResourceId,
-            affectedWorkOrderId: null,
-            affectedOperationId: null,
-            affectedSkuCode: null,
-            cancellationToken);
     }
 
     public static async Task InvalidateByWorkOrderOrOperationAsync<TIntegrationEvent>(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider,
-        IIntegrationEventPublisher integrationEventPublisher,
-        SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
+        ISender sender,
         TIntegrationEvent integrationEvent,
         string reasonCode,
         string sourceDocumentId,
@@ -346,43 +297,19 @@ internal static class SchedulingPlanInvalidationService
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
         var normalizedSource = Required(sourceDocumentId, nameof(sourceDocumentId));
-        var plans = await dbContext.SchedulePlans
-            .Include(x => x.Assignments)
-            .Where(x =>
-                x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                IsInvalidatableStatus(x.Status) &&
-                x.Assignments.Any(assignment =>
-                    assignment.WorkOrderId == normalizedSource ||
-                    assignment.OperationId == normalizedSource))
-            .ToArrayAsync(cancellationToken);
-        var matchesWorkOrder = plans
-            .SelectMany(x => x.Assignments)
-            .Any(x => string.Equals(x.WorkOrderId, normalizedSource, StringComparison.Ordinal));
-        var matchesOperation = plans
-            .SelectMany(x => x.Assignments)
-            .Any(x => string.Equals(x.OperationId, normalizedSource, StringComparison.Ordinal));
-
-        await AddInvalidationsAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
-            integrationEvent,
-            reasonCode,
-            plans,
-            affectedResourceId: null,
-            affectedWorkOrderId: matchesWorkOrder ? normalizedSource : null,
-            affectedOperationId: matchesOperation && !matchesWorkOrder ? normalizedSource : null,
-            affectedSkuCode: affectedSkuCode,
+        await sender.Send(
+            ToCommand(
+                integrationEvent,
+                reasonCode,
+                SchedulePlanInvalidationScope.WorkOrderOrOperation,
+                normalizedSource,
+                affectedWorkOrderId: null,
+                affectedSkuCode),
             cancellationToken);
     }
 
     public static async Task InvalidateAllGeneratedPlansAsync<TIntegrationEvent>(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider,
-        IIntegrationEventPublisher integrationEventPublisher,
-        SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
+        ISender sender,
         TIntegrationEvent integrationEvent,
         string reasonCode,
         string? affectedWorkOrderId = null,
@@ -390,132 +317,15 @@ internal static class SchedulingPlanInvalidationService
         CancellationToken cancellationToken = default)
         where TIntegrationEvent : IIntegrationEventEnvelope
     {
-        var plans = await dbContext.SchedulePlans
-            .Include(x => x.Assignments)
-            .Where(x =>
-                x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                IsInvalidatableStatus(x.Status))
-            .ToArrayAsync(cancellationToken);
-
-        await AddInvalidationsAsync(
-            dbContext,
-            timeProvider,
-            integrationEventPublisher,
-            invalidatedEventConverter,
-            integrationEvent,
-            reasonCode,
-            plans,
-            affectedResourceId: null,
-            affectedWorkOrderId: affectedWorkOrderId,
-            affectedOperationId: null,
-            affectedSkuCode: affectedSkuCode,
-            cancellationToken);
-    }
-
-    private static async Task AddInvalidationsAsync<TIntegrationEvent>(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider,
-        IIntegrationEventPublisher integrationEventPublisher,
-        SchedulePlanInvalidatedIntegrationEventConverter invalidatedEventConverter,
-        TIntegrationEvent integrationEvent,
-        string reasonCode,
-        IReadOnlyCollection<SchedulePlan> plans,
-        string? affectedResourceId,
-        string? affectedWorkOrderId,
-        string? affectedOperationId,
-        string? affectedSkuCode,
-        CancellationToken cancellationToken)
-        where TIntegrationEvent : IIntegrationEventEnvelope
-    {
-        if (plans.Count == 0)
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return;
-        }
-
-        var existingPlanIds = await dbContext.SchedulePlanInvalidations
-            .Where(x =>
-                x.OrganizationId == integrationEvent.OrganizationId &&
-                x.EnvironmentId == integrationEvent.EnvironmentId &&
-                x.SourceEventType == integrationEvent.EventType &&
-                x.SourceEventId == integrationEvent.EventId)
-            .Select(x => x.PlanId)
-            .ToArrayAsync(cancellationToken);
-        var existing = existingPlanIds.ToHashSet(StringComparer.Ordinal);
-        var recordedAtUtc = timeProvider.GetUtcNow();
-        var domainEvents = new List<SchedulePlanInvalidatedDomainEvent>();
-
-        foreach (var plan in plans
-                     .Where(x => !existing.Contains(x.PlanId))
-                     .OrderBy(x => x.PlanId, StringComparer.Ordinal))
-        {
-            var affectedOperations = SelectAffectedOperations(
-                plan,
-                affectedResourceId,
-                affectedWorkOrderId,
-                affectedOperationId);
-            var snapshot = SchedulePlanInvalidatedSnapshot.FromPlan(plan, affectedOperations);
-            var invalidation = SchedulePlanInvalidation.Create(
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                plan.PlanId,
-                integrationEvent.EventId,
-                integrationEvent.EventType,
-                integrationEvent.SourceService,
+        await sender.Send(
+            ToCommand(
+                integrationEvent,
                 reasonCode,
-                affectedResourceId,
+                SchedulePlanInvalidationScope.AllInvalidatablePlans,
+                scopeValue: null,
                 affectedWorkOrderId,
-                affectedOperationId,
-                affectedSkuCode,
-                integrationEvent.OccurredAtUtc,
-                recordedAtUtc);
-            dbContext.SchedulePlanInvalidations.Add(invalidation);
-            domainEvents.Add(new SchedulePlanInvalidatedDomainEvent(invalidation, snapshot));
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        foreach (var domainEvent in domainEvents)
-        {
-            await integrationEventPublisher.PublishAsync(
-                invalidatedEventConverter.Convert(domainEvent),
-                cancellationToken);
-        }
-    }
-
-    private static IReadOnlyCollection<SchedulePlanAssignment> SelectAffectedOperations(
-        SchedulePlan plan,
-        string? affectedResourceId,
-        string? affectedWorkOrderId,
-        string? affectedOperationId)
-    {
-        var assignments = plan.Assignments.AsEnumerable();
-
-        if (!string.IsNullOrWhiteSpace(affectedResourceId))
-        {
-            var normalized = affectedResourceId.Trim();
-            assignments = assignments.Where(x =>
-                string.Equals(x.ResourceId, normalized, StringComparison.Ordinal) ||
-                string.Equals(x.WorkCenterId, normalized, StringComparison.Ordinal));
-        }
-        else if (!string.IsNullOrWhiteSpace(affectedOperationId))
-        {
-            var normalized = affectedOperationId.Trim();
-            assignments = assignments.Where(x => string.Equals(x.OperationId, normalized, StringComparison.Ordinal));
-        }
-        else if (!string.IsNullOrWhiteSpace(affectedWorkOrderId))
-        {
-            var normalized = affectedWorkOrderId.Trim();
-            assignments = assignments.Where(x => string.Equals(x.WorkOrderId, normalized, StringComparison.Ordinal));
-        }
-
-        var selected = assignments.ToArray();
-        return selected.Length == 0 ? plan.Assignments.ToArray() : selected;
-    }
-
-    private static bool IsInvalidatableStatus(SchedulePlanLifecycleStatus status)
-    {
-        return status is SchedulePlanLifecycleStatus.Generated or SchedulePlanLifecycleStatus.Released;
+                affectedSkuCode),
+            cancellationToken);
     }
 
     private static string Required(string value, string parameterName)
@@ -526,6 +336,29 @@ internal static class SchedulingPlanInvalidationService
         }
 
         return value.Trim();
+    }
+
+    private static RecordSchedulePlanInvalidationsCommand ToCommand<TIntegrationEvent>(
+        TIntegrationEvent integrationEvent,
+        string reasonCode,
+        SchedulePlanInvalidationScope scope,
+        string? scopeValue,
+        string? affectedWorkOrderId,
+        string? affectedSkuCode)
+        where TIntegrationEvent : IIntegrationEventEnvelope
+    {
+        return new RecordSchedulePlanInvalidationsCommand(
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            integrationEvent.EventId,
+            integrationEvent.EventType,
+            integrationEvent.SourceService,
+            integrationEvent.OccurredAtUtc,
+            reasonCode,
+            scope,
+            scopeValue,
+            affectedWorkOrderId,
+            affectedSkuCode);
     }
 }
 

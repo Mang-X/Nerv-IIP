@@ -470,9 +470,10 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
         string? affectedOperationId,
         string? affectedSkuCode,
         DateTimeOffset occurredAtUtc,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        SchedulePlanInvalidatedSnapshot? planSnapshot = null)
     {
-        return new SchedulePlanInvalidation(
+        var invalidation = new SchedulePlanInvalidation(
             organizationId,
             environmentId,
             planId,
@@ -486,6 +487,12 @@ public sealed class SchedulePlanInvalidation : Entity<SchedulePlanInvalidationId
             affectedSkuCode,
             occurredAtUtc,
             recordedAtUtc);
+        if (planSnapshot is not null)
+        {
+            invalidation.AddDomainEvent(new SchedulePlanInvalidatedDomainEvent(invalidation, planSnapshot));
+        }
+
+        return invalidation;
     }
 
     private static string? Optional(string? value)
