@@ -87,7 +87,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
                 payload.Result,
                 integrationEvent.EventType,
                 payload.DispositionReason,
-                payload.RecordedAtUtc));
+                payload.RecordedAtUtc,
+                integrationEvent.Actor));
             return;
         }
 
@@ -97,7 +98,8 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForUpdateMesHo
             payload.Result,
             integrationEvent.EventType,
             payload.DispositionReason,
-            payload.RecordedAtUtc);
+            payload.RecordedAtUtc,
+            integrationEvent.Actor);
     }
 
     private async Task<MesInspectionSource?> ResolveMesSourceAsync(
