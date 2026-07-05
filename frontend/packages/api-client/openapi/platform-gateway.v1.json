@@ -1640,6 +1640,48 @@
         ]
       }
     },
+    "/api/console/v1/files/usage": {
+      "get": {
+        "tags": [
+          "Console Files",
+          "Api"
+        ],
+        "operationId": "getConsoleFileStorageUsage",
+        "parameters": [
+          {
+            "name": "filePurpose",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/files/{fileId}": {
       "get": {
         "tags": [
@@ -3850,6 +3892,56 @@
         }
       },
       "NervIIPPlatformGatewayWebEndpointsFilesConsoleListFilesRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "NetCorePalExtensionsDtoResponseDataOfFileStorageUsageResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPContractsFileStorageFileStorageUsageResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPContractsFileStorageFileStorageUsageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "filePurpose": {
+            "type": "string",
+            "nullable": true
+          },
+          "usedBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quotaBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageRequest": {
         "type": "object",
         "additionalProperties": false
       },

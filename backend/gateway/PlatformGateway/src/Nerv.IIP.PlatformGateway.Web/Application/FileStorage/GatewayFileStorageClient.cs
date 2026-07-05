@@ -27,6 +27,10 @@ public interface IGatewayFileStorageClient
         ListFilesRequest request,
         CancellationToken cancellationToken);
 
+    Task<FileStorageUsageResponse> GetUsageAsync(
+        FileStorageUsageRequest request,
+        CancellationToken cancellationToken);
+
     Task<DownloadGrantResponse> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
@@ -112,6 +116,15 @@ public sealed class HttpGatewayFileStorageClient(
             () => null,
             HttpMethod.Get,
             "/api/files/v1/files" + BuildListQuery(request),
+            cancellationToken);
+
+    public Task<FileStorageUsageResponse> GetUsageAsync(
+        FileStorageUsageRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<FileStorageUsageResponse>(
+            () => null,
+            HttpMethod.Get,
+            "/api/files/v1/usage" + BuildUsageQuery(request),
             cancellationToken);
 
     public async Task<DownloadGrantResponse> CreateDownloadGrantAsync(
@@ -379,6 +392,15 @@ public sealed class HttpGatewayFileStorageClient(
         Add(values, "skip", request.Skip?.ToString());
         Add(values, "take", request.Take?.ToString());
 
+        return values.Count == 0 ? string.Empty : "?" + string.Join("&", values);
+    }
+
+    private static string BuildUsageQuery(FileStorageUsageRequest request)
+    {
+        var values = new List<string>();
+        Add(values, "organizationId", request.OrganizationId);
+        Add(values, "environmentId", request.EnvironmentId);
+        Add(values, "filePurpose", request.FilePurpose);
         return values.Count == 0 ? string.Empty : "?" + string.Join("&", values);
     }
 

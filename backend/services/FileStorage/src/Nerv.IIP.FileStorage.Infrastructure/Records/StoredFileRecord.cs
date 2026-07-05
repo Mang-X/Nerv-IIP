@@ -19,9 +19,14 @@ public sealed class StoredFileRecord
     public string? Checksum { get; private set; }
     public string ObjectKey { get; private set; } = string.Empty;
     public string ScanStatus { get; private set; } = string.Empty;
+    public DateTimeOffset? ScannedAtUtc { get; private set; }
+    public string? ScanDetail { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset CompletedAtUtc { get; private set; }
+    public DateTimeOffset? DeletedAtUtc { get; private set; }
+    public DateTimeOffset? PhysicalDeleteAfterUtc { get; private set; }
+    public string? DeletionReason { get; private set; }
 
     public static StoredFileRecord Create(
         string fileId,
@@ -60,5 +65,20 @@ public sealed class StoredFileRecord
             CreatedAtUtc = createdAtUtc,
             CompletedAtUtc = completedAtUtc
         };
+    }
+
+    public void MarkScanned(string scanStatus, DateTimeOffset scannedAtUtc, string? scanDetail)
+    {
+        ScanStatus = scanStatus;
+        ScannedAtUtc = scannedAtUtc;
+        ScanDetail = scanDetail;
+    }
+
+    public void MarkDeleted(DateTimeOffset deletedAtUtc, string reason, TimeSpan? physicalDeleteGrace = null)
+    {
+        Status = "deleted";
+        DeletedAtUtc = deletedAtUtc;
+        DeletionReason = reason;
+        PhysicalDeleteAfterUtc = deletedAtUtc.Add(physicalDeleteGrace ?? TimeSpan.Zero);
     }
 }
