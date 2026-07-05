@@ -53,17 +53,18 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
     {
         var payload = integrationEvent.Payload
             ?? throw new KnownException("Industrial telemetry alarm payload is required.");
-        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var organizationId = Required(integrationEvent.OrganizationId, "Integration event organization is required.");
-        var environmentId = Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
-        Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-        var externalAlarmId = Required(payload.ExternalAlarmId, "Industrial telemetry external alarm id is required.");
-        var deviceAssetId = Required(payload.DeviceAssetId, "Industrial telemetry alarm device asset id is required.");
-        var alarmCode = Required(payload.AlarmCode, "Industrial telemetry alarm code is required.");
-        var severity = MapAlarmSeverity(string.IsNullOrWhiteSpace(payload.Priority) ? payload.Severity : payload.Priority);
-        var recipientRefs = GetRecipientRefs(configuration);
+        var eventId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = IndustrialTelemetryAlarmNotification.Required(integrationEvent.SourceService, "Integration event source service is required.");
+        var organizationId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.OrganizationId, "Integration event organization is required.");
+        var environmentId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
+        IndustrialTelemetryAlarmNotification.Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var externalAlarmId = IndustrialTelemetryAlarmNotification.Required(payload.ExternalAlarmId, "Industrial telemetry external alarm id is required.");
+        var alarmEventId = IndustrialTelemetryAlarmNotification.Required(payload.AlarmEventId, "Industrial telemetry alarm event id is required.");
+        var deviceAssetId = IndustrialTelemetryAlarmNotification.Required(payload.DeviceAssetId, "Industrial telemetry alarm device asset id is required.");
+        var alarmCode = IndustrialTelemetryAlarmNotification.Required(payload.AlarmCode, "Industrial telemetry alarm code is required.");
+        var severity = MapAlarmSeverity(payload.Priority, payload.Severity);
+        var recipientRefs = IndustrialTelemetryAlarmNotification.GetRecipientRefs(configuration);
 
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
             dbContext,
@@ -81,7 +82,7 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
             SourceEventId: eventId,
             IntentType: NotificationContractConstants.IntentTypeTask,
             Severity: severity,
-            DedupeKey: $"industrial-telemetry-alarm-raised:{externalAlarmId}",
+            DedupeKey: $"industrial-telemetry-alarm-raised:{externalAlarmId}:{alarmEventId}",
             Resource: new NotificationResourceRef("industrial-telemetry-alarm", externalAlarmId, null),
             Title: $"Industrial telemetry alarm raised: {alarmCode}",
             Summary: BuildRaisedSummary(payload, deviceAssetId, alarmCode),
@@ -122,36 +123,32 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
         return value.ToString("0.######", CultureInfo.InvariantCulture);
     }
 
-    private static string Required(string? value, string message)
+    private static string MapAlarmSeverity(string? priority, string? severity)
+    {
+        var mappedPriority = TryMapAlarmSeverity(priority);
+        if (mappedPriority is not null)
+        {
+            return mappedPriority;
+        }
+
+        return TryMapAlarmSeverity(severity)
+            ?? throw new KnownException("Industrial telemetry alarm severity is required.");
+    }
+
+    private static string? TryMapAlarmSeverity(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            return null;
         }
 
-        return value.Trim();
-    }
-
-    private static string MapAlarmSeverity(string? value)
-    {
-        return Required(value, "Industrial telemetry alarm severity is required.").ToLowerInvariant() switch
+        return value.Trim().ToLowerInvariant() switch
         {
-            "critical" or "high" or "urgent" or "emergency" or "p0" => NotificationContractConstants.SeverityCritical,
+            "critical" or "high" or "urgent" or "emergency" => NotificationContractConstants.SeverityCritical,
             "info" or "normal" => NotificationContractConstants.SeverityInfo,
-            _ => NotificationContractConstants.SeverityWarning
+            "warning" or "warn" or "medium" or "low" => NotificationContractConstants.SeverityWarning,
+            _ => null
         };
-    }
-
-    private static string[] GetRecipientRefs(IConfiguration configuration)
-    {
-        var recipientRefs = configuration.GetSection("IndustrialTelemetry:AlarmNotification:RecipientRefs").Get<string[]>() ?? [];
-        recipientRefs = recipientRefs
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return recipientRefs.Length == 0 ? ["role:maintenance"] : recipientRefs;
     }
 }
 
@@ -195,16 +192,17 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
     {
         var payload = integrationEvent.Payload
             ?? throw new KnownException("Industrial telemetry alarm payload is required.");
-        var eventId = Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var organizationId = Required(integrationEvent.OrganizationId, "Integration event organization is required.");
-        var environmentId = Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
-        Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-        var externalAlarmId = Required(payload.ExternalAlarmId, "Industrial telemetry external alarm id is required.");
-        var deviceAssetId = Required(payload.DeviceAssetId, "Industrial telemetry alarm device asset id is required.");
-        var alarmCode = Required(payload.AlarmCode, "Industrial telemetry alarm code is required.");
-        var recipientRefs = GetRecipientRefs(configuration);
+        var eventId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventId, "Integration event id is required.");
+        var eventType = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EventType, "Integration event type is required.");
+        var sourceService = IndustrialTelemetryAlarmNotification.Required(integrationEvent.SourceService, "Integration event source service is required.");
+        var organizationId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.OrganizationId, "Integration event organization is required.");
+        var environmentId = IndustrialTelemetryAlarmNotification.Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
+        IndustrialTelemetryAlarmNotification.Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
+        var externalAlarmId = IndustrialTelemetryAlarmNotification.Required(payload.ExternalAlarmId, "Industrial telemetry external alarm id is required.");
+        var alarmEventId = IndustrialTelemetryAlarmNotification.Required(payload.AlarmEventId, "Industrial telemetry alarm event id is required.");
+        var deviceAssetId = IndustrialTelemetryAlarmNotification.Required(payload.DeviceAssetId, "Industrial telemetry alarm device asset id is required.");
+        var alarmCode = IndustrialTelemetryAlarmNotification.Required(payload.AlarmCode, "Industrial telemetry alarm code is required.");
+        var recipientRefs = IndustrialTelemetryAlarmNotification.GetRecipientRefs(configuration);
 
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
             dbContext,
@@ -222,7 +220,7 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
             SourceEventId: eventId,
             IntentType: NotificationContractConstants.IntentTypeMessage,
             Severity: NotificationContractConstants.SeverityInfo,
-            DedupeKey: $"industrial-telemetry-alarm-cleared:{externalAlarmId}",
+            DedupeKey: $"industrial-telemetry-alarm-cleared:{externalAlarmId}:{alarmEventId}",
             Resource: new NotificationResourceRef("industrial-telemetry-alarm", externalAlarmId, null),
             Title: $"Industrial telemetry alarm cleared: {alarmCode}",
             Summary: $"Alarm {alarmCode} on device {deviceAssetId} cleared at {payload.ClearedAtUtc:O}.",
@@ -231,7 +229,11 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
         await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 
-    private static string Required(string? value, string message)
+}
+
+internal static class IndustrialTelemetryAlarmNotification
+{
+    public static string Required(string? value, string message)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -241,7 +243,7 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
         return value.Trim();
     }
 
-    private static string[] GetRecipientRefs(IConfiguration configuration)
+    public static string[] GetRecipientRefs(IConfiguration configuration)
     {
         var recipientRefs = configuration.GetSection("IndustrialTelemetry:AlarmNotification:RecipientRefs").Get<string[]>() ?? [];
         recipientRefs = recipientRefs

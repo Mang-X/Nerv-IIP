@@ -49,9 +49,48 @@ public sealed class IndustrialTelemetryIntegrationEventTests
         Assert.Equal(96.5m, raised.Payload.ObservedValue);
         Assert.Equal(90m, raised.Payload.ThresholdValue);
         Assert.Equal("celsius", raised.Payload.UnitCode);
-        Assert.Equal("industrialTelemetry:alarm-raised:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001", raised.IdempotencyKey);
-        Assert.Equal("industrialTelemetry:alarm-cleared:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001", cleared.IdempotencyKey);
+        Assert.Equal($"industrialTelemetry:alarm-raised:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001:{alarm.Id.Id:D}", raised.IdempotencyKey);
+        Assert.Equal($"industrialTelemetry:alarm-cleared:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001:{alarm.Id.Id:D}", cleared.IdempotencyKey);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmRaised\"", JsonSerializer.Serialize(raised, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
         Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmCleared\"", JsonSerializer.Serialize(cleared, new JsonSerializerOptions(JsonSerializerDefaults.Web)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Recurrent_alarm_events_with_same_external_alarm_id_have_distinct_idempotency_keys()
+    {
+        var first = AlarmEvent.Raise(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "OVER_TEMP",
+            "critical",
+            DateTimeOffset.Parse("2026-07-04T08:00:00Z"),
+            "alarm-ext-001",
+            priority: null,
+            tagKey: "temperature",
+            observedValue: 96.5m,
+            thresholdValue: 90m,
+            unitCode: "celsius");
+        var recurrent = AlarmEvent.Raise(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "OVER_TEMP",
+            "critical",
+            DateTimeOffset.Parse("2026-07-04T09:00:00Z"),
+            "alarm-ext-001",
+            priority: null,
+            tagKey: "temperature",
+            observedValue: 97.5m,
+            thresholdValue: 90m,
+            unitCode: "celsius");
+
+        var firstEvent = new AlarmRaisedIntegrationEventConverter().Convert(new AlarmRaisedDomainEvent(first));
+        var recurrentEvent = new AlarmRaisedIntegrationEventConverter().Convert(new AlarmRaisedDomainEvent(recurrent));
+
+        Assert.NotEqual(first.Id, recurrent.Id);
+        Assert.NotEqual(firstEvent.IdempotencyKey, recurrentEvent.IdempotencyKey);
+        Assert.EndsWith(first.Id.Id.ToString("D"), firstEvent.IdempotencyKey, StringComparison.Ordinal);
+        Assert.EndsWith(recurrent.Id.Id.ToString("D"), recurrentEvent.IdempotencyKey, StringComparison.Ordinal);
     }
 }

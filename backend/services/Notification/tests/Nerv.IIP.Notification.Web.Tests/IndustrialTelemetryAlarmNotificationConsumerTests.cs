@@ -99,6 +99,69 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
         Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync());
     }
 
+    [Fact]
+    public async Task Handle_recurrent_alarm_raised_with_same_external_alarm_id_creates_new_notification_for_new_alarm_event()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleRaisedAsync(factory, CreateAlarmRaisedEvent(
+            "event-alarm-raised-first",
+            "industrialTelemetry:alarm-raised:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-001",
+            alarmEventId: "alarm-event-001"));
+        await HandleRaisedAsync(factory, CreateAlarmRaisedEvent(
+            "event-alarm-raised-recurrent",
+            "industrialTelemetry:alarm-raised:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-002",
+            alarmEventId: "alarm-event-002"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Equal(2, await dbContext.NotificationIntents.CountAsync());
+        Assert.Equal(2, await dbContext.NotificationMessages.CountAsync());
+        Assert.Equal(2, await dbContext.NotificationTasks.CountAsync());
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_recurrent_alarm_cleared_with_same_external_alarm_id_creates_new_recovery_notification_for_new_alarm_event()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleClearedAsync(factory, CreateAlarmClearedEvent(
+            "event-alarm-cleared-first",
+            "industrialTelemetry:alarm-cleared:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-001",
+            alarmEventId: "alarm-event-001"));
+        await HandleClearedAsync(factory, CreateAlarmClearedEvent(
+            "event-alarm-cleared-recurrent",
+            "industrialTelemetry:alarm-cleared:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-002",
+            alarmEventId: "alarm-event-002"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Equal(2, await dbContext.NotificationIntents.CountAsync());
+        Assert.Equal(2, await dbContext.NotificationMessages.CountAsync());
+        Assert.Empty(await dbContext.NotificationTasks.ToListAsync());
+        Assert.Equal(2, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task Handle_alarm_raised_falls_back_to_severity_when_priority_is_not_notification_severity()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleRaisedAsync(factory, CreateAlarmRaisedEvent(
+            "event-alarm-priority-code",
+            "industrialTelemetry:alarm-raised:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-001",
+            priority: "p1"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
+    }
+
     private static async Task HandleRaisedAsync(
         NotificationConsumerWebApplicationFactory factory,
         AlarmRaisedIntegrationEvent integrationEvent)
@@ -119,7 +182,11 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
     }
 
-    private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(string eventId, string idempotencyKey)
+    private static AlarmRaisedIntegrationEvent CreateAlarmRaisedEvent(
+        string eventId,
+        string idempotencyKey,
+        string alarmEventId = "alarm-event-001",
+        string? priority = null)
     {
         return new AlarmRaisedIntegrationEvent(
             EventId: eventId,
@@ -134,20 +201,23 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
             Actor: "system:industrial-telemetry",
             IdempotencyKey: idempotencyKey,
             Payload: new AlarmRaisedPayload(
-                AlarmEventId: "alarm-event-001",
+                AlarmEventId: alarmEventId,
                 DeviceAssetId: "asset-001",
                 AlarmCode: "HI_TEMP",
                 Severity: "critical",
                 RaisedAtUtc: DateTimeOffset.Parse("2026-07-03T08:00:00Z"),
                 ExternalAlarmId: "external-alarm-001",
-                Priority: null,
+                Priority: priority,
                 TagKey: "temp.bearing",
                 ObservedValue: 97.5m,
                 ThresholdValue: 80m,
                 UnitCode: "C"));
     }
 
-    private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(string eventId, string idempotencyKey)
+    private static AlarmClearedIntegrationEvent CreateAlarmClearedEvent(
+        string eventId,
+        string idempotencyKey,
+        string alarmEventId = "alarm-event-001")
     {
         return new AlarmClearedIntegrationEvent(
             EventId: eventId,
@@ -156,13 +226,13 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
             OccurredAtUtc: DateTimeOffset.Parse("2026-07-03T08:05:00Z"),
             SourceService: IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
             CorrelationId: $"corr-{eventId}",
-            CausationId: "alarm-event-001",
+            CausationId: alarmEventId,
             OrganizationId: "org-001",
             EnvironmentId: "env-001",
             Actor: "system:industrial-telemetry",
             IdempotencyKey: idempotencyKey,
             Payload: new AlarmClearedPayload(
-                AlarmEventId: "alarm-event-001",
+                AlarmEventId: alarmEventId,
                 DeviceAssetId: "asset-001",
                 AlarmCode: "HI_TEMP",
                 Severity: "critical",
