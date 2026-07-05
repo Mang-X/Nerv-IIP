@@ -8,29 +8,47 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
+using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
 public sealed class GatewayAuthorizationOptions
 {
-    public int AuthorizationCacheTtlSeconds { get; set; } = 45;
+    public int AuthorizationCacheTtlSeconds { get; set; } = 10;
 }
 
 public sealed class HttpGatewayAuthorizationClient(
     HttpClient httpClient,
     IAppCache cache,
-    IOptions<GatewayAuthorizationOptions> options) : IGatewayAuthorizationClient
+    IOptions<GatewayAuthorizationOptions> options,
+    GatewayDownstreamHealthState healthState) : IGatewayAuthorizationClient
 {
     private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
         options.Value.AuthorizationCacheTtlSeconds > 0
             ? options.Value.AuthorizationCacheTtlSeconds
-            : 45);
+            : 10);
 
     public async Task<GatewayAuthorizationResult> CheckAsync(
         string bearerToken,
         GatewayPermissionRequirement requirement,
+        CancellationToken cancellationToken) =>
+        await CheckAsync(
+            bearerToken,
+            requirement,
+            GatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            cancellationToken);
+
+    public async Task<GatewayAuthorizationResult> CheckAsync(
+        string bearerToken,
+        GatewayPermissionRequirement requirement,
+        GatewayAuthorizationContinuityMode continuityMode,
         CancellationToken cancellationToken)
     {
+        if (continuityMode == GatewayAuthorizationContinuityMode.RealtimeRequired)
+        {
+            return await CheckRemoteAsync(bearerToken, requirement, cancellationToken);
+        }
+
         var cacheKey = BuildCacheKey(bearerToken, requirement);
         return await cache.GetOrCreateAsync(
             cacheKey,
@@ -52,23 +70,34 @@ public sealed class HttpGatewayAuthorizationClient(
             requirement.ResourceType,
             requirement.ResourceId));
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        try
         {
-            return GatewayAuthorizationResult.Forbidden("unauthorized");
-        }
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                healthState.RecordSuccess("IAM");
+                return GatewayAuthorizationResult.Forbidden("unauthorized");
+            }
 
-        if (response.StatusCode == HttpStatusCode.Forbidden)
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                healthState.RecordSuccess("IAM");
+                return GatewayAuthorizationResult.Forbidden("forbidden");
+            }
+
+            response.EnsureSuccessStatusCode();
+            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthorizationCheckResponse>>(cancellationToken);
+            var body = envelope?.Data;
+            healthState.RecordSuccess("IAM");
+            return body is not null && body.Allowed
+                ? GatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!)
+                : GatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
+        }
+        catch (Exception ex) when (IsDownstreamFailure(ex, cancellationToken))
         {
-            return GatewayAuthorizationResult.Forbidden("forbidden");
+            healthState.RecordFailure("IAM", "iam-unavailable");
+            throw;
         }
-
-        response.EnsureSuccessStatusCode();
-        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<AuthorizationCheckResponse>>(cancellationToken);
-        var body = envelope?.Data;
-        return body is not null && body.Allowed
-            ? GatewayAuthorizationResult.Allowed(body.PrincipalId!, body.PrincipalType!, body.LoginName!)
-            : GatewayAuthorizationResult.Forbidden(body?.DenialReason ?? "forbidden");
     }
 
     private static string BuildCacheKey(string bearerToken, GatewayPermissionRequirement requirement)
@@ -107,6 +136,11 @@ public sealed class HttpGatewayAuthorizationClient(
             return null;
         }
     }
+
+    private static bool IsDownstreamFailure(Exception ex, CancellationToken requestCancellationToken) =>
+        ex is HttpRequestException
+            || ex is TimeoutException
+            || ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested;
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }
