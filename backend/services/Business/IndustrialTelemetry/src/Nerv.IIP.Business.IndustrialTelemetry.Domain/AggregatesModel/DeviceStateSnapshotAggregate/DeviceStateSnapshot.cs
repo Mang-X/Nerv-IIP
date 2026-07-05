@@ -18,7 +18,8 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         DateTimeOffset occurredAtUtc,
         string sourceSequence,
         string? sourceSystem,
-        string? sourceConnector)
+        string? sourceConnector,
+        bool raiseChangedEvent)
     {
         Id = new DeviceStateSnapshotId(Guid.CreateVersion7());
         OrganizationId = IndustrialTelemetryText.Required(organizationId, nameof(organizationId));
@@ -30,6 +31,14 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         SourceSystem = IndustrialTelemetryText.Optional(sourceSystem);
         SourceConnector = IndustrialTelemetryText.Optional(sourceConnector);
         RecordedAtUtc = DateTimeOffset.UtcNow;
+        if (raiseChangedEvent)
+        {
+            RaiseStateChangedEvent();
+        }
+    }
+
+    public void RaiseStateChangedEvent()
+    {
         this.AddDomainEvent(new DeviceStateChangedDomainEvent(this));
     }
 
@@ -51,9 +60,19 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         DateTimeOffset occurredAtUtc,
         string sourceSequence,
         string? sourceSystem = null,
-        string? sourceConnector = null)
+        string? sourceConnector = null,
+        bool raiseChangedEvent = true)
     {
-        return new DeviceStateSnapshot(organizationId, environmentId, deviceAssetId, state, occurredAtUtc, sourceSequence, sourceSystem, sourceConnector);
+        return new DeviceStateSnapshot(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            state,
+            occurredAtUtc,
+            sourceSequence,
+            sourceSystem,
+            sourceConnector,
+            raiseChangedEvent);
     }
 
     public bool IsSameSourceSequence(DeviceStateSnapshot other)

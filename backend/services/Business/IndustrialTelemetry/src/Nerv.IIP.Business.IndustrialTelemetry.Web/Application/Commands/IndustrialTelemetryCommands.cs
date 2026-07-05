@@ -261,7 +261,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.StateOccurredAtUtc ?? request.BucketEndUtc,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            raiseChangedEvent: false);
         if (existingState is not null)
         {
             if (!existingState.HasSamePayload(incoming))
@@ -272,9 +273,48 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return existingState.Id;
         }
 
+        var stateCandidates = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId)
+            .Select(x => new LatestDeviceStateSnapshot(x.State, x.OccurredAtUtc, x.RecordedAtUtc, x.SourceSequence))
+            .ToListAsync(cancellationToken);
+        var latestState = stateCandidates
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
+            .FirstOrDefault();
+        if (ShouldPublishDeviceStateChanged(incoming, latestState))
+        {
+            incoming.RaiseStateChangedEvent();
+        }
+
         dbContext.DeviceStateSnapshots.Add(incoming);
         return incoming.Id;
     }
+
+    private static bool ShouldPublishDeviceStateChanged(
+        DeviceStateSnapshot incoming,
+        LatestDeviceStateSnapshot? latestState)
+    {
+        if (latestState is null)
+        {
+            return true;
+        }
+
+        if (incoming.OccurredAtUtc < latestState.OccurredAtUtc)
+        {
+            return false;
+        }
+
+        return incoming.State != latestState.State;
+    }
+
+    private sealed record LatestDeviceStateSnapshot(
+        string State,
+        DateTimeOffset OccurredAtUtc,
+        DateTimeOffset RecordedAtUtc,
+        string SourceSequence);
 
     private async Task EvaluateAlarmRulesAsync(
         RecordTelemetrySampleCommand request,

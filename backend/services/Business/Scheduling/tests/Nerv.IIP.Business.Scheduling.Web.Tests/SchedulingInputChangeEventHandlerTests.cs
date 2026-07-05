@@ -145,7 +145,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
         Assert.Equal(DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName, processed.ConsumerName);
-        Assert.Equal("industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009", processed.IdempotencyKey);
+        Assert.Equal("industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009:state-snapshot-001", processed.IdempotencyKey);
     }
 
     [Fact]
@@ -381,7 +381,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "org-001",
             "env-dev",
             "system:industrial-telemetry",
-            "industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009",
+            "industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009:state-snapshot-001",
             new DeviceStateChangedPayload(
                 "state-snapshot-001",
                 "ASSET-CNC-01",

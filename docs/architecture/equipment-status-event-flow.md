@@ -8,8 +8,10 @@
 
 ```text
 IndustrialTelemetry.DeviceStateSnapshot
-  -> industrialTelemetry.DeviceStateChanged
   -> IndustrialTelemetry runtime availability projection
+
+IndustrialTelemetry.DeviceStateSnapshot
+  -> industrialTelemetry.DeviceStateChanged
   -> Scheduling generated-plan invalidation
 
 IndustrialTelemetry.AlarmEvent
@@ -28,7 +30,7 @@ IndustrialTelemetry 拥有采集后的设备运行事实；Maintenance 拥有维
 
 ### 1. 报警事实进入 IndustrialTelemetry
 
-IndustrialTelemetry 保存 `AlarmEvent`、设备状态快照、tag 映射和采集汇总。`DeviceStateSnapshot` 表达“某个设备资产在某个采集序列上的实时状态”，并发布 `industrialTelemetry.DeviceStateChanged`。IndustrialTelemetry 的 runtime availability 查询直接从当前状态快照投影 `equipment.stateUnavailable` / `device-state` 窗口；Scheduling 消费 `DeviceStateChanged`，对已生成且引用该设备资产或工作中心资源的排程方案记录输入失效，以便下一次重排读取最新 EquipmentRuntime availability。`AlarmEvent` 表达“某个设备资产在某个采集口径下发生了报警”这一运行事实，来源可以是 Connector Host、OPC UA、MQTT、SCADA adapter 或其他受控数据入口。
+IndustrialTelemetry 保存 `AlarmEvent`、设备状态快照、tag 映射和采集汇总。`DeviceStateSnapshot` 表达“某个设备资产在某个采集序列上的实时状态”。IndustrialTelemetry 的 runtime availability 查询直接从当前状态快照投影 `equipment.stateUnavailable` / `device-state` 窗口；同一状态快照在当前/latest 状态值变化时发布 `industrialTelemetry.DeviceStateChanged`，供跨服务消费者按事件幂等键处理。`AlarmEvent` 表达“某个设备资产在某个采集口径下发生了报警”这一运行事实，来源可以是 Connector Host、OPC UA、MQTT、SCADA adapter 或其他受控数据入口。
 
 IndustrialTelemetry 只发布 `industrialTelemetry.DeviceStateChanged`、`industrialTelemetry.AlarmRaised`、`industrialTelemetry.AlarmCleared` 等公共集成事件。事件 payload 可携带状态快照 ID、设备资产 ID、当前状态、source sequence，或报警 ID、报警代码、严重度、发生时间、清除时间和 correlation 信息，但不得携带 PLC 控制指令、现场控制凭据、大体积时序数据或 SCADA 画面状态。OEE P0 只将设备状态事实值 `running` 视为 productive runtime；`standby`、`idle` 和 `ready` 可以表示 runtime availability 可用，但不计入 OEE productive running ticks。Business Console 既有 `availabilityRate` 字段名暂保持兼容，但当前 P0 数值口径是 productive runtime rate；历史把 standby 计入该字段的窗口在刷新后会下降。`GET /api/business/v1/iiot/runtime-hours` 是 Maintenance 等内部消费者获取运行小时的服务边界，按 UTC 日拆分 productive runtime/loading hours，并仍以 `DeviceStateSnapshot` 为当前事实来源；长生命周期窗口会在服务端按 366 天分片查询以避免单次物化过大，#689 historian/聚合表仍负责后续更高效的历史承接。
 
