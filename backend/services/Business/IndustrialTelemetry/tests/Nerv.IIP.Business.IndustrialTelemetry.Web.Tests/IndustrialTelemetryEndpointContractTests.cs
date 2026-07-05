@@ -309,6 +309,38 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Runtime_hours_query_does_not_split_daily_sample_count_at_chunk_boundary()
+    {
+        await using var dbContext = CreateDbContext(nameof(Runtime_hours_query_does_not_split_daily_sample_count_at_chunk_boundary));
+        var windowStartUtc = new DateTimeOffset(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var windowEndUtc = new DateTimeOffset(2026, 1, 3, 12, 0, 0, TimeSpan.Zero);
+        dbContext.DeviceStateSnapshots.Add(DeviceStateSnapshot.Record(
+            "org-001",
+            "env-dev",
+            "DEV-RUNTIME-CHUNK-DAY",
+            "running",
+            windowStartUtc,
+            "chunk-day-001",
+            "SCADA-A",
+            "opc-ua-cell-01"));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new QueryRuntimeHoursQueryHandler(dbContext).Handle(
+            new QueryRuntimeHoursQuery(
+                "org-001",
+                "env-dev",
+                "DEV-RUNTIME-CHUNK-DAY",
+                windowStartUtc,
+                windowEndUtc),
+            CancellationToken.None);
+
+        var splitBoundaryDay = Assert.Single(result.Daily, x => x.BusinessDate == "2026-01-02");
+        Assert.Equal(24m, splitBoundaryDay.RuntimeHours);
+        Assert.Equal(24m, splitBoundaryDay.LoadingHours);
+        Assert.Equal(1, splitBoundaryDay.StateSampleCount);
+    }
+
+    [Fact]
     public async Task Oee_endpoint_keeps_standby_in_runtime_availability_but_out_of_productive_runtime_rate()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();

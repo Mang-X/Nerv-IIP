@@ -351,7 +351,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
         var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
         for (var chunkStartUtc = windowStartUtc; chunkStartUtc < windowEndUtc;)
         {
-            var chunkEndUtc = chunkStartUtc.Add(QueryChunkSize);
+            var chunkEndUtc = GetNextChunkEndUtc(chunkStartUtc, windowEndUtc);
             if (chunkEndUtc > windowEndUtc)
             {
                 chunkEndUtc = windowEndUtc;
@@ -381,6 +381,12 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
                     Math.Round(x.LoadingHours, 6),
                     x.StateSampleCount))
                 .ToArray());
+    }
+
+    private static DateTimeOffset GetNextChunkEndUtc(DateTimeOffset chunkStartUtc, DateTimeOffset windowEndUtc)
+    {
+        var chunkEndUtc = new DateTimeOffset(chunkStartUtc.UtcDateTime.Date.Add(QueryChunkSize), TimeSpan.Zero);
+        return chunkEndUtc < windowEndUtc ? chunkEndUtc : windowEndUtc;
     }
 
     private async Task<int> CountStateSamplesAsync(
