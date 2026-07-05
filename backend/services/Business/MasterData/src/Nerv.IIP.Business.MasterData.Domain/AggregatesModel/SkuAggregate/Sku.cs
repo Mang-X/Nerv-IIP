@@ -46,7 +46,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string? lifecycleStatus,
         bool purchasingEnabled,
         bool manufacturingEnabled,
-        bool salesEnabled)
+        bool salesEnabled,
+        int? shelfLifeDays = null,
+        int? nearExpiryThresholdDays = null)
     {
         OrganizationId = Required(organizationId);
         EnvironmentId = Required(environmentId);
@@ -63,6 +65,8 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         BatchTrackingPolicy = Required(batchTrackingPolicy);
         SerialTrackingPolicy = Required(serialTrackingPolicy);
         ShelfLifePolicyCode = Optional(shelfLifePolicyCode);
+        ShelfLifeDays = NonNegativeDays(shelfLifeDays, nameof(shelfLifeDays));
+        NearExpiryThresholdDays = NonNegativeDays(nearExpiryThresholdDays, nameof(nearExpiryThresholdDays));
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
@@ -105,6 +109,8 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     public string BatchTrackingPolicy { get; private set; } = string.Empty;
     public string SerialTrackingPolicy { get; private set; } = string.Empty;
     public string ShelfLifePolicyCode { get; private set; } = string.Empty;
+    public int? ShelfLifeDays { get; private set; }
+    public int? NearExpiryThresholdDays { get; private set; }
     public string StorageConditionCode { get; private set; } = string.Empty;
     public string DefaultBarcodeRuleCode { get; private set; } = string.Empty;
     public bool QualityRequired { get; private set; }
@@ -168,7 +174,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string? lifecycleStatus = "active",
         bool purchasingEnabled = true,
         bool manufacturingEnabled = true,
-        bool salesEnabled = true)
+        bool salesEnabled = true,
+        int? shelfLifeDays = null,
+        int? nearExpiryThresholdDays = null)
     {
         return new Sku(
             organizationId,
@@ -204,7 +212,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
             lifecycleStatus,
             purchasingEnabled,
             manufacturingEnabled,
-            salesEnabled);
+            salesEnabled,
+            shelfLifeDays,
+            nearExpiryThresholdDays);
     }
 
     public void Rename(string name)
@@ -246,7 +256,9 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         string? lifecycleStatus = null,
         bool? purchasingEnabled = null,
         bool? manufacturingEnabled = null,
-        bool? salesEnabled = null)
+        bool? salesEnabled = null,
+        int? shelfLifeDays = null,
+        int? nearExpiryThresholdDays = null)
     {
         EnsureEnabled();
         EnsureLifecycleMutable();
@@ -263,6 +275,8 @@ public class Sku : Entity<SkuId>, IAggregateRoot
         BatchTrackingPolicy = Required(batchTrackingPolicy);
         SerialTrackingPolicy = Required(serialTrackingPolicy);
         ShelfLifePolicyCode = Optional(shelfLifePolicyCode);
+        ShelfLifeDays = NonNegativeDays(shelfLifeDays, nameof(shelfLifeDays));
+        NearExpiryThresholdDays = NonNegativeDays(nearExpiryThresholdDays, nameof(nearExpiryThresholdDays));
         StorageConditionCode = Optional(storageConditionCode);
         DefaultBarcodeRuleCode = Optional(defaultBarcodeRuleCode);
         QualityRequired = qualityRequired;
@@ -344,6 +358,12 @@ public class Sku : Entity<SkuId>, IAggregateRoot
     private static string UomOrBase(string? value, string baseUomCode)
     {
         return string.IsNullOrWhiteSpace(value) ? baseUomCode : value.Trim();
+    }
+
+    private static int? NonNegativeDays(int? value, string parameterName)
+    {
+        ValidateNonNegative(value, parameterName);
+        return value;
     }
 
     private void SetPlanningProfile(

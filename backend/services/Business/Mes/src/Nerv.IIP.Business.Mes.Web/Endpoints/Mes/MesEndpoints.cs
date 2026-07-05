@@ -114,7 +114,9 @@ public sealed record CreateFinishedGoodsReceiptRequestRequest(
     decimal? UnitCost,
     string? IdempotencyKey = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null);
+    string? SerialNo = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
@@ -986,7 +988,9 @@ public sealed class CreateFinishedGoodsReceiptRequestEndpoint(ISender sender)
             req.UnitCost,
             req.IdempotencyKey,
             req.ProducedLotNo,
-            req.SerialNo), ct);
+            req.SerialNo,
+            req.ProductionDate,
+            req.ExpiryDate), ct);
         await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
     }
 }

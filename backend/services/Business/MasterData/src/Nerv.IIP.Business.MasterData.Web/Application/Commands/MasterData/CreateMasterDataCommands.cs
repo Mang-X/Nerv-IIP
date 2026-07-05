@@ -51,6 +51,8 @@ public sealed record CreateSkuCommand(
     int? PlannedDeliveryTimeDays = null,
     int? InHouseProductionTimeDays = null,
     int? GoodsReceiptProcessingTimeDays = null,
+    int? ShelfLifeDays = null,
+    int? NearExpiryThresholdDays = null,
     string? AbcClass = null,
     string? LifecycleStatus = "active",
     bool PurchasingEnabled = true,
@@ -161,7 +163,9 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.LifecycleStatus,
             request.PurchasingEnabled,
             request.ManufacturingEnabled,
-            request.SalesEnabled);
+            request.SalesEnabled,
+            request.ShelfLifeDays,
+            request.NearExpiryThresholdDays);
         await _repository.AddAsync(sku, cancellationToken);
         return new MasterDataResourceResult("sku", sku.Code, sku.Name);
     }
@@ -243,6 +247,8 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
             request.PlannedDeliveryTimeDays,
             request.InHouseProductionTimeDays,
             request.GoodsReceiptProcessingTimeDays,
+            request.ShelfLifeDays,
+            request.NearExpiryThresholdDays,
             request.AbcClass,
             request.LifecycleStatus,
             request.PurchasingEnabled,

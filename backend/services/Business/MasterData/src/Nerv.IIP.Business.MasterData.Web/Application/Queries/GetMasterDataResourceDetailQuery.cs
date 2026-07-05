@@ -27,6 +27,8 @@ public sealed record MasterDataResourceDetail(
     string? BatchTrackingPolicy = null,
     string? SerialTrackingPolicy = null,
     string? ShelfLifePolicyCode = null,
+    int? ShelfLifeDays = null,
+    int? NearExpiryThresholdDays = null,
     string? StorageConditionCode = null,
     string? DefaultBarcodeRuleCode = null,
     bool? QualityRequired = null,

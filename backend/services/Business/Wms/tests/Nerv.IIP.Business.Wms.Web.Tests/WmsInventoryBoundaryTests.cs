@@ -807,6 +807,7 @@ public sealed class WmsInventoryBoundaryTests
     private sealed class FakeWmsInventoryReservationClient(params string[] reservationIds) : IWmsInventoryReservationClient
     {
         public List<WmsInventoryReservationRequest> Requests { get; } = [];
+        public List<WmsInventoryFefoReservationRequest> FefoRequests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
         public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
         public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
@@ -822,6 +823,18 @@ public sealed class WmsInventoryBoundaryTests
             var reservationId = reservationIds[Math.Min(Requests.Count - 1, reservationIds.Length - 1)];
             ReservationResults.Add(reservationId);
             return Task.FromResult(new WmsInventoryReservationResult(reservationId, request.Quantity, 0m));
+        }
+
+        public Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+            WmsInventoryFefoReservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            FefoRequests.Add(request);
+            var reservationId = reservationIds[Math.Min(FefoRequests.Count - 1, reservationIds.Length - 1)];
+            ReservationResults.Add(reservationId);
+            return Task.FromResult(new WmsInventoryFefoReservationResult(
+                [new WmsInventoryFefoReservationAllocation(reservationId, request.LocationCode ?? "LOC-A-01", "LOT-FEFO", null, null, DateOnly.FromDateTime(DateTime.UtcNow).AddDays(30), request.Quantity, 0m)],
+                request.Quantity));
         }
 
         public Task<WmsInventoryReservationReleaseResult> ReleaseAsync(

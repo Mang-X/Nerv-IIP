@@ -29,7 +29,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         DateTimeOffset requestedAtUtc,
         decimal? unitCost,
         string? producedLotNo,
-        string? serialNo)
+        string? serialNo,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -42,6 +44,8 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         UnitCost = unitCost is null ? null : DomainGuard.Positive(unitCost.Value, nameof(unitCost));
         ProducedLotNo = string.IsNullOrWhiteSpace(producedLotNo) ? null : producedLotNo.Trim();
         SerialNo = string.IsNullOrWhiteSpace(serialNo) ? null : serialNo.Trim();
+        ProductionDate = productionDate;
+        ExpiryDate = expiryDate;
         Status = RequestedStatus;
     }
 
@@ -56,6 +60,8 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
     public decimal? UnitCost { get; private set; }
     public string? ProducedLotNo { get; private set; }
     public string? SerialNo { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public string Status { get; private set; } = string.Empty;
     public decimal PostedQuantity { get; private set; }
     public decimal RemainingQuantity => Math.Max(0m, Quantity - PostedQuantity);
@@ -76,7 +82,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
         DateTimeOffset requestedAtUtc,
         string? producedLotNo = null,
         string? serialNo = null,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        DateOnly? ProductionDate = null,
+        DateOnly? ExpiryDate = null)
     {
         var request = new FinishedGoodsReceiptRequest(
             organizationId,
@@ -89,7 +97,9 @@ public sealed class FinishedGoodsReceiptRequest : Entity<FinishedGoodsReceiptReq
             requestedAtUtc,
             unitCost,
             producedLotNo,
-            serialNo);
+            serialNo,
+            ProductionDate,
+            ExpiryDate);
         request.AddDomainEvent(new FinishedGoodsReceiptRequestedDomainEvent(
             request,
             request.Quantity,

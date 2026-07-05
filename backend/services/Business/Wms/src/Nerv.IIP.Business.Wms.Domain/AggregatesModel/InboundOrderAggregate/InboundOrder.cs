@@ -25,7 +25,9 @@ public sealed record InboundOrderLineDraft(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 {
@@ -138,7 +140,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                line.ReceivedQuantity))
+                line.ReceivedQuantity,
+                ProductionDate: line.ProductionDate,
+                ExpiryDate: line.ExpiryDate))
             .ToArray();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
         return requests;
@@ -186,7 +190,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                line.ReceivedQuantity))
+                line.ReceivedQuantity,
+                ProductionDate: line.ProductionDate,
+                ExpiryDate: line.ExpiryDate))
             .ToArray();
         return requests;
     }
@@ -232,6 +238,8 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
         QualityStatus = WmsText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
         OwnerType = WmsText.Required(draft.OwnerType, nameof(draft.OwnerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(draft.OwnerId);
+        ProductionDate = draft.ProductionDate;
+        ExpiryDate = draft.ExpiryDate;
     }
 
     public string LineNo { get; private set; } = string.Empty;
@@ -244,6 +252,8 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
 
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
