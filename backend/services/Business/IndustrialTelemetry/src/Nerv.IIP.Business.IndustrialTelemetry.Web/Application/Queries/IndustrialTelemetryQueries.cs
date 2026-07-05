@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmRuleAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
@@ -184,9 +185,45 @@ public sealed record OeeResponse(
     bool PerformanceRateEstimated,
     bool QualityRateEstimated);
 
+public sealed record QueryRuntimeHoursQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc) : IQuery<RuntimeHoursResponse>;
+
+public sealed record RuntimeHoursDailyItem(
+    string BusinessDate,
+    decimal RuntimeHours,
+    decimal LoadingHours,
+    int StateSampleCount);
+
+public sealed record RuntimeHoursResponse(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    DateTimeOffset WindowStartUtc,
+    DateTimeOffset WindowEndUtc,
+    int StateSampleCount,
+    decimal TotalRuntimeHours,
+    decimal TotalLoadingHours,
+    bool HasRuntimeSamples,
+    IReadOnlyCollection<RuntimeHoursDailyItem> Daily);
+
 public sealed class QueryOeeQueryValidator : AbstractValidator<QueryOeeQuery>
 {
     public QueryOeeQueryValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+    }
+}
+
+public sealed class QueryRuntimeHoursQueryValidator : AbstractValidator<QueryRuntimeHoursQuery>
+{
+    public QueryRuntimeHoursQueryValidator()
     {
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
@@ -299,6 +336,187 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate);
 
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
+}
+
+public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<QueryRuntimeHoursQuery, RuntimeHoursResponse>
+{
+    private static readonly TimeSpan QueryChunkSize = TimeSpan.FromDays(366);
+
+    public async Task<RuntimeHoursResponse> Handle(QueryRuntimeHoursQuery request, CancellationToken cancellationToken)
+    {
+        var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
+        var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
+        var stateSampleCount = await CountStateSamplesAsync(request, windowStartUtc, windowEndUtc, cancellationToken);
+        var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
+        for (var chunkStartUtc = windowStartUtc; chunkStartUtc < windowEndUtc;)
+        {
+            var chunkEndUtc = GetNextChunkEndUtc(chunkStartUtc, windowEndUtc);
+            if (chunkEndUtc > windowEndUtc)
+            {
+                chunkEndUtc = windowEndUtc;
+            }
+
+            MergeBuckets(buckets, await QueryChunkBucketsAsync(request, chunkStartUtc, chunkEndUtc, cancellationToken));
+            chunkStartUtc = chunkEndUtc;
+        }
+
+        var orderedBuckets = buckets.Values
+            .OrderBy(x => x.BusinessDate, StringComparer.Ordinal)
+            .ToArray();
+        return new RuntimeHoursResponse(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.DeviceAssetId,
+            windowStartUtc,
+            windowEndUtc,
+            stateSampleCount,
+            Math.Round(orderedBuckets.Sum(x => x.RuntimeHours), 6),
+            Math.Round(orderedBuckets.Sum(x => x.LoadingHours), 6),
+            stateSampleCount > 0,
+            orderedBuckets
+                .Select(x => new RuntimeHoursDailyItem(
+                    x.BusinessDate,
+                    Math.Round(x.RuntimeHours, 6),
+                    Math.Round(x.LoadingHours, 6),
+                    x.StateSampleCount))
+                .ToArray());
+    }
+
+    private static DateTimeOffset GetNextChunkEndUtc(DateTimeOffset chunkStartUtc, DateTimeOffset windowEndUtc)
+    {
+        var chunkEndUtc = new DateTimeOffset(chunkStartUtc.UtcDateTime.Date.Add(QueryChunkSize), TimeSpan.Zero);
+        return chunkEndUtc < windowEndUtc ? chunkEndUtc : windowEndUtc;
+    }
+
+    private async Task<int> CountStateSamplesAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var hasCarryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < windowStartUtc)
+            .AnyAsync(cancellationToken);
+        var inWindowStateCount = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= windowStartUtc)
+            .Where(x => x.OccurredAtUtc < windowEndUtc)
+            .CountAsync(cancellationToken);
+
+        return inWindowStateCount + (hasCarryInState ? 1 : 0);
+    }
+
+    private async Task<IReadOnlyCollection<RuntimeHoursBucket>> QueryChunkBucketsAsync(
+        QueryRuntimeHoursQuery request,
+        DateTimeOffset chunkStartUtc,
+        DateTimeOffset chunkEndUtc,
+        CancellationToken cancellationToken)
+    {
+        var carryInState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc < chunkStartUtc)
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new RuntimeHoursStatePoint(chunkStartUtc, x.State))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var inWindowStates = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId)
+            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => x.OccurredAtUtc >= chunkStartUtc)
+            .Where(x => x.OccurredAtUtc < chunkEndUtc)
+            .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
+            .Select(x => new RuntimeHoursStatePoint(x.OccurredAtUtc, x.State))
+            .ToArrayAsync(cancellationToken);
+
+        var states = carryInState is null
+            ? inWindowStates
+            : [carryInState, .. inWindowStates];
+        return CalculateDailyRuntimeHours(states, chunkStartUtc, chunkEndUtc);
+    }
+
+    private static void MergeBuckets(Dictionary<string, RuntimeHoursBucket> target, IReadOnlyCollection<RuntimeHoursBucket> source)
+    {
+        foreach (var bucket in source)
+        {
+            target[bucket.BusinessDate] = target.TryGetValue(bucket.BusinessDate, out var existing)
+                ? existing with
+                {
+                    RuntimeHours = existing.RuntimeHours + bucket.RuntimeHours,
+                    LoadingHours = existing.LoadingHours + bucket.LoadingHours,
+                    StateSampleCount = existing.StateSampleCount + bucket.StateSampleCount,
+                }
+                : bucket;
+        }
+    }
+
+    private static IReadOnlyCollection<RuntimeHoursBucket> CalculateDailyRuntimeHours(
+        IReadOnlyList<RuntimeHoursStatePoint> states,
+        DateTimeOffset windowStartUtc,
+        DateTimeOffset windowEndUtc)
+    {
+        if (states.Count == 0)
+        {
+            return [];
+        }
+
+        var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
+        for (var i = 0; i < states.Count; i++)
+        {
+            var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
+            var segmentEnd = i + 1 < states.Count ? states[i + 1].OccurredAtUtc : windowEndUtc;
+            if (segmentEnd > windowEndUtc)
+            {
+                segmentEnd = windowEndUtc;
+            }
+
+            if (segmentEnd <= segmentStart || EquipmentRuntimeDeviceStates.IsPlannedDownState(states[i].State))
+            {
+                continue;
+            }
+
+            var isProductive = EquipmentRuntimeDeviceStates.IsProductiveRuntime(states[i].State);
+            var cursor = segmentStart.ToUniversalTime();
+            var end = segmentEnd.ToUniversalTime();
+            while (cursor < end)
+            {
+                var nextDayUtc = new DateTimeOffset(cursor.UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
+                var sliceEnd = nextDayUtc < end ? nextDayUtc : end;
+                var businessDate = DateOnly.FromDateTime(cursor.UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (!buckets.TryGetValue(businessDate, out var bucket))
+                {
+                    bucket = new RuntimeHoursBucket(businessDate, 0m, 0m, 0);
+                }
+
+                var hours = (decimal)(sliceEnd - cursor).TotalHours;
+                buckets[businessDate] = bucket with
+                {
+                    RuntimeHours = bucket.RuntimeHours + (isProductive ? hours : 0m),
+                    LoadingHours = bucket.LoadingHours + hours,
+                    StateSampleCount = bucket.StateSampleCount + 1,
+                };
+                cursor = sliceEnd;
+            }
+        }
+
+        return buckets.Values.ToArray();
+    }
+
+    private sealed record RuntimeHoursStatePoint(DateTimeOffset OccurredAtUtc, string State);
+
+    private sealed record RuntimeHoursBucket(string BusinessDate, decimal RuntimeHours, decimal LoadingHours, int StateSampleCount);
 }
 
 public sealed record GetRuntimeCurrentStateQuery(

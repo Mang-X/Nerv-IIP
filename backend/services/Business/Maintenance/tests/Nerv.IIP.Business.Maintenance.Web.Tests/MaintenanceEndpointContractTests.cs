@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceInspectionAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
@@ -654,6 +656,89 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public async Task Runtime_hour_pm_generation_logs_and_retries_when_provider_has_no_real_runtime_samples()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.MaintenancePlans.Add(MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-RUNTIME-RETRY", "P30D", new DateOnly(2026, 7, 1), "maintenance", runtimeHourInterval: 10m));
+        await dbContext.SaveChangesAsync();
+        var logger = new TestLogger<GenerateDueMaintenanceWorkOrdersCommandHandler>();
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            new FixedAssetRuntimeHoursProvider(new AssetRuntimeHoursResult(25m, AssetRuntimeSources.Fallback, HasRuntimeSamples: false)),
+            logger);
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 6, 22), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(0, result.GeneratedCount);
+        Assert.Empty(await dbContext.MaintenanceWorkOrders.ToArrayAsync());
+        var runtime = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-RUNTIME-RETRY");
+        Assert.Equal(0m, runtime.LastGeneratedRuntimeHours);
+        Assert.Equal(10m, runtime.NextDueRuntimeHours);
+        Assert.Contains(logger.Messages, message => message.LogLevel == LogLevel.Warning && message.Message.Contains("PM-RUNTIME-RETRY", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Runtime_hour_provider_drives_pm_generation_from_industrial_telemetry_runtime_hours_response()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-02", "PM-RUNTIME-HTTP", "P30D", new DateOnly(2026, 7, 1), "maintenance", runtimeHourInterval: 2.5m);
+        _ = plan.ConsumeDueDates(new DateOnly(2026, 7, 1)).ToArray();
+        dbContext.MaintenancePlans.Add(plan);
+        await dbContext.SaveChangesAsync();
+        var responseHandler = new JsonResponseHandler("""
+            {
+              "data": {
+                "organizationId": "org-001",
+                "environmentId": "env-dev",
+                "deviceAssetId": "DEV-CNC-02",
+                "windowStartUtc": "2026-07-01T00:00:00Z",
+                "windowEndUtc": "2026-07-02T00:00:00Z",
+                "stateSampleCount": 2,
+                "totalRuntimeHours": 3.25,
+                "totalLoadingHours": 4,
+                "hasRuntimeSamples": true,
+                "daily": [
+                  {
+                    "businessDate": "2026-07-01",
+                    "runtimeHours": 3.25,
+                    "loadingHours": 4,
+                    "stateSampleCount": 2
+                  }
+                ]
+              },
+              "success": true,
+              "message": "",
+              "code": 0
+            }
+            """);
+        var httpClient = new HttpClient(responseHandler)
+        {
+            BaseAddress = new Uri("https://industrial-telemetry.local"),
+        };
+        var runtimeProvider = new HttpIndustrialTelemetryAssetRuntimeHoursProvider(
+            new FixedHttpClientFactory(httpClient),
+            tokenProvider: null,
+            new ThrowingRuntimeHoursFallbackProvider(),
+            new TestLogger<HttpIndustrialTelemetryAssetRuntimeHoursProvider>());
+        var handler = new GenerateDueMaintenanceWorkOrdersCommandHandler(
+            dbContext,
+            runtimeProvider,
+            new TestLogger<GenerateDueMaintenanceWorkOrdersCommandHandler>());
+
+        var result = await handler.Handle(new GenerateDueMaintenanceWorkOrdersCommand("org-001", "env-dev", new DateOnly(2026, 7, 1), "system:pm"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(1, result.GeneratedCount);
+        Assert.Contains("/api/business/v1/iiot/runtime-hours?", responseHandler.LastRequestUri);
+        var workOrder = await dbContext.MaintenanceWorkOrders.SingleAsync();
+        Assert.Equal("PM-RUNTIME-HTTP:runtime:2.5:1", workOrder.SourceReferenceId);
+        var runtime = await dbContext.MaintenancePlans.SingleAsync(x => x.PlanCode == "PM-RUNTIME-HTTP");
+        Assert.Equal(3.25m, runtime.LastGeneratedRuntimeHours);
+        Assert.Equal(5.0m, runtime.NextDueRuntimeHours);
+    }
+
+    [Fact]
     public async Task Complete_work_order_requires_existing_downtime_reason_and_keeps_reason_classification()
     {
         await using var dbContext = CreateDbContext();
@@ -975,6 +1060,92 @@ public sealed class MaintenanceEndpointContractTests
             _ = windowEndUtc;
             _ = cancellationToken;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class TestLogger<T> : ILogger<T>
+    {
+        public List<LogMessage> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            _ = state;
+            return NullScope.Instance;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            _ = logLevel;
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _ = eventId;
+            _ = exception;
+            Messages.Add(new LogMessage(logLevel, formatter(state, exception)));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+
+    private sealed record LogMessage(LogLevel LogLevel, string Message);
+
+    private sealed class FixedHttpClientFactory(HttpClient client) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+        {
+            Assert.Equal(HttpIndustrialTelemetryAssetRuntimeHoursProvider.ClientName, name);
+            return client;
+        }
+    }
+
+    private sealed class ThrowingRuntimeHoursFallbackProvider : IAssetRuntimeHoursFallbackProvider
+    {
+        public Task<AssetRuntimeHoursResult> CalculateFallbackAsync(
+            string organizationId,
+            string environmentId,
+            string deviceAssetId,
+            DateTimeOffset windowStartUtc,
+            DateTimeOffset windowEndUtc,
+            CancellationToken cancellationToken)
+        {
+            _ = organizationId;
+            _ = environmentId;
+            _ = deviceAssetId;
+            _ = windowStartUtc;
+            _ = windowEndUtc;
+            _ = cancellationToken;
+            throw new InvalidOperationException("Fallback should not be used when IndustrialTelemetry returns real runtime samples.");
+        }
+    }
+
+    private sealed class JsonResponseHandler(string responseJson) : HttpMessageHandler
+    {
+        public string? LastRequestUri { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            LastRequestUri = request.RequestUri?.PathAndQuery;
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseJson, Encoding.UTF8, "application/json"),
+            };
+            return Task.FromResult(response);
         }
     }
 
