@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Mes;
@@ -118,6 +119,36 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
+    public async Task IndustrialTelemetry_device_state_changed_event_invalidates_generated_plan_for_affected_device_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            new FixedTimeProvider(FixedNow),
+            new RecordingLogger<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var integrationEvent = CreateDeviceStateChangedEvent();
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidation = Assert.Single(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal("plan-generated", invalidation.PlanId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.DeviceStateChanged, invalidation.ReasonCode);
+        Assert.Equal("ASSET-CNC-01", invalidation.AffectedResourceId);
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.DeviceStateChanged, invalidation.SourceEventType);
+        Assert.Equal(FixedNow, invalidation.RecordedAtUtc);
+
+        var processed = Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal(DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName, processed.ConsumerName);
+        Assert.Equal("industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009", processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task Stock_availability_changed_event_invalidates_generated_plans_in_same_business_scope()
     {
         await using var provider = CreateInMemoryProvider();
@@ -221,6 +252,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>(
             "Nerv.IIP.Contracts.Maintenance.AssetRestoredIntegrationEvent",
             AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "Nerv.IIP.Contracts.IndustrialTelemetry.DeviceStateChangedIntegrationEvent",
+            DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
             "Nerv.IIP.Contracts.Inventory.StockAvailabilityChangedIntegrationEvent",
             StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -332,6 +366,27 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "system:maintenance",
             "maintenance:asset-restored:ASSET-CNC-01",
             new AssetRestoredPayload("ASSET-CNC-01", new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero)));
+    }
+
+    private static DeviceStateChangedIntegrationEvent CreateDeviceStateChangedEvent()
+    {
+        return new DeviceStateChangedIntegrationEvent(
+            "evt-iiot-state-001",
+            IndustrialTelemetryIntegrationEventTypes.DeviceStateChanged,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 2, 0, TimeSpan.Zero),
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            "corr-iiot-001",
+            "state-snapshot-001",
+            "org-001",
+            "env-dev",
+            "system:industrial-telemetry",
+            "industrialTelemetry:device-state:org-001:env-dev:ASSET-CNC-01:state-seq-009",
+            new DeviceStateChangedPayload(
+                "state-snapshot-001",
+                "ASSET-CNC-01",
+                "faulted",
+                "state-seq-009"));
     }
 
     private static StockAvailabilityChangedIntegrationEvent CreateStockAvailabilityChangedEvent()

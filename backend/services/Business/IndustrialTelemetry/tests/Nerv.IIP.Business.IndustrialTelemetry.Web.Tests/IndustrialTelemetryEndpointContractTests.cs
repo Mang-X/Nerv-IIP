@@ -137,6 +137,30 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Runtime_availability_reflects_running_to_faulted_state_change_as_device_state_unavailable()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        await PostSampleAsync(client, "DEV-STATE-690", "running", new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-001");
+        await PostSampleAsync(client, "DEV-STATE-690", "faulted", new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), "SCADA-A", "opc-ua-cell-01", "state-690-002");
+
+        var response = await client.GetFromJsonAsync<ResponseData<EquipmentRuntimeAvailabilityResponse>>(
+            "/api/business/v1/iiot/devices/DEV-STATE-690/runtime-availability?organizationId=org-001&environmentId=env-dev&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T08:30:00Z&freshnessMaxAgeMinutes=60",
+            EquipmentRuntimeJson.Options);
+
+        Assert.NotNull(response?.Data);
+        var window = Assert.Single(response.Data.Items, x =>
+            x.DeviceAssetId == "DEV-STATE-690"
+            && x.AvailabilityStatus == EquipmentRuntimeAvailabilityStatus.Unavailable
+            && x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable
+            && x.SourceType == EquipmentRuntimeSourceType.DeviceState);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 5, 0, TimeSpan.Zero), window.StartUtc);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 8, 30, 0, TimeSpan.Zero), window.EndUtc);
+    }
+
+    [Fact]
     public async Task Alarm_rule_endpoint_upserts_and_lists_rule_configuration()
     {
         await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
