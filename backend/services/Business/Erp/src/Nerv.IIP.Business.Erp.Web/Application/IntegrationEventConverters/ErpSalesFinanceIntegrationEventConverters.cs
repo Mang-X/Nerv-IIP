@@ -1,5 +1,5 @@
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
-using Nerv.IIP.Business.Erp.Web.Application.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 using static Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters.ErpIntegrationEventConverterHelpers;
 

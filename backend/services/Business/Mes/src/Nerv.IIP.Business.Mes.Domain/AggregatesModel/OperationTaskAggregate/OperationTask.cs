@@ -1,3 +1,5 @@
+using Nerv.IIP.Business.Mes.Domain.DomainEvents;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 
 public partial record OperationTaskId : IGuidStronglyTypedId;
@@ -30,7 +32,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DateTimeOffset earliestStartUtc,
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
-        DateTimeOffset? existingEndUtc)
+        DateTimeOffset? existingEndUtc,
+        string? skuCode,
+        string? uomCode,
+        decimal plannedQuantity,
+        bool requiresQualityInspection)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -46,6 +52,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : throw new ArgumentOutOfRangeException(nameof(duration), "Duration must be positive.");
         ExistingStartUtc = existingStartUtc;
         ExistingEndUtc = existingEndUtc;
+        SkuCode = NormalizeOptional(skuCode) ?? workOrderId;
+        UomCode = NormalizeOptional(uomCode) ?? "pcs";
+        PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
+        RequiresQualityInspection = requiresQualityInspection;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -70,6 +80,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public string? ShiftId { get; private set; }
     public DateTimeOffset? AssignedAtUtc { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
+    public string SkuCode { get; private set; } = string.Empty;
+    public string UomCode { get; private set; } = "pcs";
+    public decimal PlannedQuantity { get; private set; }
+    public bool RequiresQualityInspection { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
 
@@ -95,7 +109,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         string workCenterId,
         IReadOnlyCollection<string> alternativeWorkCenterIds,
         DateTimeOffset earliestStartUtc,
-        TimeSpan duration)
+        TimeSpan duration,
+        string? skuCode = null,
+        string? uomCode = null,
+        decimal plannedQuantity = 0m,
+        bool requiresQualityInspection = false)
     {
         return Create(
             organizationId,
@@ -109,7 +127,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             earliestStartUtc,
             duration,
             null,
-            null);
+            null,
+            skuCode,
+            uomCode,
+            plannedQuantity,
+            requiresQualityInspection);
     }
 
     public static OperationTask Create(
@@ -124,7 +146,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         DateTimeOffset earliestStartUtc,
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
-        DateTimeOffset? existingEndUtc)
+        DateTimeOffset? existingEndUtc,
+        string? skuCode = null,
+        string? uomCode = null,
+        decimal plannedQuantity = 0m,
+        bool requiresQualityInspection = false)
     {
         return new OperationTask(
             organizationId,
@@ -138,7 +164,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             earliestStartUtc,
             duration,
             existingStartUtc,
-            existingEndUtc);
+            existingEndUtc,
+            skuCode,
+            uomCode,
+            plannedQuantity,
+            requiresQualityInspection);
     }
 
     public void Start(DateTimeOffset startedAtUtc)
@@ -203,6 +233,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var elapsedTicks = Math.Max(0L, (completedAtUtc - ExistingStartUtc.Value).Ticks - PausedDurationTicks);
         LaborTimeTicks = elapsedTicks;
         MachineTimeTicks = elapsedTicks;
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
     }
 
     public void ReopenAfterReportReversal()

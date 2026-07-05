@@ -77,5 +77,9 @@ public sealed class ErpProcurementIntegrationEventTests
         Assert.Equal("erp.PurchaseReceiptRecorded", integrationEvent.EventType);
         Assert.Equal("RCV-001", integrationEvent.Payload.PurchaseReceiptNo);
         Assert.Equal("accepted", integrationEvent.Payload.QualityStatus);
+        var line = Assert.Single(integrationEvent.Payload.Lines!);
+        Assert.Equal("LINE-001", line.LineReference);
+        Assert.Equal("SKU-RM-1000", line.SkuCode);
+        Assert.Equal(2m, line.ReceivedQuantity);
     }
 }

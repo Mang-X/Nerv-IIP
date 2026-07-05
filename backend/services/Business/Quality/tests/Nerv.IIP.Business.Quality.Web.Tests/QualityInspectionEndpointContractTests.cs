@@ -26,6 +26,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionTasks;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.ServiceAuth;
@@ -42,7 +43,7 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var contracts = QualityInspectionEndpointContracts.All;
 
-        Assert.Equal(6, contracts.Count);
+        Assert.Equal(8, contracts.Count);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/quality/inspection-plans"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionPlansManage
@@ -67,6 +68,14 @@ public sealed class QualityInspectionEndpointContractTests
             && x.Route == "/api/business/v1/quality/inspection-records"
             && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
             && x.OperationId == "listBusinessQualityInspectionRecords");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/business/v1/quality/inspection-tasks"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsRead
+            && x.OperationId == "listBusinessQualityInspectionTasks");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/quality/inspection-tasks/{inspectionTaskId}/inspection-record"
+            && x.PermissionCode == BusinessPermissionCodes.QualityInspectionRecordsCreate
+            && x.OperationId == "createBusinessQualityInspectionRecordFromTask");
     }
 
     [Fact]
@@ -94,6 +103,8 @@ public sealed class QualityInspectionEndpointContractTests
     [InlineData(typeof(CreateInspectionRecordEndpoint))]
     [InlineData(typeof(OpenNcrFromInspectionEndpoint))]
     [InlineData(typeof(ListInspectionRecordsEndpoint))]
+    [InlineData(typeof(ListInspectionTasksEndpoint))]
+    [InlineData(typeof(CreateInspectionRecordFromTaskEndpoint))]
     public void Inspection_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -202,7 +213,8 @@ public sealed class QualityInspectionEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
             new CreateInspectionRecordCommand(
@@ -233,7 +245,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
 
         var recordId = await handler.Handle(
             new CreateInspectionRecordCommand(
@@ -278,7 +291,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
         var command = new CreateInspectionRecordCommand(
             "org-001",
             "env-dev",
@@ -311,7 +325,8 @@ public sealed class QualityInspectionEndpointContractTests
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
-            new InspectionPlanRepository(dbContext));
+            new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext));
         var first = new CreateInspectionRecordCommand(
             "org-001",
             "env-dev",
@@ -345,6 +360,7 @@ public sealed class QualityInspectionEndpointContractTests
         var handler = new CreateInspectionRecordCommandHandler(
             new InspectionRecordRepository(dbContext),
             new InspectionPlanRepository(dbContext),
+            new InspectionTaskRepository(dbContext),
             sourceDocumentVerifier: new FixedInspectionSourceDocumentVerifier(
                 new InspectionSourceDocumentVerification(true, "SKU-OTHER", 5m)));
 
