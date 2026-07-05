@@ -5,10 +5,10 @@ using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
-using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
+using Nerv.IIP.Notification.Domain.ObservabilityAlerts;
+using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using Nerv.IIP.ServiceAuth;
-using Npgsql;
 
 namespace Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 
@@ -44,6 +44,13 @@ public sealed class ObservabilityAlertRuleOptions
     public double? CurrentValue { get; set; }
     public TimeSpan HeartbeatMaxAge { get; set; } = TimeSpan.FromMinutes(5);
     public int QueryPageSize { get; set; } = 250;
+
+    public bool MatchesKind(string kind) =>
+        Enabled
+        && string.Equals(Kind, kind, StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(RuleId);
+
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? RuleId : Name;
 }
 
 public enum ObservabilityAlertStatus
@@ -69,14 +76,27 @@ public interface IObservabilityAlertProbe
 }
 
 public sealed class ObservabilityAlertMonitor(
-    IEnumerable<IObservabilityAlertProbe> probes,
-    IMediator mediator,
+    IServiceScopeFactory scopeFactory,
     IOptions<ObservabilityAlertOptions> options,
     ILogger<ObservabilityAlertMonitor> logger)
 {
     private readonly Dictionary<string, AlertState> alertStates = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim checkLock = new(1, 1);
 
     public async Task<ObservabilityAlertMonitorResult> CheckOnceAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await checkLock.WaitAsync(cancellationToken);
+        try
+        {
+            return await CheckOnceCoreAsync(now, cancellationToken);
+        }
+        finally
+        {
+            checkLock.Release();
+        }
+    }
+
+    private async Task<ObservabilityAlertMonitorResult> CheckOnceCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var currentOptions = options.Value;
         if (!IsConfigured(currentOptions))
@@ -86,6 +106,9 @@ public sealed class ObservabilityAlertMonitor(
 
         var submitted = 0;
         var suppressed = 0;
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+        var probes = scope.ServiceProvider.GetServices<IObservabilityAlertProbe>();
         foreach (var probe in probes)
         {
             var samples = await probe.CollectAsync(now, cancellationToken);
@@ -102,13 +125,13 @@ public sealed class ObservabilityAlertMonitor(
                             continue;
                         }
 
-                        await SubmitAsync(sample, currentOptions, now, resolved: false, cancellationToken);
+                        await SubmitAsync(mediator, sample, currentOptions, now, resolved: false, cancellationToken);
                         state.Active = true;
                         state.LastSubmittedAtUtc = now;
                         submitted++;
                         break;
                     case ObservabilityAlertStatus.Resolved when state.Active:
-                        await SubmitAsync(sample, currentOptions, now, resolved: true, cancellationToken);
+                        await SubmitAsync(mediator, sample, currentOptions, now, resolved: true, cancellationToken);
                         state.Active = false;
                         state.LastSubmittedAtUtc = now;
                         submitted++;
@@ -121,6 +144,7 @@ public sealed class ObservabilityAlertMonitor(
     }
 
     private async Task SubmitAsync(
+        IMediator mediator,
         ObservabilityAlertSample sample,
         ObservabilityAlertOptions currentOptions,
         DateTimeOffset now,
@@ -240,11 +264,13 @@ public sealed class ServiceHealthAlertProbe(
     IOptions<ObservabilityAlertOptions> options,
     ILogger<ServiceHealthAlertProbe> logger) : IObservabilityAlertProbe
 {
+    public const string HttpClientName = "observability-alerts";
+
     public async Task<IReadOnlyCollection<ObservabilityAlertSample>> CollectAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var rules = options.Value.Rules.Where(x => IsEnabled(x, "service-health") && !string.IsNullOrWhiteSpace(x.HealthUrl));
+        var rules = options.Value.Rules.Where(x => x.MatchesKind("service-health") && !string.IsNullOrWhiteSpace(x.HealthUrl));
         var samples = new List<ObservabilityAlertSample>();
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient(HttpClientName);
         foreach (var rule in rules)
         {
             try
@@ -252,7 +278,7 @@ public sealed class ServiceHealthAlertProbe(
                 using var response = await client.GetAsync(rule.HealthUrl, cancellationToken);
                 samples.Add(new ObservabilityAlertSample(
                     rule.RuleId,
-                    DisplayName(rule),
+                    rule.DisplayName,
                     response.IsSuccessStatusCode ? ObservabilityAlertStatus.Resolved : ObservabilityAlertStatus.Firing,
                     $"{rule.HealthUrl} returned HTTP {(int)response.StatusCode}.",
                     rule.RuleId,
@@ -263,7 +289,7 @@ public sealed class ServiceHealthAlertProbe(
                 logger.LogWarning(exception, "Service health alert probe failed RuleId={RuleId}", rule.RuleId);
                 samples.Add(new ObservabilityAlertSample(
                     rule.RuleId,
-                    DisplayName(rule),
+                    rule.DisplayName,
                     ObservabilityAlertStatus.Firing,
                     $"{rule.HealthUrl} is unreachable: {exception.Message}",
                     rule.RuleId,
@@ -273,12 +299,6 @@ public sealed class ServiceHealthAlertProbe(
 
         return samples;
     }
-
-    private static bool IsEnabled(ObservabilityAlertRuleOptions rule, string kind) =>
-        rule.Enabled && string.Equals(rule.Kind, kind, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(rule.RuleId);
-
-    private static string DisplayName(ObservabilityAlertRuleOptions rule) =>
-        string.IsNullOrWhiteSpace(rule.Name) ? rule.RuleId : rule.Name;
 }
 
 public sealed class NotificationDeadLetterBacklogAlertProbe(
@@ -287,7 +307,7 @@ public sealed class NotificationDeadLetterBacklogAlertProbe(
 {
     public async Task<IReadOnlyCollection<ObservabilityAlertSample>> CollectAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var rules = options.Value.Rules.Where(x => IsEnabled(x, "cap-dlq-backlog") || IsEnabled(x, "notification-dlq-backlog")).ToArray();
+        var rules = options.Value.Rules.Where(x => x.MatchesKind("cap-dlq-backlog") || x.MatchesKind("notification-dlq-backlog")).ToArray();
         if (rules.Length == 0)
         {
             return [];
@@ -296,19 +316,13 @@ public sealed class NotificationDeadLetterBacklogAlertProbe(
         var metrics = await deadLetterStore.GetMetricsAsync(cancellationToken);
         return rules.Select(rule => new ObservabilityAlertSample(
                 rule.RuleId,
-                DisplayName(rule),
+                rule.DisplayName,
                 metrics.ActionableCount >= Math.Max(1, rule.Threshold) ? ObservabilityAlertStatus.Firing : ObservabilityAlertStatus.Resolved,
                 $"Notification DLQ actionable backlog is {metrics.ActionableCount}, threshold is {Math.Max(1, rule.Threshold)}. Pending={metrics.PendingCount}, Failed={metrics.FailedCount}.",
                 "notification-dlq",
                 rule.Severity))
             .ToArray();
     }
-
-    private static bool IsEnabled(ObservabilityAlertRuleOptions rule, string kind) =>
-        rule.Enabled && string.Equals(rule.Kind, kind, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(rule.RuleId);
-
-    private static string DisplayName(ObservabilityAlertRuleOptions rule) =>
-        string.IsNullOrWhiteSpace(rule.Name) ? rule.RuleId : rule.Name;
 }
 
 public sealed class AppHubConnectorHeartbeatAlertProbe(
@@ -316,10 +330,12 @@ public sealed class AppHubConnectorHeartbeatAlertProbe(
     IOptions<ObservabilityAlertOptions> options,
     ILogger<AppHubConnectorHeartbeatAlertProbe> logger) : IObservabilityAlertProbe
 {
+    public const string HttpClientName = "observability-alerts";
+
     public async Task<IReadOnlyCollection<ObservabilityAlertSample>> CollectAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var currentOptions = options.Value;
-        var rules = currentOptions.Rules.Where(x => IsEnabled(x, "connector-heartbeat-stale")).ToArray();
+        var rules = currentOptions.Rules.Where(x => x.MatchesKind("connector-heartbeat-stale")).ToArray();
         if (rules.Length == 0)
         {
             return [];
@@ -329,14 +345,14 @@ public sealed class AppHubConnectorHeartbeatAlertProbe(
         {
             return rules.Select(rule => new ObservabilityAlertSample(
                 rule.RuleId,
-                DisplayName(rule),
+                rule.DisplayName,
                 ObservabilityAlertStatus.Firing,
                 "AppHubBaseUrl is not configured for connector heartbeat alert probing.",
                 rule.RuleId,
                 rule.Severity)).ToArray();
         }
 
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient(HttpClientName);
         client.BaseAddress = new Uri(currentOptions.AppHubBaseUrl, UriKind.Absolute);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -366,7 +382,7 @@ public sealed class AppHubConnectorHeartbeatAlertProbe(
                     .ToArray();
                 return new ObservabilityAlertSample(
                     rule.RuleId,
-                    DisplayName(rule),
+                    rule.DisplayName,
                     stale.Length >= Math.Max(1, rule.Threshold) ? ObservabilityAlertStatus.Firing : ObservabilityAlertStatus.Resolved,
                     $"{stale.Length} connector/application instance heartbeats are stale beyond {rule.HeartbeatMaxAge}.",
                     "apphub-connector-heartbeats",
@@ -378,30 +394,24 @@ public sealed class AppHubConnectorHeartbeatAlertProbe(
             logger.LogWarning(exception, "Connector heartbeat alert probe failed.");
             return rules.Select(rule => new ObservabilityAlertSample(
                 rule.RuleId,
-                DisplayName(rule),
+                rule.DisplayName,
                 ObservabilityAlertStatus.Firing,
                 $"AppHub heartbeat query failed: {exception.Message}",
                 rule.RuleId,
                 rule.Severity)).ToArray();
         }
     }
-
-    private static bool IsEnabled(ObservabilityAlertRuleOptions rule, string kind) =>
-        rule.Enabled && string.Equals(rule.Kind, kind, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(rule.RuleId);
-
-    private static string DisplayName(ObservabilityAlertRuleOptions rule) =>
-        string.IsNullOrWhiteSpace(rule.Name) ? rule.RuleId : rule.Name;
 }
 
 public sealed class PostgreSqlWatermarkAlertProbe(
-    IConfiguration configuration,
+    IDatabaseWatermarkReader databaseWatermarkReader,
     IOptions<ObservabilityAlertOptions> options,
     ILogger<PostgreSqlWatermarkAlertProbe> logger) : IObservabilityAlertProbe
 {
     public async Task<IReadOnlyCollection<ObservabilityAlertSample>> CollectAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var samples = new List<ObservabilityAlertSample>();
-        foreach (var rule in options.Value.Rules.Where(x => IsEnabled(x, "postgres-watermark")))
+        foreach (var rule in options.Value.Rules.Where(x => x.MatchesKind("postgres-watermark")))
         {
             try
             {
@@ -413,18 +423,18 @@ public sealed class PostgreSqlWatermarkAlertProbe(
 
                 samples.Add(new ObservabilityAlertSample(
                     rule.RuleId,
-                    DisplayName(rule),
+                    rule.DisplayName,
                     percent >= rule.WatermarkPercent ? ObservabilityAlertStatus.Firing : ObservabilityAlertStatus.Resolved,
                     $"{rule.MetricName ?? "PostgreSQL watermark"} is {percent:0.##}%, threshold is {rule.WatermarkPercent:0.##}%.",
                     rule.RuleId,
                     rule.Severity));
             }
-            catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException)
+            catch (Exception exception) when (exception is DatabaseWatermarkReadException or TimeoutException or InvalidOperationException)
             {
                 logger.LogWarning(exception, "PostgreSQL watermark alert probe failed RuleId={RuleId}", rule.RuleId);
                 samples.Add(new ObservabilityAlertSample(
                     rule.RuleId,
-                    DisplayName(rule),
+                    rule.DisplayName,
                     ObservabilityAlertStatus.Firing,
                     $"PostgreSQL watermark probe failed: {exception.Message}",
                     rule.RuleId,
@@ -445,36 +455,12 @@ public sealed class PostgreSqlWatermarkAlertProbe(
         var connectionStringName = string.IsNullOrWhiteSpace(rule.ConnectionStringName)
             ? "NotificationDb"
             : rule.ConnectionStringName;
-        var connectionString = configuration.GetConnectionString(connectionStringName);
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException($"Connection string '{connectionStringName}' is not configured.");
-        }
 
-        await using var dataSource = NpgsqlDataSource.Create(connectionString);
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (string.Equals(rule.MetricName, "database-size", StringComparison.OrdinalIgnoreCase))
-        {
-            if (rule.CapacityMegabytes is null or <= 0)
-            {
-                return null;
-            }
-
-            await using var command = new NpgsqlCommand("select pg_database_size(current_database())", connection);
-            var bytes = Convert.ToDouble(await command.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-            return bytes / 1024d / 1024d / rule.CapacityMegabytes.Value * 100d;
-        }
-
-        await using var activeCommand = new NpgsqlCommand("select count(*) from pg_stat_activity", connection);
-        var active = Convert.ToDouble(await activeCommand.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-        await using var maxCommand = new NpgsqlCommand("show max_connections", connection);
-        var maxValue = Convert.ToDouble(await maxCommand.ExecuteScalarAsync(cancellationToken), System.Globalization.CultureInfo.InvariantCulture);
-        return maxValue <= 0 ? null : active / maxValue * 100d;
+        return await databaseWatermarkReader.ReadPercentAsync(
+            new DatabaseWatermarkReadRequest(
+                connectionStringName,
+                string.IsNullOrWhiteSpace(rule.MetricName) ? "connections" : rule.MetricName,
+                rule.CapacityMegabytes),
+            cancellationToken);
     }
-
-    private static bool IsEnabled(ObservabilityAlertRuleOptions rule, string kind) =>
-        rule.Enabled && string.Equals(rule.Kind, kind, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(rule.RuleId);
-
-    private static string DisplayName(ObservabilityAlertRuleOptions rule) =>
-        string.IsNullOrWhiteSpace(rule.Name) ? rule.RuleId : rule.Name;
 }

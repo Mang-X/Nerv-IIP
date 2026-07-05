@@ -1,15 +1,18 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
+using Nerv.IIP.Notification.Domain.ObservabilityAlerts;
 using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 
 namespace Nerv.IIP.Notification.Web.Tests;
@@ -17,32 +20,57 @@ namespace Nerv.IIP.Notification.Web.Tests;
 public sealed class ObservabilityAlertMonitorTests
 {
     [Fact]
-    public async Task Alert_monitor_submits_failure_once_then_resolved_after_recovery()
+    public async Task Alert_monitor_submits_failure_once_then_resolved_after_recovery_across_independent_scopes()
     {
-        using var factory = new NotificationEndpointTests.NotificationWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
         var probe = new SequenceAlertProbe(
             new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"),
             new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"),
             new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Resolved, "HTTP 200", "apphub"));
-        var monitor = new ObservabilityAlertMonitor(
-            [probe],
-            scope.ServiceProvider.GetRequiredService<MediatR.IMediator>(),
-            Options.Create(new ObservabilityAlertOptions
+        using var factory = new NotificationEndpointTests.NotificationWebApplicationFactory()
+            .WithWebHostBuilder(builder =>
             {
-                Enabled = true,
-                OrganizationId = "org-001",
-                EnvironmentId = "env-001",
-                RecipientRefs = ["role:ops-admin"],
-                DedupeWindow = TimeSpan.FromMinutes(30),
-                SilentWindow = TimeSpan.FromMinutes(10)
-            }),
-            NullLogger<ObservabilityAlertMonitor>.Instance);
+                builder.ConfigureAppConfiguration((_, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Observability:Alerts:Enabled"] = "true",
+                        ["Observability:Alerts:OrganizationId"] = "org-001",
+                        ["Observability:Alerts:EnvironmentId"] = "env-001",
+                        ["Observability:Alerts:RecipientRefs:0"] = "role:ops-admin",
+                        ["Observability:Alerts:DedupeWindow"] = "00:30:00",
+                        ["Observability:Alerts:SilentWindow"] = "00:10:00"
+                    });
+                });
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IObservabilityAlertProbe>();
+                    services.AddSingleton(probe);
+                    services.AddScoped<IObservabilityAlertProbe>(sp => sp.GetRequiredService<SequenceAlertProbe>());
+                });
+            });
 
-        var first = await monitor.CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:00:00Z"), CancellationToken.None);
-        var duplicate = await monitor.CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:05:00Z"), CancellationToken.None);
-        var resolved = await monitor.CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:12:00Z"), CancellationToken.None);
+        ObservabilityAlertMonitorResult first;
+        ObservabilityAlertMonitorResult duplicate;
+        ObservabilityAlertMonitorResult resolved;
+        using (var firstScope = factory.Services.CreateScope())
+        {
+            first = await firstScope.ServiceProvider.GetRequiredService<ObservabilityAlertMonitor>()
+                .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:00:00Z"), CancellationToken.None);
+        }
 
+        using (var duplicateScope = factory.Services.CreateScope())
+        {
+            duplicate = await duplicateScope.ServiceProvider.GetRequiredService<ObservabilityAlertMonitor>()
+                .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:05:00Z"), CancellationToken.None);
+        }
+
+        using (var resolvedScope = factory.Services.CreateScope())
+        {
+            resolved = await resolvedScope.ServiceProvider.GetRequiredService<ObservabilityAlertMonitor>()
+                .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:12:00Z"), CancellationToken.None);
+        }
+
+        using var scope = factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var intents = await dbContext.NotificationIntents
             .Include(x => x.Messages)
@@ -134,7 +162,7 @@ public sealed class ObservabilityAlertMonitorTests
             options,
             NullLogger<AppHubConnectorHeartbeatAlertProbe>.Instance);
         var postgresProbe = new PostgreSqlWatermarkAlertProbe(
-            new ConfigurationBuilder().Build(),
+            new FixedDatabaseWatermarkReader(91),
             options,
             NullLogger<PostgreSqlWatermarkAlertProbe>.Instance);
 
@@ -160,6 +188,12 @@ public sealed class ObservabilityAlertMonitorTests
             index++;
             return Task.FromResult<IReadOnlyCollection<ObservabilityAlertSample>>([sample]);
         }
+    }
+
+    private sealed class FixedDatabaseWatermarkReader(double value) : IDatabaseWatermarkReader
+    {
+        public Task<double?> ReadPercentAsync(DatabaseWatermarkReadRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<double?>(value);
     }
 
     private static async Task<Nerv.IIP.Messaging.CAP.IntegrationEventDeadLetterMessage> AddDeadLetterAsync(

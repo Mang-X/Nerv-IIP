@@ -35,7 +35,6 @@
     <PackageReference Include="NetCorePal.Extensions.DistributedTransactions.CAP.PostgreSQL" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
-    <PackageReference Include="Npgsql" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
 
