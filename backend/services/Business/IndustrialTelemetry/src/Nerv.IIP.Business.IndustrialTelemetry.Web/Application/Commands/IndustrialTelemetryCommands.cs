@@ -261,7 +261,8 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             request.StateOccurredAtUtc ?? request.BucketEndUtc,
             normalizedSourceSequence,
             normalizedSourceSystem,
-            normalizedSourceConnector);
+            normalizedSourceConnector,
+            raiseChangedEvent: false);
         if (existingState is not null)
         {
             if (!existingState.HasSamePayload(incoming))
@@ -272,9 +273,44 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
             return existingState.Id;
         }
 
+        var latestState = await dbContext.DeviceStateSnapshots
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId)
+            .OrderByDescending(x => x.OccurredAtUnixTimeMilliseconds)
+            .ThenByDescending(x => x.RecordedAtUnixTimeMilliseconds)
+            .ThenByDescending(x => x.SourceSequence)
+            .Select(x => new LatestDeviceStateSnapshot(x.State, x.OccurredAtUnixTimeMilliseconds))
+            .FirstOrDefaultAsync(cancellationToken);
+        if (ShouldPublishDeviceStateChanged(incoming, latestState))
+        {
+            incoming.RaiseStateChangedEvent();
+        }
+
         dbContext.DeviceStateSnapshots.Add(incoming);
         return incoming.Id;
     }
+
+    private static bool ShouldPublishDeviceStateChanged(
+        DeviceStateSnapshot incoming,
+        LatestDeviceStateSnapshot? latestState)
+    {
+        if (latestState is null)
+        {
+            return true;
+        }
+
+        if (incoming.OccurredAtUnixTimeMilliseconds < latestState.OccurredAtUnixTimeMilliseconds)
+        {
+            return false;
+        }
+
+        return incoming.State != latestState.State;
+    }
+
+    private sealed record LatestDeviceStateSnapshot(
+        string State,
+        long OccurredAtUnixTimeMilliseconds);
 
     private async Task EvaluateAlarmRulesAsync(
         RecordTelemetrySampleCommand request,
