@@ -103,11 +103,6 @@ public interface IOpcUaCredentialResolver
     ValueTask<OpcUaUserCredential?> ResolveAsync(string? credentialReference, CancellationToken cancellationToken);
 }
 
-public interface IOpcUaCollectionConnector
-{
-    Task RunCollectionCycleAsync(CancellationToken cancellationToken);
-}
-
 public interface IIndustrialTelemetrySamplesClient
 {
     Task RecordSampleAsync(RecordIndustrialTelemetrySampleRequest request, CancellationToken cancellationToken);

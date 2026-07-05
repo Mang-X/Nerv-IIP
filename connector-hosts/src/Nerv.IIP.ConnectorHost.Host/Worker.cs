@@ -5,7 +5,8 @@ public class Worker(
     IConfiguration configuration,
     Application.ConnectorReportingLoop reportingLoop,
     Application.ConnectorOperationLoop operationLoop,
-    IReadOnlyList<Connectors.OpcUa.IOpcUaCollectionConnector> opcUaCollectors) : BackgroundService
+    IndustrialTelemetryCollectorRunner telemetryCollectorRunner,
+    IReadOnlyList<Connectors.Abstractions.IIndustrialTelemetryCollectionConnector> telemetryCollectors) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -15,11 +16,7 @@ public class Worker(
         {
             try
             {
-                foreach (var collector in opcUaCollectors)
-                {
-                    await collector.RunCollectionCycleAsync(stoppingToken);
-                }
-
+                await telemetryCollectorRunner.RunCollectionCycleAsync(telemetryCollectors, stoppingToken);
                 await reportingLoop.RunCycleAsync(stoppingToken);
                 await operationLoop.RunCycleAsync(stoppingToken);
                 logger.LogInformation("Connector Host cycle completed at {time}", DateTimeOffset.UtcNow);
