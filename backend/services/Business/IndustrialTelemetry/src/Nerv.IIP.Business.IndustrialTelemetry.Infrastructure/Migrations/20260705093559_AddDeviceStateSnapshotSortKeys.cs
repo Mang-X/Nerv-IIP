@@ -31,8 +31,8 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Infrastructure.Migrations
             migrationBuilder.Sql(
                 """
                 UPDATE industrial_telemetry.device_state_snapshots
-                SET occurred_at_unix_time_milliseconds = (EXTRACT(EPOCH FROM occurred_at_utc) * 1000)::bigint,
-                    recorded_at_unix_time_milliseconds = (EXTRACT(EPOCH FROM recorded_at_utc) * 1000)::bigint;
+                SET occurred_at_unix_time_milliseconds = FLOOR(EXTRACT(EPOCH FROM occurred_at_utc) * 1000)::bigint,
+                    recorded_at_unix_time_milliseconds = FLOOR(EXTRACT(EPOCH FROM recorded_at_utc) * 1000)::bigint;
                 """);
 
             migrationBuilder.CreateIndex(
