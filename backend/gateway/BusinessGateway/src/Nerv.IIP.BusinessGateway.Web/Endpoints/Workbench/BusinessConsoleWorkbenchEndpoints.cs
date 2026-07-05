@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
@@ -23,7 +24,8 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
     IBusinessQualityClient quality,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
     IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    BusinessGatewayDownstreamHealthState healthState)
     : Endpoint<BusinessConsoleWorkbenchSummaryRequest, ResponseData<BusinessConsoleWorkbenchSummaryResponse>>
 {
     private const int DefaultTake = 20;
@@ -75,12 +77,19 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         List<BusinessConsoleWorkbenchTodoItem> todos,
         CancellationToken cancellationToken)
     {
-        var authorization = await CheckSourceAsync(
+        var authorization = await TryCheckSourceAsync(
+            "BusinessApproval",
             bearerToken,
             BusinessGatewayPermissions.ApprovalsRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
+        if (authorization is null)
+        {
+            return;
+        }
+
         if (!authorization.IsAllowed)
         {
             sourceStatuses["BusinessApproval"] = SourceStatus.Forbidden("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
@@ -104,15 +113,15 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     "pending",
                     item.DocumentId,
                     item.DueAtUtc)));
-            sourceStatuses["BusinessApproval"] = SourceStatus.Available("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
+            sourceStatuses["BusinessApproval"] = SourceAvailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["BusinessApproval"] = SourceStatus.Unavailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
+            sourceStatuses["BusinessApproval"] = SourceUnavailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["BusinessApproval"] = SourceStatus.Unavailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
+            sourceStatuses["BusinessApproval"] = SourceUnavailable("BusinessApproval", BusinessGatewayPermissions.ApprovalsRead);
         }
     }
 
@@ -125,25 +134,40 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         List<BusinessConsoleWorkbenchTodoItem> todos,
         CancellationToken cancellationToken)
     {
-        var messageAuthorization = await CheckSourceAsync(
+        var messageAuthorization = await TryCheckSourceAsync(
+            "Notification",
             bearerToken,
             BusinessGatewayPermissions.NotificationMessagesRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
-        var taskAuthorization = await CheckSourceAsync(
+        var taskAuthorization = await TryCheckSourceAsync(
+            "Notification",
             bearerToken,
             BusinessGatewayPermissions.NotificationTasksRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
-        if (!messageAuthorization.IsAllowed && !taskAuthorization.IsAllowed)
+        if (messageAuthorization is null && taskAuthorization is null)
         {
-            sourceStatuses["Notification"] = SourceStatus.Forbidden("Notification", BusinessGatewayPermissions.NotificationMessagesRead);
             return;
         }
 
-        var notificationPermissionCode = messageAuthorization.IsAllowed
+        var messagesAllowed = messageAuthorization?.IsAllowed == true;
+        var tasksAllowed = taskAuthorization?.IsAllowed == true;
+        if (!messagesAllowed && !tasksAllowed)
+        {
+            if (messageAuthorization is not null && taskAuthorization is not null)
+            {
+                sourceStatuses["Notification"] = SourceStatus.Forbidden("Notification", BusinessGatewayPermissions.NotificationMessagesRead);
+            }
+
+            return;
+        }
+
+        var notificationPermissionCode = messagesAllowed
             ? BusinessGatewayPermissions.NotificationMessagesRead
             : BusinessGatewayPermissions.NotificationTasksRead;
         var principalRef = PrincipalReference(messageAuthorization) ?? PrincipalReference(taskAuthorization);
@@ -155,7 +179,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
 
         try
         {
-            if (messageAuthorization.IsAllowed)
+            if (messagesAllowed)
             {
                 var response = await notification.ListMessagesAsync(
                     tokenProvider.BearerToken,
@@ -170,7 +194,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     item.CreatedAtUtc)));
             }
 
-            if (taskAuthorization.IsAllowed)
+            if (tasksAllowed)
             {
                 var response = await notification.ListTasksAsync(
                     tokenProvider.BearerToken,
@@ -185,17 +209,17 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                     null)));
             }
 
-            sourceStatuses["Notification"] = SourceStatus.Available(
+            sourceStatuses["Notification"] = SourceAvailable(
                 "Notification",
                 notificationPermissionCode);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", notificationPermissionCode);
+            sourceStatuses["Notification"] = SourceUnavailable("Notification", notificationPermissionCode);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["Notification"] = SourceStatus.Unavailable("Notification", notificationPermissionCode);
+            sourceStatuses["Notification"] = SourceUnavailable("Notification", notificationPermissionCode);
         }
     }
 
@@ -207,12 +231,19 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         List<BusinessConsoleWorkbenchKpiItem> kpis,
         CancellationToken cancellationToken)
     {
-        var authorization = await CheckSourceAsync(
+        var authorization = await TryCheckSourceAsync(
+            "BusinessQuality",
             bearerToken,
             BusinessGatewayPermissions.QualityNcrRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
+        if (authorization is null)
+        {
+            return;
+        }
+
         if (!authorization.IsAllowed)
         {
             sourceStatuses["BusinessQuality"] = SourceStatus.Forbidden("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
@@ -226,15 +257,15 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                 new BusinessConsoleQualityListRequest(request.OrganizationId, request.EnvironmentId, "open", Take: take),
                 cancellationToken);
             kpis.Add(new("openNcrs", "Open NCRs", response.Total, "BusinessQuality", "available"));
-            sourceStatuses["BusinessQuality"] = SourceStatus.Available("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
+            sourceStatuses["BusinessQuality"] = SourceAvailable("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["BusinessQuality"] = SourceStatus.Unavailable("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
+            sourceStatuses["BusinessQuality"] = SourceUnavailable("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["BusinessQuality"] = SourceStatus.Unavailable("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
+            sourceStatuses["BusinessQuality"] = SourceUnavailable("BusinessQuality", BusinessGatewayPermissions.QualityNcrRead);
         }
     }
 
@@ -246,12 +277,19 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         List<BusinessConsoleWorkbenchAlertItem> alerts,
         CancellationToken cancellationToken)
     {
-        var authorization = await CheckSourceAsync(
+        var authorization = await TryCheckSourceAsync(
+            "IndustrialTelemetry",
             bearerToken,
             BusinessGatewayPermissions.IiotAlarmsRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
+        if (authorization is null)
+        {
+            return;
+        }
+
         if (!authorization.IsAllowed)
         {
             sourceStatuses["IndustrialTelemetry"] = SourceStatus.Forbidden("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
@@ -270,15 +308,15 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                 item.AlarmCode,
                 item.Severity,
                 item.RaisedAtUtc)));
-            sourceStatuses["IndustrialTelemetry"] = SourceStatus.Available("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
+            sourceStatuses["IndustrialTelemetry"] = SourceAvailable("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["IndustrialTelemetry"] = SourceStatus.Unavailable("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
+            sourceStatuses["IndustrialTelemetry"] = SourceUnavailable("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["IndustrialTelemetry"] = SourceStatus.Unavailable("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
+            sourceStatuses["IndustrialTelemetry"] = SourceUnavailable("IndustrialTelemetry", BusinessGatewayPermissions.IiotAlarmsRead);
         }
     }
 
@@ -290,12 +328,19 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         List<BusinessConsoleWorkbenchKpiItem> kpis,
         CancellationToken cancellationToken)
     {
-        var workOrders = await CheckSourceAsync(
+        var workOrders = await TryCheckSourceAsync(
+            "BusinessMES",
             bearerToken,
             BusinessGatewayPermissions.MesWorkOrdersRead,
             request.OrganizationId,
             request.EnvironmentId,
+            sourceStatuses,
             cancellationToken);
+        if (workOrders is null)
+        {
+            return;
+        }
+
         if (!workOrders.IsAllowed)
         {
             sourceStatuses["BusinessMES"] = SourceStatus.Forbidden("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
@@ -309,15 +354,15 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
                 new BusinessConsoleMesListRequest(request.OrganizationId, request.EnvironmentId, "released", Take: take),
                 cancellationToken);
             kpis.Add(new("releasedWorkOrders", "Released work orders", response.Total, "BusinessMES", "available"));
-            sourceStatuses["BusinessMES"] = SourceStatus.Available("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
+            sourceStatuses["BusinessMES"] = SourceAvailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
         }
         catch (BusinessServiceProxyException)
         {
-            sourceStatuses["BusinessMES"] = SourceStatus.Unavailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
+            sourceStatuses["BusinessMES"] = SourceUnavailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
         }
         catch (HttpRequestException)
         {
-            sourceStatuses["BusinessMES"] = SourceStatus.Unavailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
+            sourceStatuses["BusinessMES"] = SourceUnavailable("BusinessMES", BusinessGatewayPermissions.MesWorkOrdersRead);
         }
     }
 
@@ -331,6 +376,32 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
             bearerToken,
             new BusinessGatewayPermissionRequirement(permissionCode, organizationId, environmentId, null, null),
             cancellationToken);
+
+    private async Task<BusinessGatewayAuthorizationResult?> TryCheckSourceAsync(
+        string source,
+        string bearerToken,
+        string permissionCode,
+        string organizationId,
+        string environmentId,
+        Dictionary<string, BusinessConsoleWorkbenchSourceStatus> sourceStatuses,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CheckSourceAsync(
+                bearerToken,
+                permissionCode,
+                organizationId,
+                environmentId,
+                cancellationToken);
+        }
+        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+        {
+            healthState.RecordFailure("IAM", "iam-unavailable");
+            sourceStatuses[source] = SourceStatus.Unavailable(source, permissionCode, "authorization-unavailable");
+            return null;
+        }
+    }
 
     private async Task<string?> RequireBearerAndScopeAsync(BusinessConsoleWorkbenchSummaryRequest request, CancellationToken cancellationToken)
     {
@@ -358,8 +429,13 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         _ => take,
     };
 
-    private static string? PrincipalReference(BusinessGatewayAuthorizationResult authorization)
+    private static string? PrincipalReference(BusinessGatewayAuthorizationResult? authorization)
     {
+        if (authorization is null)
+        {
+            return null;
+        }
+
         if (!string.IsNullOrWhiteSpace(authorization.PrincipalId))
         {
             return authorization.PrincipalId;
@@ -381,6 +457,26 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
         return sources.Any(source => sourceStatuses.TryGetValue(source, out var status) && status.Status == "available")
             ? "available"
             : "unavailable";
+    }
+
+    private static bool IsAuthorizationUnavailable(Exception ex, CancellationToken requestCancellationToken) =>
+        ex is HttpRequestException
+            || ex is TimeoutException
+            || ex is TaskCanceledException && !requestCancellationToken.IsCancellationRequested;
+
+    private BusinessConsoleWorkbenchSourceStatus SourceAvailable(string source, string permissionCode)
+    {
+        healthState.RecordSuccess(source);
+        return SourceStatus.Available(source, permissionCode);
+    }
+
+    private BusinessConsoleWorkbenchSourceStatus SourceUnavailable(
+        string source,
+        string permissionCode,
+        string reason = "source-unavailable")
+    {
+        healthState.RecordFailure(source, reason);
+        return SourceStatus.Unavailable(source, permissionCode, reason);
     }
 
     private static class SourceStatus

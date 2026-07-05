@@ -120,6 +120,12 @@ public sealed record CreateFinishedGoodsReceiptRequestResponse(
     global::Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate.FinishedGoodsReceiptRequestId FinishedGoodsReceiptRequestId,
     string RequestNo);
 
+public sealed record RetryFinishedGoodsReceiptInventoryPostingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    [property: RouteParam] string RequestNo,
+    string IdempotencyKey);
+
 public sealed record ListFinishedGoodsReceiptRequestsRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -692,7 +698,8 @@ public sealed class ListMaterialIssueRequestsEndpoint(ISender sender)
             req.Keyword,
             req.WorkCenterId,
             req.ShiftId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.Status), ct);
         await Send.OkAsync(response, ct);
     }
 }
@@ -1005,6 +1012,22 @@ public sealed class ListFinishedGoodsReceiptRequestsEndpoint(ISender sender)
     }
 }
 
+public sealed class RetryFinishedGoodsReceiptInventoryPostingEndpoint(ISender sender)
+    : MesEndpoint<RetryFinishedGoodsReceiptInventoryPostingRequest, CreateFinishedGoodsReceiptRequestResponse>
+{
+    public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<RetryFinishedGoodsReceiptInventoryPostingEndpoint>());
+
+    public override async Task HandleAsync(RetryFinishedGoodsReceiptInventoryPostingRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RetryFinishedGoodsReceiptInventoryPostingCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.RequestNo,
+            req.IdempotencyKey), ct);
+        await Send.OkAsync(new CreateFinishedGoodsReceiptRequestResponse(result.Id, result.RequestNo), ct);
+    }
+}
+
 public sealed class ListDowntimeEventsEndpoint(ISender sender)
     : MesEndpoint<ListDowntimeEventsRequest, MesDowntimeEventListResponse>
 {
@@ -1220,6 +1243,7 @@ public static class MesEndpointContracts
         new(typeof(ListRelatedQualityItemsEndpoint), "GET", "/api/business/v1/mes/related-quality-items", MesPermissionCodes.QualityRead, "listBusinessMesRelatedQualityItems"),
         new(typeof(CreateFinishedGoodsReceiptRequestEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsManage, "createBusinessMesFinishedGoodsReceiptRequest"),
         new(typeof(ListFinishedGoodsReceiptRequestsEndpoint), "GET", "/api/business/v1/mes/finished-goods-receipt-requests", MesPermissionCodes.ReceiptsRead, "listBusinessMesFinishedGoodsReceiptRequests"),
+        new(typeof(RetryFinishedGoodsReceiptInventoryPostingEndpoint), "POST", "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry", MesPermissionCodes.ReceiptsManage, "retryBusinessMesFinishedGoodsReceiptInventoryPosting"),
         new(typeof(ListDowntimeEventsEndpoint), "GET", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeRead, "listBusinessMesDowntimeEvents"),
         new(typeof(RecordDowntimeEventEndpoint), "POST", "/api/business/v1/mes/downtime-events", MesPermissionCodes.DowntimeManage, "recordBusinessMesDowntimeEvent"),
         new(typeof(ConfirmDowntimeRecoveryEndpoint), "POST", "/api/business/v1/mes/downtime-events/{downtimeEventId}/recover", MesPermissionCodes.DowntimeManage, "confirmBusinessMesDowntimeRecovery"),

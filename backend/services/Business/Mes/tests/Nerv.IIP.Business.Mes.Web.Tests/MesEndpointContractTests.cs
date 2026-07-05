@@ -26,7 +26,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposeRescheduleAndRushOrderRoutes()
     {
-        Assert.Equal(43, MesEndpointContracts.All.Count);
+        Assert.Equal(44, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"
@@ -193,6 +193,11 @@ public sealed class MesEndpointContractTests
             && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests"
             && x.PermissionCode == MesPermissionCodes.ReceiptsRead
             && x.OperationId == "listBusinessMesFinishedGoodsReceiptRequests");
+        Assert.Contains(MesEndpointContracts.All, x =>
+            x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/mes/finished-goods-receipt-requests/{requestNo}/inventory-posting/retry"
+            && x.PermissionCode == MesPermissionCodes.ReceiptsManage
+            && x.OperationId == "retryBusinessMesFinishedGoodsReceiptInventoryPosting");
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/capacity-impacts"
@@ -616,6 +621,29 @@ public sealed class MesEndpointContractTests
         Assert.Contains("reversed_report_no", materialLotSql, StringComparison.Ordinal);
         Assert.Contains("NOT EXISTS", producedBatchSql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("reversed_report_no", producedBatchSql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Finished_goods_receipt_cumulative_quantity_guard_translates_to_npgsql_sum_query()
+    {
+        var options = new DbContextOptionsBuilder<Infrastructure.ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=nerv_iip_query_translation;Username=nerv;Password=nerv")
+            .Options;
+        using var dbContext = new Infrastructure.ApplicationDbContext(options, new NoopMediator());
+
+        var sql = CreateFinishedGoodsReceiptRequestCommandHandler.ActiveReceiptRequestsForWorkOrder(
+                dbContext.FinishedGoodsReceiptRequests,
+                "org-001",
+                "env-dev",
+                "WO-001")
+            .GroupBy(_ => 1)
+            .Select(group => group.Sum(x => x.Quantity))
+            .ToQueryString();
+
+        Assert.Contains("finished_goods_receipt_requests", sql, StringComparison.Ordinal);
+        Assert.Contains("sum", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("status", sql, StringComparison.Ordinal);
+        Assert.Contains("Cancelled", sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1370,6 +1398,7 @@ public sealed class MesEndpointContractTests
         "/api/business/v1/mes/work-orders/WO-001/close",
         "/api/business/v1/mes/work-orders/WO-001/hold",
         "/api/business/v1/mes/work-orders/WO-001/cancel",
+        "/api/business/v1/mes/finished-goods-receipt-requests/FGR-001/inventory-posting/retry",
     ];
 
     private static async ValueTask DisposeAuthOnlyFactoryAsync(WebApplicationFactory<Program> factory)

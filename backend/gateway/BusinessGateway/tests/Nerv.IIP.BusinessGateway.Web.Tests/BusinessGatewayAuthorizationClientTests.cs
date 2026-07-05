@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -90,6 +91,71 @@ public sealed class BusinessGatewayAuthorizationClientTests
     }
 
     [Fact]
+    public async Task Http_authorization_client_keeps_read_continuity_from_cache_when_iam_is_temporarily_unavailable()
+    {
+        var fail = false;
+        var handler = new RecordingHandler(_ => fail
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : AuthorizationResponse(HttpStatusCode.OK, allowed: true));
+        var client = CreateClient(handler, new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 10 });
+        var requirement = new BusinessGatewayPermissionRequirement(
+            BusinessGatewayPermissions.MasterDataProductsRead,
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        var first = await client.CheckAsync(
+            "access-token-001",
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+        fail = true;
+        var second = await client.CheckAsync(
+            "access-token-001",
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+
+        Assert.True(first.IsAllowed);
+        Assert.True(second.IsAllowed);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Http_authorization_client_rejects_realtime_write_check_when_iam_is_unavailable()
+    {
+        var fail = false;
+        var handler = new RecordingHandler(_ => fail
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : AuthorizationResponse(HttpStatusCode.OK, allowed: true));
+        var client = CreateClient(handler, new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 10 });
+        var requirement = new BusinessGatewayPermissionRequirement(
+            BusinessGatewayPermissions.MasterDataProductsManage,
+            "org-001",
+            "env-dev",
+            null,
+            null);
+
+        var first = await client.CheckAsync(
+            "access-token-001",
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+            CancellationToken.None);
+        fail = true;
+
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => client.CheckAsync(
+            "access-token-001",
+            requirement,
+            BusinessGatewayAuthorizationContinuityMode.RealtimeRequired,
+            CancellationToken.None));
+
+        Assert.True(first.IsAllowed);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
     public async Task Accept_language_forwarding_handler_copies_current_request_language()
     {
         var httpContext = new DefaultHttpContext();
@@ -114,7 +180,8 @@ public sealed class BusinessGatewayAuthorizationClientTests
         new(
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
             new MemoryAppCache(),
-            Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }));
+            Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }),
+            new BusinessGatewayDownstreamHealthState());
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
     {

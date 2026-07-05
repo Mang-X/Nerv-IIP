@@ -41,6 +41,9 @@ public sealed record MaterialReturnedToWarehouseDomainEvent(
     string MaterialLotId,
     DateTimeOffset ReturnedAtUtc) : IDomainEvent;
 
-public sealed record FinishedGoodsReceiptRequestedDomainEvent(FinishedGoodsReceiptRequest FinishedGoodsReceiptRequest) : IDomainEvent;
+public sealed record FinishedGoodsReceiptRequestedDomainEvent(
+    FinishedGoodsReceiptRequest FinishedGoodsReceiptRequest,
+    decimal Quantity,
+    string IdempotencyKey) : IDomainEvent;
 
 public sealed record DefectRaisedDomainEvent(DefectRecord DefectRecord) : IDomainEvent;
