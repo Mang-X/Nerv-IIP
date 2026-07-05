@@ -1,6 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
@@ -88,6 +89,12 @@ public sealed class StockMovementPostingFailedIntegrationEventHandlerForMarkMesR
         if (receipt is null)
         {
             LogUnmatched(integrationEvent, "finished goods receipt request was not found");
+            return;
+        }
+
+        if (receipt.Status == FinishedGoodsReceiptRequest.PostedStatus ||
+            receipt.Status == FinishedGoodsReceiptRequest.CancelledStatus)
+        {
             return;
         }
 
