@@ -162,6 +162,23 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
         Assert.Equal(NotificationContractConstants.SeverityCritical, intent.Severity);
     }
 
+    [Fact]
+    public async Task Handle_alarm_raised_falls_back_to_warning_when_severity_is_unknown()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleRaisedAsync(factory, CreateAlarmRaisedEvent(
+            "event-alarm-unknown-severity",
+            "industrialTelemetry:alarm-raised:org-001:env-001:asset-001:HI_TEMP:external-alarm-001:alarm-event-001",
+            severity: "major"));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = await dbContext.NotificationIntents.SingleAsync();
+
+        Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
+    }
+
     private static async Task HandleRaisedAsync(
         NotificationConsumerWebApplicationFactory factory,
         AlarmRaisedIntegrationEvent integrationEvent)
@@ -186,7 +203,8 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
         string eventId,
         string idempotencyKey,
         string alarmEventId = "alarm-event-001",
-        string? priority = null)
+        string? priority = null,
+        string severity = "critical")
     {
         return new AlarmRaisedIntegrationEvent(
             EventId: eventId,
@@ -204,7 +222,7 @@ public sealed class IndustrialTelemetryAlarmNotificationConsumerTests
                 AlarmEventId: alarmEventId,
                 DeviceAssetId: "asset-001",
                 AlarmCode: "HI_TEMP",
-                Severity: "critical",
+                Severity: severity,
                 RaisedAtUtc: DateTimeOffset.Parse("2026-07-03T08:00:00Z"),
                 ExternalAlarmId: "external-alarm-001",
                 Priority: priority,

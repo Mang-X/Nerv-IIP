@@ -131,8 +131,8 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
             return mappedPriority;
         }
 
-        return TryMapAlarmSeverity(severity)
-            ?? throw new KnownException("Industrial telemetry alarm severity is required.");
+        var requiredSeverity = IndustrialTelemetryAlarmNotification.Required(severity, "Industrial telemetry alarm severity is required.");
+        return TryMapAlarmSeverity(requiredSeverity) ?? NotificationContractConstants.SeverityWarning;
     }
 
     private static string? TryMapAlarmSeverity(string? value)
