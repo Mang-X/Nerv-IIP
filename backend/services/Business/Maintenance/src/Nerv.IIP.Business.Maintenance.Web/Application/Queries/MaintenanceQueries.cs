@@ -243,14 +243,14 @@ public sealed class QueryMaintenanceInspectionMeasurementTrendQueryHandler(Appli
         IReadOnlyDictionary<MaintenancePlanId, string> planDevices,
         IReadOnlyDictionary<MaintenanceWorkOrderId, string> workOrderDevices)
     {
-        if (inspection.PlanId is not null && planDevices.TryGetValue(inspection.PlanId, out var planDevice))
-        {
-            return planDevice == deviceAssetId;
-        }
-
-        return inspection.WorkOrderId is not null
+        var planMatches = inspection.PlanId is not null
+            && planDevices.TryGetValue(inspection.PlanId, out var planDevice)
+            && planDevice == deviceAssetId;
+        var workOrderMatches = inspection.WorkOrderId is not null
             && workOrderDevices.TryGetValue(inspection.WorkOrderId, out var workOrderDevice)
             && workOrderDevice == deviceAssetId;
+
+        return planMatches || workOrderMatches;
     }
 }
 
@@ -461,6 +461,7 @@ public sealed class QueryMaintenanceReliabilitySummaryQueryHandler(ApplicationDb
             .Where(x => x.OpenedAtUtc >= windowStartUtc && x.OpenedAtUtc < windowEndUtc)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.TechnicianUserId == null || x.AssignedTechnicianUserId == request.TechnicianUserId)
+            .Where(x => x.Status == MaintenanceWorkOrderStatus.Completed)
             .Select(x => new
             {
                 x.DeviceAssetId,

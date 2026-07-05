@@ -104,11 +104,11 @@ const resultOptions = Object.keys(inspectionResultLabels)
 const measurementsValid = computed(() =>
   measurementRows.every((row) => {
     if (!hasMeasurementInput(row)) return true
-    const measuredValue = Number(row.measuredValue)
+    const measuredValue = requiredNumber(row.measuredValue)
     const lowerSpecLimit = optionalNumber(row.lowerSpecLimit)
     const upperSpecLimit = optionalNumber(row.upperSpecLimit)
     return Boolean(row.characteristicCode.trim())
-      && Number.isFinite(measuredValue)
+      && measuredValue.valid
       && Boolean(row.uomCode.trim())
       && lowerSpecLimit.valid
       && upperSpecLimit.valid
@@ -121,7 +121,7 @@ const measurementPayload = computed(() =>
     .filter(hasMeasurementInput)
     .map(row => ({
       characteristicCode: row.characteristicCode.trim(),
-      measuredValue: Number(row.measuredValue),
+      measuredValue: requiredNumber(row.measuredValue).value!,
       uomCode: row.uomCode.trim(),
       lowerSpecLimit: optionalNumber(row.lowerSpecLimit).value,
       upperSpecLimit: optionalNumber(row.upperSpecLimit).value,
@@ -178,6 +178,13 @@ function hasMeasurementInput(row: MeasurementFormRow) {
 function optionalNumber(value: string | number | null | undefined): { valid: boolean, value: number | null } {
   const trimmed = String(value ?? '').trim()
   if (!trimmed) return { valid: true, value: null }
+  const numeric = Number(trimmed)
+  return { valid: Number.isFinite(numeric), value: Number.isFinite(numeric) ? numeric : null }
+}
+
+function requiredNumber(value: string | number | null | undefined): { valid: boolean, value: number | null } {
+  const trimmed = String(value ?? '').trim()
+  if (!trimmed) return { valid: false, value: null }
   const numeric = Number(trimmed)
   return { valid: Number.isFinite(numeric), value: Number.isFinite(numeric) ? numeric : null }
 }

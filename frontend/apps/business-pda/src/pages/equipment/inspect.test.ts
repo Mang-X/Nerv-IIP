@@ -236,6 +236,21 @@ describe('PDA equipment inspect page', () => {
     })
   })
 
+  it('does not submit a partial measurement row without a measured value', async () => {
+    const wrapper = mount(InspectPage)
+    await wrapper.findAll('[data-testid="plan-option"]')[0].trigger('click')
+    await wrapper.get('[data-testid="result-pass"]').trigger('click')
+    await wrapper.get('[data-testid="measurement-characteristic"]').setValue('bearing-temperature')
+    await wrapper.get('[data-testid="measurement-uom"]').setValue('C')
+
+    const submit = wrapper.get('[data-testid="submit"]')
+    expect(submit.attributes('disabled')).toBeDefined()
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(recordInspection).not.toHaveBeenCalled()
+  })
+
   it('disables submit while recordPending (double-submit guard)', async () => {
     recordPending.value = true
     const wrapper = mount(InspectPage)

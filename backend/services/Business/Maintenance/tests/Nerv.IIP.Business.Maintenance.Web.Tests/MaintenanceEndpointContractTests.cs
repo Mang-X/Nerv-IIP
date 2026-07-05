@@ -163,6 +163,45 @@ public sealed class MaintenanceEndpointContractTests
         Assert.True(trendItem.IsWithinSpec);
     }
 
+    [Fact]
+    public async Task Maintenance_inspection_measurement_trend_matches_work_order_device_when_plan_device_differs()
+    {
+        await using var dbContext = CreateDbContext();
+        var plan = MaintenancePlan.Create("org-001", "env-dev", "DEV-CNC-01", "PM-MEASURE", "P7D", new DateOnly(2026, 6, 1), "maintenance");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001");
+        dbContext.MaintenancePlans.Add(plan);
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        await dbContext.SaveChangesAsync();
+        var inspectedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+
+        await new RecordMaintenanceInspectionCommandHandler(dbContext).Handle(
+            new RecordMaintenanceInspectionCommand(
+                "org-001",
+                "env-dev",
+                plan.Id,
+                workOrder.Id,
+                "inspector-001",
+                "passed",
+                inspectedAtUtc,
+                [new MaintenanceInspectionMeasurementInput("bearing-temperature", 65m, "C", 0m, 70m)]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var trend = await new QueryMaintenanceInspectionMeasurementTrendQueryHandler(dbContext).Handle(
+            new QueryMaintenanceInspectionMeasurementTrendQuery(
+                "org-001",
+                "env-dev",
+                "DEV-CNC-02",
+                "bearing-temperature",
+                inspectedAtUtc.AddMinutes(-1),
+                inspectedAtUtc.AddMinutes(1)),
+            CancellationToken.None);
+
+        var item = Assert.Single(trend.Items);
+        Assert.Equal(workOrder.Id, item.WorkOrderId);
+        Assert.Equal(plan.Id, item.PlanId);
+    }
+
     [Theory]
     [InlineData("NG")]
     [InlineData("Failed")]
@@ -932,20 +971,31 @@ public sealed class MaintenanceEndpointContractTests
         var windowEnd = windowStart.AddDays(1);
         var first = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 90);
         var second = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 30);
-        var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001", "worker-002", 45);
+        var otherTechnician = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-002", 45);
+        var otherCurrency = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 15);
+        var open = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001", "worker-001", 60);
+        var otherDevice = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-02", "normal", "operator-001", "worker-001", 45);
         first.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 75, sparePartCostAmount: 120m, externalServiceCostAmount: 30m, costCurrencyCode: "CNY");
         second.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 20, sparePartCostAmount: 10m, externalServiceCostAmount: 5m, costCurrencyCode: "CNY");
-        dbContext.MaintenanceWorkOrders.AddRange(first, second, otherDevice);
+        otherTechnician.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 25, sparePartCostAmount: 20m, externalServiceCostAmount: 0m, costCurrencyCode: "CNY");
+        otherCurrency.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 10, sparePartCostAmount: 8m, externalServiceCostAmount: 2m, costCurrencyCode: "USD");
+        otherDevice.Complete("fixed", "equipment-failure", 10, [], actualLaborMinutes: 35, sparePartCostAmount: 40m, externalServiceCostAmount: 0m, costCurrencyCode: "CNY");
+        dbContext.MaintenanceWorkOrders.AddRange(first, second, otherTechnician, otherCurrency, open, otherDevice);
         dbContext.Entry(first).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(1);
         dbContext.Entry(second).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(2);
-        dbContext.Entry(otherDevice).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(3);
+        dbContext.Entry(otherTechnician).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(3);
+        dbContext.Entry(otherCurrency).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(4);
+        dbContext.Entry(open).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(5);
+        dbContext.Entry(otherDevice).Property(x => x.OpenedAtUtc).CurrentValue = windowStart.AddHours(6);
         await dbContext.SaveChangesAsync();
 
         var response = await new QueryMaintenanceReliabilitySummaryQueryHandler(dbContext).Handle(
             new QueryMaintenanceReliabilitySummaryQuery("org-001", "env-dev", windowStart, windowEnd, DeviceAssetId: "DEV-CNC-01"),
             CancellationToken.None);
 
-        var item = Assert.Single(response.Items);
+        Assert.Equal(3, response.Items.Count);
+        Assert.DoesNotContain(response.Items, x => x.CostCurrencyCode is null);
+        var item = Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "CNY");
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
         Assert.Equal("worker-001", item.AssignedTechnicianUserId);
         Assert.Equal(2, item.WorkOrderCount);
@@ -955,6 +1005,8 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal(130m, item.SparePartCostAmount);
         Assert.Equal(35m, item.ExternalServiceCostAmount);
         Assert.Equal(165m, item.TotalCostAmount);
+        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-002" && x.CostCurrencyCode == "CNY");
+        Assert.Single(response.Items, x => x.AssignedTechnicianUserId == "worker-001" && x.CostCurrencyCode == "USD");
     }
 
     [Fact]
