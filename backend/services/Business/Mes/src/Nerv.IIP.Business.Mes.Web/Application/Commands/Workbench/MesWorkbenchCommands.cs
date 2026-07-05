@@ -853,7 +853,7 @@ public sealed class AssignDispatchTaskCommandHandler(ApplicationDbContext dbCont
             throw new KnownException($"未找到工序任务，OperationTaskId = {request.OperationTaskId}");
         }
 
-        var qualityIssues = await ReadinessReasonCodes.GetQualityBlockingIssuesAsync(
+        var qualityIssues = await ReadinessReasonCodes.GetActiveQualityHoldIssuesAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
@@ -1264,6 +1264,25 @@ internal static class ReadinessReasonCodes
                     "工单缺少已发布生产版本或检验方案。"));
         }
 
+        issues.AddRange(await GetActiveQualityHoldIssuesAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
+            operationTaskId,
+            cancellationToken));
+
+        return issues;
+    }
+
+    public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetActiveQualityHoldIssuesAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string? operationTaskId,
+        CancellationToken cancellationToken)
+    {
         var activeHolds = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
@@ -1274,16 +1293,15 @@ internal static class ReadinessReasonCodes
                 x.Active)
             .OrderByDescending(x => x.RecordedAtUtc)
             .ToArrayAsync(cancellationToken);
-        issues.AddRange(activeHolds.Select(x => new ReadinessBlockingIssue(
+        return activeHolds.Select(x => new ReadinessBlockingIssue(
             MesReadinessReasonCodes.QualityHoldActive,
             "Quality",
             "InspectionRecord",
             x.InspectionRecordId,
             string.IsNullOrWhiteSpace(x.DispositionReason)
                 ? "工单存在有效质量保留，无法放行或开工。"
-                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}")));
-
-        return issues;
+                : $"工单存在有效质量保留，无法放行或开工：{x.DispositionReason}"))
+            .ToArray();
     }
 
     public static async Task<IReadOnlyCollection<ReadinessBlockingIssue>> GetEquipmentBlockingIssuesAsync(

@@ -153,6 +153,11 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         HoldReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         HeldAtUtc = heldAtUtc;
         HeldBy = DomainGuard.Required(actor, nameof(actor));
+        ReleaseInspectionRecordId = null;
+        ReleaseReason = null;
+        ReleasedAtUtc = null;
+        ReleasedBy = null;
+        ReleaseSource = null;
     }
 
     private void RecordReleaseAudit(

@@ -494,6 +494,55 @@ public sealed class MesAggregateTests
     }
 
     [Fact]
+    public void QualityHoldContext_clears_previous_release_audit_when_reopened_by_later_rejection()
+    {
+        var rejectedAt = DateTimeOffset.Parse("2026-07-05T09:00:00Z");
+        var releasedAt = rejectedAt.AddMinutes(30);
+        var reopenedAt = rejectedAt.AddMinutes(45);
+        var context = QualityHoldContext.Capture(
+            "org-001",
+            "env-dev",
+            "WO-QUALITY",
+            "OP-10",
+            "business-mes",
+            "OP-10",
+            "QIR-REJECTED-1",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "surface defect",
+            rejectedAt,
+            "quality");
+
+        context.ApplyInspectionResult(
+            "QIR-CONDITIONAL",
+            "QIP-001",
+            "conditional-release",
+            "quality.InspectionConditionalReleased",
+            "released for OP-10 only",
+            releasedAt,
+            "quality");
+        context.ApplyInspectionResult(
+            "QIR-REJECTED-2",
+            "QIP-001",
+            "rejected",
+            "quality.InspectionRejected",
+            "recheck failed",
+            reopenedAt,
+            "quality");
+
+        Assert.True(context.Active);
+        Assert.Equal("QIR-REJECTED-2", context.HeldInspectionRecordId);
+        Assert.Equal("recheck failed", context.HoldReason);
+        Assert.Equal(reopenedAt, context.HeldAtUtc);
+        Assert.Null(context.ReleaseInspectionRecordId);
+        Assert.Null(context.ReleaseReason);
+        Assert.Null(context.ReleasedAtUtc);
+        Assert.Null(context.ReleasedBy);
+        Assert.Null(context.ReleaseSource);
+    }
+
+    [Fact]
     public void QualityHoldContext_force_release_is_idempotent_and_requires_existing_active_hold()
     {
         var rejectedAt = DateTimeOffset.Parse("2026-07-05T09:00:00Z");

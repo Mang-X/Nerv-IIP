@@ -1142,6 +1142,44 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan()
+    {
+        var services = CreateServices(nameof(Dispatch_without_active_quality_hold_does_not_block_on_missing_quality_plan));
+        var now = DateTimeOffset.Parse("2026-07-05T10:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DISPATCH-NO-PV", "FG-FSA", null, 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-DISPATCH-NO-PV",
+            "OP-DISPATCH-NO-PV-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null));
+        await dbContext.SaveChangesAsync();
+
+        var response = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+            new AssignDispatchTaskCommand(
+                "org-001",
+                "env-dev",
+                "OP-DISPATCH-NO-PV-10",
+                "operator-001",
+                null,
+                "SHIFT-A",
+                now.AddMinutes(15)),
+            CancellationToken.None);
+
+        Assert.Equal("Accepted", response.Status);
+    }
+
+    [Fact]
     public void Equipment_inspection_required_reason_classifies_as_maintenance()
     {
         var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(EquipmentRuntimeReasonCodes.InspectionRequired);
