@@ -59,6 +59,19 @@ public sealed class ListFilesEndpoint(IFileStorageService files)
 }
 
 [Tags("Files")]
+[HttpGet("/api/files/v1/usage")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class GetFileStorageUsageEndpoint(IFileStorageService files)
+    : Endpoint<FileStorageUsageRequest, FileStorageUsageResponse>
+{
+    public override async Task HandleAsync(FileStorageUsageRequest req, CancellationToken ct)
+    {
+        var result = await files.GetUsageAsync(req, ct);
+        await this.SendResultAsync(result, ct);
+    }
+}
+
+[Tags("Files")]
 [HttpPost("/api/files/v1/files/{fileId}/download-grants")]
 [Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
 public sealed class CreateDownloadGrantEndpoint(IFileStorageService files)

@@ -431,7 +431,7 @@ Source:
 | --- | --- | --- | --- | --- | --- |
 | `telemetry_tags` | business | IndustrialTelemetry 拥有的设备采集 tag 映射和采样策略元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + tag_key` 是业务唯一键；`value_type`、`unit_code` 和 `sampling_policy` 描述采集口径。 | tag 唯一索引防重复映射；设备/tag 维度支持采集配置查询。 | 创建后保留为采集元数据；PLC/DCS/SCADA 凭据不进入本 schema。 |
 | `alarm_rules` | business | IndustrialTelemetry 拥有的报警规则阈值配置，记录设备、tag、比较符、阈值、单位、严重级别、独立优先级、死区、开/关延时、最小持续时间和启停状态。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + rule_code` 是业务唯一键；`deadband_value`、`on_delay_seconds`、`off_delay_seconds`、`min_duration_seconds` 和 `priority` 支撑 ISA-18.2 风格去抖与优先级。 | 规则唯一索引防重复；设备+tag 索引用于规则维护和受控评估查询。 | 规则配置可更新启停、阈值、去抖参数和优先级；不保存 PLC/DCS/SCADA 控制命令或凭据。 |
-| `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间、来源系统/连接器和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性。 | 来源 scope+序列唯一索引防重复写入；设备+时间索引用于时间线、current-state 和 runtime availability 查询。 | 只追加受控状态事实，不表达控制命令。 |
+| `device_state_snapshots` | business | 设备状态快照事实，记录设备状态、发生时间、来源系统/连接器和来源序列。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性；`occurred_at_unix_time_milliseconds` 和 `recorded_at_unix_time_milliseconds` 是由对应 UTC timestamp 派生的内部排序键。 | 来源 scope+序列唯一索引防重复写入；设备+时间索引用于时间线、current-state 和 runtime availability 查询；设备+发生/记录 Unix ms+source sequence 索引用于 provider-neutral current-state 排序和 DeviceStateChanged 发布门控。 | 只追加受控状态事实，不表达控制命令。 |
 | `alarm_events` | business | 工业报警生命周期事实，记录 raise/clear、严重级别、独立优先级、触发 tag、观测值、阈值、单位和外部报警 ID。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + device_asset_id + alarm_code + external_alarm_id` 是 raised 状态下的外部报警幂等键；规则报警额外用 `organization_id + environment_id + device_asset_id + tag_key + external_alarm_id` 约束同一规则/tag 只能存在一个 active raised 事件；`status` 表示 raised/cleared；`tag_key`、`observed_value`、`threshold_value`、`unit_code` 为 RCA 上下文字段。 | 外部报警 active 唯一索引防重复 raise；规则 active 唯一索引兜底并发/规则定义变更时的同条件重复报警；设备+时间索引用于报警时间线和 RCA 查询。 | 报警创建后可清除；清除只补充 cleared facts，不删除历史；迁移会把历史重复 active 规则报警中较晚行标记为 cleared 后再加唯一索引。 |
 | `telemetry_summaries` | business | 粗粒度采集汇总 bucket，保存 tag 数值摘要和可选来源系统/连接器元数据。 | `id` 为 Guid v7 强类型 ID；`organization_id + environment_id + source_system + source_connector + device_asset_id + tag_key + source_sequence` 是幂等唯一键，且 source 元数据为空时按 not-distinct 参与唯一性；`sample_count`、`min_value`、`max_value`、`average_value` 保存摘要；`bucket_end_unix_time_milliseconds` 是由 `bucket_end_utc` 派生的内部排序/迟到桶判断键。 | 来源 scope+序列唯一索引防重复；设备+tag+bucket 起点索引用于趋势查询；设备+tag+bucket end Unix ms 索引用于 provider-neutral 去抖连续性和 late-bucket 抑制查询。 | 作为可重算摘要事实保留；原始高速时序不进入平台业务库。 |
 | `CAPLock` | system | CAP distributed lock table，由 netcorepal/CAP 基础设施维护。 | 主键由 CAP 类型定义。 | CAP 内部协调。 | 系统表随服务数据库迁移创建；业务代码不直接读写。 |
@@ -640,10 +640,11 @@ Source:
 3. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/EntityConfigurations/*.cs`
 4. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260521061426_InitialFileStorageSchema.cs`
 5. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260608105829_AddStoredFilesTenantListIndex.cs`
+6. `backend/services/FileStorage/src/Nerv.IIP.FileStorage.Infrastructure/Migrations/20260705065020_AddFileStorageSecurityHardening.cs`
 
 | Table | Kind | Purpose | Key relationships and indexes |
 | --- | --- | --- | --- |
-| `stored_files` | business | FileStorage 已完成文件的公开元数据与内部对象定位事实。 | `file_id` 为业务生成 string ID；`object_key` 唯一且仅限内部持久化；`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询；`organization_id + environment_id + completed_at_utc` 支持 Console 文件列表按租户分页读取。 |
+| `stored_files` | business | FileStorage 已完成文件的公开元数据、内部对象定位、扫描结果和生命周期清理事实。 | `file_id` 为业务生成 string ID；`object_key` 唯一且仅限内部持久化；`scan_status`、`scanned_at_utc` 和 `scan_detail` 记录后台扫描结果；`deleted_at_utc`、`physical_delete_after_utc` 和 `deletion_reason` 记录软删到物理清理窗口；`organization_id + environment_id + owner_service + owner_type + owner_id` 支持按业务 owner 查询；`organization_id + environment_id + completed_at_utc` 支持 Console 文件列表按租户分页读取；`scan_status + status` 支持扫描 worker 扫描候选与下载门控；`status + physical_delete_after_utc` 支持过期物理清理。 |
 | `upload_sessions` | business | 上传会话元数据，记录预留 fileId、调用方上下文、provider、过期时间和完成状态。 | `upload_session_id` 为业务生成 string ID；`file_id` 唯一；`object_key` 唯一；`organization_id + environment_id + expires_at_utc` 支持过期会话扫描。 |
 | `download_grants` | business | 短期下载授权元数据，当前用于平台控制下载路径；tus provider 下可映射到本地 tus 字节内容。 | `download_grant_id` 为业务生成 string ID；`file_id` 指向 `stored_files`；`organization_id + environment_id + file_id + expires_at_utc` 支持授权校验和清理。 |
 | `__EFMigrationsHistory` | system | EF Core migration history table，记录 FileStorage 已应用迁移。 | 必须位于 `filestorage` schema；业务代码不直接读写。 |
@@ -651,7 +652,7 @@ Source:
 Known gaps:
 
 1. 默认运行路径仍可使用 in-memory store 和 `server-proxy` metadata stub；设置 `Persistence:Provider=PostgreSQL` 后可启用 PostgreSQL-backed FileStorage service，客户 release bundle 仍待后续。
-2. 设置 `FileStorage:UploadProvider=tus` 后已具备本地 tus `HEAD`/`PATCH` offset 传输和 download grant content 读取能力；size/checksum 强校验、过期清理任务和更完整 tus 兼容性仍属于 hardening。
+2. 设置 `FileStorage:UploadProvider=tus` 后已具备本地 tus `HEAD`/`PATCH` offset 传输、download grant content 读取、size/checksum 强校验、过期未完成上传清理、用途类型策略、配额拒绝、后台扫描状态流转和正式文件软删/物理清理能力。
 3. tus 端点当前按平台内部服务边界实现为 `AllowAnonymous`，生产入口需要由 Gateway/auth 层保护；MinIO/S3 multipart 不进入 MVP，放到后续对象存储部署联调。`object_key` 不得被提升为公开 API、SDK DTO、Gateway facade 或 Console generated client 字段。
 
 ## Notification Schema
@@ -699,7 +700,7 @@ Known gaps:
 | Service | Expected schema | Catalog status | Implemented | Validated | Release-supported | Required before first migration |
 | --- | --- | --- | --- | --- | --- | --- |
 | IAM | `iam` | Implemented | Yes | Yes | No | 已有 PostgreSQL `iam` schema、初始 migration、schema convention tests、idempotent seed、登录/refresh/logout/`/me` 和 Connector Host credential validation；客户 release bundle 仍待后续。 |
-| FileStorage | `filestorage` | Implemented baseline | Yes | Yes | No | 已有 `stored_files`、`upload_sessions`、`download_grants` 初始 migration、schema convention tests、PostgreSQL-backed API service、server-proxy metadata API 和本地 tus MVP 传输能力；客户 release bundle 仍待后续；MinIO/S3 multipart 为 post-MVP 部署联调项。 |
+| FileStorage | `filestorage` | Implemented baseline | Yes | Yes | No | 已有 `stored_files`、`upload_sessions`、`download_grants` 初始 migration 与安全 hardening migration、schema convention tests、PostgreSQL-backed API service、server-proxy metadata API、本地 tus MVP 传输、用途类型策略、配额、后台扫描和文件生命周期清理能力；客户 release bundle 仍待后续；MinIO/S3 multipart 为 post-MVP 部署联调项。 |
 | BusinessMasterData | `business_masterdata` | Implemented | Yes | Yes | No | 已有 Layer 0 realignment schema、numbering counter/idempotency tables、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessProductEngineering | `product_engineering` | Implemented | Yes | Yes | No | 已有 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、StandardOperation、ECO/ECN、ProductionVersion、numbering counter/idempotency tables、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |
 | BusinessInventory | `inventory` | Implemented | Yes | Yes | No | 已有库存地点、库存台账、库存移动、盘点任务和盘点调整 schema、migration、schema convention tests 和 verify script；客户 release bundle 仍待后续。 |

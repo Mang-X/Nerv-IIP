@@ -14,6 +14,7 @@ public static class SchedulingPlanInvalidationReasons
 {
     public const string EquipmentUnavailable = "equipmentUnavailable";
     public const string EquipmentRestored = "equipmentRestored";
+    public const string DeviceStateChanged = "deviceStateChanged";
     public const string MaterialReadinessChanged = "materialReadinessChanged";
     public const string QualityBlocked = "qualityBlocked";
     public const string QualityReleased = "qualityReleased";

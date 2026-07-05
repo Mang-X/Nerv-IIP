@@ -18,7 +18,8 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         DateTimeOffset occurredAtUtc,
         string sourceSequence,
         string? sourceSystem,
-        string? sourceConnector)
+        string? sourceConnector,
+        bool raiseChangedEvent)
     {
         Id = new DeviceStateSnapshotId(Guid.CreateVersion7());
         OrganizationId = IndustrialTelemetryText.Required(organizationId, nameof(organizationId));
@@ -26,10 +27,20 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         DeviceAssetId = IndustrialTelemetryText.Required(deviceAssetId, nameof(deviceAssetId));
         State = IndustrialTelemetryText.RequiredLower(state, nameof(state));
         OccurredAtUtc = occurredAtUtc;
+        OccurredAtUnixTimeMilliseconds = occurredAtUtc.ToUnixTimeMilliseconds();
         SourceSequence = IndustrialTelemetryText.Required(sourceSequence, nameof(sourceSequence));
         SourceSystem = IndustrialTelemetryText.Optional(sourceSystem);
         SourceConnector = IndustrialTelemetryText.Optional(sourceConnector);
         RecordedAtUtc = DateTimeOffset.UtcNow;
+        RecordedAtUnixTimeMilliseconds = RecordedAtUtc.ToUnixTimeMilliseconds();
+        if (raiseChangedEvent)
+        {
+            RaiseStateChangedEvent();
+        }
+    }
+
+    public void RaiseStateChangedEvent()
+    {
         this.AddDomainEvent(new DeviceStateChangedDomainEvent(this));
     }
 
@@ -38,10 +49,12 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
     public string DeviceAssetId { get; private set; } = string.Empty;
     public string State { get; private set; } = string.Empty;
     public DateTimeOffset OccurredAtUtc { get; private set; }
+    public long OccurredAtUnixTimeMilliseconds { get; private set; }
     public string SourceSequence { get; private set; } = string.Empty;
     public string? SourceSystem { get; private set; }
     public string? SourceConnector { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
+    public long RecordedAtUnixTimeMilliseconds { get; private set; }
 
     public static DeviceStateSnapshot Record(
         string organizationId,
@@ -51,9 +64,19 @@ public sealed class DeviceStateSnapshot : Entity<DeviceStateSnapshotId>, IAggreg
         DateTimeOffset occurredAtUtc,
         string sourceSequence,
         string? sourceSystem = null,
-        string? sourceConnector = null)
+        string? sourceConnector = null,
+        bool raiseChangedEvent = true)
     {
-        return new DeviceStateSnapshot(organizationId, environmentId, deviceAssetId, state, occurredAtUtc, sourceSequence, sourceSystem, sourceConnector);
+        return new DeviceStateSnapshot(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            state,
+            occurredAtUtc,
+            sourceSequence,
+            sourceSystem,
+            sourceConnector,
+            raiseChangedEvent);
     }
 
     public bool IsSameSourceSequence(DeviceStateSnapshot other)
