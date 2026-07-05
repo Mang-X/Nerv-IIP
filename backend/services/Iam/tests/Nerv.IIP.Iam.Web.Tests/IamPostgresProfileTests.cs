@@ -612,6 +612,149 @@ public sealed class IamPostgresProfileTests
     }
 
     [Fact]
+    public async Task Postgres_user_lifecycle_and_password_policy_use_ef_persistence()
+    {
+        var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        if (string.IsNullOrWhiteSpace(postgresConnectionString))
+        {
+            return;
+        }
+
+        var environment = PreserveEnvironment(
+            "Persistence__Provider",
+            "ConnectionStrings__IamDb",
+            "Iam__Seed__Enabled",
+            "Iam__Seed__AdminPassword",
+            "Iam__Seed__ConnectorHostSecret");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Persistence__Provider", "PostgreSQL");
+            Environment.SetEnvironmentVariable("ConnectionStrings__IamDb", postgresConnectionString);
+            Environment.SetEnvironmentVariable("Iam__Seed__Enabled", "true");
+            Environment.SetEnvironmentVariable("Iam__Seed__AdminPassword", "Admin123!");
+            Environment.SetEnvironmentVariable("Iam__Seed__ConnectorHostSecret", "local-connector-secret");
+
+            await using var factory = new WebApplicationFactory<Program>();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                await db.Database.EnsureDeletedAsync();
+
+                var migrations = scope.ServiceProvider.GetRequiredService<IamDatabaseMigrationRunner>();
+                await migrations.MigrateAsync();
+
+                var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
+                await seed.SeedAsync(CancellationToken.None);
+            }
+
+            var client = factory.CreateClient();
+            var adminLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "admin", password = "Admin123!" });
+            adminLogin.EnsureSuccessStatusCode();
+            var adminAuth = await ReadResponseDataAsync<AuthResponse>(adminLogin);
+
+            var create = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new
+                {
+                    loginName = "lifecycle-pg-user",
+                    email = "lifecycle-pg-user@nerv-iip.local",
+                    password = "InitialPassword123!"
+                });
+            Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+            var user = await ReadResponseDataAsync<UserResponse>(create);
+
+            var userLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "lifecycle-pg-user", password = "InitialPassword123!" });
+            userLogin.EnsureSuccessStatusCode();
+            var userAuth = await ReadResponseDataAsync<LifecycleAuthResponse>(userLogin);
+            Assert.True(userAuth.PasswordChangeRequired);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", userAuth.AccessToken);
+            var change = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/change-password",
+                new { currentPassword = "InitialPassword123!", newPassword = "ChangedPassword123!" });
+            Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+
+            var oldBearerChange = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/change-password",
+                new { currentPassword = "ChangedPassword123!", newPassword = "AnotherPassword123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, oldBearerChange.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
+            var disableViaPatch = await client.PatchAsJsonAsync(
+                $"/api/iam/v1/users/{user.UserId}",
+                new
+                {
+                    loginName = user.LoginName,
+                    email = user.Email,
+                    enabled = false,
+                    accountExpiresAtUtc = (DateTimeOffset?)null
+                });
+            disableViaPatch.EnsureSuccessStatusCode();
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var activeSessions = await db.UserSessions
+                    .Where(x => x.UserId.Id == user.UserId && x.RevokedAtUtc == null)
+                    .ToListAsync();
+                Assert.Empty(activeSessions);
+            }
+
+            client.DefaultRequestHeaders.Authorization = null;
+            var disabledRefresh = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/refresh",
+                new { userAuth.RefreshToken });
+            Assert.Equal(HttpStatusCode.Unauthorized, disabledRefresh.StatusCode);
+
+            var disabledLogin = await client.PostAsJsonAsync(
+                "/api/iam/v1/auth/login",
+                new { loginName = "lifecycle-pg-user", password = "ChangedPassword123!" });
+            Assert.Equal(HttpStatusCode.Unauthorized, disabledLogin.StatusCode);
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", adminAuth.AccessToken);
+            var historyUser = await client.PostAsJsonAsync(
+                "/api/iam/v1/users",
+                new
+                {
+                    loginName = "history-pg-user",
+                    email = "history-pg-user@nerv-iip.local",
+                    password = "HistoryPassword123!"
+                });
+            Assert.Equal(HttpStatusCode.Created, historyUser.StatusCode);
+            var history = await ReadResponseDataAsync<UserResponse>(historyUser);
+
+            var reset = await client.PostAsJsonAsync(
+                $"/api/iam/v1/users/{history.UserId}/reset-password",
+                new { newPassword = "HistoryPassword234!" });
+            Assert.Equal(HttpStatusCode.NoContent, reset.StatusCode);
+
+            var reuse = await client.PostAsJsonAsync(
+                $"/api/iam/v1/users/{history.UserId}/reset-password",
+                new { newPassword = "HistoryPassword123!" });
+            Assert.Equal(HttpStatusCode.BadRequest, reuse.StatusCode);
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var historyRows = await db.Set<UserPasswordHistory>()
+                    .Where(x => x.UserId.Id == history.UserId)
+                    .ToListAsync();
+                Assert.NotEmpty(historyRows);
+            }
+        }
+        finally
+        {
+            RestoreEnvironment(environment);
+        }
+    }
+
+    [Fact]
     public async Task Postgres_profile_issues_external_client_token_and_authorizes_with_grants()
     {
         var postgresConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
@@ -827,9 +970,23 @@ public sealed class IamPostgresProfileTests
     }
 
     private sealed record AuthResponse(string AccessToken, string RefreshToken, string SessionId, DateTimeOffset ExpiresAtUtc);
+    private sealed record LifecycleAuthResponse(
+        string AccessToken,
+        string RefreshToken,
+        string SessionId,
+        DateTimeOffset ExpiresAtUtc,
+        bool PasswordChangeRequired);
     private sealed record ClientCredentialsTokenResponse(string AccessToken, string TokenType, DateTimeOffset ExpiresAtUtc, string Scope);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
-    private sealed record UserResponse(string UserId, string LoginName, string Email, bool Enabled);
+    private sealed record UserResponse(
+        string UserId,
+        string LoginName,
+        string Email,
+        bool Enabled,
+        DateTimeOffset? AccountExpiresAtUtc = null,
+        bool PasswordChangeRequired = false,
+        DateTimeOffset? PasswordExpiresAtUtc = null,
+        DateTimeOffset? LockoutUntilUtc = null);
     private sealed record RoleResponse(string RoleId, string RoleName, IReadOnlyList<string> PermissionCodes);
     private sealed record PermissionCatalogResponse(IReadOnlyList<PermissionCatalogItemResponse> Items);
     private sealed record PermissionCatalogItemResponse(string Code, string Domain, string Description, bool Seeded);

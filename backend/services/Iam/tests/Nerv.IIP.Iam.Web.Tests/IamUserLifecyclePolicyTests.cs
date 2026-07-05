@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Nerv.IIP.Iam.Web.Tests;
@@ -114,6 +115,37 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
         Assert.True(resetLogin.PasswordChangeRequired);
     }
 
+    [Fact]
+    public async Task InMemory_password_policy_uses_configured_options()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Iam:PasswordPolicy:MinimumLength", "12");
+            builder.UseSetting("Iam:PasswordPolicy:RequireNonAlphanumeric", "false");
+            builder.UseSetting("Iam:PasswordPolicy:PasswordExpiresDays", "0");
+            builder.UseSetting("Iam:PasswordPolicy:PasswordHistoryCount", "1");
+        });
+        using var client = factory.CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        var loginName = $"configured-policy-{suffix}";
+
+        var tooShort = await client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName, email = $"{loginName}@nerv-iip.local", password = "Short123" });
+        Assert.Equal(HttpStatusCode.BadRequest, tooShort.StatusCode);
+
+        var create = await client.PostAsJsonAsync(
+            "/api/iam/v1/users",
+            new { loginName, email = $"{loginName}@nerv-iip.local", password = "LongPassword123" });
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var user = await ReadResponseDataAsync<UserResponse>(create);
+        Assert.Null(user.PasswordExpiresAtUtc);
+
+        await ChangePasswordAsync(client, loginName, "LongPassword123", "LongPassword234");
+        await ChangePasswordAsync(client, loginName, "LongPassword234", "LongPassword345");
+        await ChangePasswordAsync(client, loginName, "LongPassword345", "LongPassword123");
+    }
+
     private async Task<UserResponse> CreateUserAsync(string loginName, string email, string password)
     {
         var response = await _client.PostAsJsonAsync(
@@ -132,13 +164,29 @@ public sealed class IamUserLifecyclePolicyTests : IClassFixture<WebApplicationFa
 
     private async Task ChangePasswordAsync(string loginName, string currentPassword, string newPassword)
     {
-        var login = await LoginAsync(loginName, currentPassword);
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
-        var change = await _client.PostAsJsonAsync(
+        await ChangePasswordAsync(_client, loginName, currentPassword, newPassword);
+    }
+
+    private static async Task ChangePasswordAsync(
+        HttpClient client,
+        string loginName,
+        string currentPassword,
+        string newPassword)
+    {
+        var login = await LoginAsync(client, loginName, currentPassword);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
+        var change = await client.PostAsJsonAsync(
             "/api/iam/v1/auth/change-password",
             new { currentPassword, newPassword });
-        _client.DefaultRequestHeaders.Authorization = null;
+        client.DefaultRequestHeaders.Authorization = null;
         Assert.Equal(HttpStatusCode.NoContent, change.StatusCode);
+    }
+
+    private static async Task<AuthResponse> LoginAsync(HttpClient client, string loginName, string password)
+    {
+        var login = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new { loginName, password });
+        login.EnsureSuccessStatusCode();
+        return await ReadResponseDataAsync<AuthResponse>(login);
     }
 
     private async Task<PagedListResponse<T>> GetPagedAsync<T>(string requestUri)

@@ -310,11 +310,16 @@ public sealed class InMemoryIamStore
         }
     }
 
-    public UserFact CreateUser(string loginName, string email, string password, DateTimeOffset? accountExpiresAtUtc)
+    public UserFact CreateUser(
+        string loginName,
+        string email,
+        string password,
+        DateTimeOffset? accountExpiresAtUtc,
+        InMemoryIamPasswordPolicy passwordPolicy)
     {
         lock (_gate)
         {
-            ValidateComplexity(password);
+            ValidateComplexity(password, passwordPolicy);
             EnsureUserIsUnique(null, loginName, email);
 
             var now = DateTimeOffset.UtcNow;
@@ -328,7 +333,7 @@ public sealed class InMemoryIamStore
                 1,
                 AccountExpiresAtUtc: accountExpiresAtUtc,
                 PasswordChangedAtUtc: now,
-                PasswordExpiresAtUtc: now.AddDays(90),
+                PasswordExpiresAtUtc: GetPasswordExpiresAtUtc(now, passwordPolicy),
                 PasswordChangeRequired: true,
                 PasswordHistoryHashes: []);
             _users.Add(user);
@@ -380,6 +385,7 @@ public sealed class InMemoryIamStore
             }
 
             var current = _users[index];
+            var shouldRevokeSessions = current.Enabled && !enabled;
             var updated = current with
             {
                 LoginName = loginName,
@@ -390,6 +396,11 @@ public sealed class InMemoryIamStore
                 PermissionVersion = current.Enabled == enabled ? current.PermissionVersion : current.PermissionVersion + 1
             };
             _users[index] = updated;
+            if (shouldRevokeSessions)
+            {
+                RevokeActiveUserSessions(userId, DateTimeOffset.UtcNow);
+            }
+
             return updated;
         }
     }
@@ -430,19 +441,11 @@ public sealed class InMemoryIamStore
                 PermissionVersion = user.PermissionVersion + 1
             };
 
-            var now = DateTimeOffset.UtcNow;
-            for (var i = 0; i < _sessions.Count; i++)
-            {
-                var session = _sessions[i];
-                if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
-                {
-                    _sessions[i] = session with { RevokedAtUtc = now };
-                }
-            }
+            RevokeActiveUserSessions(userId, DateTimeOffset.UtcNow);
         }
     }
 
-    public void ResetPassword(string userId, string newPassword)
+    public void ResetPassword(string userId, string newPassword, InMemoryIamPasswordPolicy passwordPolicy)
     {
         lock (_gate)
         {
@@ -452,32 +455,29 @@ public sealed class InMemoryIamStore
                 throw new InvalidOperationException($"User '{userId}' was not found.");
             }
 
-            ValidateNewPassword(user, newPassword);
+            ValidateNewPassword(user, newPassword, passwordPolicy);
             var now = DateTimeOffset.UtcNow;
-            var history = AppendPasswordHistory(user, now);
+            var history = AppendPasswordHistory(user, passwordPolicy);
             _users[_users.IndexOf(user)] = user with
             {
                 PasswordHash = Hash(newPassword),
                 PasswordChangedAtUtc = now,
-                PasswordExpiresAtUtc = now.AddDays(90),
+                PasswordExpiresAtUtc = GetPasswordExpiresAtUtc(now, passwordPolicy),
                 PasswordChangeRequired = true,
                 PasswordHistoryHashes = history,
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
 
-            for (var i = 0; i < _sessions.Count; i++)
-            {
-                var session = _sessions[i];
-                if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
-                {
-                    _sessions[i] = session with { RevokedAtUtc = now };
-                }
-            }
+            RevokeActiveUserSessions(userId, now);
         }
     }
 
-    public void ChangePassword(string userId, string currentPassword, string newPassword)
+    public void ChangePassword(
+        string userId,
+        string currentPassword,
+        string newPassword,
+        InMemoryIamPasswordPolicy passwordPolicy)
     {
         lock (_gate)
         {
@@ -488,14 +488,14 @@ public sealed class InMemoryIamStore
                 throw new UnauthorizedAccessException("Current password is invalid.");
             }
 
-            ValidateNewPassword(user, newPassword);
+            ValidateNewPassword(user, newPassword, passwordPolicy);
             var now = DateTimeOffset.UtcNow;
-            var history = AppendPasswordHistory(user, now);
+            var history = AppendPasswordHistory(user, passwordPolicy);
             _users[_users.IndexOf(user)] = user with
             {
                 PasswordHash = Hash(newPassword),
                 PasswordChangedAtUtc = now,
-                PasswordExpiresAtUtc = now.AddDays(90),
+                PasswordExpiresAtUtc = GetPasswordExpiresAtUtc(now, passwordPolicy),
                 PasswordChangeRequired = false,
                 PasswordHistoryHashes = history,
                 SecurityStamp = Guid.NewGuid().ToString("n"),
@@ -681,9 +681,12 @@ public sealed class InMemoryIamStore
         }
     }
 
-    private static void ValidateNewPassword(UserFact user, string password)
+    private static void ValidateNewPassword(
+        UserFact user,
+        string password,
+        InMemoryIamPasswordPolicy passwordPolicy)
     {
-        ValidateComplexity(password);
+        ValidateComplexity(password, passwordPolicy);
         if (Verify(password, user.PasswordHash)
             || (user.PasswordHistoryHashes ?? []).Any(hash => Verify(password, hash)))
         {
@@ -691,26 +694,56 @@ public sealed class InMemoryIamStore
         }
     }
 
-    private static void ValidateComplexity(string password)
+    private static void ValidateComplexity(string password, InMemoryIamPasswordPolicy passwordPolicy)
     {
-        if (string.IsNullOrWhiteSpace(password)
-            || password.Length < 8
-            || !password.Any(char.IsUpper)
-            || !password.Any(char.IsLower)
-            || !password.Any(char.IsDigit)
-            || password.All(char.IsLetterOrDigit))
+        if (string.IsNullOrWhiteSpace(password) || password.Length < passwordPolicy.MinimumLength)
+        {
+            throw new InvalidOperationException("Password does not satisfy IAM password policy.");
+        }
+
+        if ((passwordPolicy.RequireUppercase && !password.Any(char.IsUpper))
+            || (passwordPolicy.RequireLowercase && !password.Any(char.IsLower))
+            || (passwordPolicy.RequireDigit && !password.Any(char.IsDigit))
+            || (passwordPolicy.RequireNonAlphanumeric && password.All(char.IsLetterOrDigit)))
         {
             throw new InvalidOperationException("Password does not satisfy IAM password policy.");
         }
     }
 
-    private static IReadOnlyList<string> AppendPasswordHistory(UserFact user, DateTimeOffset now)
+    private static IReadOnlyList<string> AppendPasswordHistory(
+        UserFact user,
+        InMemoryIamPasswordPolicy passwordPolicy)
     {
-        _ = now;
+        if (passwordPolicy.PasswordHistoryCount <= 0)
+        {
+            return [];
+        }
+
         return (user.PasswordHistoryHashes ?? [])
             .Append(user.PasswordHash)
-            .TakeLast(5)
+            .TakeLast(passwordPolicy.PasswordHistoryCount)
             .ToArray();
+    }
+
+    private static DateTimeOffset? GetPasswordExpiresAtUtc(
+        DateTimeOffset changedAtUtc,
+        InMemoryIamPasswordPolicy passwordPolicy)
+    {
+        return passwordPolicy.PasswordExpiresDays <= 0
+            ? null
+            : changedAtUtc.AddDays(passwordPolicy.PasswordExpiresDays);
+    }
+
+    private void RevokeActiveUserSessions(string userId, DateTimeOffset now)
+    {
+        for (var i = 0; i < _sessions.Count; i++)
+        {
+            var session = _sessions[i];
+            if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
+            {
+                _sessions[i] = session with { RevokedAtUtc = now };
+            }
+        }
     }
 
     public bool RoleNameExists(string roleName)
@@ -777,6 +810,14 @@ public sealed record AuthResult(
     string? OrganizationId,
     string? EnvironmentId,
     bool PasswordChangeRequired);
+public sealed record InMemoryIamPasswordPolicy(
+    int MinimumLength,
+    bool RequireUppercase,
+    bool RequireLowercase,
+    bool RequireDigit,
+    bool RequireNonAlphanumeric,
+    int PasswordExpiresDays,
+    int PasswordHistoryCount);
 public sealed record ConnectorPrincipal(string PrincipalType, string OrganizationId, string EnvironmentId, string ConnectorHostId);
 public sealed record ExternalClientPrincipal(
     string ClientId,

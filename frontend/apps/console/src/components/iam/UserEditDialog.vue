@@ -128,7 +128,7 @@ watch(open, (isOpen) => {
             <div class="grid gap-1">
               <FieldLabel for="iam-edit-enabled">启用</FieldLabel>
             </div>
-            <Checkbox id="iam-edit-enabled" v-model:checked="form.enabled" />
+            <Checkbox id="iam-edit-enabled" v-model="form.enabled" />
           </Field>
 
           <Field>

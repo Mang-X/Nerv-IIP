@@ -4,6 +4,7 @@ using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Iam.Web.Application.Users;
@@ -36,7 +37,9 @@ public interface IIamUserApplicationService
     Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken);
 }
 
-public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : IIamUserApplicationService
+public sealed class InMemoryIamUserApplicationService(
+    InMemoryIamStore store,
+    IOptions<IamPasswordPolicyOptions> passwordPolicyOptions) : IIamUserApplicationService
 {
     public Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken)
     {
@@ -61,7 +64,12 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
     {
         try
         {
-            return Task.FromResult(ToResponse(store.CreateUser(loginName, email, password, accountExpiresAtUtc)));
+            return Task.FromResult(ToResponse(store.CreateUser(
+                loginName,
+                email,
+                password,
+                accountExpiresAtUtc,
+                ToStorePolicy(passwordPolicyOptions.Value))));
         }
         catch (InvalidOperationException ex)
         {
@@ -77,7 +85,12 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
         DateTimeOffset? accountExpiresAtUtc,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(ToResponse(store.UpdateUser(userId, loginName, email, enabled, accountExpiresAtUtc)));
+        return Task.FromResult(ToResponse(store.UpdateUser(
+            userId,
+            loginName,
+            email,
+            enabled,
+            accountExpiresAtUtc)));
     }
 
     public Task EnableUserAsync(string userId, CancellationToken cancellationToken)
@@ -101,7 +114,7 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
 
         try
         {
-            store.ResetPassword(userId, newPassword);
+            store.ResetPassword(userId, newPassword, ToStorePolicy(passwordPolicyOptions.Value));
         }
         catch (InvalidOperationException ex)
         {
@@ -115,7 +128,7 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
     {
         try
         {
-            store.ChangePassword(userId, currentPassword, newPassword);
+            store.ChangePassword(userId, currentPassword, newPassword, ToStorePolicy(passwordPolicyOptions.Value));
         }
         catch (InvalidOperationException ex)
         {
@@ -139,6 +152,18 @@ public sealed class InMemoryIamUserApplicationService(InMemoryIamStore store) : 
             user.PasswordChangeRequired,
             user.PasswordExpiresAtUtc,
             user.LockoutUntilUtc);
+    }
+
+    private static InMemoryIamPasswordPolicy ToStorePolicy(IamPasswordPolicyOptions options)
+    {
+        return new InMemoryIamPasswordPolicy(
+            options.MinimumLength,
+            options.RequireUppercase,
+            options.RequireLowercase,
+            options.RequireDigit,
+            options.RequireNonAlphanumeric,
+            options.PasswordExpiresDays,
+            options.PasswordHistoryCount);
     }
 }
 
@@ -222,7 +247,18 @@ public sealed class PostgreSqlIamUserApplicationService(
             throw new KnownException($"Email '{email}' is already used.");
         }
 
+        var shouldRevokeSessions = user.Enabled && !enabled;
         user.UpdateProfile(loginName, email, enabled, accountExpiresAtUtc);
+        if (shouldRevokeSessions)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
+            foreach (var session in sessions)
+            {
+                session.Revoke(now, "user-disabled");
+            }
+        }
+
         return ToResponse(user);
     }
 
