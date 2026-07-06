@@ -12,7 +12,7 @@ public sealed class WmsExecutionAggregateTests
     [Fact]
     public void Inbound_completion_requires_idempotency_key_and_creates_inventory_request()
     {
-        var inbound = DomainWmsFactory.InboundOrder();
+        var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
 
         var exception = Assert.Throws<ArgumentException>(() => inbound.Complete(" "));
@@ -26,9 +26,84 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
-    public void Putaway_quantity_cannot_exceed_inbound_line_quantity()
+    public void Quality_required_inbound_line_cannot_be_putaway_before_inspection_result()
     {
         var inbound = DomainWmsFactory.InboundOrder();
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.CreatePutawayTask("TASK-IN-QUALITY-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m));
+
+        Assert.Contains("quality", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Quality_required_inbound_completion_waits_for_quality_result_and_posts_quality_stock()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+
+        var request = Assert.Single(inbound.Complete("idem-in-quality-001"));
+
+        Assert.Equal(InboundOrderStatus.PendingQualityCheck, inbound.Status);
+        Assert.Equal("quality", request.QualityStatus);
+    }
+
+    [Fact]
+    public void Inspection_passed_releases_putaway_gate_after_pending_quality_check()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+        inbound.Complete("idem-in-quality-001");
+
+        inbound.ApplyInspectionResult("quality.InspectionPassed", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "accepted");
+        var task = inbound.CreatePutawayTask("TASK-IN-PASSED-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
+
+        Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
+        Assert.Equal("TASK-IN-PASSED-001", task.TaskNo);
+    }
+
+    [Fact]
+    public void Inspection_rejected_keeps_putaway_blocked_and_creates_supplier_return_fact()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+        inbound.Complete("idem-in-quality-001");
+
+        var supplierReturn = inbound.ApplyInspectionResult("quality.InspectionRejected", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "critical-defect");
+
+        Assert.NotNull(supplierReturn);
+        Assert.Equal("return-to-supplier", supplierReturn.DispositionType);
+        Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.CreatePutawayTask("TASK-IN-REJECTED-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m));
+        Assert.Contains("rejected", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Conditional_release_allows_restricted_putaway_after_quality_result()
+    {
+        var inbound = DomainWmsFactory.InboundOrder();
+        inbound.Complete("idem-in-quality-001");
+
+        inbound.ApplyInspectionResult("quality.InspectionConditionalReleased", "QI-001", "SKU-FG-1000", "LOT-001", null, 5m, "use-as-is");
+        var task = inbound.CreatePutawayTask("TASK-IN-CONDITIONAL-001", "LINE-001", "LOC-STAGE", "LOC-RESTRICTED-01", 5m);
+
+        Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
+        Assert.Equal("LOC-RESTRICTED-01", task.ToLocationCode);
+    }
+
+    [Fact]
+    public void Inspection_exempt_inbound_completion_keeps_direct_unrestricted_path()
+    {
+        var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
+
+        var request = Assert.Single(inbound.Complete("idem-in-exempt-001"));
+
+        Assert.Equal(InboundOrderStatus.Completed, inbound.Status);
+        Assert.Equal("unrestricted", request.QualityStatus);
+    }
+
+    [Fact]
+    public void Putaway_quantity_cannot_exceed_inbound_line_quantity()
+    {
+        var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
 
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
             inbound.CreatePutawayTask("TASK-IN-002", "LINE-001", "LOC-STAGE", "LOC-A-01", 6m));
@@ -39,7 +114,7 @@ public sealed class WmsExecutionAggregateTests
     [Fact]
     public void Completed_inbound_orders_are_immutable()
     {
-        var inbound = DomainWmsFactory.InboundOrder();
+        var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
         inbound.CreatePutawayTask("TASK-IN-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m);
         inbound.Complete("idem-in-001");
 
@@ -229,7 +304,19 @@ internal static class DomainWmsFactory
             "purchase-receipt",
             "PO-001",
             "SITE-01",
-            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", "owner-001")]);
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "quality", "company", "owner-001")]);
+    }
+
+    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder InspectionExemptInboundOrder()
+    {
+        return Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-001",
+            "purchase-receipt",
+            "PO-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "inspection-exempt", "company", "owner-001")]);
     }
 
     public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder OutboundOrder(decimal requestedQuantity = 4m)
