@@ -82,11 +82,17 @@ interface AccessScope {
 - 自身是一块设计过的深色墙面页（非跳转）；`prefers-reduced-motion` 兜底。
 - 现有 `pages/index.vue`（当前是工厂总览 demo）→ 内容迁入 `/factory`；`/` 改为 Launcher。
 
-### 1.4 组件策略（reuse，但不模板化）
+### 1.4 组件策略（复用优先，缺则新建，风格统一）
 
-- **复用** `@nerv-iip/ui` screen 层 28 组件（`ScreenPanel`/`OeeHero`/`RingGauge`/`StatusCard`/`AlarmTable`/`TrendChart`/`DigitalFlop`/`StatusLight`/`ScrollBoard` 等）作为原子件。
-- **每屏 bespoke 布局**：业务组合件（如 `WorkshopMatrix`/`DeviceStatusWall`/`LineAndonHero`）建在各屏本地 `components/screen-blocks/`，**针对该屏内容单独设计版式**，不套统一模板。接口稳定后由 MAN-321 上提 `@nerv-iip/ui`。
-- 遵循组件库治理：原版零改动，定制靠新建组合件。
+- **复用优先**：`@nerv-iip/ui` screen 层 28 组件（`ScreenPanel`/`OeeHero`/`RingGauge`/`StatusCard`/`AlarmTable`/`TrendChart`/`DigitalFlop`/`StatusLight`/`ScrollBoard` 等）作为原子件。
+- **缺则新建，不受现有组件局限**：特殊场景（如超大产线红绿灯、设备状态全景墙、大屏选择卡）现有件不合适时，**直接按大屏风格新建**，不硬套/不改造现有件凑合。业务组合件建在各屏本地 `components/screen-blocks/`，**针对该屏内容单独设计版式**，不套统一模板。
+- **设计哲学/风格必须统一**（新建件的硬门禁，依据 `frontend/packages/ui/src/components/screen/product.md` 设计宪法 + `tokens.css`）：
+  1. 只用 `--sb-*` 令牌，**不混入共享 `--*`**，无亮色模式；
+  2. **克制发光**——辉光只给活数据（实时值/运行态），标题/坐标轴/静态文字不发光；远距可读（关键数字大字号 + 克制 text-shadow，次要信息降噪）；
+  3. **动效只用两条缓动**（`--sb-ease` / `--sb-ease-emphasized`），press 收缩（`scale`）**绝不回弹/膨胀/位移**，每个会动元素都有 `prefers-reduced-motion` 降级；
+  4. **数据驱动**——零 props 可渲染示例，接真实数据只传值，不写死业务文案当占位；
+  5. 遵守宪法 Don't 铁律：不堆叠 `backdrop-filter`/大面积高斯模糊、不用大数字模板/侧边色条/渐变文字、shadcn/现有原版零改动（定制靠新建）。
+- **治理**：新建组合件先落本地，接口稳定后由 MAN-321（SCR-7）上提 `@nerv-iip/ui` 并补 design-system 文档站 demo（`/components/screen/`）。
 
 ### 1.5 诚实标注约定
 
