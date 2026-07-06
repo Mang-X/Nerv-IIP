@@ -963,6 +963,36 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task MasterData_disable_rejects_device_asset_supplier_and_parent_references()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.BusinessPartners.Add(BusinessPartner.Create("org-001", "env-dev", "SUP-ACME", "supplier", "ACME Supplier"));
+        var supplierDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-SUP", "Supplier Device", "LINE-1", "WC-1")
+            .WithLedger(null, null, string.Empty, null, "SUP-ACME", string.Empty, string.Empty, "LINE-1", string.Empty, null, null);
+        var parentDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-PARENT", "Parent Device", "LINE-1", "WC-1");
+        dbContext.DeviceAssets.AddRange(supplierDevice, parentDevice);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var childDevice = DeviceAsset.Register("org-001", "env-dev", "DEV-CHILD", "Child Device", "LINE-1", "WC-1")
+            .WithLedger(null, null, string.Empty, null, string.Empty, string.Empty, string.Empty, "LINE-1", string.Empty, parentDevice.Id.ToString(), null);
+        dbContext.DeviceAssets.Add(childDevice);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new SetMasterDataResourceEnabledCommandHandler(dbContext);
+        var supplierReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "business-partner", "SUP-ACME", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active device asset", supplierReference.Message, StringComparison.OrdinalIgnoreCase);
+
+        var parentReference = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new SetMasterDataResourceEnabledCommand("org-001", "env-dev", "device-asset", "DEV-PARENT", false, Reason: "retired"),
+            CancellationToken.None));
+        Assert.Contains("active child device asset", parentReference.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ProductEngineering_reference_checker_converts_downstream_http_failure_to_known_exception()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))

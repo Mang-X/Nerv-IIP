@@ -692,6 +692,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(conversion);
             case "business-partner":
                 var partner = await FindAsync(dbContext.BusinessPartners, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureBusinessPartnerIsNotReferencedAsync(request, cancellationToken);
+                }
                 if (request.Enabled) partner.Enable(reason); else partner.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(partner);
             case "site":
@@ -732,6 +736,10 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 return UpdateMasterDataResourceCommandHandler.Detail(workCenter);
             case "device-asset":
                 var device = await FindAsync(dbContext.DeviceAssets, request, cancellationToken);
+                if (!request.Enabled)
+                {
+                    await EnsureDeviceAssetIsNotReferencedAsync(request, device.Id.ToString(), cancellationToken);
+                }
                 if (request.Enabled) device.Enable(reason); else device.Disable(reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(device);
             case "reference-data":
@@ -834,6 +842,34 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 ? "unknown ProductEngineering reference"
                 : string.Join(", ", downstreamUsage.References.Take(5));
             throw new KnownException($"Work center '{request.Code}' cannot be disabled because ProductEngineering references it: {references}.");
+        }
+    }
+
+    private async Task EnsureBusinessPartnerIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, CancellationToken cancellationToken)
+    {
+        var referencedByDevice = await dbContext.DeviceAssets.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            x.SupplierPartnerCode == request.Code,
+            cancellationToken);
+        if (referencedByDevice)
+        {
+            throw new KnownException($"Business partner '{request.Code}' cannot be disabled because it is referenced by active device asset records.");
+        }
+    }
+
+    private async Task EnsureDeviceAssetIsNotReferencedAsync(SetMasterDataResourceEnabledCommand request, string publicId, CancellationToken cancellationToken)
+    {
+        var referencedByChildDevice = await dbContext.DeviceAssets.AnyAsync(x =>
+            x.OrganizationId == request.OrganizationId &&
+            x.EnvironmentId == request.EnvironmentId &&
+            !x.Disabled &&
+            (x.ParentDeviceId == request.Code || x.ParentDeviceId == publicId),
+            cancellationToken);
+        if (referencedByChildDevice)
+        {
+            throw new KnownException($"Device asset '{request.Code}' cannot be disabled because it is referenced by active child device asset records.");
         }
     }
 }
