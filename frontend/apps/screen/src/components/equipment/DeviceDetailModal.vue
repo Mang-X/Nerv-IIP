@@ -1,20 +1,41 @@
 <script setup lang="ts">
 import { Sparkline, StatusLight, StatusTag } from '@nerv-iip/ui'
-import { X } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import type { DeviceDetail } from '@/data/contracts/equipment'
+import {
+  Activity,
+  BatteryCharging,
+  Droplets,
+  Gauge,
+  Thermometer,
+  Timer,
+  Waves,
+  Wind,
+  Wrench,
+  X,
+  Zap,
+} from 'lucide-vue-next'
+import { type Component, computed, onBeforeUnmount, onMounted } from 'vue'
+import type { DeviceDetail, ParamKind } from '@/data/contracts/equipment'
+import { fetchDeviceDetail } from '@/data/fetchers/equipment'
+import { useScreenData } from '@/screen-kit'
 
 /**
- * 设备详情弹窗（点击全景墙设备格触发）：基础信息 / 关键参数可视化（近 12 点趋势，
- * 断线虚线占位）/ 保养维修档案（维修单·PM·点检·单机 MTBF/MTTR）。
- * Teleport 到 body（浮层契约），ESC / 遮罩点击关闭；进出仅淡入缩放，无回弹。
+ * 设备详情弹窗（点击全景墙设备格触发）：自取数并 3s 轮询（参数/趋势实时跳动）。
+ * 基础信息 / 关键参数可视化（类型配色 + 图标 + 正常范围，断线虚线占位）/
+ * 保养维修档案。Teleport body，ESC / 遮罩关闭；淡入无回弹。
  */
 const props = defineProps<{
-  detail: DeviceDetail | null
-  loading: boolean
+  deviceId: string
+  factoryId: string
+  workshopIds: string[] | 'all'
 }>()
 
 const emit = defineEmits<{ close: [] }>()
+
+// 详情刷新频率：3s（比全景 5s 快，比格上参数 2s 稳）
+const { data: detail } = useScreenData<DeviceDetail | null>(
+  () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds),
+  { intervalMs: 3000 },
+)
 
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') emit('close')
@@ -23,12 +44,12 @@ onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 const tone = computed(() => {
-  const s = props.detail?.device.state
+  const s = detail.value?.device.state
   return s === 'alarm' ? 'alarm' : s === 'idle' || s === 'down' ? 'idle' : 'run'
 })
 
 const infoRows = computed(() => {
-  const d = props.detail
+  const d = detail.value
   if (!d) return []
   return [
     { label: '资产编码', value: d.device.code },
@@ -41,6 +62,37 @@ const infoRows = computed(() => {
     ...(d.device.block ? [{ label: '阻塞原因', value: d.device.block, bad: true }] : []),
   ]
 })
+
+// 参数类型 → 颜色 / 图标（图表按类型着色，2026-07 生产走查）
+const KIND_COLOR: Record<ParamKind, string> = {
+  temp: 'var(--sb-amber)',
+  energy: 'var(--sb-amber)',
+  pressure: 'var(--sb-cyan)',
+  flow: 'var(--sb-cyan)',
+  torque: 'var(--sb-cyan)',
+  speed: 'var(--sb-green)',
+  level: 'var(--sb-green)',
+  cycle: 'var(--sb-green)',
+  current: 'var(--sb-indigo)',
+  vibration: 'var(--sb-indigo)',
+}
+const KIND_ICON: Record<ParamKind, Component> = {
+  temp: Thermometer,
+  pressure: Gauge,
+  speed: Wind,
+  current: Zap,
+  vibration: Activity,
+  flow: Droplets,
+  level: Waves,
+  cycle: Timer,
+  energy: BatteryCharging,
+  torque: Wrench,
+}
+function paramColor(kind: ParamKind, toneVal?: 'warn' | 'bad'): string {
+  if (toneVal === 'bad') return 'var(--sb-red)'
+  if (toneVal === 'warn') return 'var(--sb-amber)'
+  return KIND_COLOR[kind]
+}
 </script>
 
 <template>
@@ -57,9 +109,9 @@ const infoRows = computed(() => {
           </button>
         </header>
 
-        <div v-if="loading" class="ddm-loading">读取设备档案…</div>
+        <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
 
-        <div v-else-if="detail" class="ddm-body">
+        <div v-else class="ddm-body">
           <!-- 基础信息 -->
           <section class="ddm-col">
             <h4 class="ddm-st">基础信息</h4>
@@ -71,18 +123,27 @@ const infoRows = computed(() => {
             </dl>
           </section>
 
-          <!-- 参数可视化 -->
+          <!-- 参数可视化：类型配色 + 图标 + 正常范围 + 趋势 -->
           <section class="ddm-col ddm-col--params">
-            <h4 class="ddm-st">关键参数 · 近 12 点</h4>
+            <h4 class="ddm-st">关键参数 · 近 12 点 · 3s 刷新</h4>
             <div class="ddm-params">
               <div v-for="p in detail.params" :key="p.label" class="ddm-param" :class="p.tone">
                 <div class="ddm-param-h">
+                  <component
+                    :is="KIND_ICON[p.kind]"
+                    :size="15"
+                    class="ddm-param-ic"
+                    :style="{ color: paramColor(p.kind, p.tone) }"
+                  />
                   <span class="ddm-param-l">{{ p.label }}</span>
-                  <b class="ddm-param-v" :class="p.tone">
+                  <span v-if="p.range !== '—'" class="ddm-param-r">正常 {{ p.range }}</span>
+                  <b class="ddm-param-v" :style="{ color: paramColor(p.kind, p.tone) }">
                     {{ p.value === null ? '—' : p.value }}<small v-if="p.value !== null">{{ p.unit }}</small>
                   </b>
                 </div>
-                <div class="ddm-spark"><Sparkline :data="p.spark" area /></div>
+                <div class="ddm-spark">
+                  <Sparkline :data="p.spark" area :color="paramColor(p.kind, p.tone)" />
+                </div>
               </div>
             </div>
             <p class="ddm-note">参数为演示数据流 · historian / 实时采集接入待 #570</p>
@@ -291,31 +352,37 @@ const infoRows = computed(() => {
 .ddm-param-h {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
   margin-bottom: 6px;
+}
+.ddm-param-ic {
+  align-self: center;
+  flex: none;
 }
 .ddm-param-l {
   font-size: 13px;
   color: var(--sb-muted);
+  white-space: nowrap;
+}
+.ddm-param-r {
+  font-size: 11px;
+  color: var(--sb-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ddm-param-v {
+  margin-left: auto;
   font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--sb-text);
+  white-space: nowrap;
 }
 .ddm-param-v small {
   font-size: 12px;
   font-weight: 500;
   color: var(--sb-muted);
   margin-left: 3px;
-}
-.ddm-param-v.warn {
-  color: var(--sb-amber);
-}
-.ddm-param-v.bad {
-  color: var(--sb-red);
 }
 .ddm-spark {
   height: 52px;

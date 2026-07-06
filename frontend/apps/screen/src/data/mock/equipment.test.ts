@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildDeviceDetail, buildEquipmentOverview, chunkIds, DEVICE_BATCH_LIMIT } from './equipment'
+import {
+  buildDeviceDetail,
+  buildEquipmentOverview,
+  buildParamsTick,
+  chunkIds,
+  DEVICE_BATCH_LIMIT,
+} from './equipment'
 import { devicesByWorkshop, workshopsByFactory } from './masterdata'
 
 const ROUNDS = 15
@@ -47,11 +53,14 @@ describe('buildEquipmentOverview', () => {
     }
   })
 
-  it('F02：小样本 MTBF/MTTR 为 null（页面显「—」）', () => {
-    const s = buildEquipmentOverview('F02')
-    expect(s.devices.length).toBeLessThan(6)
-    expect(s.reliability.mtbfHours).toBeNull()
-    expect(s.reliability.mttrMinutes).toBeNull()
+  it('小样本（WS-MACH 收窄 <6 台）MTBF/MTTR 为 null；F02 全量样本足有值', () => {
+    const narrow = buildEquipmentOverview('F02', ['WS-MACH'])
+    expect(narrow.devices.length).toBeLessThan(6)
+    expect(narrow.reliability.mtbfHours).toBeNull()
+    expect(narrow.reliability.mttrMinutes).toBeNull()
+    const full = buildEquipmentOverview('F02')
+    expect(full.devices.length).toBeGreaterThanOrEqual(6)
+    expect(full.reliability.mtbfHours).not.toBeNull()
   })
 
   it('scope 收窄：只聚合白名单车间设备', () => {
@@ -60,15 +69,27 @@ describe('buildEquipmentOverview', () => {
     for (const d of s.devices) expect(['电芯线', 'PACK 线']).toContain(d.lineName)
   })
 
-  it('格上关键参数：每台 ≥2；断线全「—」；报警设备存在超限红参数', () => {
+  it('格上关键参数：每台 ≥2 且带类型；断线全「—」；报警设备存在超限红参数', () => {
     const s = buildEquipmentOverview('F01')
-    for (const d of s.devices) expect(d.params.length).toBeGreaterThanOrEqual(2)
+    for (const d of s.devices) {
+      expect(d.params.length).toBeGreaterThanOrEqual(2)
+      for (const p of d.params) expect(p.kind).toBeTruthy()
+    }
     const off = s.devices.find((d) => d.state === 'offline')
     expect(off).toBeDefined()
     expect(off!.params.every((p) => p.value === '—')).toBe(true)
     const alarm = s.devices.find((d) => d.state === 'alarm')
     expect(alarm).toBeDefined()
     expect(alarm!.params.some((p) => p.tone === 'bad')).toBe(true)
+  })
+
+  it('参数快刷 tick：键覆盖全部设备', () => {
+    const s = buildEquipmentOverview('F01')
+    const tick = buildParamsTick('F01')
+    for (const d of s.devices) {
+      expect(tick[d.id]).toBeDefined()
+      expect(tick[d.id].length).toBeGreaterThanOrEqual(2)
+    }
   })
 })
 

@@ -74,15 +74,29 @@ export const WORK_CENTERS: WorkCenterRef[] = LINES.map((l) => ({
   lineId: l.id,
 }))
 
-// 每产线 2 台设备
-const DEVICE_KINDS = ['主机', '辅机']
-export const DEVICES: DeviceRef[] = LINES.flatMap((l, li) =>
-  DEVICE_KINDS.map((kind, ki) => {
-    const n = li * DEVICE_KINDS.length + ki + 1
+// 每产线真实设备清单（数量/命名贴近真实产线，共 56 台；2026-07 生产走查：
+// 原「每线 2 台主/辅机」过于理想化，缺少大量设备场景）
+const LINE_DEVICES: Record<string, string[]> = {
+  'LN-STAMP-1': ['800T 压机 1#', '800T 压机 2#', '送料机器人', '模具清洗机', '板料对中台'],
+  'LN-STAMP-2': ['1000T 压机', '600T 压机', '上料机械手', '端拾器库'],
+  'LN-WELD-1': ['焊接机器人 R01', '焊接机器人 R02', '焊接机器人 R03', '点焊控制柜', '输送滚床 1#', '涂胶机'],
+  'LN-WELD-2': ['焊接机器人 R11', '焊接机器人 R12', '激光焊接站', '夹具切换台', '输送滚床 2#'],
+  'LN-PAINT-1': ['前处理线体', '电泳槽', '喷涂机器人 P01', '喷涂机器人 P02', '流平烘干炉', '空调送风机组'],
+  'LN-ASSY-1': ['拧紧工作站 1#', '拧紧工作站 2#', '油液加注机', '合装举升机', 'AGV 牵引车 01', '下线检测台'],
+  'LN-ASSY-2': ['拧紧工作站 3#', '内饰装配线体', 'AGV 牵引车 02', '风挡涂胶机', '四轮定位仪'],
+  'LN-BAT-1': ['卷绕机 1#', '卷绕机 2#', '注液机', '化成柜 A', '化成柜 B', '分容柜'],
+  'LN-BAT-2': ['模组堆叠机', 'PACK 线体', '气密检测台', 'EOL 测试柜'],
+  'LN-INJ-1': ['注塑机 1600T', '注塑机 800T', '取件机械手', '原料干燥机'],
+  'LN-MACH-1': ['加工中心 M01', '加工中心 M02', '车铣复合 M03', '零件清洗机', '三坐标测量机'],
+}
+let deviceSeq = 0
+export const DEVICES: DeviceRef[] = LINES.flatMap((l) =>
+  (LINE_DEVICES[l.id] ?? []).map((name) => {
+    deviceSeq += 1
     return {
-      id: `DEV-${String(n).padStart(3, '0')}`,
-      code: `DEV-${String(n).padStart(3, '0')}`,
-      name: `${l.name}${kind}`,
+      id: `DEV-${String(deviceSeq).padStart(3, '0')}`,
+      code: `DEV-${String(deviceSeq).padStart(3, '0')}`,
+      name,
       workshopId: l.workshopId,
       lineId: l.id,
       workCenterId: `WC-${l.code.replace('LN-', '')}`,

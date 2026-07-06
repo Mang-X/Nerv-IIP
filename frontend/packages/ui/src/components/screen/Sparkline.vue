@@ -13,10 +13,13 @@ const props = withDefaults(
     data?: number[]
     /** Fill the area under the line with a fading gradient. */
     area?: boolean
+    /** Line color (any CSS color) — 按参数类型着色（2026-07 生产走查）；默认数据青。 */
+    color?: string
   }>(),
   {
     area: false,
     data: () => [8, 11, 9, 14, 12, 17, 15, 21, 19, 24, 22, 28],
+    color: undefined,
   },
 )
 
@@ -50,11 +53,12 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
     :viewBox="`0 0 ${W} ${H}`"
     preserveAspectRatio="none"
     aria-hidden="true"
+    :style="color ? { '--sb-sl-color': color } : undefined"
   >
     <defs>
       <linearGradient :id="`${uid}-fill`" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="var(--sb-cyan)" stop-opacity=".16" />
-        <stop offset="1" stop-color="var(--sb-cyan)" stop-opacity="0" />
+        <stop offset="0" :stop-color="color ?? 'var(--sb-cyan)'" stop-opacity=".16" />
+        <stop offset="1" :stop-color="color ?? 'var(--sb-cyan)'" stop-opacity="0" />
       </linearGradient>
     </defs>
     <path v-if="area" :d="geom.area" :fill="`url(#${uid}-fill)`" />
@@ -62,7 +66,7 @@ const uid = `sl-${Math.random().toString(36).slice(2, 8)}`
       class="sb-sl-line"
       :d="geom.line"
       fill="none"
-      stroke="var(--sb-cyan)"
+      stroke="var(--sb-sl-color, var(--sb-cyan))"
       stroke-width="1.5"
       stroke-linecap="round"
       stroke-linejoin="round"

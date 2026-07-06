@@ -4,16 +4,28 @@ import { computed, ref, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import DeviceStatusWall from '@/components/equipment/DeviceStatusWall.vue'
-import type { DeviceCell, DeviceDetail, EquipmentOverview } from '@/data/contracts/equipment'
-import { fetchDeviceDetail, fetchEquipmentOverview } from '@/data/fetchers/equipment'
+import type { DeviceCell, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
+import { fetchDeviceParamsTick, fetchEquipmentOverview } from '@/data/fetchers/equipment'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import { useScreenData } from '@/screen-kit'
 
+// 刷新频率分层：格上参数 2s 快刷 · 全景/计数/流 5s · 详情弹窗 3s（弹窗内部）
 const scope = useAccessScope()
 const { data: ov, refresh } = useScreenData<EquipmentOverview>(
   () => fetchEquipmentOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 5000 },
 )
+const { data: paramsTick } = useScreenData<DeviceParamsTick>(
+  () => fetchDeviceParamsTick(scope.currentFactoryId, scope.persona.workshopIds),
+  { intervalMs: 2000 },
+)
+/** 全景设备 + 高频参数合流：参数以 2s tick 为准，状态/计数仍 5s。 */
+const devicesLive = computed<DeviceCell[]>(() => {
+  const list = ov.value?.devices ?? []
+  const tick = paramsTick.value
+  if (!tick) return list
+  return list.map((d) => (tick[d.id] ? { ...d, params: tick[d.id] } : d))
+})
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   async () => {
@@ -42,21 +54,13 @@ const VIEW_OPTIONS = [
   { label: '按产线', value: 'line' },
 ]
 
-// —— 设备详情弹窗（点击设备格按需取数）——
-const detailOpen = ref(false)
-const detailLoading = ref(false)
-const detail = ref<DeviceDetail | null>(null)
-async function openDevice(d: DeviceCell) {
-  detailOpen.value = true
-  detailLoading.value = true
-  detail.value = null
-  detail.value = await fetchDeviceDetail(d.id, scope.currentFactoryId, scope.persona.workshopIds)
-  detailLoading.value = false
-  if (!detail.value) detailOpen.value = false
+// —— 设备详情弹窗（点击设备格打开；弹窗内部 3s 轮询取数）——
+const selectedId = ref<string | null>(null)
+function openDevice(d: DeviceCell) {
+  selectedId.value = d.id
 }
 function closeDetail() {
-  detailOpen.value = false
-  detail.value = null
+  selectedId.value = null
 }
 
 // —— 可靠性四格（MTBF/MTTR 无样本 null → 「—」）——
@@ -85,7 +89,7 @@ const relCells = computed(() => {
               <span class="sec-rule" aria-hidden="true" />
               <ScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
             </div>
-            <DeviceStatusWall :devices="ov.devices" :counts="ov.counts" :view="view" @select="openDevice" />
+            <DeviceStatusWall :devices="devicesLive" :counts="ov.counts" :view="view" @select="openDevice" />
           </section>
 
           <AlarmTable title="未恢复报警" :rows="ov.alarms" more="" class="alarms" />
@@ -153,7 +157,13 @@ const relCells = computed(() => {
     </div>
     <div v-else class="eq-loading">连接数据…</div>
 
-    <DeviceDetailModal v-if="detailOpen" :detail="detail" :loading="detailLoading" @close="closeDetail" />
+    <DeviceDetailModal
+      v-if="selectedId"
+      :device-id="selectedId"
+      :factory-id="scope.currentFactoryId"
+      :workshop-ids="scope.persona.workshopIds"
+      @close="closeDetail"
+    />
   </ScreenLayout>
 </template>
 

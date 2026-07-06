@@ -5,11 +5,25 @@
 /** 一期与连接器约定的标准状态词表（后端 state 为自由小写字符串） */
 export type DeviceState = 'run' | 'idle' | 'down' | 'alarm' | 'offline'
 
+/** 参数类型 —— 驱动图表配色与图标（温度/压力/转速/电流/振动/流量/液位/节拍/能耗/扭矩） */
+export type ParamKind =
+  | 'temp'
+  | 'pressure'
+  | 'speed'
+  | 'current'
+  | 'vibration'
+  | 'flow'
+  | 'level'
+  | 'cycle'
+  | 'energy'
+  | 'torque'
+
 /** 格上简版关键参数（🟠 演示数据流，historian/实时采集接入待 #570） */
 export interface DeviceParamBrief {
   label: string
   /** 已带单位的展示值；断线设备为「—」 */
   value: string
+  kind: ParamKind
   tone?: 'warn' | 'bad'
 }
 
@@ -107,9 +121,15 @@ export interface DeviceParamSeries {
   /** 数值；断线为 null，页面显「—」 */
   value: number | null
   unit: string
+  kind: ParamKind
+  /** 正常范围文字，如「≤ 75℃」「120–140Nm」 */
+  range: string
   spark: number[]
   tone?: 'warn' | 'bad'
 }
+
+/** 参数快刷 tick：deviceId → 格上简版参数（高频轮询，只刷参数不刷状态） */
+export type DeviceParamsTick = Record<string, DeviceParamBrief[]>
 
 export interface DeviceDetail {
   device: DeviceCell
