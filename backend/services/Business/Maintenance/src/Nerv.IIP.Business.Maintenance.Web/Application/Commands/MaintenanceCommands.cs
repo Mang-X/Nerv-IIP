@@ -26,6 +26,21 @@ public sealed class MaintenanceCompletionOptions
     public bool RequireActualLaborMinutes { get; set; }
 }
 
+internal static class MaintenanceNumericValidation
+{
+    private const decimal MaxNumeric18Scale6 = 999_999_999_999.999999m;
+
+    public static bool FitsNumeric18Scale6(decimal value)
+    {
+        return decimal.Abs(value) <= MaxNumeric18Scale6;
+    }
+
+    public static bool FitsNullableNumeric18Scale6(decimal? value)
+    {
+        return value is null || FitsNumeric18Scale6(value.Value);
+    }
+}
+
 public sealed record CreateMaintenanceWorkOrderCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -129,13 +144,24 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
         RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DowntimeMinutes).GreaterThan(0);
         RuleFor(x => x.ActualLaborMinutes).GreaterThan(0).When(x => x.ActualLaborMinutes is not null);
-        RuleFor(x => x.SparePartCostAmount).GreaterThanOrEqualTo(0).When(x => x.SparePartCostAmount is not null);
-        RuleFor(x => x.ExternalServiceCostAmount).GreaterThanOrEqualTo(0).When(x => x.ExternalServiceCostAmount is not null);
+        RuleFor(x => x.SparePartCostAmount)
+            .GreaterThanOrEqualTo(0)
+            .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+            .WithMessage("Spare part cost amount must fit numeric(18,6).")
+            .When(x => x.SparePartCostAmount is not null);
+        RuleFor(x => x.ExternalServiceCostAmount)
+            .GreaterThanOrEqualTo(0)
+            .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+            .WithMessage("External service cost amount must fit numeric(18,6).")
+            .When(x => x.ExternalServiceCostAmount is not null);
         RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
         RuleForEach(x => x.SpareParts).ChildRules(x =>
         {
             x.RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
-            x.RuleFor(p => p.Quantity).GreaterThan(0);
+            x.RuleFor(p => p.Quantity)
+                .GreaterThan(0)
+                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+                .WithMessage("Spare part quantity must fit numeric(18,6).");
             x.RuleFor(p => p.UomCode).MaximumLength(50);
         });
     }
@@ -510,7 +536,16 @@ public sealed class RecordMaintenanceInspectionCommandValidator : AbstractValida
         RuleForEach(x => x.Measurements).ChildRules(x =>
         {
             x.RuleFor(m => m.CharacteristicCode).NotEmpty().MaximumLength(100);
+            x.RuleFor(m => m.MeasuredValue)
+                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+                .WithMessage("Measured value must fit numeric(18,6).");
             x.RuleFor(m => m.UomCode).NotEmpty().MaximumLength(50);
+            x.RuleFor(m => m.LowerSpecLimit)
+                .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+                .WithMessage("Lower spec limit must fit numeric(18,6).");
+            x.RuleFor(m => m.UpperSpecLimit)
+                .Must(MaintenanceNumericValidation.FitsNullableNumeric18Scale6)
+                .WithMessage("Upper spec limit must fit numeric(18,6).");
             x.RuleFor(m => m).Must(m => m.LowerSpecLimit is null || m.UpperSpecLimit is null || m.LowerSpecLimit <= m.UpperSpecLimit)
                 .WithMessage("Lower spec limit cannot be greater than upper spec limit.");
         });

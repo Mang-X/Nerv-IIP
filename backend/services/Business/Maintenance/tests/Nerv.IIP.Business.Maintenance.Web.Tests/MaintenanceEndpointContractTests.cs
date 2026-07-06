@@ -56,6 +56,54 @@ public sealed class MaintenanceEndpointContractTests
     }
 
     [Fact]
+    public void Maintenance_command_validators_reject_decimal_values_outside_database_precision()
+    {
+        const decimal maxNumeric18Scale6 = 999_999_999_999.999999m;
+        const decimal tooLargeForNumeric18Scale6 = 1_000_000_000_000m;
+
+        var validInspection = new RecordMaintenanceInspectionCommandValidator().Validate(
+            new RecordMaintenanceInspectionCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                "inspector-001",
+                "passed",
+                DateTimeOffset.UtcNow,
+                [new MaintenanceInspectionMeasurementInput("bearing-temperature", maxNumeric18Scale6, "C", -maxNumeric18Scale6, maxNumeric18Scale6)]));
+
+        var invalidInspection = new RecordMaintenanceInspectionCommandValidator().Validate(
+            new RecordMaintenanceInspectionCommand(
+                "org-001",
+                "env-dev",
+                new MaintenancePlanId(Guid.CreateVersion7()),
+                null,
+                "inspector-001",
+                "passed",
+                DateTimeOffset.UtcNow,
+                [new MaintenanceInspectionMeasurementInput("bearing-temperature", tooLargeForNumeric18Scale6, "C", -tooLargeForNumeric18Scale6, tooLargeForNumeric18Scale6)]));
+
+        var invalidCompletion = new CompleteMaintenanceWorkOrderCommandValidator().Validate(
+            new CompleteMaintenanceWorkOrderCommand(
+                new MaintenanceWorkOrderId(Guid.CreateVersion7()),
+                "fixed",
+                "equipment-failure",
+                10,
+                [new MaintenanceSparePartInput("SKU-BEARING", tooLargeForNumeric18Scale6, "EA")],
+                SparePartCostAmount: tooLargeForNumeric18Scale6,
+                ExternalServiceCostAmount: tooLargeForNumeric18Scale6,
+                CostCurrencyCode: "CNY"));
+
+        Assert.True(validInspection.IsValid);
+        Assert.Contains(invalidInspection.Errors, x => x.ErrorMessage == "Measured value must fit numeric(18,6).");
+        Assert.Contains(invalidInspection.Errors, x => x.ErrorMessage == "Lower spec limit must fit numeric(18,6).");
+        Assert.Contains(invalidInspection.Errors, x => x.ErrorMessage == "Upper spec limit must fit numeric(18,6).");
+        Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part cost amount must fit numeric(18,6).");
+        Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "External service cost amount must fit numeric(18,6).");
+        Assert.Contains(invalidCompletion.Errors, x => x.ErrorMessage == "Spare part quantity must fit numeric(18,6).");
+    }
+
+    [Fact]
     public async Task Maintenance_work_order_and_plan_lists_return_skip_take_and_total()
     {
         await using var dbContext = CreateDbContext();
