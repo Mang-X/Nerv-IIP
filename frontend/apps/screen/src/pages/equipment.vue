@@ -136,13 +136,14 @@ const relCells = computed(() => {
           </ScreenPanel>
 
           <ScreenPanel title="维修工单进度" class="repairs">
-            <div class="rp-list">
+            <div class="rp-list sb-scroll">
               <div v-for="r in ov.repairs" :key="r.wo" class="rp-row">
                 <div class="rp-top">
                   <span class="rp-wo">{{ r.wo }}</span>
                   <span class="rp-dev">{{ r.device }} · {{ r.issue }}</span>
                   <StatusTag v-if="r.overdue" tone="red" label="超时" />
                   <StatusTag v-else-if="r.awaitingConfirm" tone="cyan" label="待确认" />
+                  <StatusTag v-else-if="r.stage === '待备件'" tone="amber" label="待备件" />
                   <span v-else class="rp-stage">{{ r.stage }}</span>
                 </div>
                 <div class="rp-bar-row">
@@ -159,18 +160,20 @@ const relCells = computed(() => {
           </ScreenPanel>
 
           <ScreenPanel title="今日保养与点检" class="pm">
-            <div class="pm-list">
-              <div v-for="t in ov.pmTasks" :key="t.device + t.task" class="pm-row">
-                <span class="pm-dev">{{ t.device }}</span>
-                <span class="pm-task">{{ t.task }}</span>
-                <span class="pm-due" :class="t.state">{{ t.due }}</span>
+            <div class="pm-scroll sb-scroll">
+              <div class="pm-list">
+                <div v-for="t in ov.pmTasks" :key="t.device + t.task" class="pm-row">
+                  <span class="pm-dev">{{ t.device }}</span>
+                  <span class="pm-task">{{ t.task }}</span>
+                  <span class="pm-due" :class="t.state">{{ t.due }}</span>
+                </div>
               </div>
-            </div>
-            <div class="insp-list">
-              <div v-for="i in ov.inspections" :key="i.time + i.device" class="insp-row">
-                <span class="insp-time">{{ i.time }}</span>
-                <span class="insp-txt">{{ i.device }} · {{ i.item }} · {{ i.by }}</span>
-                <span class="insp-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
+              <div class="insp-list">
+                <div v-for="i in ov.inspections" :key="i.time + i.device" class="insp-row">
+                  <span class="insp-time">{{ i.time }}</span>
+                  <span class="insp-txt">{{ i.device }} · {{ i.item }} · {{ i.by }}</span>
+                  <span class="insp-res" :class="{ bad: i.result === '异常' }">{{ i.result }}</span>
+                </div>
               </div>
             </div>
             <p class="pm-note">停机帕累托 · 备件库存联动 · PM 达成率 / 点检完成率 · 待 #570</p>
@@ -299,9 +302,10 @@ const relCells = computed(() => {
 .rp-list {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: space-evenly;
+  padding-right: 4px;
 }
 .rp-row + .rp-row {
   border-top: 1px solid var(--sb-divider);
@@ -406,12 +410,15 @@ const relCells = computed(() => {
 .pm-due.done {
   color: var(--sb-green);
 }
-.insp-list {
+.pm-scroll {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.insp-list {
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
   margin-top: 4px;
 }
 .insp-row {

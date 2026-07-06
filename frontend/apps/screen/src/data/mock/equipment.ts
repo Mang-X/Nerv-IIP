@@ -16,7 +16,7 @@ import type {
   RepairOrder,
   StateCounts,
 } from '@/data/contracts/equipment'
-import { clock, jitter } from './fixtures'
+import { clock, jitter, seq } from './fixtures'
 import { devicesByWorkshop, LINES, WORK_CENTERS, WORKSHOPS, workshopsByFactory } from './masterdata'
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -238,8 +238,30 @@ export function buildEquipmentOverview(
   const counts: StateCounts = { run: 0, idle: 0, down: 0, alarm: 0, offline: 0 }
   for (const d of devices) counts[d.state]++
 
-  // —— 未恢复报警表（级别·未恢复时长·已触发工单 ✅ 闭环）——
+  // —— 可见性过滤基础：scope 收窄后各档案面板同步收窄 ——
+  const visibleWorkshopIds = new Set(workshops.map((w) => w.id))
+  const visibleLineNames = new Set(
+    LINES.filter((l) => visibleWorkshopIds.has(l.workshopId)).map((l) => l.name),
+  )
+  const visibleDeviceNames = new Set(rawDevices.map((d) => d.name))
+
+  // —— 未恢复报警表（级别·未恢复时长·已触发工单 ✅ 闭环；叙事 + 常规池）——
   const hasAlarm = counts.alarm > 0
+  const ALARM_POOL: { line: string; level: 'sev' | 'gen'; name: string; minsAgo: number; status: string }[] = [
+    { line: '焊装二线', level: 'sev', name: '激光焊接站 保护镜片污染', minsAgo: 96, status: `维修中 ${clamp(jitter(64, 10), 40, 90)} min` },
+    { line: '涂装线', level: 'gen', name: '流平烘干炉 烘房温度波动', minsAgo: 82, status: `观察中 ${clamp(jitter(12, 5), 5, 25)} min` },
+    { line: '焊装一线', level: 'gen', name: '焊接机器人 R02 伺服过载预警', minsAgo: 108, status: '已确认 · 待处理' },
+    { line: '冲压二线', level: 'gen', name: '1000T 压机 模具寿命预警', minsAgo: 122, status: '计划换模' },
+    { line: '电芯线', level: 'gen', name: '注液机 注液量偏差预警', minsAgo: 137, status: `观察中 ${clamp(jitter(30, 8), 15, 50)} min` },
+    { line: '总装二线', level: 'gen', name: 'AGV 牵引车 02 电量低于阈值', minsAgo: 150, status: '已恢复' },
+    { line: '涂装线', level: 'gen', name: '空调送风机组 过滤网压差高', minsAgo: 166, status: '待保养' },
+    { line: '冲压一线', level: 'gen', name: '送料机器人 气源压力波动', minsAgo: 184, status: '已恢复' },
+    { line: '总装一线', level: 'gen', name: '下线检测台 相机标定漂移', minsAgo: 201, status: '待校准' },
+    { line: '电芯线', level: 'gen', name: '化成柜 A 温度均匀性偏差', minsAgo: 218, status: `观察中 ${clamp(jitter(40, 10), 20, 60)} min` },
+    { line: 'PACK 线', level: 'gen', name: '气密检测台 泄漏率临界', minsAgo: 232, status: '复测中' },
+    { line: '机加线', level: 'gen', name: '加工中心 M01 刀具寿命预警', minsAgo: 240, status: '计划换刀' },
+    { line: '注塑一线', level: 'gen', name: '注塑机 1600T 料温偏高', minsAgo: 252, status: `观察中 ${clamp(jitter(18, 6), 8, 30)} min` },
+  ]
   const alarms: OpenAlarmRow[] = [
     ...(hasAlarm
       ? [
@@ -265,26 +287,30 @@ export function buildEquipmentOverview(
           },
         ]
       : []),
-    {
-      time: clock(jitter(64, 10)),
-      line: workshops[0] ? lineNameOf(devicesByWorkshop(workshops[0].id)[0]?.lineId ?? '') : '冲压一线',
-      level: 'gen',
-      name: '润滑油位低',
-      wo: 'WO-1917',
-      status: '已恢复待确认',
-    },
-    {
-      time: clock(jitter(80, 10)),
-      line: '涂装线',
-      level: 'gen',
-      name: '烘房温度波动',
-      wo: 'WO-1921',
-      status: `观察中 ${clamp(jitter(12, 5), 5, 25)} min`,
-    },
+    ...(visibleLineNames.has('冲压一线')
+      ? [
+          {
+            time: clock(jitter(64, 10)),
+            line: '冲压一线',
+            level: 'gen' as const,
+            name: '800T 压机 1# 润滑油位低',
+            wo: 'WO-1917',
+            status: '已恢复待确认',
+          },
+        ]
+      : []),
+    ...ALARM_POOL.filter((a) => visibleLineNames.has(a.line)).map((a, i) => ({
+      time: clock(a.minsAgo + jitter(2, 3)),
+      line: a.line,
+      level: a.level,
+      name: a.name,
+      wo: seq('WO', 1921 - i),
+      status: a.status,
+    })),
   ]
 
-  // —— 维修工单进度（含超时 🟡 与已恢复待确认 ✅）——
-  const repairs: RepairOrder[] = [
+  // —— 维修工单进度（含超时 🟡 / 已恢复待确认 ✅ / 待备件；按可见设备过滤）——
+  const REPAIR_POOL: RepairOrder[] = [
     {
       wo: 'WO-1934',
       device: '卷绕机 1#',
@@ -321,7 +347,35 @@ export function buildEquipmentOverview(
       overdue: false,
       awaitingConfirm: false,
     },
+    {
+      wo: 'WO-1907',
+      device: '焊接机器人 R02',
+      issue: '伺服电机异响排查',
+      progress: clamp(jitter(45, 8), 30, 65),
+      stage: '维修中',
+      overdue: false,
+      awaitingConfirm: false,
+    },
+    {
+      wo: 'WO-1903',
+      device: '空调送风机组',
+      issue: '送风机轴承更换',
+      progress: clamp(jitter(30, 6), 18, 45),
+      stage: '待备件',
+      overdue: false,
+      awaitingConfirm: false,
+    },
+    {
+      wo: 'WO-1899',
+      device: '加工中心 M01',
+      issue: '主轴拉刀力检测',
+      progress: clamp(jitter(72, 6), 55, 90),
+      stage: '维修中',
+      overdue: false,
+      awaitingConfirm: false,
+    },
   ]
+  const repairs = REPAIR_POOL.filter((r) => visibleDeviceNames.has(r.device))
 
   // —— 可靠性：小样本工厂（<6 台）MTBF/MTTR 无样本 → null，页面显「—」 ——
   const smallSample = devices.length < 6
@@ -333,18 +387,29 @@ export function buildEquipmentOverview(
     repairs: smallSample ? 0 : 2,
   }
 
-  const pmTasks: PmTask[] = [
+  const PM_POOL: PmTask[] = [
     { device: '800T 压机 1#', task: '月度精度校准', due: '今日 16:00', state: 'due' },
+    { device: '焊接机器人 R03', task: '减速机润滑脂补充', due: '今日 20:00', state: 'due' },
     { device: '空调送风机组', task: '过滤网更换', due: '超期 1 天', state: 'overdue' },
+    { device: '电泳槽', task: '槽液过滤器巡检', due: '超期 2 天', state: 'overdue' },
     { device: '拧紧工作站 3#', task: '导轨润滑', due: '已完成 11:20', state: 'done' },
+    { device: '三坐标测量机', task: '精度验证', due: '已完成 09:40', state: 'done' },
   ]
+  const pmTasks = PM_POOL.filter((t) => visibleDeviceNames.has(t.device))
 
-  const inspections: InspectionRow[] = [
-    { time: clock(jitter(30, 8)), device: '卷绕机 2#', item: '气压/温度点检', by: '孙立军', result: '合格' },
-    { time: clock(jitter(55, 8)), device: '焊接机器人 R01', item: '焊接参数抽检', by: '王海涛', result: '合格' },
-    { time: clock(jitter(85, 8)), device: '合装举升机', item: '液压油位点检', by: '赵敏', result: '异常' },
-    { time: clock(jitter(110, 10)), device: '1000T 压机', item: '模具状态点检', by: '李国强', result: '合格' },
+  const INSPECTION_POOL: (Omit<InspectionRow, 'time'> & { minsAgo: number })[] = [
+    { minsAgo: 28, device: '卷绕机 2#', item: '气压/温度点检', by: '孙立军', result: '合格' },
+    { minsAgo: 52, device: '焊接机器人 R01', item: '焊接参数抽检', by: '王海涛', result: '合格' },
+    { minsAgo: 76, device: '喷涂机器人 P01', item: '雾化空气压力点检', by: '陈晓东', result: '合格' },
+    { minsAgo: 92, device: '合装举升机', item: '液压油位点检', by: '赵敏', result: '异常' },
+    { minsAgo: 118, device: '模组堆叠机', item: '真空吸盘点检', by: '孙立军', result: '合格' },
+    { minsAgo: 141, device: '1000T 压机', item: '模具状态点检', by: '李国强', result: '合格' },
+    { minsAgo: 168, device: 'EOL 测试柜', item: '绝缘测试仪校验', by: '孙立军', result: '合格' },
+    { minsAgo: 195, device: '注塑机 800T', item: '锁模力点检', by: '周文斌', result: '合格' },
   ]
+  const inspections: InspectionRow[] = INSPECTION_POOL.filter((i) =>
+    visibleDeviceNames.has(i.device),
+  ).map((i) => ({ time: clock(i.minsAgo + jitter(2, 3)), device: i.device, item: i.item, by: i.by, result: i.result }))
 
   return { factoryId, counts, devices, alarms, repairs, reliability, pmTasks, inspections }
 }

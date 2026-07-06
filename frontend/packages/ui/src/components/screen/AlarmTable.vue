@@ -41,7 +41,8 @@ withDefaults(
 <template>
   <ScreenPanel :title="title" class="sb-at">
     <template v-if="more" #extra><span class="sb-at-more">{{ more }}</span></template>
-    <table class="sb-at-tbl">
+    <div class="sb-at-body sb-scroll">
+      <table class="sb-at-tbl">
       <thead>
         <tr>
           <th scope="col">告警时间</th>
@@ -64,7 +65,8 @@ withDefaults(
           <td :class="{ 'sb-at-ok': a.status === '已恢复' }">{{ a.status }}</td>
         </tr>
       </tbody>
-    </table>
+      </table>
+    </div>
   </ScreenPanel>
 </template>
 
@@ -72,6 +74,17 @@ withDefaults(
 .sb-at-more {
   font-size: 13px;
   color: var(--sb-muted);
+}
+/* 行数多时面板内滚动（2026-07 生产走查：真实报警量 10+ 行），表头吸顶 */
+.sb-at {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.sb-at-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .sb-at-tbl {
   width: 100%;
@@ -86,6 +99,10 @@ withDefaults(
   text-align: left;
   padding: 11px 10px;
   border-bottom: 1px solid var(--sb-line-2);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(13, 21, 39, 0.96);
 }
 .sb-at-tbl td {
   padding: 12px 10px;

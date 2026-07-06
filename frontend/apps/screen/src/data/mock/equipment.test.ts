@@ -63,10 +63,23 @@ describe('buildEquipmentOverview', () => {
     expect(full.reliability.mtbfHours).not.toBeNull()
   })
 
-  it('scope 收窄：只聚合白名单车间设备', () => {
+  it('scope 收窄：设备/报警/维修/保养/点检各档案同步收窄', () => {
     const s = buildEquipmentOverview('F01', ['WS-BATTERY'])
     expect(s.devices).toHaveLength(devicesByWorkshop('WS-BATTERY').length)
+    const names = new Set(s.devices.map((d) => d.name))
     for (const d of s.devices) expect(['电芯线', 'PACK 线']).toContain(d.lineName)
+    for (const a of s.alarms) expect(['电芯线', 'PACK 线']).toContain(a.line)
+    for (const r of s.repairs) expect(names.has(r.device)).toBe(true)
+    for (const t of s.pmTasks) expect(names.has(t.device)).toBe(true)
+    for (const i of s.inspections) expect(names.has(i.device)).toBe(true)
+  })
+
+  it('档案数据量达到真实密度（F01：报警 ≥10、维修 ≥5、PM ≥4、点检 ≥6）', () => {
+    const s = buildEquipmentOverview('F01')
+    expect(s.alarms.length).toBeGreaterThanOrEqual(10)
+    expect(s.repairs.length).toBeGreaterThanOrEqual(5)
+    expect(s.pmTasks.length).toBeGreaterThanOrEqual(4)
+    expect(s.inspections.length).toBeGreaterThanOrEqual(6)
   })
 
   it('格上关键参数：每台 ≥2 且带类型；断线全「—」；报警设备存在超限红参数', () => {
