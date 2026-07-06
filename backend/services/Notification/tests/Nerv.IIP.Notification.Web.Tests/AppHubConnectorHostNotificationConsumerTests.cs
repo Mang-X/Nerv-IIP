@@ -71,6 +71,37 @@ public sealed class AppHubConnectorHostNotificationConsumerTests
         Assert.Equal(ConnectorHostRestoredIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
     }
 
+    [Fact]
+    public async Task Handle_connector_host_unreachable_with_empty_host_dead_letters_without_retry_exception()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory();
+
+        await HandleUnreachableAsync(
+            factory,
+            CreateUnreachableEvent("event-apphub-offline-empty-host", "apphub:connector-host-unreachable:org-001:env-001::demo-api-001:2026-07-06T01:06:00Z")
+                with
+                {
+                    Payload = new ConnectorHostUnreachablePayload(
+                        ConnectorHostId: "",
+                        InstanceKey: "demo-api-001",
+                        LastHeartbeatAtUtc: DateTimeOffset.Parse("2026-07-06T01:00:00Z"),
+                        DetectedAtUtc: DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+                        HeartbeatTimeoutSeconds: 300)
+                });
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetterStore = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            ConnectorHostUnreachableIntegrationEventHandlerForNotification.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+
+        Assert.Equal("invalid-payload", deadLetter.FailureCode);
+        Assert.Equal(0, await dbContext.NotificationIntents.CountAsync());
+        Assert.Equal(0, await dbContext.ProcessedIntegrationEvents.CountAsync());
+    }
+
     private static async Task HandleUnreachableAsync(
         NotificationConsumerWebApplicationFactory factory,
         ConnectorHostUnreachableIntegrationEvent integrationEvent)

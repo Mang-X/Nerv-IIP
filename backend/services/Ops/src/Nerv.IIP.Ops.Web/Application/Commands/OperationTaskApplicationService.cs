@@ -433,82 +433,27 @@ public sealed class EfOperationLeaseReaper(
 
 internal static class BuiltInOperationTemplates
 {
-    public static readonly OperationTemplateSnapshot LifecycleRestart = new(
-        "lifecycle.restart",
-        Enabled: true,
-        DefaultMaxAttempts: 3,
-        DefaultLeaseDurationSeconds: 300,
-        RequiresApproval: false);
-
-    public static readonly OperationTemplateSnapshot DeviceControlCommand = new(
-        "device.control.command",
-        Enabled: true,
-        DefaultMaxAttempts: 1,
-        DefaultLeaseDurationSeconds: 300,
-        RequiresApproval: true);
-
-    public static readonly OperationTemplateSnapshot ConfigReload = new(
-        "config.reload",
-        Enabled: true,
-        DefaultMaxAttempts: 3,
-        DefaultLeaseDurationSeconds: 300,
-        RequiresApproval: false);
-
     public static readonly IReadOnlyList<OperationTemplateResponse> Responses =
-    [
-        Response(
-            "opt-lifecycle-restart",
-            "lifecycle.restart",
-            "Lifecycle restart",
-            "low",
-            LifecycleRestart),
-        Response(
-            "opt-device-control-command",
-            "device.control.command",
-            "Device control command",
-            "critical",
-            DeviceControlCommand),
-        Response(
-            "opt-config-reload",
-            "config.reload",
-            "Configuration reload",
-            "medium",
-            ConfigReload)
-    ];
+        BuiltInOperationTemplateCatalog.Definitions.Select(ToResponse).ToArray();
 
     public static OperationTemplateSnapshot? Find(string operationCode)
     {
-        return string.IsNullOrWhiteSpace(operationCode)
-            ? null
-            : All.FirstOrDefault(x => string.Equals(x.OperationCode, operationCode.Trim(), StringComparison.Ordinal));
+        return BuiltInOperationTemplateCatalog.Find(operationCode)?.ToSnapshot();
     }
 
-    private static readonly IReadOnlyList<OperationTemplateSnapshot> All =
-    [
-        LifecycleRestart,
-        DeviceControlCommand,
-        ConfigReload
-    ];
-
-    private static OperationTemplateResponse Response(
-        string templateId,
-        string operationCode,
-        string displayName,
-        string riskLevel,
-        OperationTemplateSnapshot snapshot)
+    private static OperationTemplateResponse ToResponse(BuiltInOperationTemplateDefinition definition)
     {
-        var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
         return new OperationTemplateResponse(
-            templateId,
-            operationCode,
-            displayName,
-            "{}",
-            riskLevel,
-            snapshot.DefaultMaxAttempts,
-            snapshot.DefaultLeaseDurationSeconds,
-            snapshot.RequiresApproval,
-            snapshot.Enabled,
-            now,
-            now);
+            definition.OperationTemplateId,
+            definition.OperationCode,
+            definition.DisplayName,
+            definition.ParameterSchemaJson,
+            definition.RiskLevel,
+            definition.DefaultMaxAttempts,
+            definition.DefaultLeaseDurationSeconds,
+            definition.RequiresApproval,
+            definition.Enabled,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc,
+            BuiltInOperationTemplateCatalog.MetadataTimestampUtc);
     }
 }

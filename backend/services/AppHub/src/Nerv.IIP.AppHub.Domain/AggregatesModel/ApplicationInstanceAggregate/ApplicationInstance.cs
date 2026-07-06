@@ -139,7 +139,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
         }
 
         this.AddDomainEvent(new ApplicationHeartbeatRecordedDomainEvent(InstanceKey, heartbeatAtUtc, reachable));
-        if (wasUnreachable && reachable)
+        if (wasUnreachable && reachable && !string.IsNullOrWhiteSpace(ConnectorHostId))
         {
             this.AddDomainEvent(new ConnectorHostRestoredDomainEvent(
                 OrganizationId,
@@ -152,7 +152,7 @@ public class ApplicationInstance : Entity<ApplicationInstanceId>, IAggregateRoot
 
     public bool MarkHeartbeatUnreachable(DateTimeOffset detectedAtUtc, TimeSpan heartbeatTimeout)
     {
-        if (Heartbeat is null || !Heartbeat.Reachable)
+        if (Heartbeat is null || !Heartbeat.Reachable || string.IsNullOrWhiteSpace(ConnectorHostId))
         {
             return false;
         }

@@ -68,6 +68,7 @@ public sealed class ApplicationInstanceAggregateTests
         Assert.Equal("demo-api-001", unreachable.InstanceKey);
         Assert.Equal(heartbeatAt, unreachable.LastHeartbeatAtUtc);
         Assert.Equal(detectedAt, unreachable.DetectedAtUtc);
+        Assert.Equal(TimeSpan.FromMinutes(5), unreachable.HeartbeatTimeout);
 
         instance.ClearDomainEvents();
         var restoredAt = DateTimeOffset.Parse("2026-07-06T01:08:00Z");
@@ -78,6 +79,26 @@ public sealed class ApplicationInstanceAggregateTests
         Assert.Equal("connector-host-001", restored.ConnectorHostId);
         Assert.Equal("demo-api-001", restored.InstanceKey);
         Assert.Equal(restoredAt, restored.RestoredAtUtc);
+    }
+
+    [Fact]
+    public void Heartbeat_timeout_with_empty_connector_host_does_not_emit_unreachable_or_restored_events()
+    {
+        var instance = CreateInstance(connectorHostId: "");
+        var heartbeatAt = DateTimeOffset.Parse("2026-07-06T01:00:00Z");
+        instance.RecordHeartbeat(heartbeatAt, true, 12);
+        instance.ClearDomainEvents();
+
+        var marked = instance.MarkHeartbeatUnreachable(
+            DateTimeOffset.Parse("2026-07-06T01:06:00Z"),
+            TimeSpan.FromMinutes(5));
+
+        Assert.False(marked);
+        Assert.True(instance.Heartbeat!.Reachable);
+        Assert.Empty(instance.GetDomainEvents().OfType<ConnectorHostUnreachableDomainEvent>());
+
+        instance.RecordHeartbeat(DateTimeOffset.Parse("2026-07-06T01:08:00Z"), true, 9);
+        Assert.Empty(instance.GetDomainEvents().OfType<ConnectorHostRestoredDomainEvent>());
     }
 
     [Fact]
@@ -127,12 +148,12 @@ public sealed class ApplicationInstanceAggregateTests
         Assert.Equal("idem-result-001", instance.Metadata["ops.lastCompletedOperationIdempotencyKey"]);
     }
 
-    private static ApplicationInstance CreateInstance()
+    private static ApplicationInstance CreateInstance(string connectorHostId = "connector-host-001")
     {
         return new ApplicationInstance(
             "org-001",
             "env-dev",
-            "connector-host-001",
+            connectorHostId,
             "demo-api",
             "1.0.0",
             "node-001",

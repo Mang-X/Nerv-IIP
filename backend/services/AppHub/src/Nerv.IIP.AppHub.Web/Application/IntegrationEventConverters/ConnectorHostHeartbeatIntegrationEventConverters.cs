@@ -10,18 +10,20 @@ public sealed class ConnectorHostUnreachableIntegrationEventConverter
     public ConnectorHostUnreachableIntegrationEvent Convert(ConnectorHostUnreachableDomainEvent domainEvent)
     {
         var timeoutSeconds = Math.Max(0, (int)domainEvent.HeartbeatTimeout.TotalSeconds);
+        var eventId = $"evt-{Guid.CreateVersion7():N}";
+        var idempotencyKey = $"apphub:connector-host-unreachable:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.DetectedAtUtc:O}";
         return new ConnectorHostUnreachableIntegrationEvent(
-            $"evt-{Guid.CreateVersion7():N}",
+            eventId,
             AppHubIntegrationEventTypes.ConnectorHostUnreachable,
             AppHubIntegrationEventVersions.V1,
             domainEvent.DetectedAtUtc,
             AppHubIntegrationEventSources.AppHub,
-            string.Empty,
+            $"corr-{eventId}",
             domainEvent.InstanceKey,
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             AppHubIntegrationEventSources.AppHub,
-            $"apphub:connector-host-unreachable:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.DetectedAtUtc:O}",
+            idempotencyKey,
             new ConnectorHostUnreachablePayload(
                 domainEvent.ConnectorHostId,
                 domainEvent.InstanceKey,
@@ -36,18 +38,20 @@ public sealed class ConnectorHostRestoredIntegrationEventConverter
 {
     public ConnectorHostRestoredIntegrationEvent Convert(ConnectorHostRestoredDomainEvent domainEvent)
     {
+        var eventId = $"evt-{Guid.CreateVersion7():N}";
+        var idempotencyKey = $"apphub:connector-host-restored:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.RestoredAtUtc:O}";
         return new ConnectorHostRestoredIntegrationEvent(
-            $"evt-{Guid.CreateVersion7():N}",
+            eventId,
             AppHubIntegrationEventTypes.ConnectorHostRestored,
             AppHubIntegrationEventVersions.V1,
             domainEvent.RestoredAtUtc,
             AppHubIntegrationEventSources.AppHub,
-            string.Empty,
+            $"corr-{eventId}",
             domainEvent.InstanceKey,
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             AppHubIntegrationEventSources.AppHub,
-            $"apphub:connector-host-restored:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ConnectorHostId}:{domainEvent.InstanceKey}:{domainEvent.RestoredAtUtc:O}",
+            idempotencyKey,
             new ConnectorHostRestoredPayload(
                 domainEvent.ConnectorHostId,
                 domainEvent.InstanceKey,

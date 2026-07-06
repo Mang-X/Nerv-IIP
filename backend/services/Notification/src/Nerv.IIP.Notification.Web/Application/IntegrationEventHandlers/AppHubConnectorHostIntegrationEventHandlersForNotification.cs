@@ -7,7 +7,6 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
-using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 
@@ -49,16 +48,21 @@ public sealed class ConnectorHostUnreachableIntegrationEventHandlerForNotificati
         ConnectorHostUnreachableIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload
-            ?? throw new KnownException("AppHub connector host unreachable payload is required.");
-        var eventId = AppHubConnectorHostNotification.Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = AppHubConnectorHostNotification.Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = AppHubConnectorHostNotification.Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var organizationId = AppHubConnectorHostNotification.Required(integrationEvent.OrganizationId, "Integration event organization is required.");
-        var environmentId = AppHubConnectorHostNotification.Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
-        var dedupeKey = AppHubConnectorHostNotification.Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-        var connectorHostId = AppHubConnectorHostNotification.Required(payload.ConnectorHostId, "Connector Host id is required.");
-        var instanceKey = AppHubConnectorHostNotification.Required(payload.InstanceKey, "Application instance key is required.");
+        var payload = integrationEvent.Payload;
+        if (payload is null
+            || !AppHubConnectorHostNotification.TryRequired(payload.ConnectorHostId, out var connectorHostId)
+            || !AppHubConnectorHostNotification.TryRequired(payload.InstanceKey, out var instanceKey))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "invalid-payload",
+                    "AppHub connector host unreachable payload is missing required connector host or instance fields."),
+                cancellationToken);
+            return;
+        }
+
         var recipientRefs = AppHubConnectorHostNotification.GetRecipientRefs(configuration);
 
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
@@ -72,18 +76,18 @@ public sealed class ConnectorHostUnreachableIntegrationEventHandlerForNotificati
         }
 
         var request = new SubmitNotificationIntentRequest(
-            SourceService: sourceService,
-            SourceEventType: eventType,
-            SourceEventId: eventId,
+            SourceService: integrationEvent.SourceService,
+            SourceEventType: integrationEvent.EventType,
+            SourceEventId: integrationEvent.EventId,
             IntentType: NotificationContractConstants.IntentTypeTask,
             Severity: NotificationContractConstants.SeverityCritical,
-            DedupeKey: dedupeKey,
+            DedupeKey: integrationEvent.IdempotencyKey,
             Resource: new NotificationResourceRef("connector-host", connectorHostId, null),
             Title: $"Connector Host unreachable: {connectorHostId}",
             Summary: $"Connector Host {connectorHostId} for instance {instanceKey} is unreachable; last heartbeat {payload.LastHeartbeatAtUtc:O}, detected at {payload.DetectedAtUtc:O}, timeout {payload.HeartbeatTimeoutSeconds}s.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -125,16 +129,21 @@ public sealed class ConnectorHostRestoredIntegrationEventHandlerForNotification(
         ConnectorHostRestoredIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {
-        var payload = integrationEvent.Payload
-            ?? throw new KnownException("AppHub connector host restored payload is required.");
-        var eventId = AppHubConnectorHostNotification.Required(integrationEvent.EventId, "Integration event id is required.");
-        var eventType = AppHubConnectorHostNotification.Required(integrationEvent.EventType, "Integration event type is required.");
-        var sourceService = AppHubConnectorHostNotification.Required(integrationEvent.SourceService, "Integration event source service is required.");
-        var organizationId = AppHubConnectorHostNotification.Required(integrationEvent.OrganizationId, "Integration event organization is required.");
-        var environmentId = AppHubConnectorHostNotification.Required(integrationEvent.EnvironmentId, "Integration event environment is required.");
-        var dedupeKey = AppHubConnectorHostNotification.Required(integrationEvent.IdempotencyKey, "Integration event idempotency key is required.");
-        var connectorHostId = AppHubConnectorHostNotification.Required(payload.ConnectorHostId, "Connector Host id is required.");
-        var instanceKey = AppHubConnectorHostNotification.Required(payload.InstanceKey, "Application instance key is required.");
+        var payload = integrationEvent.Payload;
+        if (payload is null
+            || !AppHubConnectorHostNotification.TryRequired(payload.ConnectorHostId, out var connectorHostId)
+            || !AppHubConnectorHostNotification.TryRequired(payload.InstanceKey, out var instanceKey))
+        {
+            await deadLetterStore.AddAsync(
+                IntegrationEventDeadLetterMessage.Create(
+                    ConsumerName,
+                    integrationEvent,
+                    "invalid-payload",
+                    "AppHub connector host restored payload is missing required connector host or instance fields."),
+                cancellationToken);
+            return;
+        }
+
         var recipientRefs = AppHubConnectorHostNotification.GetRecipientRefs(configuration);
 
         if (!await NotificationProcessedIntegrationEventInbox.TryRecordAsync(
@@ -148,31 +157,33 @@ public sealed class ConnectorHostRestoredIntegrationEventHandlerForNotification(
         }
 
         var request = new SubmitNotificationIntentRequest(
-            SourceService: sourceService,
-            SourceEventType: eventType,
-            SourceEventId: eventId,
+            SourceService: integrationEvent.SourceService,
+            SourceEventType: integrationEvent.EventType,
+            SourceEventId: integrationEvent.EventId,
             IntentType: NotificationContractConstants.IntentTypeMessage,
             Severity: NotificationContractConstants.SeverityInfo,
-            DedupeKey: dedupeKey,
+            DedupeKey: integrationEvent.IdempotencyKey,
             Resource: new NotificationResourceRef("connector-host", connectorHostId, null),
             Title: $"Connector Host restored: {connectorHostId}",
             Summary: $"Connector Host {connectorHostId} for instance {instanceKey} restored at {payload.RestoredAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
 internal static class AppHubConnectorHostNotification
 {
-    public static string Required(string? value, string message)
+    public static bool TryRequired(string? value, out string normalized)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new KnownException(message);
+            normalized = string.Empty;
+            return false;
         }
 
-        return value.Trim();
+        normalized = value.Trim();
+        return true;
     }
 
     public static string[] GetRecipientRefs(IConfiguration configuration)

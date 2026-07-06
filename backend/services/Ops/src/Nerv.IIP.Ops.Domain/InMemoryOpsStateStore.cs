@@ -35,39 +35,10 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
     private const int MaxAuditRecordsResponseSize = 500;
     private readonly object _gate = new();
     private readonly Dictionary<string, string> _idempotency = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, OperationTemplateSnapshot> _templates = new(StringComparer.Ordinal)
-    {
-        ["lifecycle.restart"] = new OperationTemplateSnapshot("lifecycle.restart", true, 3, 300, false),
-        ["device.control.command"] = new OperationTemplateSnapshot("device.control.command", true, 1, 300, true),
-        ["config.reload"] = new OperationTemplateSnapshot("config.reload", true, 3, 300, false)
-    };
-    private readonly Dictionary<string, OperationTemplateFact> _templateResponses = new(StringComparer.Ordinal)
-    {
-        ["lifecycle.restart"] = BuiltInTemplateResponse(
-            "opt-lifecycle-restart",
-            "lifecycle.restart",
-            "Lifecycle restart",
-            "low",
-            3,
-            300,
-            requiresApproval: false),
-        ["device.control.command"] = BuiltInTemplateResponse(
-            "opt-device-control-command",
-            "device.control.command",
-            "Device control command",
-            "critical",
-            1,
-            300,
-            requiresApproval: true),
-        ["config.reload"] = BuiltInTemplateResponse(
-            "opt-config-reload",
-            "config.reload",
-            "Configuration reload",
-            "medium",
-            3,
-            300,
-            requiresApproval: false)
-    };
+    private readonly Dictionary<string, OperationTemplateSnapshot> _templates = BuiltInOperationTemplateCatalog.Definitions
+        .ToDictionary(x => x.OperationCode, x => x.ToSnapshot(), StringComparer.Ordinal);
+    private readonly Dictionary<string, OperationTemplateFact> _templateResponses = BuiltInOperationTemplateCatalog.Definitions
+        .ToDictionary(x => x.OperationCode, x => x.ToFact(), StringComparer.Ordinal);
     private readonly List<OperationTaskFact> _tasks = [];
     private readonly List<OperationAttemptFact> _attempts = [];
     private readonly List<AuditRecordFact> _auditRecords = [];
@@ -642,27 +613,4 @@ public sealed class InMemoryOpsStateStore : IOpsStateStore
         _attempts[_attempts.FindIndex(x => x.AttemptId == attempt.AttemptId)] = attempt;
     }
 
-    private static OperationTemplateFact BuiltInTemplateResponse(
-        string templateId,
-        string operationCode,
-        string displayName,
-        string riskLevel,
-        int defaultMaxAttempts,
-        int defaultLeaseDurationSeconds,
-        bool requiresApproval)
-    {
-        var now = DateTimeOffset.Parse("2026-05-21T00:00:00Z");
-        return new OperationTemplateFact(
-            templateId,
-            operationCode,
-            displayName,
-            "{}",
-            riskLevel,
-            defaultMaxAttempts,
-            defaultLeaseDurationSeconds,
-            requiresApproval,
-            Enabled: true,
-            now,
-            now);
-    }
 }

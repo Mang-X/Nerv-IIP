@@ -1,6 +1,8 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.AppHub.Infrastructure;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.AppHub.Web.Application.Commands;
 
@@ -16,6 +18,22 @@ public sealed class AppHubHeartbeatTimeoutScanOptions
 
 public sealed record AppHubHeartbeatTimeoutScanResult(int MarkedUnreachableCount);
 
+public sealed record AppHubHeartbeatTimeoutScanCommand(
+    DateTimeOffset Now,
+    TimeSpan HeartbeatTimeout,
+    int Take) : ICommand<AppHubHeartbeatTimeoutScanResult>;
+
+public sealed class AppHubHeartbeatTimeoutScanCommandHandler(AppHubHeartbeatTimeoutScanner scanner)
+    : ICommandHandler<AppHubHeartbeatTimeoutScanCommand, AppHubHeartbeatTimeoutScanResult>
+{
+    public Task<AppHubHeartbeatTimeoutScanResult> Handle(
+        AppHubHeartbeatTimeoutScanCommand request,
+        CancellationToken cancellationToken)
+    {
+        return scanner.ScanAsync(request.Now, request.HeartbeatTimeout, request.Take, cancellationToken);
+    }
+}
+
 public sealed class AppHubHeartbeatTimeoutScanner(ApplicationDbContext dbContext)
 {
     public async Task<AppHubHeartbeatTimeoutScanResult> ScanAsync(
@@ -30,6 +48,7 @@ public sealed class AppHubHeartbeatTimeoutScanner(ApplicationDbContext dbContext
             .Where(x =>
                 x.Heartbeat != null
                 && x.Heartbeat.Reachable
+                && x.ConnectorHostId != ""
                 && x.Heartbeat.LastHeartbeatAtUtc <= cutoff)
             .OrderBy(x => x.Heartbeat!.LastHeartbeatAtUtc)
             .ThenBy(x => x.InstanceKey)
@@ -47,12 +66,6 @@ public sealed class AppHubHeartbeatTimeoutScanner(ApplicationDbContext dbContext
             marked++;
         }
 
-        if (marked == 0)
-        {
-            return new AppHubHeartbeatTimeoutScanResult(0);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
         return new AppHubHeartbeatTimeoutScanResult(marked);
     }
 }
@@ -77,11 +90,12 @@ internal sealed class AppHubHeartbeatTimeoutScanWorker(
             try
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
-                var scanner = scope.ServiceProvider.GetRequiredService<AppHubHeartbeatTimeoutScanner>();
-                var result = await scanner.ScanAsync(
-                    timeProvider.GetUtcNow(),
-                    currentOptions.HeartbeatTimeout,
-                    currentOptions.Take,
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                var result = await sender.Send(
+                    new AppHubHeartbeatTimeoutScanCommand(
+                        timeProvider.GetUtcNow(),
+                        currentOptions.HeartbeatTimeout,
+                        currentOptions.Take),
                     stoppingToken);
                 if (result.MarkedUnreachableCount > 0)
                 {
