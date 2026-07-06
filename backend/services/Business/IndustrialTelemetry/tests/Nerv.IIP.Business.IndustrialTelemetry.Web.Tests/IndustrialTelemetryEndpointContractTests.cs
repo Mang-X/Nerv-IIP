@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.AlarmEventAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.DeviceStateSnapshotAggregate;
 using Nerv.IIP.Business.IndustrialTelemetry.Infrastructure;
@@ -854,6 +855,46 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal(["critical", "high"], scope.SeverityLevels);
         Assert.Equal(["role:maintenance-manager"], scope.RecipientRefs);
         Assert.Equal(250, scope.MaxAlarms);
+    }
+
+    [Fact]
+    public async Task Alarm_escalation_scheduler_does_not_stop_host_for_invalid_interval_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Enabled"] = "true",
+                ["IndustrialTelemetry:AlarmEscalation:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:AlarmEscalation:EnvironmentId"] = "env-dev",
+                ["IndustrialTelemetry:AlarmEscalation:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Interval"] = "not-a-timespan",
+            })
+            .Build();
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var scheduler = new AlarmEscalationScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<AlarmEscalationScheduler>.Instance,
+            TimeProvider.System);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public void Alarm_escalation_scheduler_skips_invalid_scope_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:OrganizationId"] = "org-001",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:EnvironmentId"] = "env-dev",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:RecipientRefs:0"] = "role:maintenance-manager",
+                ["IndustrialTelemetry:AlarmEscalation:Scopes:0:MaxAlarms"] = "not-an-int",
+            })
+            .Build();
+
+        Assert.Empty(AlarmEscalationScheduler.GetConfiguredScopes(configuration));
     }
 
     [Fact]

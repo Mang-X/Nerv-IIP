@@ -1,3 +1,4 @@
+using System.Globalization;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 
 namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
@@ -26,7 +27,7 @@ public sealed class AlarmEscalationScheduler(
             return;
         }
 
-        var interval = configuration.GetValue("IndustrialTelemetry:AlarmEscalation:Interval", DefaultInterval);
+        var interval = ReadInterval(configuration, logger);
         if (interval <= TimeSpan.Zero)
         {
             logger.LogWarning(
@@ -48,14 +49,14 @@ public sealed class AlarmEscalationScheduler(
     {
         foreach (var scopeSection in configuration.GetSection("IndustrialTelemetry:AlarmEscalation:Scopes").GetChildren())
         {
-            var scope = ReadScope(scopeSection, logger);
+            var scope = TryReadScope(scopeSection, logger);
             if (scope is not null)
             {
                 yield return scope;
             }
         }
 
-        var singleScope = ReadScope(configuration.GetSection("IndustrialTelemetry:AlarmEscalation"), logger);
+        var singleScope = TryReadScope(configuration.GetSection("IndustrialTelemetry:AlarmEscalation"), logger);
         if (singleScope is not null)
         {
             yield return singleScope;
@@ -106,6 +107,39 @@ public sealed class AlarmEscalationScheduler(
                 "IndustrialTelemetry alarm escalation scheduler failed for {OrganizationId}/{EnvironmentId}; the scheduler will retry on the next tick.",
                 scope.OrganizationId,
                 scope.EnvironmentId);
+        }
+    }
+
+    private static TimeSpan ReadInterval(IConfiguration configuration, ILogger logger)
+    {
+        var configured = configuration["IndustrialTelemetry:AlarmEscalation:Interval"];
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return DefaultInterval;
+        }
+
+        if (TimeSpan.TryParse(configured, CultureInfo.InvariantCulture, out var interval))
+        {
+            return interval;
+        }
+
+        logger.LogWarning(
+            "IndustrialTelemetry alarm escalation interval value {IntervalValue} is invalid; falling back to {DefaultInterval}.",
+            configured,
+            DefaultInterval);
+        return DefaultInterval;
+    }
+
+    private static AlarmEscalationScope? TryReadScope(IConfiguration section, ILogger? logger)
+    {
+        try
+        {
+            return ReadScope(section, logger);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
+        {
+            logger?.LogWarning(ex, "IndustrialTelemetry alarm escalation scope configuration is invalid and will be skipped.");
+            return null;
         }
     }
 
