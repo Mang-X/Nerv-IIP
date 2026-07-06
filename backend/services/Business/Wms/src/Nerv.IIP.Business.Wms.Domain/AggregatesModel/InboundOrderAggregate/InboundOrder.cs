@@ -1,6 +1,8 @@
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 
@@ -13,6 +15,7 @@ public enum InboundOrderStatus
     Open = 0,
     Completed = 1,
     InventoryPostingFailed = 2,
+    PendingQualityCheck = 3,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -95,8 +98,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string toLocationCode,
         decimal quantity)
     {
-        EnsureOpen();
         var line = FindLine(lineNo);
+        EnsureCanCreatePutawayTask(line);
         if (quantity > line.ReceivedQuantity)
         {
             throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Putaway quantity cannot exceed inbound line quantity.");
@@ -121,7 +124,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
-        Status = InboundOrderStatus.Completed;
+        Status = lines.Any(x => x.RequiresQualityInspection)
+            ? InboundOrderStatus.PendingQualityCheck
+            : InboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
         var singleLine = lines.Count == 1;
         var requests = lines.Select(line => InventoryMovementRequest.Create(
@@ -137,7 +142,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.StagingLocationCode,
                 line.LotNo,
                 line.SerialNo,
-                line.QualityStatus,
+                line.ReceiptQualityStatus,
                 line.OwnerType,
                 line.OwnerId,
                 line.ReceivedQuantity,
@@ -146,6 +151,51 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             .ToArray();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
         return requests;
+    }
+
+    public SupplierReturnRequest? ApplyInspectionResult(
+        string eventType,
+        string inspectionRecordId,
+        string skuCode,
+        string? lotNo,
+        string? serialNo,
+        decimal inspectedQuantity,
+        string? dispositionReason)
+    {
+        if (Status != InboundOrderStatus.PendingQualityCheck && Status != InboundOrderStatus.Completed)
+        {
+            throw new InvalidOperationException("Quality inspection result can only be applied after inbound completion.");
+        }
+
+        var line = FindInspectionLine(skuCode, lotNo, serialNo);
+        var result = InboundQualityInspectionResult.FromEventType(eventType);
+        line.ApplyInspectionResult(result.GateStatus, inspectionRecordId, inspectedQuantity, dispositionReason);
+        if (lines.All(x => !x.RequiresQualityInspection || x.HasQualityResult))
+        {
+            Status = InboundOrderStatus.Completed;
+        }
+
+        if (result.GateStatus != InboundQualityGateStatuses.Rejected)
+        {
+            return null;
+        }
+
+        return SupplierReturnRequest.Create(
+            OrganizationId,
+            EnvironmentId,
+            InboundOrderNo,
+            line.LineNo,
+            inspectionRecordId,
+            line.SkuCode,
+            line.UomCode,
+            SiteCode,
+            line.StagingLocationCode,
+            line.LotNo,
+            line.SerialNo,
+            line.OwnerType,
+            line.OwnerId,
+            inspectedQuantity,
+            dispositionReason);
     }
 
     public void MarkInventoryPostingFailed()
@@ -187,7 +237,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.StagingLocationCode,
                 line.LotNo,
                 line.SerialNo,
-                line.QualityStatus,
+                line.ReceiptQualityStatus,
                 line.OwnerType,
                 line.OwnerId,
                 line.ReceivedQuantity,
@@ -201,6 +251,59 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     {
         return lines.SingleOrDefault(x => x.LineNo == lineNo)
             ?? throw new InvalidOperationException($"Inbound line '{lineNo}' was not found.");
+    }
+
+    private InboundOrderLine FindInspectionLine(string skuCode, string? lotNo, string? serialNo)
+    {
+        var normalizedSkuCode = WmsText.Required(skuCode, nameof(skuCode));
+        var normalizedLotNo = WmsText.Optional(lotNo);
+        var normalizedSerialNo = WmsText.Optional(serialNo);
+        var matches = lines
+            .Where(x => x.SkuCode == normalizedSkuCode
+                && x.LotNo == normalizedLotNo
+                && x.SerialNo == normalizedSerialNo)
+            .Take(2)
+            .ToArray();
+        return matches.Length == 1
+            ? matches[0]
+            : throw new InvalidOperationException("Quality inspection result cannot resolve exactly one inbound line.");
+    }
+
+    private void EnsureCanCreatePutawayTask(InboundOrderLine line)
+    {
+        if (Status == InboundOrderStatus.Open)
+        {
+            if (line.RequiresQualityInspection)
+            {
+                throw new InvalidOperationException("Inbound line is pending quality inspection and cannot be put away.");
+            }
+
+            return;
+        }
+
+        if (line.QualityGateStatus == InboundQualityGateStatuses.Rejected)
+        {
+            throw new InvalidOperationException("Rejected inbound line cannot be put away.");
+        }
+
+        if (Status == InboundOrderStatus.PendingQualityCheck)
+        {
+            if (!line.RequiresQualityInspection || line.IsReleasedForPutaway)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("Inbound line is pending quality inspection and cannot be put away.");
+        }
+
+        if (Status == InboundOrderStatus.Completed && line.IsReleasedForPutaway)
+        {
+            return;
+        }
+
+        throw Status == InboundOrderStatus.InventoryPostingFailed
+            ? new InvalidOperationException("Inbound orders with failed Inventory posting cannot be put away.")
+            : new InvalidOperationException("Completed inbound orders are immutable.");
     }
 
     private void EnsureOpen()
@@ -236,6 +339,9 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
         LotNo = WmsText.Optional(draft.LotNo);
         SerialNo = WmsText.Optional(draft.SerialNo);
         QualityStatus = WmsText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
+        QualityGateStatus = WmsReceivingQualityStatuses.RequiresInspection(QualityStatus)
+            ? InboundQualityGateStatuses.Pending
+            : InboundQualityGateStatuses.NotRequired;
         OwnerType = WmsText.Required(draft.OwnerType, nameof(draft.OwnerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(draft.OwnerId);
         ProductionDate = draft.ProductionDate;
@@ -250,13 +356,77 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
     public string? LotNo { get; private set; }
     public string? SerialNo { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
+    public string QualityGateStatus { get; private set; } = InboundQualityGateStatuses.Pending;
+    public string? InspectionRecordId { get; private set; }
+    public string? QualityDispositionReason { get; private set; }
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
+    public bool RequiresQualityInspection => QualityGateStatus != InboundQualityGateStatuses.NotRequired;
+    public bool HasQualityResult => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased or InboundQualityGateStatuses.Rejected;
+    public bool IsReleasedForPutaway => QualityGateStatus is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased;
+    public string ReceiptQualityStatus => RequiresQualityInspection ? "quality" : "unrestricted";
 
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
         return new InboundOrderLine(draft);
+    }
+
+    internal void ApplyInspectionResult(
+        string gateStatus,
+        string inspectionRecordId,
+        decimal inspectedQuantity,
+        string? dispositionReason)
+    {
+        if (!RequiresQualityInspection)
+        {
+            throw new InvalidOperationException("Inspection-exempt inbound line cannot receive a quality inspection result.");
+        }
+
+        if (inspectedQuantity <= 0m || inspectedQuantity > ReceivedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(inspectedQuantity), inspectedQuantity, "Inspected quantity must be within received quantity.");
+        }
+
+        var normalizedInspectionRecordId = WmsText.Required(inspectionRecordId, nameof(inspectionRecordId));
+        if (InspectionRecordId == normalizedInspectionRecordId && QualityGateStatus == gateStatus)
+        {
+            return;
+        }
+
+        if (HasQualityResult)
+        {
+            throw new InvalidOperationException("Inbound line already has a quality inspection result.");
+        }
+
+        QualityGateStatus = gateStatus;
+        InspectionRecordId = normalizedInspectionRecordId;
+        QualityDispositionReason = WmsText.Optional(dispositionReason);
+    }
+}
+
+public static class InboundQualityGateStatuses
+{
+    public const string Pending = "pending";
+    public const string Passed = "passed";
+    public const string ConditionalReleased = "conditional-release";
+    public const string Rejected = "rejected";
+    public const string NotRequired = "not-required";
+
+    public static bool RequiresInspection(string qualityStatus) => WmsReceivingQualityStatuses.RequiresInspection(qualityStatus);
+}
+
+internal readonly record struct InboundQualityInspectionResult(string GateStatus)
+{
+    public static InboundQualityInspectionResult FromEventType(string eventType)
+    {
+        return eventType switch
+        {
+            "quality.InspectionPassed" => new InboundQualityInspectionResult(InboundQualityGateStatuses.Passed),
+            "quality.InspectionConditionalReleased" => new InboundQualityInspectionResult(InboundQualityGateStatuses.ConditionalReleased),
+            "quality.InspectionRejected" => new InboundQualityInspectionResult(InboundQualityGateStatuses.Rejected),
+            _ => throw new InvalidOperationException($"Unsupported quality inspection event type: {eventType}."),
+        };
     }
 }
