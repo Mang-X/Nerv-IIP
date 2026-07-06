@@ -97,6 +97,30 @@ public sealed class ObservabilityAlertMonitorTests
     }
 
     [Fact]
+    public async Task Alert_monitor_counts_deduplicated_firing_attempts_as_suppressed()
+    {
+        var probe = new SequenceAlertProbe(
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"),
+            new ObservabilityAlertSample("service-health:apphub", "apphub health", ObservabilityAlertStatus.Firing, "HTTP 503", "apphub"));
+        using var factory = CreateMonitorFactory(probe);
+
+        var first = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:00:00Z"), CancellationToken.None);
+        var duplicate = await factory.Services.GetRequiredService<ObservabilityAlertMonitor>()
+            .CheckOnceAsync(DateTimeOffset.Parse("2026-07-05T01:11:00Z"), CancellationToken.None);
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var intent = Assert.Single(await dbContext.NotificationIntents.ToArrayAsync());
+
+        Assert.Equal(1, first.SubmittedCount);
+        Assert.Equal(0, first.SuppressedCount);
+        Assert.Equal(0, duplicate.SubmittedCount);
+        Assert.Equal(1, duplicate.SuppressedCount);
+        Assert.Equal("observability-alert:service-health:apphub:1:202607050100", intent.DedupeKey);
+    }
+
+    [Fact]
     public async Task Alert_monitor_uses_new_dedupe_scope_after_resolved_refire()
     {
         var probe = new SequenceAlertProbe(
