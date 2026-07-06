@@ -3076,10 +3076,26 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
         var permissions = request.Headers.GetValues(InventoryForwardedPermissionHeaders.PermissionsHeaderName).Single();
         var issuer = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuerHeaderName).Single();
+        var organizationId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.OrganizationHeaderName).Single();
+        var environmentId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.EnvironmentHeaderName).Single();
+        var requestKey = request.Headers.GetValues(InventoryForwardedPermissionHeaders.RequestKeyHeaderName).Single();
+        var issuedAt = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuedAtHeaderName).Single();
         var signature = request.Headers.GetValues(InventoryForwardedPermissionHeaders.SignatureHeaderName).Single();
         Assert.Equal(BusinessGatewayPermissions.InventoryExpiredStockOverride, permissions);
         Assert.Equal("business-gateway", issuer);
-        Assert.True(InventoryForwardedPermissionHeaders.VerifySignature("test-signing-key", issuer, permissions, signature));
+        Assert.Equal("org-001", organizationId);
+        Assert.Equal("env-dev", environmentId);
+        Assert.Equal("idem-inventory-001", requestKey);
+        Assert.True(long.TryParse(issuedAt, out var issuedAtUnixSeconds));
+        Assert.True(InventoryForwardedPermissionHeaders.VerifySignature(
+            "test-signing-key",
+            issuer,
+            permissions,
+            organizationId,
+            environmentId,
+            requestKey,
+            issuedAtUnixSeconds,
+            signature));
     }
 
     [Fact]

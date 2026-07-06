@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using MediatR;
@@ -36,6 +37,10 @@ public sealed class InventoryReviewFollowUpTests
         var signingKey = "test-forwarded-permissions-key";
         var issuer = "business-gateway";
         var permissions = InventoryPermissionCodes.ExpiredStockOverride;
+        var organizationId = "org-001";
+        var environmentId = "env-dev";
+        var requestKey = "idem-override-001";
+        var issuedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var unsignedHeaders = new HeaderDictionary
         {
             [InventoryForwardedPermissionHeaders.PermissionsHeaderName] = permissions
@@ -44,7 +49,36 @@ public sealed class InventoryReviewFollowUpTests
         {
             [InventoryForwardedPermissionHeaders.PermissionsHeaderName] = permissions,
             [InventoryForwardedPermissionHeaders.IssuerHeaderName] = issuer,
-            [InventoryForwardedPermissionHeaders.SignatureHeaderName] = InventoryForwardedPermissionHeaders.CreateSignature(signingKey, issuer, permissions)
+            [InventoryForwardedPermissionHeaders.OrganizationHeaderName] = organizationId,
+            [InventoryForwardedPermissionHeaders.EnvironmentHeaderName] = environmentId,
+            [InventoryForwardedPermissionHeaders.RequestKeyHeaderName] = requestKey,
+            [InventoryForwardedPermissionHeaders.IssuedAtHeaderName] = issuedAt.ToString(CultureInfo.InvariantCulture),
+            [InventoryForwardedPermissionHeaders.SignatureHeaderName] = InventoryForwardedPermissionHeaders.CreateSignature(
+                signingKey,
+                issuer,
+                permissions,
+                organizationId,
+                environmentId,
+                requestKey,
+                issuedAt)
+        };
+        var expiredIssuedAt = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeSeconds();
+        var expiredHeaders = new HeaderDictionary
+        {
+            [InventoryForwardedPermissionHeaders.PermissionsHeaderName] = permissions,
+            [InventoryForwardedPermissionHeaders.IssuerHeaderName] = issuer,
+            [InventoryForwardedPermissionHeaders.OrganizationHeaderName] = organizationId,
+            [InventoryForwardedPermissionHeaders.EnvironmentHeaderName] = environmentId,
+            [InventoryForwardedPermissionHeaders.RequestKeyHeaderName] = requestKey,
+            [InventoryForwardedPermissionHeaders.IssuedAtHeaderName] = expiredIssuedAt.ToString(CultureInfo.InvariantCulture),
+            [InventoryForwardedPermissionHeaders.SignatureHeaderName] = InventoryForwardedPermissionHeaders.CreateSignature(
+                signingKey,
+                issuer,
+                permissions,
+                organizationId,
+                environmentId,
+                requestKey,
+                expiredIssuedAt)
         };
         var options = new InventoryForwardedPermissionOptions { SigningKey = signingKey, TrustedIssuer = issuer };
 
@@ -52,16 +86,49 @@ public sealed class InventoryReviewFollowUpTests
             internalPrincipal,
             new HeaderDictionary(),
             InventoryPermissionCodes.ExpiredStockOverride,
+            organizationId,
+            environmentId,
+            requestKey,
             options));
         Assert.False(InventoryPermissionContext.HasPermission(
             internalPrincipal,
             unsignedHeaders,
             InventoryPermissionCodes.ExpiredStockOverride,
+            organizationId,
+            environmentId,
+            requestKey,
+            options));
+        Assert.False(InventoryPermissionContext.HasPermission(
+            internalPrincipal,
+            signedHeaders,
+            InventoryPermissionCodes.ExpiredStockOverride,
+            "org-999",
+            environmentId,
+            requestKey,
+            options));
+        Assert.False(InventoryPermissionContext.HasPermission(
+            internalPrincipal,
+            signedHeaders,
+            InventoryPermissionCodes.ExpiredStockOverride,
+            organizationId,
+            environmentId,
+            "idem-other",
+            options));
+        Assert.False(InventoryPermissionContext.HasPermission(
+            internalPrincipal,
+            expiredHeaders,
+            InventoryPermissionCodes.ExpiredStockOverride,
+            organizationId,
+            environmentId,
+            requestKey,
             options));
         Assert.True(InventoryPermissionContext.HasPermission(
             internalPrincipal,
             signedHeaders,
             InventoryPermissionCodes.ExpiredStockOverride,
+            organizationId,
+            environmentId,
+            requestKey,
             options));
     }
 

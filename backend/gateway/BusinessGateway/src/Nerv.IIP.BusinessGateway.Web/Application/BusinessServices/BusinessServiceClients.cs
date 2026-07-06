@@ -2132,7 +2132,12 @@ public sealed class HttpBusinessInventoryClient(
             "/api/inventory/v1/movements",
             request,
             cancellationToken,
-            configureRequest: httpRequest => AddForwardedPermissions(httpRequest, forwardedPermissions));
+            configureRequest: httpRequest => AddForwardedPermissions(
+                httpRequest,
+                forwardedPermissions,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.IdempotencyKey));
 
     public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -2165,7 +2170,12 @@ public sealed class HttpBusinessInventoryClient(
         decimal CountedQuantity,
         string IdempotencyKey);
 
-    private void AddForwardedPermissions(HttpRequestMessage request, IReadOnlyCollection<string>? forwardedPermissions)
+    private void AddForwardedPermissions(
+        HttpRequestMessage request,
+        IReadOnlyCollection<string>? forwardedPermissions,
+        string organizationId,
+        string environmentId,
+        string requestKey)
     {
         if (forwardedPermissions is null || forwardedPermissions.Count == 0)
         {
@@ -2179,9 +2189,21 @@ public sealed class HttpBusinessInventoryClient(
         }
 
         var permissions = string.Join(' ', forwardedPermissions.Order(StringComparer.Ordinal));
-        var signature = InventoryForwardedPermissionHeaders.CreateSignature(options.SigningKey, options.Issuer, permissions);
+        var issuedAtUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var signature = InventoryForwardedPermissionHeaders.CreateSignature(
+            options.SigningKey,
+            options.Issuer,
+            permissions,
+            organizationId,
+            environmentId,
+            requestKey,
+            issuedAtUnixSeconds);
         request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.PermissionsHeaderName, permissions);
         request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.IssuerHeaderName, options.Issuer);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.OrganizationHeaderName, organizationId);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.EnvironmentHeaderName, environmentId);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.RequestKeyHeaderName, requestKey);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.IssuedAtHeaderName, issuedAtUnixSeconds.ToString(CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.SignatureHeaderName, signature);
     }
 }
