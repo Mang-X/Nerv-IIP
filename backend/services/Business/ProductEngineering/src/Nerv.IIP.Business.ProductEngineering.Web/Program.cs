@@ -94,6 +94,7 @@ try
     builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
     builder.Services.AddScoped<EngineeringChangeScheduledReleaseService>();
     builder.Services.AddHostedService<EngineeringChangeScheduledReleaseScheduler>();
+    builder.Services.AddScoped<ICommandLock<PromoteScheduledEngineeringChangeCommand>, PromoteScheduledEngineeringChangeCommandLock>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();

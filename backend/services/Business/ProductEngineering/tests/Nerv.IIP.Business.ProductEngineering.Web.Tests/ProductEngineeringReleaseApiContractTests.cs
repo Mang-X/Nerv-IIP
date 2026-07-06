@@ -1750,6 +1750,23 @@ public sealed class ProductEngineeringReleaseApiContractTests
     }
 
     [Fact]
+    public async Task Promote_scheduled_engineering_change_command_declares_per_change_business_date_lock_key()
+    {
+        var command = new PromoteScheduledEngineeringChangeCommand(
+            "ORG 001",
+            "ENV/DEV",
+            "ECO-LOCK/001",
+            new DateOnly(2026, 6, 3));
+        var commandLock = new PromoteScheduledEngineeringChangeCommandLock();
+
+        var settings = await commandLock.GetLockKeysAsync(command, CancellationToken.None);
+
+        Assert.Equal(
+            "business-product-engineering:eco-scheduled-release:org%20001:env%2Fdev:eco-lock%2F001:20260603",
+            settings.LockKey);
+    }
+
+    [Fact]
     public async Task Cancel_scheduled_engineering_change_leaves_affected_versions_visible_to_downstream()
     {
         await using var provider = CreateInMemoryProvider();

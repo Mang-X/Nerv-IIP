@@ -11,6 +11,7 @@ using Nerv.IIP.Business.ProductEngineering.Infrastructure;
 using Nerv.IIP.Business.ProductEngineering.Infrastructure.Repositories;
 using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.ServiceAuth;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
@@ -1058,6 +1059,28 @@ public sealed record PromoteScheduledEngineeringChangeCommand(
     string EnvironmentId,
     string ChangeNumber,
     DateOnly BusinessDate) : ICommand<bool>;
+
+public sealed class PromoteScheduledEngineeringChangeCommandLock : ICommandLock<PromoteScheduledEngineeringChangeCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(PromoteScheduledEngineeringChangeCommand command, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        var lockKey = string.Join(
+            ':',
+            "business-product-engineering",
+            "eco-scheduled-release",
+            Normalize(command.OrganizationId),
+            Normalize(command.EnvironmentId),
+            Normalize(command.ChangeNumber),
+            command.BusinessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+        return Task.FromResult(new CommandLockSettings(lockKey, 30));
+    }
+
+    private static string Normalize(string value)
+    {
+        return Uri.EscapeDataString(value.Trim().ToLowerInvariant());
+    }
+}
 
 public sealed class PromoteScheduledEngineeringChangeCommandHandler(
     ApplicationDbContext dbContext,
