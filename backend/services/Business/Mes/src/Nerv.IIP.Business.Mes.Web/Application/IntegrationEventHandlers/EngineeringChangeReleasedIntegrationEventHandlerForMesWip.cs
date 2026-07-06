@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 
@@ -19,7 +20,8 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IOptions<MesEngineeringChangeOptions> options,
-    IMediator? mediator = null)
+    IMediator? mediator = null,
+    ITransactionUnitOfWork? unitOfWork = null)
     : IIntegrationEventHandler<EngineeringChangeReleasedIntegrationEvent>, ICapSubscribe
 {
     public const string TopicName = EngineeringChangeReleasedIntegrationEventTopic.TopicName;
@@ -50,6 +52,16 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
     {
     }
 
+    public EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
+        ApplicationDbContext dbContext,
+        IIntegrationEventDeadLetterStore deadLetterStore,
+        MesEngineeringChangeOptions options,
+        IMediator mediator,
+        ITransactionUnitOfWork unitOfWork)
+        : this(dbContext, deadLetterStore, Options.Create(options), mediator, unitOfWork)
+    {
+    }
+
     public async Task HandleAsync(
         EngineeringChangeReleasedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
@@ -66,6 +78,46 @@ public sealed class EngineeringChangeReleasedIntegrationEventHandlerForMesWip(
     }
 
     private async Task HandleValidEventAsync(
+        EngineeringChangeReleasedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        if (unitOfWork is null)
+        {
+            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            return;
+        }
+
+        if (unitOfWork.CurrentTransaction is not null)
+        {
+            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await unitOfWork.BeginTransactionAsync(cancellationToken);
+        unitOfWork.CurrentTransaction = transaction;
+        var currentTransaction = unitOfWork.CurrentTransaction;
+        try
+        {
+            await HandleValidEventCoreAsync(integrationEvent, cancellationToken);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await unitOfWork.RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            if (currentTransaction is not null)
+            {
+                await currentTransaction.DisposeAsync();
+            }
+        }
+    }
+
+    private async Task HandleValidEventCoreAsync(
         EngineeringChangeReleasedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
     {

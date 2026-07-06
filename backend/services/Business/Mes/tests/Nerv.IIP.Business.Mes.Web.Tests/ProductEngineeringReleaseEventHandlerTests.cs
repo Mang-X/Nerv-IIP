@@ -1,6 +1,8 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
@@ -13,6 +15,7 @@ using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.Repository.EntityFrameworkCore;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -123,6 +126,55 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         Assert.Equal(WorkOrder.CreatedStatus, impacts.Single(x => x.WorkOrderId == "WO-CREATED").WorkOrderStatusAtDetection);
         Assert.Equal(WorkOrder.ReleasedStatus, impacts.Single(x => x.WorkOrderId == "WO-RELEASED").WorkOrderStatusAtDetection);
         Assert.Equal(WorkOrder.StartedStatus, impacts.Single(x => x.WorkOrderId == "WO-STARTED").WorkOrderStatusAtDetection);
+        Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync(x => x.ConsumerName == EngineeringChangeReleasedIntegrationEventHandlerForMesWip.ConsumerName));
+    }
+
+    [Fact]
+    public async Task EngineeringChangeReleasedHandler_PersistsImpactsAndPublishesInsideTransaction()
+    {
+        var databaseRoot = new InMemoryDatabaseRoot();
+        var databaseName = $"mes-product-engineering-change-transaction-{Guid.CreateVersion7():N}";
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .Options;
+        var services = new ServiceCollection();
+        services.AddDbContext<ApplicationDbContext>(builder => builder.UseInMemoryDatabase(databaseName, databaseRoot));
+        services.AddScoped<RecordingTransactionUnitOfWork>();
+        services.AddScoped<ITransactionUnitOfWork>(provider => provider.GetRequiredService<RecordingTransactionUnitOfWork>());
+        services.AddScoped<IMediator>(provider => new TransactionAssertingMediator(provider.GetRequiredService<RecordingTransactionUnitOfWork>()));
+        services.AddScoped<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+        services.AddSingleton(Options.Create(new MesEngineeringChangeOptions { NotStartedPolicy = MesEngineeringChangeNotStartedPolicy.AutoRebind }));
+        services.AddScoped<EngineeringChangeReleasedIntegrationEventHandlerForMesWip>();
+        await using var provider = services.BuildServiceProvider();
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var started = WorkOrder.Create("org-001", "env-dev", "WO-STARTED", "SKU-FG-1000", "PV-OLD", 10m, 10, DateTimeOffset.Parse("2026-07-06T16:00:00Z"), "PCS");
+            started.MarkReleased();
+            started.Start(DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
+            dbContext.WorkOrders.Add(started);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<RecordingTransactionUnitOfWork>();
+            var mediator = (TransactionAssertingMediator)scope.ServiceProvider.GetRequiredService<IMediator>();
+            var handler = scope.ServiceProvider.GetRequiredService<EngineeringChangeReleasedIntegrationEventHandlerForMesWip>();
+
+            await handler.HandleAsync(CreateEngineeringChangeReleasedEvent(), CancellationToken.None);
+
+            Assert.Equal(1, mediator.PublishCount);
+            Assert.True(unitOfWork.BeginCalled);
+            Assert.True(unitOfWork.CommitCalled);
+            Assert.False(unitOfWork.RollbackCalled);
+        }
+
+        await using var assertionDbContext = CreateDbContext(options);
+        var impact = await assertionDbContext.EngineeringChangeWorkOrderImpacts
+            .SingleAsync(x => x.Status == MesEngineeringChangeImpactStatuses.PendingDecision);
+        Assert.Equal("WO-STARTED", impact.WorkOrderId);
         Assert.Equal(1, await assertionDbContext.ProcessedIntegrationEvents.CountAsync(x => x.ConsumerName == EngineeringChangeReleasedIntegrationEventHandlerForMesWip.ConsumerName));
     }
 
@@ -587,6 +639,134 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException("Noop mediator cannot stream requests.");
+        }
+    }
+
+    private sealed class TransactionAssertingMediator(RecordingTransactionUnitOfWork unitOfWork) : IMediator
+    {
+        public int PublishCount { get; private set; }
+
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            PublishCount++;
+            Assert.NotNull(unitOfWork.CurrentTransaction);
+            return Task.CompletedTask;
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+            where TNotification : INotification
+        {
+            PublishCount++;
+            Assert.NotNull(unitOfWork.CurrentTransaction);
+            return Task.CompletedTask;
+        }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Transaction asserting mediator cannot send requests.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            throw new NotSupportedException("Transaction asserting mediator cannot send requests.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Transaction asserting mediator cannot send requests.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Transaction asserting mediator cannot stream requests.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Transaction asserting mediator cannot stream requests.");
+        }
+    }
+
+    private sealed class RecordingTransactionUnitOfWork : ITransactionUnitOfWork
+    {
+        public IDbContextTransaction? CurrentTransaction { get; set; }
+
+        public bool BeginCalled { get; private set; }
+
+        public bool CommitCalled { get; private set; }
+
+        public bool RollbackCalled { get; private set; }
+
+        public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        {
+            BeginCalled = true;
+            return Task.FromResult<IDbContextTransaction>(new RecordingDbContextTransaction());
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            CommitCalled = true;
+            CurrentTransaction = null;
+            return Task.CompletedTask;
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            RollbackCalled = true;
+            CurrentTransaction = null;
+            return Task.CompletedTask;
+        }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(0);
+        }
+
+        public Task<bool> SaveEntitiesAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(true);
+        }
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingDbContextTransaction : IDbContextTransaction
+    {
+        public Guid TransactionId { get; } = Guid.CreateVersion7();
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public void Commit()
+        {
+        }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public void Rollback()
+        {
+        }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
         }
     }
 }
