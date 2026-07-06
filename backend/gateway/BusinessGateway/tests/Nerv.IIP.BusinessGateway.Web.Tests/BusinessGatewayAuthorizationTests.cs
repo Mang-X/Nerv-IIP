@@ -880,6 +880,8 @@ public sealed class BusinessGatewayAuthorizationTests
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/plans", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspections", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/inspection-measurements/trends?deviceAssetId=DEV-OIL-01&characteristicCode=bearing-temperature&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenancePlansRead);
+        routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/reliability/summary?deviceAssetId=DEV-OIL-01&technicianUserId=worker-001&windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
         routes.Add(HttpMethod.Post, "/api/business-console/v1/maintenance/spare-parts", BusinessGatewayPermissions.MaintenanceWorkOrdersManage);
         routes.Add(HttpMethod.Get, "/api/business-console/v1/maintenance/availability-windows?windowStartUtc=2026-06-01T08:00:00Z&windowEndUtc=2026-06-01T16:00:00Z&deviceAssetIds=DEV-OIL-01", BusinessGatewayPermissions.MaintenanceWorkOrdersRead);
