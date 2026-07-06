@@ -131,6 +131,20 @@ public sealed class WmsExecutionAggregateTests
     }
 
     [Fact]
+    public void Unknown_receiving_quality_status_fails_closed_to_pending_quality_gate()
+    {
+        var inbound = DomainWmsFactory.InboundOrderWithQualityStatus("iqc");
+
+        var request = Assert.Single(inbound.Complete("idem-in-iqc-001"));
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            inbound.CreatePutawayTask("TASK-IN-IQC-001", "LINE-001", "LOC-STAGE", "LOC-A-01", 5m));
+
+        Assert.Equal(InboundOrderStatus.PendingQualityCheck, inbound.Status);
+        Assert.Equal("quality", request.QualityStatus);
+        Assert.Contains("quality", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Putaway_quantity_cannot_exceed_inbound_line_quantity()
     {
         var inbound = DomainWmsFactory.InspectionExemptInboundOrder();
@@ -366,6 +380,11 @@ internal static class DomainWmsFactory
 
     public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder QualifiedInboundOrder()
     {
+        return InboundOrderWithQualityStatus("qualified");
+    }
+
+    public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder InboundOrderWithQualityStatus(string qualityStatus)
+    {
         return Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.Create(
             "org-001",
             "env-dev",
@@ -373,7 +392,7 @@ internal static class DomainWmsFactory
             "purchase-receipt",
             "PO-001",
             "SITE-01",
-            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", "owner-001")]);
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, qualityStatus, "company", "owner-001")]);
     }
 
     public static Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate.OutboundOrder OutboundOrder(decimal requestedQuantity = 4m)

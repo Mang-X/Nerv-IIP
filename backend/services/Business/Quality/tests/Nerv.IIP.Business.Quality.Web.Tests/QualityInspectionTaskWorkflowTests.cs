@@ -44,6 +44,23 @@ public sealed class QualityInspectionTaskWorkflowTests
     }
 
     [Fact]
+    public async Task Wms_inbound_completed_creates_task_for_unlisted_quality_status_that_wms_gates()
+    {
+        await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_creates_task_for_unlisted_quality_status_that_wms_gates));
+        dbContext.InspectionPlans.Add(ActivePlan("PLAN-RCV-IQC", "receiving", "SKU-RM-1000"));
+        await dbContext.SaveChangesAsync();
+        var handler = CreateWmsHandler(dbContext);
+
+        await handler.HandleAsync(WmsInboundCompleted("IN-IQC", "LINE-001", "SKU-RM-1000", "iqc"), CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var task = await dbContext.InspectionTasks.SingleAsync();
+        Assert.Equal("IN-IQC", task.SourceDocumentId);
+        Assert.Equal("LINE-001", task.SourceDocumentLineId);
+        Assert.Equal("SKU-RM-1000", task.SkuCode);
+    }
+
+    [Fact]
     public async Task Wms_inbound_completed_deduplicates_duplicate_lines_before_save()
     {
         await using var dbContext = CreateDbContext(nameof(Wms_inbound_completed_deduplicates_duplicate_lines_before_save));

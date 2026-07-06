@@ -2,6 +2,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggre
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.DomainEvents;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 
@@ -338,7 +339,7 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
         LotNo = WmsText.Optional(draft.LotNo);
         SerialNo = WmsText.Optional(draft.SerialNo);
         QualityStatus = WmsText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
-        QualityGateStatus = InboundQualityGateStatuses.RequiresInspection(QualityStatus)
+        QualityGateStatus = WmsReceivingQualityStatuses.RequiresInspection(QualityStatus)
             ? InboundQualityGateStatuses.Pending
             : InboundQualityGateStatuses.NotRequired;
         OwnerType = WmsText.Required(draft.OwnerType, nameof(draft.OwnerType)).ToLowerInvariant();
@@ -413,15 +414,7 @@ public static class InboundQualityGateStatuses
     public const string Rejected = "rejected";
     public const string NotRequired = "not-required";
 
-    private static readonly HashSet<string> InspectionRequiredStatuses = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "quality",
-        "inspection-required",
-        "quality-inspection-required",
-        "pending-quality-check",
-    };
-
-    public static bool RequiresInspection(string qualityStatus) => InspectionRequiredStatuses.Contains(qualityStatus);
+    public static bool RequiresInspection(string qualityStatus) => WmsReceivingQualityStatuses.RequiresInspection(qualityStatus);
 }
 
 internal readonly record struct InboundQualityInspectionResult(string GateStatus)

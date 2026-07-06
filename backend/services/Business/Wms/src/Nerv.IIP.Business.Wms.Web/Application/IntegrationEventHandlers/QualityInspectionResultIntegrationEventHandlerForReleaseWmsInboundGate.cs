@@ -87,21 +87,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 dbContext.SupplierReturnRequests.Add(supplierReturn);
             }
         }
-        catch (ArgumentException exception)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            await DeadLetterAsync(
-                integrationEvent,
-                "quality-inspection-result-divergence",
-                exception.Message,
-                cancellationToken);
-        }
-        catch (InvalidOperationException exception)
-        {
-            await DeadLetterAsync(
-                integrationEvent,
-                "quality-inspection-result-divergence",
-                exception.Message,
-                cancellationToken);
+            await DeadLetterDivergenceAsync(integrationEvent, exception, cancellationToken);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -131,6 +119,18 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 integrationEvent,
                 failureCode,
                 failureMessage),
+            cancellationToken);
+    }
+
+    private Task DeadLetterDivergenceAsync(
+        InspectionResultIntegrationEvent integrationEvent,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        return DeadLetterAsync(
+            integrationEvent,
+            "quality-inspection-result-divergence",
+            exception.Message,
             cancellationToken);
     }
 }
