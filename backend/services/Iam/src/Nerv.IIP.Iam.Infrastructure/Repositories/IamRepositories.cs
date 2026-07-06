@@ -30,13 +30,17 @@ public sealed class UserRepository(ApplicationDbContext context)
 
     public async Task<User?> GetByIdAsync(UserId userId, CancellationToken cancellationToken = default)
     {
-        return await DbContext.Users.SingleOrDefaultAsync(x => x.Id == userId && x.Deleted == NotDeleted, cancellationToken);
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(x => x.Id == userId && x.Deleted == NotDeleted, cancellationToken);
     }
 
     public async Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default)
     {
         var normalizedLoginName = loginName.ToLowerInvariant();
-        return await DbContext.Users.SingleOrDefaultAsync(
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(
             x => x.LoginName.ToLower() == normalizedLoginName && x.Deleted == NotDeleted,
             cancellationToken);
     }
@@ -44,7 +48,9 @@ public sealed class UserRepository(ApplicationDbContext context)
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email.ToLowerInvariant();
-        return await DbContext.Users.SingleOrDefaultAsync(
+        return await DbContext.Users
+            .Include(x => x.PasswordHistory)
+            .SingleOrDefaultAsync(
             x => x.Email.ToLower() == normalizedEmail && x.Deleted == NotDeleted,
             cancellationToken);
     }
