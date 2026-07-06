@@ -1,0 +1,206 @@
+// 产线监控 mock 聚合（MAN-316）：真实业务画像前置 ——
+// ① 产线状态从设备画像**真实归并**（buildEquipmentOverview 同源：设备屏卷绕机
+//    报警 ⇔ 产线屏电芯线红灯），断线设备计入失联角标（防假绿）；
+// ② 当班产量按**标准节拍反推**（非拍数字），良品/报废/返修与计划勾稽；
+// ③ 班次剩余按真实时钟推算；④ 横幅只在有事时存在（异常是例外）。
+// 🟠 产量/节拍/达成待 #570 真实端点，接入后由 fetchers/line.ts 单点切换。
+import type { DeviceCell } from '@/data/contracts/equipment'
+import type { CurrentWo, LineBoard, LineState, LineSummaryCard } from '@/data/contracts/line'
+import { buildEquipmentOverview } from './equipment'
+import { clock, jitter, seq } from './fixtures'
+import { LINES, WORKSHOPS } from './masterdata'
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n))
+}
+
+// —— 线型工艺档案：标准节拍（s/件）+ 工序路线 + 在制产品（真实业务画像）——
+interface LineProfile {
+  taktSec: number
+  steps: string[]
+  product: string
+  doingIdx: number
+}
+const LINE_PROFILES: Record<string, LineProfile> = {
+  'LN-STAMP-1': { taktSec: 9, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: 'Model C 左侧围外板', doingIdx: 1 },
+  'LN-STAMP-2': { taktSec: 11, steps: ['上料', '冲压成形', '在线检测', '码垛'], product: '发动机舱盖内板', doingIdx: 1 },
+  'LN-WELD-1': { taktSec: 66, steps: ['装夹定位', '机器人焊接', '涂胶', '下件检测'], product: 'Model C 白车身总成', doingIdx: 1 },
+  'LN-WELD-2': { taktSec: 72, steps: ['装夹定位', '激光焊接', '下件检测'], product: '后地板总成', doingIdx: 1 },
+  'LN-PAINT-1': { taktSec: 95, steps: ['前处理', '电泳', '中涂', '面漆', '流平烘干'], product: 'Model C 车身涂装', doingIdx: 2 },
+  'LN-ASSY-1': { taktSec: 78, steps: ['内饰装配', '底盘合装', '油液加注', '下线检测'], product: 'Model C 整车装配', doingIdx: 1 },
+  'LN-ASSY-2': { taktSec: 84, steps: ['内饰装配', '风挡涂胶', '四轮定位', '下线检测'], product: 'Model C 整车装配', doingIdx: 0 },
+  'LN-BAT-1': { taktSec: 13, steps: ['极片上料', '卷绕', '注液', '化成', '分容'], product: 'LFP-280Ah 电芯', doingIdx: 1 },
+  'LN-BAT-2': { taktSec: 48, steps: ['模组上件', '堆叠', '气密检测', 'EOL 测试'], product: '标准电池包 PACK-96s', doingIdx: 1 },
+  'LN-INJ-1': { taktSec: 35, steps: ['原料干燥', '注塑成形', '取件', '去毛边'], product: '前保险杠骨架', doingIdx: 1 },
+  'LN-MACH-1': { taktSec: 210, steps: ['粗加工', '精加工', '清洗', '三坐标检测'], product: '电机壳体 EM-3', doingIdx: 1 },
+}
+const DEFAULT_LINE_PROFILE: LineProfile = { taktSec: 60, steps: ['上料', '加工', '检测'], product: '通用件', doingIdx: 1 }
+
+const STATE_LABELS: Record<LineState, string> = {
+  run: '正常作业',
+  attention: '需关注',
+  alarm: '设备报警',
+}
+
+/** 状态归并（纯函数）：任一设备报警 → 红；停机/待机 → 黄；否则绿。断线不改灯，走失联角标。 */
+export function composeLineState(devices: Pick<DeviceCell, 'state'>[]): LineState {
+  if (devices.some((d) => d.state === 'alarm')) return 'alarm'
+  if (devices.some((d) => d.state === 'down' || d.state === 'idle')) return 'attention'
+  return 'run'
+}
+
+/** 当班（早班 08:00–20:00 / 夜班 20:00–08:00），按真实时钟推算已过/剩余。 */
+export function shiftNow(now = new Date()): {
+  name: string
+  range: string
+  remainingMin: number
+  elapsedMin: number
+} {
+  const minOfDay = now.getHours() * 60 + now.getMinutes()
+  const day = minOfDay >= 480 && minOfDay < 1200
+  const elapsed = day ? minOfDay - 480 : minOfDay >= 1200 ? minOfDay - 1200 : minOfDay + 240
+  return {
+    name: day ? '早班' : '夜班',
+    range: day ? '08:00–20:00' : '20:00–08:00',
+    remainingMin: 720 - elapsed,
+    elapsedMin: elapsed,
+  }
+}
+
+/** 单线核心指标（选择器卡与单线屏共用，保证两处数字一致的口径） */
+function lineMetrics(lineId: string, state: LineState, elapsedMin: number) {
+  const p = LINE_PROFILES[lineId] ?? DEFAULT_LINE_PROFILE
+  // 达成率：报警线明显掉、关注线小掉（🟠 待 #570）
+  const achievement =
+    state === 'alarm'
+      ? clamp(jitter(78, 6), 68, 88)
+      : state === 'attention'
+        ? clamp(jitter(88, 5), 80, 95)
+        : clamp(jitter(96, 4), 90, 100)
+  // 节拍：落后为正（红），报警线显著落后
+  const deviationPct =
+    state === 'alarm'
+      ? clamp(jitter(18, 6), 10, 28)
+      : state === 'attention'
+        ? clamp(jitter(8, 5), 2, 15)
+        : clamp(jitter(0, 8), -6, 6)
+  const actualSec = +(p.taktSec * (1 + deviationPct / 100)).toFixed(1)
+  // 当班计划按标准节拍反推（单流简化）
+  const plan = Math.max(1, Math.floor((elapsedMin * 60) / p.taktSec))
+  const total = Math.round((plan * achievement) / 100)
+  const scrap = clamp(Math.round(total * 0.008) + clamp(jitter(1, 2), 0, 2), 0, total)
+  const rework = clamp(clamp(jitter(2, 3), 0, 4), 0, total - scrap)
+  const good = total - scrap - rework
+  return { profile: p, achievement, deviationPct, actualSec, plan, good, scrap, rework }
+}
+
+/** 该线一句话异常（卡片用；有事才有） */
+function lineAlert(devices: DeviceCell[]): string | undefined {
+  const alarm = devices.find((d) => d.state === 'alarm')
+  if (alarm) return `${alarm.name} ${alarm.block ?? '报警'}`
+  const down = devices.find((d) => d.state === 'down')
+  if (down) return `${down.name} 停机待修`
+  const idle = devices.find((d) => d.state === 'idle' && d.block)
+  if (idle) return idle.block
+  return undefined
+}
+
+/** /line 选择器：迷你监控卡（红线置顶，其余保持产线原序） */
+export function buildLineCards(
+  factoryId = 'F01',
+  workshopIds: string[] | 'all' = 'all',
+): LineSummaryCard[] {
+  const eq = buildEquipmentOverview(factoryId, workshopIds)
+  const byLine = new Map<string, DeviceCell[]>()
+  for (const d of eq.devices) {
+    const arr = byLine.get(d.lineId) ?? []
+    arr.push(d)
+    byLine.set(d.lineId, arr)
+  }
+  const { elapsedMin } = shiftNow()
+  const cards: LineSummaryCard[] = []
+  for (const line of LINES) {
+    const devices = byLine.get(line.id)
+    if (!devices?.length) continue
+    const state = composeLineState(devices)
+    const m = lineMetrics(line.id, state, Math.max(30, elapsedMin))
+    cards.push({
+      id: line.id,
+      name: line.name,
+      workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.name ?? line.workshopId,
+      state,
+      stateLabel: STATE_LABELS[state],
+      offlineDevices: devices.filter((d) => d.state === 'offline').length,
+      achievement: m.achievement,
+      taktDeviationPct: m.deviationPct,
+      currentWo: seq('WO', 1940 + LINES.indexOf(line)),
+      alert: lineAlert(devices),
+    })
+  }
+  const rank: Record<LineState, number> = { alarm: 0, attention: 1, run: 2 }
+  return cards.sort((a, b) => rank[a.state] - rank[b.state])
+}
+
+/** /line/[id] 单线大屏；scope 外或不存在的线返回 null。 */
+export function buildLineBoard(
+  lineId: string,
+  factoryId = 'F01',
+  workshopIds: string[] | 'all' = 'all',
+): LineBoard | null {
+  const line = LINES.find((l) => l.id === lineId)
+  if (!line) return null
+  const eq = buildEquipmentOverview(factoryId, workshopIds)
+  const devices = eq.devices.filter((d) => d.lineId === lineId)
+  if (!devices.length) return null // scope 外（越权线）
+
+  const state = composeLineState(devices)
+  const shift = shiftNow()
+  const elapsed = Math.max(30, shift.elapsedMin)
+  const m = lineMetrics(lineId, state, elapsed)
+
+  // 横幅：只在报警/停机时存在（异常是例外）
+  const alarmDev = devices.find((d) => d.state === 'alarm')
+  const downDev = devices.find((d) => d.state === 'down')
+  const banner = alarmDev
+    ? { level: 'alarm' as const, text: `${alarmDev.name} ${alarmDev.block ?? '设备报警'}`, since: clock(jitter(26, 6)) }
+    : downDev
+      ? { level: 'downtime' as const, text: `${downDev.name} ${downDev.block ?? '停机'}`, since: clock(jitter(48, 8)) }
+      : undefined
+
+  // 小时产量趋势（近 12h）：围绕节拍产能波动，报警线尾部明显走低
+  const perHour = Math.round(3600 / m.profile.taktSec)
+  const hourly = Array.from({ length: 12 }, (_, i) => {
+    const base = state === 'alarm' && i >= 10 ? perHour * 0.4 : perHour
+    return Math.max(0, Math.round(base + ((Math.random() - 0.5) * perHour) / 4))
+  })
+
+  const wo: CurrentWo = {
+    code: seq('WO', 1940 + LINES.indexOf(line)),
+    product: m.profile.product,
+    qtyPlan: Math.ceil(m.plan / 100) * 100,
+    qtyDone: m.good,
+    wip: clamp(jitter(devices.length * 2, 4), 2, 40),
+    dueInMin: clamp(jitter(300, 150), 60, 600),
+    steps: m.profile.steps.map((name, i) => ({
+      name,
+      state: i < m.profile.doingIdx ? ('done' as const) : i === m.profile.doingIdx ? ('doing' as const) : ('todo' as const),
+    })),
+    kitting: lineId === 'LN-ASSY-2' ? 'short' : 'ok', // 🟡 线边齐套（单工单）
+  }
+
+  return {
+    lineId,
+    lineName: line.name,
+    workshopName: WORKSHOPS.find((w) => w.id === line.workshopId)?.name ?? line.workshopId,
+    state,
+    stateLabel: STATE_LABELS[state],
+    offlineDevices: devices.filter((d) => d.state === 'offline').length,
+    banner,
+    shift,
+    output: { good: m.good, scrap: m.scrap, rework: m.rework, plan: m.plan, achievement: m.achievement },
+    takt: { standardSec: m.profile.taktSec, actualSec: m.actualSec, deviationPct: m.deviationPct },
+    hourly,
+    wo,
+    devices: devices.map((d) => ({ id: d.id, name: d.name, state: d.state, stateLabel: d.stateLabel })),
+  }
+}
