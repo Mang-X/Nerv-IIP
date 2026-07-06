@@ -139,6 +139,19 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
             degradationSources: [],
           },
         },
+        {
+          suggestionId: 'suggestion-003',
+          runId: 'run-001',
+          suggestionType: 'reschedule-out',
+          skuCode: 'FG-SHOCK',
+          uomCode: 'pcs',
+          siteCode: 'SITE-01',
+          quantity: 8,
+          requiredDate: '2026-06-20',
+          status: 'Open',
+          reasonCode: 'scheduled-receipt-early',
+          netRequirementExplanation: null,
+        },
       ]),
       suggestionsError: shallowRef(null),
       suggestionsPending: shallowRef(false),
@@ -227,5 +240,13 @@ describe('PlanningWorkbench', () => {
     expect(wrapper.text()).toContain('组件毛需求')
     expect(wrapper.text()).toContain('scrap/yield 已计入组件毛需求')
     expect(wrapper.text()).toContain('SO-1001')
+  })
+
+  it('renders MRP exception suggestions as non-acceptance workbench rows', () => {
+    const wrapper = mount(PlanningWorkbench)
+
+    expect(wrapper.text()).toContain('延期调整')
+    expect(wrapper.text()).toContain('异常待处理')
+    expect(wrapper.findAll('button').filter((button) => button.text() === '接受')).toHaveLength(2)
   })
 })

@@ -554,6 +554,16 @@ public interface IBusinessPlanningClient
         BusinessConsolePlanningDemandCancelRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
         string internalBearerToken,
         BusinessConsoleRunMrpRequest request,
@@ -3306,6 +3316,56 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         return new BusinessConsoleAcceptedResponse(true);
     }
 
+    public Task<BusinessConsoleForecastInputListResponse> ListForecastInputsAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken) =>
+        ListForecastInputsCoreAsync(internalBearerToken, request, cancellationToken);
+
+    private async Task<BusinessConsoleForecastInputListResponse> ListForecastInputsCoreAsync(
+        string internalBearerToken,
+        BusinessConsoleForecastInputListRequest request,
+        CancellationToken cancellationToken)
+    {
+        var items = await SendAsync<IReadOnlyCollection<BusinessConsoleForecastInputItem>>(
+            internalBearerToken,
+            HttpMethod.Get,
+            "/api/business/v1/planning/forecasts?" + Query(
+                ("organizationId", request.OrganizationId),
+                ("environmentId", request.EnvironmentId),
+                ("skuCode", request.SkuCode),
+                ("siteCode", request.SiteCode),
+                ("fromDate", request.FromDate),
+                ("toDate", request.ToDate)),
+            null,
+            cancellationToken);
+        return new BusinessConsoleForecastInputListResponse(items);
+    }
+
+    public async Task<BusinessConsoleForecastInputItem> CreateOrUpdateForecastInputAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateForecastInputRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamCreateOrUpdateForecastInputResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/planning/forecasts",
+            request,
+            cancellationToken);
+        return new BusinessConsoleForecastInputItem(
+            response.ForecastInputId,
+            request.ForecastReference,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.PeriodStartDate,
+            request.PeriodEndDate,
+            request.Quantity,
+            request.BackwardConsumptionDays,
+            request.ForwardConsumptionDays);
+    }
+
     public async Task<BusinessConsoleRunMrpResponse> RunMrpAsync(
         string internalBearerToken,
         BusinessConsoleRunMrpRequest request,
@@ -3507,6 +3567,8 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
         };
 
     private sealed record DownstreamCreateOrUpdateDemandSourceResponse(string DemandSourceId);
+
+    private sealed record DownstreamCreateOrUpdateForecastInputResponse(string ForecastInputId);
 
     private sealed record DownstreamMpsBucketItem(
         string MpsId,

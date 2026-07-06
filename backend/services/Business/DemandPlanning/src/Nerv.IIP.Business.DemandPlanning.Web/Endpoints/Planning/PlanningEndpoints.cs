@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
@@ -96,6 +97,29 @@ public sealed record CancelDemandSourceRequest(
     [property: RouteParam] DemandSourceId DemandSourceId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId);
+
+public sealed record CreateOrUpdateForecastInputRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ForecastReference,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    DateOnly PeriodStartDate,
+    DateOnly PeriodEndDate,
+    decimal Quantity,
+    int BackwardConsumptionDays = 0,
+    int ForwardConsumptionDays = 0);
+
+public sealed record CreateOrUpdateForecastInputResponse(ForecastInputId ForecastInputId);
+
+public sealed record ListForecastInputsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? SkuCode,
+    string? SiteCode,
+    DateOnly? FromDate,
+    DateOnly? ToDate);
 
 public sealed record RunMrpRequest(string OrganizationId, string EnvironmentId, DateOnly HorizonStart, DateOnly HorizonEnd);
 
@@ -290,6 +314,53 @@ public sealed class CancelDemandSourceEndpoint(ISender sender)
     }
 }
 
+public sealed class CreateOrUpdateForecastInputEndpoint(ISender sender)
+    : DemandPlanningEndpoint<CreateOrUpdateForecastInputRequest, ResponseData<CreateOrUpdateForecastInputResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<CreateOrUpdateForecastInputEndpoint>());
+    }
+
+    public override async Task HandleAsync(CreateOrUpdateForecastInputRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new CreateOrUpdateForecastInputCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.ForecastReference,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.PeriodStartDate,
+            req.PeriodEndDate,
+            req.Quantity,
+            req.BackwardConsumptionDays,
+            req.ForwardConsumptionDays), ct);
+        await Send.OkAsync(new CreateOrUpdateForecastInputResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListForecastInputsEndpoint(ISender sender)
+    : DemandPlanningEndpoint<ListForecastInputsRequest, ResponseData<IReadOnlyCollection<ForecastInputResponse>>>
+{
+    public override void Configure()
+    {
+        ConfigureDemandPlanningContract(DemandPlanningEndpointContracts.Get<ListForecastInputsEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListForecastInputsRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListForecastInputsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SkuCode,
+            req.SiteCode,
+            req.FromDate,
+            req.ToDate), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed class RunMrpEndpoint(ISender sender)
     : DemandPlanningEndpoint<RunMrpRequest, ResponseData<RunMrpResponse>>
 {
@@ -401,6 +472,8 @@ public static class DemandPlanningEndpointContracts
         new(typeof(CreateOrUpdateDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdatePlanningDemand"),
         new(typeof(ListDemandSourcesEndpoint), "GET", "/api/business/v1/planning/demands", DemandPlanningPermissionCodes.DemandsRead, InternalServiceAuthorizationPolicy.Name, "listPlanningDemands"),
         new(typeof(CancelDemandSourceEndpoint), "POST", "/api/business/v1/planning/demands/{demandSourceId}/cancel", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "cancelPlanningDemand"),
+        new(typeof(CreateOrUpdateForecastInputEndpoint), "POST", "/api/business/v1/planning/forecasts", DemandPlanningPermissionCodes.DemandsManage, InternalServiceAuthorizationPolicy.Name, "createOrUpdatePlanningForecast"),
+        new(typeof(ListForecastInputsEndpoint), "GET", "/api/business/v1/planning/forecasts", DemandPlanningPermissionCodes.DemandsRead, InternalServiceAuthorizationPolicy.Name, "listPlanningForecasts"),
         new(typeof(RunMrpEndpoint), "POST", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRun, InternalServiceAuthorizationPolicy.Name, "runPlanningMrp"),
         new(typeof(ListMrpRunsEndpoint), "GET", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningMrpRuns"),
         new(typeof(ListMrpPeggingEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/pegging", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMrpPegging"),
