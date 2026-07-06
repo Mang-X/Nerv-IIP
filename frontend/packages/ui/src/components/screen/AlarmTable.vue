@@ -9,6 +9,10 @@ import ScreenPanel from './ScreenPanel.vue'
  */
 withDefaults(
   defineProps<{
+    /** Panel heading (2026-07 生产走查：各屏语境不同，开放定制). */
+    title?: string
+    /** Right-side hint text; pass '' to hide (大屏无点击语境). */
+    more?: string
     rows?: {
       time: string
       line: string
@@ -21,6 +25,8 @@ withDefaults(
     }[]
   }>(),
   {
+    title: '告警列表',
+    more: '查看全部 ›',
     rows: () => [
       { time: '10:23:14', line: 'CNC 线 C', level: 'sev', name: '主轴电机过载', wo: 'WO-2406-0421', status: '未确认' },
       { time: '10:18:07', line: '焊接线 A', level: 'gen', name: '焊枪温度异常', wo: 'WO-2406-0418', status: '处理中' },
@@ -33,8 +39,8 @@ withDefaults(
 </script>
 
 <template>
-  <ScreenPanel title="告警列表" class="sb-at">
-    <template #extra><span class="sb-at-more">查看全部 ›</span></template>
+  <ScreenPanel :title="title" class="sb-at">
+    <template v-if="more" #extra><span class="sb-at-more">{{ more }}</span></template>
     <table class="sb-at-tbl">
       <thead>
         <tr>
