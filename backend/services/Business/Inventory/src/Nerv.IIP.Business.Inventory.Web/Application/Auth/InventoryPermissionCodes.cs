@@ -7,6 +7,7 @@ public static class InventoryPermissionCodes
     public const string LedgerRead = "business.inventory.ledger.read";
     public const string CountsManage = "business.inventory.counts.manage";
     public const string ReservationsManage = "business.inventory.reservations.manage";
+    public const string ExpiredStockOverride = "business.inventory.expired-stock.override";
 
     public static readonly IReadOnlyCollection<string> All =
     [
@@ -15,5 +16,6 @@ public static class InventoryPermissionCodes
         LedgerRead,
         CountsManage,
         ReservationsManage,
+        ExpiredStockOverride,
     ];
 }

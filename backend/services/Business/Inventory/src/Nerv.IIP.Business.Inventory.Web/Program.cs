@@ -6,7 +6,9 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
@@ -31,6 +33,12 @@ try
         .AddNewtonsoftJson(options => { options.SerializerSettings.AddNetCorePalJsonConverters(); });
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
+    var masterDataBaseAddress = ResolveServiceBaseAddress(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    builder.Services.AddHttpClient<IInventorySkuExpiryPolicyProvider, HttpInventorySkuExpiryPolicyProvider>(client =>
+    {
+        client.BaseAddress = masterDataBaseAddress;
+        client.Timeout = TimeSpan.FromSeconds(2);
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -48,6 +56,10 @@ try
     builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
+    builder.Services.Configure<ExpiredStockBlockingOptions>(builder.Configuration.GetSection("Inventory:ExpiredStockBlocking"));
+    builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
+    builder.Services.AddScoped<ExpiredStockBlockingService>();
+    builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
@@ -146,6 +158,19 @@ static string ToLowerCamelEndpointName(string endpointTypeName)
         : endpointTypeName;
 
     return char.ToLowerInvariant(name[0]) + name[1..];
+}
+
+static Uri ResolveServiceBaseAddress(IConfiguration configuration, IHostEnvironment environment, string key, string developmentDefault)
+{
+    var configured = configuration[key];
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        configured = environment.IsDevelopment() || environment.IsEnvironment("Testing")
+            ? developmentDefault
+            : throw new InvalidOperationException($"{key} is required outside Development.");
+    }
+
+    return new Uri(configured, UriKind.Absolute);
 }
 
 #pragma warning disable S1118

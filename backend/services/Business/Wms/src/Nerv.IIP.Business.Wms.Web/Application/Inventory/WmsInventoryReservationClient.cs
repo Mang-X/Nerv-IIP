@@ -20,9 +20,47 @@ public sealed record WmsInventoryReservationRequest(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
-public sealed record WmsInventoryReservationResult(string ReservationId, decimal ReservedQuantity, decimal AvailableQuantity);
+public sealed record WmsInventoryReservationResult(
+    string ReservationId,
+    decimal ReservedQuantity,
+    decimal AvailableQuantity,
+    string? LotNo = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
+
+public sealed record WmsInventoryFefoReservationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    string? LocationCode = null);
+
+public sealed record WmsInventoryFefoReservationResult(
+    IReadOnlyCollection<WmsInventoryFefoReservationAllocation> Allocations,
+    decimal ReservedQuantity);
+
+public sealed record WmsInventoryFefoReservationAllocation(
+    string ReservationId,
+    string LocationCode,
+    string? LotNo,
+    string? SerialNo,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate,
+    decimal ReservedQuantity,
+    decimal AvailableQuantity);
 
 public sealed record WmsInventoryReservationReleaseRequest(string ReservationId, decimal Quantity);
 
@@ -55,6 +93,10 @@ public interface IWmsInventoryReservationClient
 {
     Task<WmsInventoryReservationResult> ReserveAsync(
         WmsInventoryReservationRequest request,
+        CancellationToken cancellationToken);
+
+    Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+        WmsInventoryFefoReservationRequest request,
         CancellationToken cancellationToken);
 
     Task<WmsInventoryReservationReleaseResult> ReleaseAsync(
@@ -90,6 +132,27 @@ public sealed class HttpWmsInventoryReservationClient(
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
             throw new KnownException(envelope?.Message ?? "Inventory reservation was rejected without a response payload.");
+        }
+
+        return envelope.Data;
+    }
+
+    public async Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
+        WmsInventoryFefoReservationRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/api/inventory/v1/reservations/fefo")
+        {
+            Content = JsonContent.Create(request),
+        };
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryFefoReservationResult>>(cancellationToken);
+        if (envelope is null || !envelope.Success || envelope.Data is null)
+        {
+            throw new KnownException(envelope?.Message ?? "Inventory FEFO reservation was rejected without a response payload.");
         }
 
         return envelope.Data;

@@ -56,6 +56,8 @@
 
 业务控制台前端只直接消费 BusinessGateway 暴露的 `/api/business-console/v1/**` 接口，不直接调用 BusinessMasterData、Inventory、Quality、MES、IAM 或 FileStorage 的服务 URL。BusinessGateway 属于业务平台聚合入口，不属于 PlatformGateway；它可以执行用户鉴权、IAM 权限检查、上下文透传、internal token 下游调用和页面级响应整理，但不承载业务规则或持久事实。
 
+当 BusinessGateway 需要向下游业务服务转发“当前用户已经通过额外权限校验”的事实时，不得使用裸 permission header。下游服务只能信任由 BusinessGateway 注入并通过共享配置密钥签名的最小 forwarded permission header；服务到服务 internal token 只证明调用方身份，不能单独代表终端用户具备高风险放行权限。入口服务必须先执行 IAM permission check，再注入签名 header；下游服务必须校验可信 issuer、签名、明确 permission code、组织/环境、请求键和短时效签发时间，未配置签名密钥、签名无效、上下文不匹配或签发时间过期时按未授权处理。
+
 BusinessGateway Console OpenAPI 的生成链路固定为：
 
 1. BusinessGateway 通过 FastEndpoints.Swagger 输出 `/swagger/v1/swagger.json`。

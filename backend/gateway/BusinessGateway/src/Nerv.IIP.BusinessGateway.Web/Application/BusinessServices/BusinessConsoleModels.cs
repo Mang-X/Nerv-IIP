@@ -814,7 +814,8 @@ public sealed record BusinessConsolePostStockMovementRequest(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    bool AllowExpiredStock = false);
 
 public sealed record BusinessConsolePostStockMovementResponse(
     string MovementId,

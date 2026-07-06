@@ -147,7 +147,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 stockLocator.SerialNo,
                 stockLocator.OwnerType,
                 stockLocator.OwnerId,
-                payload.InspectedQuantity),
+                payload.InspectedQuantity,
+                stockLocator.ProductionDate,
+                stockLocator.ExpiryDate),
             cancellationToken);
     }
 
@@ -169,7 +171,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
             NormalizeOptionalLocator(payload.LotNo),
             NormalizeOptionalLocator(payload.SerialNo),
             payload.OwnerType,
-            NormalizeOptionalLocator(payload.OwnerId));
+            NormalizeOptionalLocator(payload.OwnerId),
+            null,
+            null);
         return true;
     }
 
@@ -211,7 +215,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
         string? LotNo,
         string? SerialNo,
         string OwnerType,
-        string? OwnerId)
+        string? OwnerId,
+        DateOnly? ProductionDate,
+        DateOnly? ExpiryDate)
     {
         public static StockLocator FromStockRelease(StockReleaseDimensionPayload stockRelease)
         {
@@ -222,7 +228,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 NormalizeOptionalLocator(stockRelease.LotNo),
                 NormalizeOptionalLocator(stockRelease.SerialNo),
                 stockRelease.OwnerType,
-                NormalizeOptionalLocator(stockRelease.OwnerId));
+                NormalizeOptionalLocator(stockRelease.OwnerId),
+                null,
+                null);
         }
 
         public static StockLocator FromLedger(StockLedger ledger)
@@ -234,7 +242,9 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForStockStatus
                 ledger.LotNo,
                 ledger.SerialNo,
                 ledger.OwnerType,
-                ledger.OwnerId);
+                ledger.OwnerId,
+                ledger.ProductionDate,
+                ledger.ExpiryDate);
         }
     }
 }

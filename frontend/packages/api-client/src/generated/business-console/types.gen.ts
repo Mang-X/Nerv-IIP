@@ -3804,6 +3804,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     ownerType?: string;
     ownerId?: string | null;
     quantity?: number;
+    allowExpiredStock?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateStockCountTaskResponse = NetCorePalExtensionsDtoResponseData & {

@@ -8,11 +8,13 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.ServiceAuth;
@@ -441,6 +443,93 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", inventory.LastInternalToken);
         Assert.Equal("SKU-001", inventory.LastAvailabilityRequest!.SkuCode);
         Assert.Equal("S1", inventory.LastAvailabilityRequest.SiteCode);
+    }
+
+    [Fact]
+    public async Task Inventory_movement_override_permission_is_forwarded_only_after_gateway_authorization()
+    {
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
+            BusinessGatewayPermissions.InventoryMovementsCreate,
+            BusinessGatewayPermissions.InventoryExpiredStockOverride);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/movements", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            movementType = "outbound",
+            sourceService = "business-console",
+            sourceDocumentId = "OUT-EXPIRED",
+            sourceDocumentLineId = "LINE-001",
+            idempotencyKey = "idem-expired-override",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "L1",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            qualityStatus = "qualified",
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = -1m,
+            allowExpiredStock = true,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.InventoryMovementsCreate);
+        Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.InventoryExpiredStockOverride);
+        Assert.Equal("internal-test-token", inventory.LastInternalToken);
+        Assert.Contains(BusinessGatewayPermissions.InventoryExpiredStockOverride, inventory.LastForwardedPermissions);
+    }
+
+    [Fact]
+    public async Task Inventory_movement_override_permission_is_not_forwarded_when_gateway_authorization_denies_override()
+    {
+        var inventory = new RecordingInventoryClient();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.InventoryMovementsCreate);
+        await using var factory = CreateFactory(auth, services =>
+        {
+            services.RemoveAll<IBusinessInventoryClient>();
+            services.AddSingleton<IBusinessInventoryClient>(inventory);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", BusinessGatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/inventory/movements", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            movementType = "outbound",
+            sourceService = "business-console",
+            sourceDocumentId = "OUT-EXPIRED",
+            sourceDocumentLineId = "LINE-001",
+            idempotencyKey = "idem-expired-override",
+            skuCode = "SKU-001",
+            uomCode = "EA",
+            siteCode = "S1",
+            locationCode = "L1",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            qualityStatus = "qualified",
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = -1m,
+            allowExpiredStock = true,
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.DoesNotContain(BusinessGatewayPermissions.InventoryExpiredStockOverride, inventory.LastForwardedPermissions);
     }
 
     [Fact]
@@ -2991,7 +3080,9 @@ public sealed class BusinessGatewayProxyTests
             code = 0,
         }));
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
-        var client = new HttpBusinessInventoryClient(httpClient);
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions()));
 
         var response = await client.GetAvailabilityAsync(
             "internal-token-001",
@@ -3003,6 +3094,82 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/inventory/v1/availability?organizationId=org-001&environmentId=env-dev&skuCode=SKU-HTTP&uomCode=EA&siteCode=S1&qualityStatus=available&ownerType=owned", request.RequestUri!.PathAndQuery);
         Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task Inventory_http_client_signs_forwarded_permissions_for_downstream_override()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                movementId = "movement-http-001",
+                onHandQuantity = 10,
+                availableQuantity = 8,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var client = new HttpBusinessInventoryClient(
+            httpClient,
+            Options.Create(new BusinessGatewayInventoryForwardedPermissionOptions
+            {
+                Issuer = "business-gateway",
+                SigningKey = "test-signing-key",
+            }));
+
+        await client.PostMovementAsync(
+            "internal-token-001",
+            new BusinessConsolePostStockMovementRequest(
+                "org-001",
+                "env-dev",
+                "issue",
+                "business-gateway-test",
+                "doc-001",
+                null,
+                "idem-inventory-001",
+                "SKU-HTTP",
+                "EA",
+                "S1",
+                "L1",
+                "LOT-1",
+                null,
+                "qualified",
+                "own",
+                null,
+                1,
+                AllowExpiredStock: true),
+            CancellationToken.None,
+            [BusinessGatewayPermissions.InventoryExpiredStockOverride]);
+
+        var request = handler.Requests.Single();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/inventory/v1/movements", request.RequestUri!.PathAndQuery);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        var permissions = request.Headers.GetValues(InventoryForwardedPermissionHeaders.PermissionsHeaderName).Single();
+        var issuer = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuerHeaderName).Single();
+        var organizationId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.OrganizationHeaderName).Single();
+        var environmentId = request.Headers.GetValues(InventoryForwardedPermissionHeaders.EnvironmentHeaderName).Single();
+        var requestKey = request.Headers.GetValues(InventoryForwardedPermissionHeaders.RequestKeyHeaderName).Single();
+        var issuedAt = request.Headers.GetValues(InventoryForwardedPermissionHeaders.IssuedAtHeaderName).Single();
+        var signature = request.Headers.GetValues(InventoryForwardedPermissionHeaders.SignatureHeaderName).Single();
+        Assert.Equal(BusinessGatewayPermissions.InventoryExpiredStockOverride, permissions);
+        Assert.Equal("business-gateway", issuer);
+        Assert.Equal("org-001", organizationId);
+        Assert.Equal("env-dev", environmentId);
+        Assert.Equal("idem-inventory-001", requestKey);
+        Assert.True(long.TryParse(issuedAt, out var issuedAtUnixSeconds));
+        Assert.True(InventoryForwardedPermissionHeaders.VerifySignature(
+            "test-signing-key",
+            issuer,
+            permissions,
+            organizationId,
+            environmentId,
+            requestKey,
+            issuedAtUnixSeconds,
+            signature));
     }
 
     [Fact]
@@ -5033,6 +5200,8 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
 
     public BusinessConsoleInventoryAvailabilityRequest? LastAvailabilityRequest { get; private set; }
 
+    public IReadOnlyCollection<string> LastForwardedPermissions { get; private set; } = [];
+
     public Exception? AvailabilityFailure { get; init; }
 
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
@@ -5069,8 +5238,13 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null)
+    {
+        LastInternalToken = internalBearerToken;
+        LastForwardedPermissions = forwardedPermissions ?? [];
+        return Task.FromResult(new BusinessConsolePostStockMovementResponse("move-001", 10, 8));
+    }
 
     public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,

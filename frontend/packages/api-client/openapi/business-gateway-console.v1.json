@@ -33529,6 +33529,9 @@
           "quantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "allowExpiredStock": {
+            "type": "boolean"
           }
         }
       },
