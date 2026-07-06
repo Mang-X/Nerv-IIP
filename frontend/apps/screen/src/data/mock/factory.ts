@@ -138,29 +138,47 @@ export function buildFactoryOverview(
       di++
     }
   }
-  // 常规提醒流（每车间轮转），保证流有内容且全部真实命名
+  // 常规流（每车间两轮），保证两条流都溢出可滚且全部真实命名
   for (const [i, c] of cells.entries()) {
     const lines = linesByWorkshop(c.id)
     const lineName = lines[i % Math.max(1, lines.length)]?.name ?? c.name
-    alarms.push({
-      id: seq('AL', 2380 - i),
-      level: i % 3 === 0 ? 'warning' : 'info',
-      text:
-        i % 3 === 0
-          ? `${c.name} ${lineName} 节拍低于目标`
-          : i % 3 === 1
-            ? `${c.name} 物料齐套校验通过`
-            : `${c.name} ${lineName} 完工上报 ${seq('WO', 1900 + i)}`,
-      time: clock(jitter(16 + i * 8, 5)),
-    })
-    if (downtimes.length < 4) {
-      downtimes.push({
+    const lineName2 = lines[(i + 1) % Math.max(1, lines.length)]?.name ?? c.name
+    alarms.push(
+      {
+        id: seq('AL', 2380 - i),
+        level: i % 3 === 0 ? 'warning' : 'info',
+        text:
+          i % 3 === 0
+            ? `${c.name} ${lineName} 节拍低于目标`
+            : i % 3 === 1
+              ? `${c.name} 物料齐套校验通过`
+              : `${c.name} ${lineName} 完工上报 ${seq('WO', 1900 + i)}`,
+        time: clock(jitter(16 + i * 8, 5)),
+      },
+      {
+        id: seq('AL', 2360 - i),
+        level: i % 4 === 0 ? 'warning' : 'info',
+        text:
+          i % 4 === 0
+            ? `${c.name} ${lineName2} 首检超时提醒`
+            : `${c.name} ${lineName2} 质检放行 ${seq('WO', 1880 + i)}`,
+        time: clock(jitter(52 + i * 9, 6)),
+      },
+    )
+    downtimes.push(
+      {
         id: seq('DT', 840 - i),
         level: 'info',
         text: `${c.name} ${lineName} 计划保养完成 ${jitter(18, 8)} min`,
         time: clock(jitter(40 + i * 12, 8)),
-      })
-    }
+      },
+      {
+        id: seq('DT', 820 - i),
+        level: 'info',
+        text: `${c.name} ${lineName2} 换型停机记录 ${jitter(15, 6)} min`,
+        time: clock(jitter(96 + i * 14, 10)),
+      },
+    )
   }
 
   return { factoryId, kpis, workshops: cells, oee, alarms, downtimes }

@@ -46,8 +46,9 @@ describe('buildFactoryOverview', () => {
         expect(w.health).toBe(composeHealth(w))
         expect(w.manager).toBeTruthy()
       }
-      expect(s.alarms.length).toBeGreaterThan(0)
-      expect(s.downtimes.length).toBeGreaterThan(0)
+      // 两条流都要溢出可滚（ScrollBoard 不溢出不滚）
+      expect(s.alarms.length).toBeGreaterThanOrEqual(8)
+      expect(s.downtimes.length).toBeGreaterThanOrEqual(8)
       expect(s.oee.map((o) => o.label)).toEqual(['可用率', '性能率', '良品率'])
     }
   })

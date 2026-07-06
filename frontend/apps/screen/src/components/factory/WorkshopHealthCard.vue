@@ -67,9 +67,10 @@ const nf = new Intl.NumberFormat('en-US')
   min-height: 0;
   padding: 18px 20px 14px;
   border-radius: var(--sb-radius);
-  background: linear-gradient(180deg, var(--sb-panel-a), var(--sb-panel-b));
-  border: 1px solid var(--sb-line);
-  border-top-color: rgba(255, 255, 255, 0.09);
+  /* 通透：低透明度让氛围底透出来 */
+  background: linear-gradient(180deg, rgba(24, 38, 66, 0.42), rgba(10, 16, 30, 0.3));
+  border: 1px solid rgba(148, 190, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.1);
 }
 /* 红卡：边框微染 + 缓脉冲（置顶已由数据层排序保证） */
 .whc.red {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, StatusTag } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import WorkshopHealthCard from '@/components/factory/WorkshopHealthCard.vue'
@@ -26,7 +26,7 @@ const factoryName = computed(
   () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
 )
 
-// —— 顶部 KPI 带右侧单元（语义色只落在异常数字上）——
+// —— 顶部 KPI 带右侧单元（语义色只落在异常数字上；文案全中文业务词）——
 interface BandCell {
   label: string
   value: string
@@ -45,8 +45,8 @@ const bandCells = computed<BandCell[]>(() => {
       sub: `严重 ${k.criticalAlarms}`,
       tone: k.criticalAlarms > 0 ? 'bad' : k.openAlarms > 0 ? 'warn' : undefined,
     },
-    { label: 'Open 停机', value: String(k.openDowntime), tone: k.openDowntime > 0 ? 'warn' : undefined },
-    { label: 'Open NCR', value: String(k.openNcr), tone: k.openNcr > 0 ? 'warn' : undefined },
+    { label: '未结停机', value: String(k.openDowntime), tone: k.openDowntime > 0 ? 'warn' : undefined },
+    { label: '未结不良单', value: String(k.openNcr), tone: k.openNcr > 0 ? 'warn' : undefined },
   ]
 })
 </script>
@@ -54,8 +54,8 @@ const bandCells = computed<BandCell[]>(() => {
 <template>
   <ScreenLayout title="Nerv-IIP 工厂运营大屏" :line="factoryName" screen="指挥中心大屏 01">
     <div v-if="ov" class="fx">
-      <!-- 全厂 KPI 带：达成率大号进度环为焦点，其余为语义色数字 -->
-      <ScreenPanel class="band">
+      <!-- 全厂 KPI 带：达成率大号进度环为焦点 -->
+      <section class="sec band">
         <div class="band-in">
           <div class="hero">
             <div class="hero-ring" :style="{ '--p': ov.kpis.achievement }" />
@@ -73,18 +73,21 @@ const bandCells = computed<BandCell[]>(() => {
             </div>
           </div>
         </div>
-      </ScreenPanel>
+      </section>
 
       <div class="main">
-        <!-- 车间状态矩阵：红卡置顶（数据层排序），图例即健康度合成规则 -->
-        <ScreenPanel title="车间运行状态" class="matrix">
-          <template #extra>
+        <!-- 车间状态矩阵：无外壳容器（卡片直接浮在氛围底上），红卡置顶 -->
+        <section class="matrix-wrap">
+          <div class="sec-h">
+            <i class="sec-glyph" aria-hidden="true" />
+            <span class="sec-t">车间运行状态</span>
+            <span class="sec-rule" aria-hidden="true" />
             <span class="legend">
               <i class="lg green" />正常
               <i class="lg yellow" />关注 · 停机/达成率低
-              <i class="lg red" />异常 · critical/超期
+              <i class="lg red" />异常 · 严重告警/超期
             </span>
-          </template>
+          </div>
           <div class="matrix-grid">
             <WorkshopHealthCard v-for="w in ov.workshops" :key="w.id" :cell="w" />
             <div class="more-card">
@@ -93,23 +96,29 @@ const bandCells = computed<BandCell[]>(() => {
               <StatusTag tone="amber" label="待 #570" />
             </div>
           </div>
-        </ScreenPanel>
+        </section>
 
         <div class="side">
-          <ScreenPanel title="综合效率 OEE">
-            <template #extra>
+          <section class="sec">
+            <div class="sec-h">
+              <i class="sec-glyph" aria-hidden="true" />
+              <span class="sec-t">综合效率 OEE</span>
+              <span class="sec-rule" aria-hidden="true" />
               <StatusTag tone="amber" label="综合 ≈ 可用率 · 待 #570" />
-            </template>
+            </div>
             <div class="rings">
-              <RingGauge v-for="o in ov.oee" :key="o.label" :value="o.value" :label="o.label" :size="112" />
+              <RingGauge v-for="o in ov.oee" :key="o.label" :value="o.value" :label="o.label" :size="108" />
             </div>
             <p class="oee-note">性能率 / 良品率为占位值，#570 接入后启用真实综合 OEE</p>
-          </ScreenPanel>
+          </section>
 
-          <ScreenPanel title="实时告警" class="feed">
-            <template #extra>
+          <section class="sec feed">
+            <div class="sec-h">
+              <i class="sec-glyph" aria-hidden="true" />
+              <span class="sec-t">实时告警</span>
+              <span class="sec-rule" aria-hidden="true" />
               <span :class="['live', { stale: isStale }]">{{ isStale ? '数据滞留' : '实时' }}</span>
-            </template>
+            </div>
             <div class="feed-scroll">
               <ScrollBoard :items="ov.alarms" :row-key="(a) => a.id" :speed="22">
                 <template #row="{ item }">
@@ -121,9 +130,14 @@ const bandCells = computed<BandCell[]>(() => {
                 </template>
               </ScrollBoard>
             </div>
-          </ScreenPanel>
+          </section>
 
-          <ScreenPanel title="停机事件" class="feed">
+          <section class="sec feed">
+            <div class="sec-h">
+              <i class="sec-glyph" aria-hidden="true" />
+              <span class="sec-t">停机事件</span>
+              <span class="sec-rule" aria-hidden="true" />
+            </div>
             <div class="feed-scroll">
               <ScrollBoard :items="ov.downtimes" :row-key="(a) => a.id" :speed="18">
                 <template #row="{ item }">
@@ -135,7 +149,7 @@ const bandCells = computed<BandCell[]>(() => {
                 </template>
               </ScrollBoard>
             </div>
-          </ScreenPanel>
+          </section>
         </div>
       </div>
     </div>
@@ -156,6 +170,47 @@ const bandCells = computed<BandCell[]>(() => {
   place-content: center;
   color: var(--sb-faint);
   font-size: 15px;
+}
+
+/* —— 通透容器：低透明度背景让氛围底透出来，边框整圈近暗、顶边微亮 —— */
+.sec {
+  background: linear-gradient(180deg, rgba(20, 32, 58, 0.34), rgba(8, 14, 27, 0.26));
+  border: 1px solid rgba(148, 190, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 15px 18px;
+}
+
+/* —— 特效区块标题：斜切能量块 + 发光标题字 + 渐隐引导线 —— */
+.sec-h {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 12px;
+  min-height: 24px;
+}
+.sec-glyph {
+  width: 9px;
+  height: 19px;
+  flex: none;
+  border-radius: 2px;
+  transform: skewX(-16deg);
+  background: linear-gradient(180deg, var(--sb-cyan), rgba(74, 166, 238, 0.25));
+  box-shadow: 0 0 12px rgba(74, 166, 238, 0.55);
+}
+.sec-t {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(96, 180, 255, 0.45);
+  white-space: nowrap;
+}
+.sec-rule {
+  flex: 1;
+  height: 1px;
+  margin: 0 8px;
+  background: linear-gradient(90deg, rgba(135, 208, 255, 0.3), rgba(255, 255, 255, 0.05) 45%, transparent);
 }
 
 /* —— KPI 带 —— */
@@ -258,7 +313,7 @@ const bandCells = computed<BandCell[]>(() => {
   grid-template-columns: 1.9fr 1fr;
   gap: 16px;
 }
-.matrix {
+.matrix-wrap {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -277,6 +332,7 @@ const bandCells = computed<BandCell[]>(() => {
   gap: 7px;
   font-size: 12.5px;
   color: var(--sb-faint);
+  white-space: nowrap;
 }
 .legend .lg {
   width: 8px;
@@ -325,10 +381,10 @@ const bandCells = computed<BandCell[]>(() => {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 8px 0 2px;
+  padding: 6px 0 0;
 }
 .oee-note {
-  margin: 10px 0 0;
+  margin: 9px 0 0;
   font-size: 12px;
   color: var(--sb-faint);
   text-align: center;
