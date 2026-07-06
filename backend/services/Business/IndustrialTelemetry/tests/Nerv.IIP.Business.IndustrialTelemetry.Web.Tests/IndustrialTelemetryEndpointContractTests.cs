@@ -882,6 +882,26 @@ public sealed class IndustrialTelemetryEndpointContractTests
     }
 
     [Fact]
+    public async Task Alarm_escalation_scheduler_does_not_stop_host_for_yes_enabled_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IndustrialTelemetry:AlarmEscalation:Enabled"] = "yes",
+            })
+            .Build();
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        var scheduler = new AlarmEscalationScheduler(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            configuration,
+            NullLogger<AlarmEscalationScheduler>.Instance,
+            TimeProvider.System);
+
+        await scheduler.StartAsync(CancellationToken.None);
+        await scheduler.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public void Alarm_escalation_scheduler_skips_invalid_scope_configuration()
     {
         var configuration = new ConfigurationBuilder()
