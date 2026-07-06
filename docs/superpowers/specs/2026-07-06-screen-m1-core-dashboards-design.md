@@ -84,7 +84,7 @@ interface AccessScope {
 
 ### 1.4 组件策略（复用优先，缺则新建，风格统一）
 
-- **复用优先**：`@nerv-iip/ui` screen 层 28 组件（`ScreenPanel`/`OeeHero`/`RingGauge`/`StatusCard`/`AlarmTable`/`TrendChart`/`DigitalFlop`/`StatusLight`/`ScrollBoard` 等）作为原子件。
+- **复用优先，以文档站实际落地件为基准**：`@nerv-iip/ui` screen 层 28 组件（`ScreenPanel`/`OeeHero`/`RingGauge`/`StatusCard`/`AlarmTable`/`TrendChart`/`DigitalFlop`/`StatusLight`/`ScrollBoard` 等）作为原子件。**真实 props/用法/视觉以 design-system 文档站「大屏」分区 + 组件源码为准**（见 §1.6），不凭记忆或二手摘要选件。
 - **缺则新建，不受现有组件局限**：特殊场景（如超大产线红绿灯、设备状态全景墙、大屏选择卡）现有件不合适时，**直接按大屏风格新建**，不硬套/不改造现有件凑合。业务组合件建在各屏本地 `components/screen-blocks/`，**针对该屏内容单独设计版式**，不套统一模板。
 - **设计哲学/风格必须统一**（新建件的硬门禁，依据 `frontend/packages/ui/src/components/screen/product.md` 设计宪法 + `tokens.css`）：
   1. 只用 `--sb-*` 令牌，**不混入共享 `--*`**，无亮色模式；
@@ -99,6 +99,19 @@ interface AccessScope {
 - 占位指标（OEE 性能率/质量率=1、综合 OEE≈可用率）统一走 `PlaceholderBadge`/tooltip：屏上明确标注「≈可用率」「待 #570」，不伪装真 OEE。
 - 数据新鲜度 `IsSourceFresh` 驱动"失联灰条/角标"，防假绿。
 - 无对应闭环的能力（安灯呼叫-响应）显式标注「闭环待 MAN-322」，不假装有。
+
+### 1.6 参考资料（source of truth，实现前必读）
+
+设计与实现都以**项目中实际落地的组件**为基准，不凭记忆/二手摘要：
+
+- **实际落地组件（首要基准）**：design-system 文档站「大屏 / 控制室」分区 `frontend/apps/design-system/docs/components/screen/`——每组件 usage/props + 可交互 `ScreenDemo` 示例 + `gallery` 总览（`ScreenGallery`）。选件、比对视觉、给新建件定风格都以此为准；本地可 `pnpm -C frontend --filter @nerv-iip/design-system dev` 实机查阅。
+- **组件源码（API 权威）**：`frontend/packages/ui/src/components/screen/*.vue`（props/slots/emits 以源码为准）+ `index.ts` 导出边界。
+- **设计宪法**：`frontend/packages/ui/src/components/screen/product.md`。
+- **令牌**：`frontend/packages/ui/src/components/screen/tokens.css`。
+- **地基**：`apps/screen/src/screen-kit/`（`ScreenScaler`/`ScrollBoard`/`useScreenData`）+ `docs/superpowers/specs/2026-06-26-screen-foundation-design.md`。
+- **数据契约**：`@nerv-iip/api-client` business-console `types.gen.ts`（mock 契约对齐目标）。
+
+> 落地纪律：每屏实现子代理动手前，先读上述文档站对应组件页 + 源码，确认真实 props 再用；新建件先在文档站找最接近的落地件对齐风格。
 
 ## 二、屏 A · 工厂总览 `/factory`（MAN-314）
 
