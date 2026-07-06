@@ -31,10 +31,14 @@ export interface LineSummaryCard {
   alert?: string
 }
 
-/** 工序状态机步骤 */
-export interface WoStep {
+/** 工序流工位（流水线语义：各工序**同时**在产，不存在「当前工序」——
+ *  那是批次/离散型的表达。done 沿流向递减，段间差值即在制）。 */
+export interface WoStation {
   name: string
-  state: 'done' | 'doing' | 'todo'
+  /** 该工序累计完成数 🟡 */
+  done: number
+  /** run 正常流动 / bottleneck 节拍瓶颈 / blocked 停摆（设备报警/停机所在工序） */
+  state: 'run' | 'bottleneck' | 'blocked'
 }
 
 /** 当前工单（✅ 按 workCenter 归并） */
@@ -43,11 +47,12 @@ export interface CurrentWo {
   product: string
   qtyPlan: number
   qtyDone: number
-  /** 在制 WIP ✅ */
+  /** 在制 WIP = 首道完成 − 末道完成（工序间滞留量）✅ */
   wip: number
   /** 距交付（分钟，工单 DueUtc）✅ */
   dueInMin: number
-  steps: WoStep[]
+  /** 工序流分布（首道 → 末道） */
+  stations: WoStation[]
   /** 线边齐套（单工单 🟡） */
   kitting: 'ok' | 'short'
 }

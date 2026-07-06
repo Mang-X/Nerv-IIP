@@ -94,14 +94,15 @@ describe('buildLineBoard（单线大屏）', () => {
     expect(b!.takt.deviationPct).toBeGreaterThan(0)
     expect(b!.takt.actualSec).toBeGreaterThan(b!.takt.standardSec)
     expect(b!.hourly).toHaveLength(12)
-    // 工序状态机：恰一个 doing，done 全在 doing 之前
-    const doing = b!.wo!.steps.filter((s) => s.state === 'doing')
-    expect(doing).toHaveLength(1)
-    const doingIdx = b!.wo!.steps.findIndex((s) => s.state === 'doing')
-    for (const [i, s] of b!.wo!.steps.entries()) {
-      if (i < doingIdx) expect(s.state).toBe('done')
-      if (i > doingIdx) expect(s.state).toBe('todo')
-    }
+    // 工序流（流水线语义）：各工序同时在产 —— 累计完成沿流向单调递减、
+    // 末道 = 工单完成数、WIP = 首末差（勾稽）；报警线停摆工位在卷绕
+    const st = b!.wo!.stations
+    expect(st.length).toBeGreaterThanOrEqual(3)
+    for (let i = 1; i < st.length; i++) expect(st[i - 1].done).toBeGreaterThanOrEqual(st[i].done)
+    expect(st[st.length - 1].done).toBe(b!.wo!.qtyDone)
+    expect(b!.wo!.wip).toBe(st[0].done - st[st.length - 1].done)
+    const blocked = st.find((s) => s.state === 'blocked')
+    expect(blocked?.name).toBe('卷绕')
     expect(b!.wo!.dueInMin).toBeGreaterThan(0)
     expect(b!.shift.remainingMin).toBeGreaterThan(0)
     // FPY 勾稽 = 良品/完工；报警线停机统计 ≥1 次；安灯有响应中记录
@@ -150,9 +151,10 @@ describe('buildLineBoard（单线大屏）', () => {
     expect(b!.takt.deviationPct).toBeLessThanOrEqual(6)
     expect(b!.andon).toHaveLength(0)
     expect(b!.downtime.count).toBe(0)
-    // 正常线：可用率满、近时段 OEE 不低
+    // 正常线：可用率满、近时段 OEE 不低、工序流全绿（不制造假瓶颈）
     expect(b!.oee.availability).toBe(100)
     expect(b!.hourlyOee[23]).toBeGreaterThanOrEqual(60)
+    expect(b!.wo!.stations.every((s) => s.state === 'run')).toBe(true)
   })
 
   it('scope 外的线返回 null（越权防护）；未知线 null', () => {

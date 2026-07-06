@@ -286,19 +286,24 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                   <span class="lb-wo-code">{{ board.wo.code }}</span>
                   <b class="lb-wo-product">{{ board.wo.product }}</b>
                 </div>
-                <div class="lb-wo-steps">
-                  <span
-                    v-for="s in board.wo.steps"
-                    :key="s.name"
-                    class="lb-step"
-                    :class="s.state"
-                  >
-                    <i />{{ s.name }}
-                  </span>
+                <!-- 工序流分布（流水线：各工序同时在产）——工位累计完成沿流向递减，
+                     段间差值即在制；停摆红 / 瓶颈黄 -->
+                <div class="lb-wo-flow">
+                  <template v-for="(s, i) in board.wo.stations" :key="s.name">
+                    <div class="lb-station" :class="s.state">
+                      <span class="lb-station-name">
+                        {{ s.name }}
+                        <em v-if="s.state === 'blocked'">停摆</em>
+                        <em v-else-if="s.state === 'bottleneck'">瓶颈</em>
+                      </span>
+                      <b class="lb-station-done">{{ nf.format(s.done) }}</b>
+                    </div>
+                    <span v-if="i < board.wo.stations.length - 1" class="lb-flow-arrow" aria-hidden="true">›</span>
+                  </template>
                 </div>
                 <div class="lb-wo-nums">
                   <span>完工 <b>{{ nf.format(board.wo.qtyDone) }}</b> / {{ nf.format(board.wo.qtyPlan) }}</span>
-                  <span>在制 WIP <b>{{ board.wo.wip }}</b></span>
+                  <span>工序间在制 <b>{{ nf.format(board.wo.wip) }}</b></span>
                 </div>
               </div>
               <div class="lb-due">
@@ -1025,41 +1030,62 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 工序状态机：done 青实点 / doing 亮点光晕 / todo 空点 */
-.lb-wo-steps {
+/* 工序流分布（流水线语义）：工位 = 名称 + 累计完成（沿流向递减），
+   停摆红 / 瓶颈黄，工位间渐隐箭头示流向 */
+.lb-wo-flow {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 10px;
   margin: 13px 0 0;
   flex-wrap: wrap;
 }
-.lb-step {
+.lb-station {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 66px;
+}
+.lb-station-name {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 13.5px;
+  gap: 6px;
+  font-size: 12.5px;
   color: var(--sb-muted);
-  position: relative;
+  white-space: nowrap;
 }
-.lb-step i {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-}
-.lb-step.done {
-  color: var(--sb-text-2);
-}
-.lb-step.done i {
-  background: var(--sb-cyan-dim);
-}
-.lb-step.doing {
-  color: var(--sb-cyan);
+.lb-station-name em {
+  font-style: normal;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.04em;
 }
-.lb-step.doing i {
-  background: var(--sb-cyan);
-  box-shadow: 0 0 8px var(--sb-cyan-dim);
+.lb-station-done {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sb-text-2);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.lb-station.blocked .lb-station-name,
+.lb-station.blocked .lb-station-name em {
+  color: var(--sb-red);
+}
+.lb-station.blocked .lb-station-done {
+  color: var(--sb-red);
+}
+.lb-station.bottleneck .lb-station-name,
+.lb-station.bottleneck .lb-station-name em {
+  color: var(--sb-amber);
+}
+.lb-station.bottleneck .lb-station-done {
+  color: var(--sb-amber);
+}
+.lb-flow-arrow {
+  color: var(--sb-faint);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.7;
+  flex: none;
 }
 .lb-wo-nums {
   display: flex;
