@@ -174,6 +174,37 @@ public sealed class MrpCalculatorTests
     }
 
     [Fact]
+    public void Late_same_day_scheduled_receipt_exceptions_keep_receipt_pegging_separate()
+    {
+        var input = NewInput(
+            demands:
+            [
+                new DemandSnapshot("SO-1001", "SKU-FG-1000", "pcs", "SITE-01", 12m, new DateOnly(2026, 6, 1), "sales-order"),
+            ],
+            availability: [],
+            bomComponents: [],
+            scheduledReceipts:
+            [
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 5m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1001"),
+                new ScheduledReceiptSnapshot("SKU-FG-1000", "pcs", "SITE-01", 7m, new DateOnly(2026, 6, 5), "erp", "purchase-order", "PO-1002"),
+            ]);
+
+        var suggestions = MrpCalculator.Calculate(input)
+            .Where(x => x.SuggestionType == "reschedule-in")
+            .OrderBy(x => x.Quantity)
+            .ToArray();
+
+        Assert.Equal(2, suggestions.Length);
+        Assert.All(suggestions, suggestion =>
+        {
+            var receiptLink = Assert.Single(suggestion.PeggingLinks, x => x.PeggingType == "scheduled-receipt");
+            Assert.Equal(suggestion.Quantity, receiptLink.Quantity);
+        });
+        Assert.Contains(suggestions, x => x.Quantity == 5m && x.PeggingLinks.Any(y => y.DemandSourceReference == "erp:purchase-order:PO-1001"));
+        Assert.Contains(suggestions, x => x.Quantity == 7m && x.PeggingLinks.Any(y => y.DemandSourceReference == "erp:purchase-order:PO-1002"));
+    }
+
+    [Fact]
     public void Early_scheduled_receipt_used_by_future_requirement_creates_reschedule_out_exception()
     {
         var input = NewInput(

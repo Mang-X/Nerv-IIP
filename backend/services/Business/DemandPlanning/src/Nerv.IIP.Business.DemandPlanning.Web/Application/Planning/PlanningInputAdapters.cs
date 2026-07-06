@@ -439,7 +439,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                         forecast.UomCode,
                         forecast.SiteCode,
                         remaining,
-                        forecast.PeriodEndDate,
+                        ClampForecastDueDate(forecast.PeriodEndDate, horizonStart, horizonEnd),
                         "forecast");
             })
             .Where(x => x is not null)
@@ -475,6 +475,18 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
     {
         return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
             || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateOnly ClampForecastDueDate(DateOnly periodEndDate, DateOnly horizonStart, DateOnly horizonEnd)
+    {
+        if (periodEndDate < horizonStart)
+        {
+            return horizonStart;
+        }
+
+        return periodEndDate > horizonEnd
+            ? horizonEnd
+            : periodEndDate;
     }
 }
 

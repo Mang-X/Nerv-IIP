@@ -223,6 +223,45 @@ public sealed class PlanningInputAdapterTests
     }
 
     [Fact]
+    public async Task Upstream_adapter_clamps_cross_horizon_forecast_due_date_to_horizon_end()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await new CreateOrUpdateForecastInputCommandHandler(dbContext).Handle(
+            new CreateOrUpdateForecastInputCommand(
+                "org-001",
+                "env-dev",
+                "FC-2026-Q3-SKU-FG-1000",
+                "SKU-FG-1000",
+                "pcs",
+                "SITE-01",
+                new DateOnly(2026, 7, 1),
+                new DateOnly(2026, 9, 30),
+                90m,
+                7,
+                7),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var providerUnderTest = new DemandPlanningUpstreamInputSnapshotProvider(
+            dbContext,
+            new FakePlanningProductEngineeringClient(),
+            new FakePlanningInventoryClient());
+
+        var snapshot = await providerUnderTest.GetSnapshotAsync(
+            "org-001",
+            "env-dev",
+            new DateOnly(2026, 7, 1),
+            new DateOnly(2026, 7, 31),
+            CancellationToken.None);
+
+        var forecast = Assert.Single(snapshot.Demands, x => x.SourceType == "forecast");
+        Assert.Equal("FC-2026-Q3-SKU-FG-1000", forecast.DemandSourceReference);
+        Assert.Equal(90m, forecast.Quantity);
+        Assert.Equal(new DateOnly(2026, 7, 31), forecast.DueDate);
+    }
+
+    [Fact]
     public async Task Upstream_adapter_omits_fully_consumed_forecast()
     {
         await using var provider = CreateInMemoryProvider();

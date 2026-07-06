@@ -208,12 +208,9 @@ public static class MrpCalculator
                     availability,
                     scheduledReceipts);
                 suggestions.AddRange(supply.ExceptionReceipts.Select(x => BuildScheduledReceiptExceptionSuggestion(
-                    x.ExceptionType,
+                    x,
                     first,
                     group.Key.RequiredDate,
-                    x.ExpectedReceiptDate,
-                    x.Quantity,
-                    x.ReasonCode,
                     demandPegging,
                     peggingVersion: IsMakeItem(planningParameter?.ProcurementType, version) ? version : null,
                     grossRequirement,
@@ -349,33 +346,25 @@ public static class MrpCalculator
     }
 
     private static CalculatedPlanningSuggestion BuildScheduledReceiptExceptionSuggestion(
-        string suggestionType,
+        ScheduledReceiptException receiptException,
         Requirement requirement,
         DateOnly requiredDate,
-        DateOnly receiptDate,
-        decimal quantity,
-        string reasonCode,
         IReadOnlyCollection<DemandPegging> demandPegging,
         ProductionVersionSnapshot? peggingVersion,
         decimal grossRequirement,
         SupplyConsumption supply)
     {
-        var receiptLinks = supply.ExceptionReceipts
-            .Where(x => string.Equals(x.ExceptionType, suggestionType, StringComparison.OrdinalIgnoreCase)
-                && x.ExpectedReceiptDate == receiptDate
-                && string.Equals(x.ReasonCode, reasonCode, StringComparison.OrdinalIgnoreCase))
-            .Select(x => new CalculatedPeggingLink(
-                "scheduled-receipt",
-                $"{x.SourceSystem}:{x.SourceDocumentType}:{x.SourceDocumentId}",
-                requirement.SkuCode,
-                null,
-                x.Quantity,
-                peggingVersion?.ProductionVersionReference,
-                peggingVersion?.ManufacturingBomReference,
-                peggingVersion?.RoutingReference,
-                "scheduled-receipt",
-                x.Quantity))
-            .ToArray();
+        var receiptLink = new CalculatedPeggingLink(
+            "scheduled-receipt",
+            $"{receiptException.SourceSystem}:{receiptException.SourceDocumentType}:{receiptException.SourceDocumentId}",
+            requirement.SkuCode,
+            null,
+            receiptException.Quantity,
+            peggingVersion?.ProductionVersionReference,
+            peggingVersion?.ManufacturingBomReference,
+            peggingVersion?.RoutingReference,
+            "scheduled-receipt",
+            receiptException.Quantity);
         var peggingLinks = demandPegging
             .Select(x => new CalculatedPeggingLink(
                 "demand",
@@ -388,31 +377,31 @@ public static class MrpCalculator
                 peggingVersion?.RoutingReference,
                 x.SourceType,
                 x.Quantity))
-            .Concat(receiptLinks)
+            .Append(receiptLink)
             .ToArray();
 
         return new CalculatedPlanningSuggestion(
-            suggestionType,
+            receiptException.ExceptionType,
             requirement.SkuCode,
             requirement.UomCode,
             requirement.SiteCode,
-            quantity,
+            receiptException.Quantity,
             requiredDate,
-            receiptDate,
-            reasonCode,
+            receiptException.ExpectedReceiptDate,
+            receiptException.ReasonCode,
             new CalculatedNetRequirementExplanation(
                 grossRequirement,
                 supply.OnHandQuantity,
                 supply.ReservedQuantity,
                 supply.UsedAvailableQuantity,
-                quantity,
+                receiptException.Quantity,
                 supply.SafetyStockQuantity,
                 0m,
-                quantity,
+                receiptException.Quantity,
                 requirement.ScrapRate,
                 requirement.YieldRate,
                 "scheduled-receipt",
-                $"{quantity:g29} scheduled receipt should move from {receiptDate:O} to {requiredDate:O}",
+                $"{receiptException.Quantity:g29} scheduled receipt should move from {receiptException.ExpectedReceiptDate:O} to {requiredDate:O}",
                 requirement.UomConversions,
                 []),
             peggingLinks);
