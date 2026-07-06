@@ -100,8 +100,26 @@ describe('buildLineBoard（单线大屏）', () => {
     for (const l of b!.hourLabels) expect(l).toMatch(/^\d{2}:00$/)
     expect(b!.planPerHour).toBeGreaterThan(0)
     expect(b!.crew.leader).toBeTruthy()
-    // 设备带带首个关键参数（非断线设备）
+    // 设备带带首个关键参数（非断线设备）+ 折叠详情 4 参数带趋势
     expect(b!.devices.some((d) => d.param)).toBe(true)
+    for (const d of b!.devices) {
+      expect(d.params).toHaveLength(4)
+      if (d.state !== 'offline') expect(d.params.every((p) => p.spark.length === 12)).toBe(true)
+    }
+    // 产线 OEE 勾稽（班内推算：A×P×Q）与范围
+    const { overall, availability, performance, quality } = b!.oee
+    expect(overall).toBe(Math.round((availability * performance * quality) / 10000))
+    for (const v of [availability, performance, quality]) {
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(100)
+    }
+    // 24h OEE 热力：24 格、报警线近时段低谷
+    expect(b!.hourlyOee).toHaveLength(24)
+    for (const v of b!.hourlyOee) {
+      expect(v).toBeGreaterThanOrEqual(0)
+      expect(v).toBeLessThanOrEqual(100)
+    }
+    expect(b!.hourlyOee[23]).toBeLessThan(60)
   })
 
   it('正常线（冲压一线）：绿灯、无横幅、无安灯记录、无停机（异常是例外）', () => {
@@ -111,6 +129,9 @@ describe('buildLineBoard（单线大屏）', () => {
     expect(b!.takt.deviationPct).toBeLessThanOrEqual(6)
     expect(b!.andon).toHaveLength(0)
     expect(b!.downtime.count).toBe(0)
+    // 正常线：可用率满、近时段 OEE 不低
+    expect(b!.oee.availability).toBe(100)
+    expect(b!.hourlyOee[23]).toBeGreaterThanOrEqual(60)
   })
 
   it('scope 外的线返回 null（越权防护）；未知线 null', () => {

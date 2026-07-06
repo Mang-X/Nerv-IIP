@@ -1,7 +1,7 @@
 // 产线监控大屏数据契约（MAN-316，spec §四）。
 // 一期诚实定位「产线监控屏（含异常醒目提示）」，非真安灯（闭环待 MAN-322）。
 // 🟡 产量/节拍/达成为前端按标准工时反推聚合；🟠 待 #570 真实端点。
-import type { DeviceState } from '@/data/contracts/equipment'
+import type { DeviceParamSeries, DeviceState } from '@/data/contracts/equipment'
 
 /** 产线三态：绿=正常作业 / 黄=需关注（换型/停机待修/待机）/ 红=设备报警 */
 export type LineState = 'run' | 'attention' | 'alarm'
@@ -83,6 +83,10 @@ export interface LineBoard {
   downtime: { count: number; totalMin: number }
   /** 节拍：标准 vs 实际（落后红）🟡 */
   takt: { standardSec: number; actualSec: number; deviationPct: number }
+  /** 产线 OEE（班内推算：可用率=停机推 / 性能率=节拍推 / 良品率=FPY）🟡 待 #570 校准 */
+  oee: { overall: number; availability: number; performance: number; quality: number }
+  /** 近 24h 每小时 OEE 0–100（热力图 4×6）；索引 0 = 24h 前 🟡 */
+  hourlyOee: number[]
   /** 小时产量趋势（近 12 小时）+ 每点时刻标签 + 节拍产能参考 🟡 */
   hourly: number[]
   hourLabels: string[]
@@ -90,6 +94,13 @@ export interface LineBoard {
   wo?: CurrentWo
   /** 安灯呼叫记录（正常线为空 —— 异常是例外）；闭环 待 MAN-322 */
   andon: AndonCall[]
-  /** 该线设备带（与设备屏同源画像；param 为首个关键参数） */
-  devices: { id: string; name: string; state: DeviceState; stateLabel: string; param?: string }[]
+  /** 该线设备带（与设备屏同源画像；param 为首参摘要，params 为折叠详情 4 项带趋势） */
+  devices: {
+    id: string
+    name: string
+    state: DeviceState
+    stateLabel: string
+    param?: string
+    params: DeviceParamSeries[]
+  }[]
 }

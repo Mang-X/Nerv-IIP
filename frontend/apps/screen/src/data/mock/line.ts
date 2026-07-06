@@ -6,7 +6,7 @@
 // 🟠 产量/节拍/达成待 #570 真实端点，接入后由 fetchers/line.ts 单点切换。
 import type { DeviceCell } from '@/data/contracts/equipment'
 import type { AndonCall, CurrentWo, LineBoard, LineState, LineSummaryCard } from '@/data/contracts/line'
-import { buildEquipmentOverview } from './equipment'
+import { buildEquipmentOverview, paramSeriesFor } from './equipment'
 import { clock, jitter, seq } from './fixtures'
 import { LINES, WORKSHOPS } from './masterdata'
 
@@ -209,6 +209,24 @@ export function buildLineBoard(
     operators: clamp(jitter(devices.length + 2, 3), 4, 14),
   }
 
+  // 产线 OEE（班内推算 🟡 待 #570 校准）：可用率=停机推 / 性能率=节拍推 / 良品率=FPY
+  const availability =
+    elapsed > 0 ? clamp(Math.round(((elapsed - downtime.totalMin) / elapsed) * 100), 0, 100) : 100
+  const performance = clamp(Math.round((m.profile.taktSec / m.actualSec) * 100), 0, 100)
+  const oee = {
+    overall: Math.round((availability * performance * fpy) / 10000),
+    availability,
+    performance,
+    quality: fpy,
+  }
+
+  // 近 24h 每小时 OEE（热力图）：报警线近 3h 低谷、关注线近 4h 走弱
+  const hourlyOee = Array.from({ length: 24 }, (_, i) => {
+    if (state === 'alarm' && i >= 21) return clamp(jitter(42, 12), 25, 58)
+    if (state === 'attention' && i >= 20) return clamp(jitter(68, 8), 55, 78)
+    return clamp(jitter(86, 8), 72, 96)
+  })
+
   // 安灯呼叫：报警/停机线才有记录（闭环 待 MAN-322）
   const doingStation = `${m.profile.steps[m.profile.doingIdx]}工位`
   const andon: AndonCall[] = alarmDev
@@ -245,6 +263,8 @@ export function buildLineBoard(
     fpy,
     downtime,
     takt: { standardSec: m.profile.taktSec, actualSec: m.actualSec, deviationPct: m.deviationPct },
+    oee,
+    hourlyOee,
     hourly,
     hourLabels: hourLabelsNow(),
     planPerHour,
@@ -256,6 +276,7 @@ export function buildLineBoard(
       state: d.state,
       stateLabel: d.stateLabel,
       param: d.params[0] ? `${d.params[0].label} ${d.params[0].value}` : undefined,
+      params: paramSeriesFor(d.name, d.state),
     })),
   }
 }

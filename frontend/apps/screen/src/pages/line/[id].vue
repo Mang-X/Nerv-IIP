@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, StatusTag, TrendChart } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { RingGauge, ScreenPanel, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
+import { ChevronDown } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { paramColor } from '@/components/equipment/paramColors'
 import LineAndonHero from '@/components/line/LineAndonHero.vue'
 import type { LineBoard } from '@/data/contracts/line'
 import { fetchLineBoard } from '@/data/fetchers/line'
@@ -55,6 +57,30 @@ const trendPin = computed(() => {
     plan: nf.format(b.planPerHour),
   }
 })
+
+// —— 设备折叠面板：点行展开该设备 4 项参数（类型色 + 趋势）——
+const expandedDev = ref<string | null>(null)
+function toggleDev(id: string) {
+  expandedDev.value = expandedDev.value === id ? null : id
+}
+
+// —— OEE 24h 热力（waffle 4×6）：数值分档着色，悬停读整点数值 ——
+function oeeBucket(v: number): string {
+  if (v >= 85) return 'g4'
+  if (v >= 70) return 'g3'
+  if (v >= 55) return 'g2'
+  return 'g1'
+}
+/** 热力格 i（0 = 24h 前）对应的整点标签 */
+function waffleHour(i: number): string {
+  const h = (new Date().getHours() - 23 + i + 48) % 24
+  return `${String(h).padStart(2, '0')}:00`
+}
+const wTip = ref<{ i: number; v: number; x: number; y: number } | null>(null)
+function wTipSet(i: number, v: number, e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement
+  wTip.value = { i, v, x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop }
+}
 </script>
 
 <template>
@@ -104,13 +130,39 @@ const trendPin = computed(() => {
           </dl>
 
           <div class="lb-devs">
-            <h5 class="lb-devs-t">线上设备 · {{ board.devices.length }} 台</h5>
-            <div v-for="d in board.devices" :key="d.id" class="lb-dev" :class="d.state">
-              <i class="dot" :class="d.state" />
-              <span class="lb-dev-name">{{ d.name }}</span>
-              <span v-if="d.param" class="lb-dev-param">{{ d.param }}</span>
-              <span class="lb-dev-state" :class="d.state">{{ d.stateLabel }}</span>
+            <h5 class="lb-devs-t">线上设备 · {{ board.devices.length }} 台 <small>点击展开参数</small></h5>
+            <div v-for="d in board.devices" :key="d.id" class="lb-dev-wrap">
+              <button type="button" class="lb-dev" :class="d.state" @click="toggleDev(d.id)">
+                <i class="dot" :class="d.state" />
+                <span class="lb-dev-name">{{ d.name }}</span>
+                <span v-if="d.param" class="lb-dev-param">{{ d.param }}</span>
+                <span class="lb-dev-state" :class="d.state">{{ d.stateLabel }}</span>
+                <ChevronDown :size="14" class="lb-chev" :class="{ open: expandedDev === d.id }" />
+              </button>
+              <div v-if="expandedDev === d.id" class="lb-dev-detail">
+                <div v-for="p in d.params" :key="p.label" class="lb-dp">
+                  <span class="lb-dp-l">{{ p.label }}</span>
+                  <span class="lb-dp-spark"><Sparkline :data="p.spark" :color="paramColor(p.kind, p.tone)" /></span>
+                  <b :style="{ color: paramColor(p.kind, p.tone) }">
+                    {{ p.value === null ? '—' : `${p.value}${p.unit}` }}
+                  </b>
+                </div>
+              </div>
             </div>
+          </div>
+
+          <!-- 安灯呼叫（并入线体域，与状态灯同侧；闭环 待 MAN-322） -->
+          <div class="lb-andon-mini">
+            <div class="lb-andon-h">
+              <span>安灯呼叫</span>
+              <StatusTag tone="amber" label="闭环 · 待 MAN-322" />
+            </div>
+            <div v-for="a in board.andon" :key="a.time + a.station" class="lb-andon-row">
+              <span class="lb-andon-time">{{ a.time }}</span>
+              <span class="lb-andon-txt">{{ a.station }} · {{ a.type }} · {{ a.response }}</span>
+              <b class="lb-andon-state" :class="{ open: a.state === '响应中' }">{{ a.state }}</b>
+            </div>
+            <div v-if="!board.andon.length" class="lb-andon-empty"><i class="lb-andon-ok" />当班无安灯呼叫</div>
           </div>
         </section>
 
@@ -145,6 +197,31 @@ const trendPin = computed(() => {
                 <b :class="{ late: board.takt.deviationPct > 0 }">{{ board.takt.actualSec }}s</b>
               </p>
               <p class="lb-takt-hint">{{ board.takt.deviationPct > 0 ? '节拍落后，关注瓶颈工位' : '节拍达标' }}</p>
+            </ScreenPanel>
+
+            <ScreenPanel title="产线 OEE" class="lb-oee">
+              <template #extra>
+                <StatusTag tone="amber" label="班内推算 · 待 #570" />
+              </template>
+              <div class="lb-oee-in">
+                <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
+                  {{ board.oee.overall }}<small>%</small>
+                </div>
+                <dl class="lb-oee-rates">
+                  <div>
+                    <dt>可用率</dt>
+                    <dd :class="{ warn: board.oee.availability < 90 }">{{ board.oee.availability }}%</dd>
+                  </div>
+                  <div>
+                    <dt>性能率</dt>
+                    <dd :class="{ warn: board.oee.performance < 90 }">{{ board.oee.performance }}%</dd>
+                  </div>
+                  <div>
+                    <dt>良品率</dt>
+                    <dd>{{ board.oee.quality }}%</dd>
+                  </div>
+                </dl>
+              </div>
             </ScreenPanel>
           </div>
 
@@ -196,22 +273,30 @@ const trendPin = computed(() => {
             </div>
             </ScreenPanel>
 
-            <!-- 安灯呼叫-响应区：一期只读展示，闭环 待 MAN-322（显式标注） -->
-            <ScreenPanel title="安灯呼叫" class="lb-andon">
+            <!-- OEE 24 小时热力（waffle 4×6）：一格一小时，分档着色，悬停读值 -->
+            <ScreenPanel title="OEE · 24h 热力" class="lb-waffle">
               <template #extra>
-                <StatusTag tone="amber" label="响应闭环 · 待 MAN-322" />
+                <span class="lb-wf-legend">
+                  <i class="g4" />≥85 <i class="g3" />70+ <i class="g2" />55+ <i class="g1" />&lt;55
+                </span>
               </template>
-              <div v-if="board.andon.length" class="lb-andon-list">
-                <div v-for="a in board.andon" :key="a.time + a.station" class="lb-andon-row">
-                  <span class="lb-andon-time">{{ a.time }}</span>
-                  <span class="lb-andon-txt">{{ a.station }} · {{ a.type }}</span>
-                  <span class="lb-andon-resp">{{ a.response }}</span>
-                  <b class="lb-andon-state" :class="{ open: a.state === '响应中' }">{{ a.state }}</b>
-                </div>
+              <div class="lb-wf-grid" @mouseleave="wTip = null">
+                <i
+                  v-for="(v, i) in board.hourlyOee"
+                  :key="i"
+                  class="lb-wf-cell"
+                  :class="oeeBucket(v)"
+                  @mouseenter="wTipSet(i, v, $event)"
+                />
+                <span
+                  v-if="wTip"
+                  class="lb-wf-tip"
+                  :style="{ left: `${wTip.x}px`, top: `${wTip.y - 8}px` }"
+                >
+                  {{ waffleHour(wTip.i) }} · OEE {{ wTip.v }}%
+                </span>
               </div>
-              <div v-else class="lb-andon-empty">
-                <i class="lb-andon-ok" />当班无安灯呼叫
-              </div>
+              <div class="lb-wf-axis"><span>24h 前</span><span>现在</span></div>
             </ScreenPanel>
           </div>
         </div>
@@ -345,13 +430,34 @@ const trendPin = computed(() => {
   letter-spacing: 0.06em;
   color: var(--sb-muted);
 }
+.lb-devs-t small {
+  font-weight: 400;
+  color: var(--sb-faint);
+  margin-left: 6px;
+}
 .lb-dev {
+  appearance: none;
+  width: 100%;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 9px;
   padding: 7px 2px;
-  border-bottom: 1px solid var(--sb-divider);
   font-size: 13.5px;
+  border-radius: 6px;
+  transition: background-color 0.15s var(--sb-ease);
+}
+.lb-dev:hover {
+  background: rgba(135, 208, 255, 0.06);
+}
+.lb-dev:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--sb-cyan-dim);
 }
 .dot {
   width: 8px;
@@ -419,7 +525,7 @@ const trendPin = computed(() => {
 }
 .lb-row1 {
   display: grid;
-  grid-template-columns: 1.7fr 1fr;
+  grid-template-columns: 1.5fr 0.75fr 0.95fr;
   gap: 14px;
 }
 .lb-out-in {
@@ -473,7 +579,7 @@ const trendPin = computed(() => {
 }
 
 .lb-takt-v {
-  font-size: 52px;
+  font-size: 42px;
   font-weight: 800;
   line-height: 1;
   color: var(--sb-green);
@@ -556,22 +662,123 @@ const trendPin = computed(() => {
   letter-spacing: 0.04em;
 }
 
-/* 安灯区 */
-.lb-andon {
+/* 产线 OEE 卡 */
+.lb-oee-in {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.lb-oee-big {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sb-green);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.lb-oee-big small {
+  font-size: 19px;
+  font-weight: 600;
+}
+.lb-oee-big.warn {
+  color: var(--sb-amber);
+}
+.lb-oee-big.bad {
+  color: var(--sb-red);
+}
+.lb-oee-rates {
+  flex: 1;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 5px;
 }
-.lb-andon-list {
+.lb-oee-rates div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.lb-oee-rates dt {
+  color: var(--sb-muted);
+}
+.lb-oee-rates dd {
+  margin: 0;
+  font-weight: 700;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+}
+.lb-oee-rates dd.warn {
+  color: var(--sb-amber);
+}
+
+/* 设备折叠面板 */
+.lb-dev-wrap + .lb-dev-wrap {
+  border-top: 1px solid var(--sb-divider);
+}
+.lb-chev {
+  flex: none;
+  color: var(--sb-faint);
+  transition: transform 0.2s var(--sb-ease);
+}
+.lb-chev.open {
+  transform: rotate(180deg);
+}
+.lb-dev-detail {
+  padding: 4px 2px 10px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lb-dp {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lb-dp-l {
+  width: 62px;
+  flex: none;
+  font-size: 12px;
+  color: var(--sb-muted);
+}
+.lb-dp-spark {
   flex: 1;
-  min-height: 0;
+  height: 20px;
+  min-width: 0;
+}
+.lb-dp b {
+  flex: none;
+  min-width: 72px;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 安灯（并入左列线体域） */
+.lb-andon-mini {
+  width: 100%;
+  flex: none;
+  border-top: 1px solid var(--sb-divider);
+  padding-top: 9px;
+}
+.lb-andon-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sb-muted);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
 }
 .lb-andon-row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 2px;
-  border-bottom: 1px solid var(--sb-divider);
+  padding: 7px 2px;
   font-size: 13px;
 }
 .lb-andon-time {
@@ -587,10 +794,6 @@ const trendPin = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.lb-andon-resp {
-  flex: none;
-  color: var(--sb-muted);
-}
 .lb-andon-state {
   flex: none;
   color: var(--sb-green);
@@ -599,13 +802,12 @@ const trendPin = computed(() => {
   color: var(--sb-red);
 }
 .lb-andon-empty {
-  flex: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 9px;
+  padding: 7px 2px;
   color: var(--sb-muted);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 .lb-andon-ok {
   width: 9px;
@@ -613,6 +815,80 @@ const trendPin = computed(() => {
   border-radius: 50%;
   background: var(--sb-green);
   box-shadow: 0 0 8px var(--sb-green);
+}
+
+/* OEE 24h 热力（waffle 4×6） */
+.lb-waffle {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.lb-wf-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--sb-muted);
+}
+.lb-wf-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+.lb-wf-grid {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 6px;
+}
+.lb-wf-cell {
+  border-radius: 4px;
+  cursor: default;
+  transition: filter 0.15s var(--sb-ease);
+}
+.lb-wf-cell:hover {
+  filter: brightness(1.35);
+}
+.lb-wf-cell.g4,
+.lb-wf-legend .g4 {
+  background: rgba(69, 208, 137, 0.85);
+}
+.lb-wf-cell.g3,
+.lb-wf-legend .g3 {
+  background: rgba(69, 208, 137, 0.38);
+}
+.lb-wf-cell.g2,
+.lb-wf-legend .g2 {
+  background: rgba(242, 193, 78, 0.55);
+}
+.lb-wf-cell.g1,
+.lb-wf-legend .g1 {
+  background: rgba(239, 90, 99, 0.6);
+}
+.lb-wf-tip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: rgba(10, 16, 30, 0.97);
+  border: 1px solid rgba(148, 190, 255, 0.25);
+  font-size: 11.5px;
+  color: var(--sb-text);
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+}
+.lb-wf-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--sb-faint);
 }
 
 .lb-wo-in {
