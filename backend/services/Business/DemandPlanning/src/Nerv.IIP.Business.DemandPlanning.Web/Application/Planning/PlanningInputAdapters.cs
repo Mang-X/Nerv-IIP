@@ -536,14 +536,6 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.EnvironmentId == environmentId
                 && x.PeriodEndDate >= horizonStart
                 && x.PeriodStartDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(
-                x.ForecastReference,
-                x.SkuCode,
-                x.UomCode,
-                x.SiteCode,
-                x.Quantity,
-                ClampForecastDueDate(x.PeriodEndDate, horizonStart, horizonEnd),
-                "forecast"))
             .ToListAsync(cancellationToken);
         var mpsBuckets = await dbContext.MasterProductionSchedules
             .AsNoTracking()
@@ -552,19 +544,25 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Status == MasterProductionScheduleStatus.Released
                 && x.BucketDate >= horizonStart
                 && x.BucketDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(
+            .ToListAsync(cancellationToken);
+
+        return demandSources
+            .Concat(forecastInputs.Select(x => new DemandSnapshot(
+                x.ForecastReference,
+                x.SkuCode,
+                x.UomCode,
+                x.SiteCode,
+                x.Quantity,
+                ClampForecastDueDate(x.PeriodEndDate, horizonStart, horizonEnd),
+                "forecast")))
+            .Concat(mpsBuckets.Select(x => new DemandSnapshot(
                 $"MPS:{x.Id}",
                 x.SkuCode,
                 x.UomCode,
                 x.SiteCode,
                 x.Quantity,
                 x.BucketDate,
-                "mps"))
-            .ToListAsync(cancellationToken);
-
-        return demandSources
-            .Concat(forecastInputs)
-            .Concat(mpsBuckets)
+                "mps")))
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
