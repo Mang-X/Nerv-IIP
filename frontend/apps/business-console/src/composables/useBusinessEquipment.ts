@@ -1,19 +1,23 @@
 import {
+  acknowledgeBusinessConsoleEquipmentAlarmMutationOptions,
   getBusinessConsoleEquipmentAvailabilityQueryOptions,
   getBusinessConsoleEquipmentDeviceQueryOptions,
   getBusinessConsoleEquipmentOverviewQueryOptions,
   listBusinessConsoleEquipmentAlarmsQueryOptions,
+  shelveBusinessConsoleEquipmentAlarmMutationOptions,
+  unshelveBusinessConsoleEquipmentAlarmMutationOptions,
   type BusinessConsoleEquipmentAlarmListEnvelope,
   type BusinessConsoleEquipmentDeviceDetailEnvelope,
   type BusinessConsoleEquipmentDeviceDetailResponse,
   type BusinessConsoleEquipmentOverviewEnvelope,
   type BusinessConsoleEquipmentOverviewResponse,
+  type BusinessConsoleTelemetryAlarmEventItem,
   type EquipmentRuntimeAlarmSummary,
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useQuery } from '@pinia/colada'
+import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
@@ -320,15 +324,61 @@ export function useBusinessEquipmentAlarms() {
     }),
     enabled: hasBusinessContext(businessContext),
   }))
+  const acknowledgeMutation = useMutation({
+    ...acknowledgeBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const shelveMutation = useMutation({
+    ...shelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+  const unshelveMutation = useMutation({
+    ...unshelveBusinessConsoleEquipmentAlarmMutationOptions(),
+  })
+
+  async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
+    return acknowledgeMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        acknowledgedAtUtc: new Date().toISOString(),
+        acknowledgedBy,
+      },
+    })
+  }
+
+  async function shelveAlarm(alarmEventId: string, shelvedBy: string, durationMinutes = 30, reason?: string) {
+    return shelveMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        durationMinutes,
+        reason,
+        shelvedAtUtc: new Date().toISOString(),
+        shelvedBy,
+      },
+    })
+  }
+
+  async function unshelveAlarm(alarmEventId: string) {
+    return unshelveMutation.mutateAsync({
+      path: { alarmEventId },
+      body: {
+        ...toContextQuery(businessContext),
+        unshelvedAtUtc: new Date().toISOString(),
+      },
+    })
+  }
 
   return {
-    alarms: computed<EquipmentRuntimeAlarmSummary[]>(() =>
-      listItems<EquipmentRuntimeAlarmSummary, BusinessConsoleEquipmentAlarmListEnvelope>(
+    acknowledgeAlarm,
+    alarms: computed<BusinessConsoleTelemetryAlarmEventItem[]>(() =>
+      listItems<BusinessConsoleTelemetryAlarmEventItem, BusinessConsoleEquipmentAlarmListEnvelope>(
         alarmsQuery.data.value,
       ),
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
+    shelveAlarm,
+    unshelveAlarm,
   }
 }

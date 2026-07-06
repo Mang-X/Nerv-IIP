@@ -102,27 +102,89 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
 
 public sealed record ListAlarmEventsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmEventListItem>>;
 
-public sealed record AlarmEventListItem(AlarmEventId AlarmEventId, string OrganizationId, string EnvironmentId, string DeviceAssetId, string AlarmCode, string Severity, string Priority, string? TagKey, decimal? ObservedValue, decimal? ThresholdValue, string? UnitCode, string Status, DateTimeOffset RaisedAtUtc, DateTimeOffset? ClearedAtUtc, string ExternalAlarmId);
+public sealed record AlarmEventListItem(
+    AlarmEventId AlarmEventId,
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string AlarmCode,
+    string Severity,
+    string Priority,
+    string? TagKey,
+    decimal? ObservedValue,
+    decimal? ThresholdValue,
+    string? UnitCode,
+    string Status,
+    DateTimeOffset RaisedAtUtc,
+    DateTimeOffset? ClearedAtUtc,
+    string ExternalAlarmId,
+    DateTimeOffset? AcknowledgedAtUtc,
+    string? AcknowledgedBy,
+    DateTimeOffset? ShelvedAtUtc,
+    DateTimeOffset? ShelvedUntilUtc,
+    string? ShelvedBy,
+    string? ShelveReason,
+    DateTimeOffset? EscalatedAtUtc,
+    string? EscalationReason,
+    IReadOnlyCollection<string> EscalationRecipientRefs);
 
 public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListAlarmEventsQuery, PagedListResponse<AlarmEventListItem>>
 {
     public async Task<PagedListResponse<AlarmEventListItem>> Handle(ListAlarmEventsQuery request, CancellationToken cancellationToken)
     {
+        var status = NormalizeStatus(request.Status);
         var query = dbContext.AlarmEvents
             .AsNoTracking()
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
-            .Where(x => request.Status == null || x.Status == request.Status);
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
+        query = status switch
+        {
+            null => query,
+            "active" => query.Where(x => x.Status != "cleared"),
+            _ => query.Where(x => x.Status == status),
+        };
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
+        var alarmEvents = await query
             .OrderByDescending(x => x.RaisedAtUtc)
-            .Select(x => new AlarmEventListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.AlarmCode, x.Severity, x.Priority, x.TagKey, x.ObservedValue, x.ThresholdValue, x.UnitCode, x.Status, x.RaisedAtUtc, x.ClearedAtUtc, x.ExternalAlarmId))
             .Skip(request.Skip)
             .Take(request.Take)
             .ToArrayAsync(cancellationToken);
+        var items = alarmEvents
+            .Select(x => new AlarmEventListItem(
+                x.Id,
+                x.OrganizationId,
+                x.EnvironmentId,
+                x.DeviceAssetId,
+                x.AlarmCode,
+                x.Severity,
+                x.Priority,
+                x.TagKey,
+                x.ObservedValue,
+                x.ThresholdValue,
+                x.UnitCode,
+                x.Status,
+                x.RaisedAtUtc,
+                x.ClearedAtUtc,
+                x.ExternalAlarmId,
+                x.AcknowledgedAtUtc,
+                x.AcknowledgedBy,
+                x.ShelvedAtUtc,
+                x.ShelvedUntilUtc,
+                x.ShelvedBy,
+                x.ShelveReason,
+                x.EscalatedAtUtc,
+                x.EscalationReason,
+                x.EscalationRecipientRefs))
+            .ToArray();
         return new PagedListResponse<AlarmEventListItem>(items, total);
+    }
+
+    private static string? NormalizeStatus(string? status)
+    {
+        var normalized = status?.Trim().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 }
 

@@ -92,6 +92,38 @@ public sealed class AlarmClearedIntegrationEventConverter
     }
 }
 
+public sealed class AlarmEscalatedIntegrationEventConverter
+    : IIntegrationEventConverter<AlarmEscalatedDomainEvent, AlarmEscalatedIntegrationEvent>
+{
+    public AlarmEscalatedIntegrationEvent Convert(AlarmEscalatedDomainEvent domainEvent)
+    {
+        var alarm = domainEvent.AlarmEvent;
+        return new AlarmEscalatedIntegrationEvent(
+            EventIdFactory.New(),
+            IndustrialTelemetryIntegrationEventTypes.AlarmEscalated,
+            IndustrialTelemetryIntegrationEventVersions.V1,
+            alarm.EscalatedAtUtc ?? throw new InvalidOperationException("Alarm escalation event requires escalated time."),
+            IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry,
+            $"industrialTelemetry:alarm:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.Id.Id:D}",
+            alarm.Id.Id.ToString("D"),
+            alarm.OrganizationId,
+            alarm.EnvironmentId,
+            "system:industrial-telemetry",
+            $"industrialTelemetry:alarm-escalated:{alarm.OrganizationId}:{alarm.EnvironmentId}:{alarm.DeviceAssetId}:{alarm.AlarmCode}:{alarm.ExternalAlarmId}:{alarm.Id.Id:D}",
+            new AlarmEscalatedPayload(
+                alarm.Id.Id.ToString("D"),
+                alarm.DeviceAssetId,
+                alarm.AlarmCode,
+                alarm.Severity,
+                alarm.RaisedAtUtc,
+                alarm.EscalatedAtUtc.Value,
+                alarm.ExternalAlarmId,
+                alarm.EscalationReason ?? "alarm-escalated",
+                alarm.EscalationRecipientRefs,
+                alarm.Priority));
+    }
+}
+
 internal static class EventIdFactory
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";

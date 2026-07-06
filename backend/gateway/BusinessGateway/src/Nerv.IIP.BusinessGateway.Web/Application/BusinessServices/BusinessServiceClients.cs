@@ -874,6 +874,24 @@ public interface IBusinessIndustrialTelemetryClient
         string internalBearerToken,
         BusinessConsoleEquipmentAlarmListRequest request,
         CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken);
 }
 
 public interface IBusinessMaintenanceClient
@@ -3783,7 +3801,16 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 alarm.Status,
                 alarm.RaisedAtUtc,
                 alarm.ClearedAtUtc,
-                alarm.ExternalAlarmId)).ToArray(), page.Total);
+                alarm.ExternalAlarmId,
+                alarm.AcknowledgedAtUtc,
+                alarm.AcknowledgedBy,
+                alarm.ShelvedAtUtc,
+                alarm.ShelvedUntilUtc,
+                alarm.ShelvedBy,
+                alarm.ShelveReason,
+                alarm.EscalatedAtUtc,
+                alarm.EscalationReason,
+                alarm.EscalationRecipientRefs)).ToArray(), page.Total);
     }
 
     public async Task<BusinessConsoleTelemetryHistoryResponse> QueryHistoryAsync(
@@ -3870,19 +3897,58 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
                 request.OrganizationId,
                 request.EnvironmentId,
                 request.DeviceAssetId,
-                request.Status ?? "raised",
+                request.Status ?? "active",
                 request.Skip,
                 request.Take),
             cancellationToken);
         return new BusinessConsoleEquipmentAlarmListPageResponse(
-            alarms.Items.Select(alarm => new EquipmentRuntimeAlarmSummary(
-                alarm.AlarmEventId,
-                alarm.DeviceAssetId,
-                alarm.AlarmCode,
-                alarm.Severity,
-                alarm.RaisedAtUtc,
-                alarm.ExternalAlarmId)).ToArray(),
+            alarms.Items,
             alarms.Total);
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/acknowledge",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/shelve",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
+    }
+
+    public async Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await SendAsync<DownstreamAlarmLifecycleResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/iiot/alarms/{Uri.EscapeDataString(alarmEventId)}/unshelve",
+            request,
+            cancellationToken);
+        return new BusinessConsoleAlarmLifecycleResponse(FormatJsonScalar(response.AlarmEventId));
     }
 
     private static string AvailabilityQuery(BusinessConsoleEquipmentAvailabilityRequest request) =>
@@ -3928,7 +3994,16 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         string Status,
         DateTimeOffset RaisedAtUtc,
         DateTimeOffset? ClearedAtUtc,
-        string ExternalAlarmId);
+        string ExternalAlarmId,
+        DateTimeOffset? AcknowledgedAtUtc = null,
+        string? AcknowledgedBy = null,
+        DateTimeOffset? ShelvedAtUtc = null,
+        DateTimeOffset? ShelvedUntilUtc = null,
+        string? ShelvedBy = null,
+        string? ShelveReason = null,
+        DateTimeOffset? EscalatedAtUtc = null,
+        string? EscalationReason = null,
+        IReadOnlyCollection<string>? EscalationRecipientRefs = null);
 
     private sealed record DownstreamTelemetryTagListItem(
         JsonElement TelemetryTagId,
@@ -3962,6 +4037,8 @@ public sealed class HttpBusinessIndustrialTelemetryClient(HttpClient httpClient)
         JsonElement? DeviceStateSnapshotId);
 
     private sealed record DownstreamPostTelemetryAlarmResponse(JsonElement AlarmEventId);
+
+    private sealed record DownstreamAlarmLifecycleResponse(JsonElement AlarmEventId);
 }
 
 public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)

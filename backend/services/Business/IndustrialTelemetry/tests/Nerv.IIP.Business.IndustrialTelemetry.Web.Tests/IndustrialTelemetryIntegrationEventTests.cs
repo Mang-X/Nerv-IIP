@@ -87,6 +87,34 @@ public sealed class IndustrialTelemetryIntegrationEventTests
     }
 
     [Fact]
+    public void Alarm_escalated_event_serializes_required_event_type_and_recipients()
+    {
+        var alarm = AlarmEvent.Raise(
+            "org-001",
+            "env-dev",
+            "DEV-CNC-01",
+            "OVER_TEMP",
+            "critical",
+            DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+            "alarm-ext-001",
+            priority: "p1");
+        alarm.Escalate(
+            DateTimeOffset.Parse("2026-07-06T08:05:00Z"),
+            "critical-severity",
+            ["role:maintenance-manager", "user:lead-001"]);
+
+        var escalated = new AlarmEscalatedIntegrationEventConverter().Convert(new AlarmEscalatedDomainEvent(alarm));
+        var json = JsonSerializer.Serialize(escalated, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(IndustrialTelemetryIntegrationEventTypes.AlarmEscalated, escalated.EventType);
+        Assert.Equal(alarm.Id.Id.ToString("D"), escalated.Payload.AlarmEventId);
+        Assert.Equal("critical-severity", escalated.Payload.EscalationReason);
+        Assert.Equal(["role:maintenance-manager", "user:lead-001"], escalated.Payload.RecipientRefs);
+        Assert.Equal($"industrialTelemetry:alarm-escalated:org-001:env-dev:DEV-CNC-01:OVER_TEMP:alarm-ext-001:{alarm.Id.Id:D}", escalated.IdempotencyKey);
+        Assert.Contains("\"eventType\":\"industrialTelemetry.AlarmEscalated\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Recurrent_alarm_events_with_same_external_alarm_id_have_distinct_idempotency_keys()
     {
         var first = AlarmEvent.Raise(
