@@ -463,6 +463,41 @@ public sealed class WorkOrderClosedIntegrationEventConverter
     }
 }
 
+public sealed class WorkOrderEngineeringChangeImpactDetectedIntegrationEventConverter
+    : IIntegrationEventConverter<MesEngineeringChangeWorkOrderImpactDetectedDomainEvent, WorkOrderEngineeringChangeImpactDetectedIntegrationEvent>
+{
+    public WorkOrderEngineeringChangeImpactDetectedIntegrationEvent Convert(MesEngineeringChangeWorkOrderImpactDetectedDomainEvent domainEvent)
+    {
+        var impact = domainEvent.Impact;
+        var idempotencyKey = EventIds.Idempotency(
+            "engineering-change-impact",
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            impact.ChangeNumber,
+            impact.WorkOrderId);
+        return new WorkOrderEngineeringChangeImpactDetectedIntegrationEvent(
+            $"evt-{Guid.CreateVersion7():N}",
+            MesIntegrationEventTypes.WorkOrderEngineeringChangeImpactDetected,
+            MesIntegrationEventVersions.V1,
+            impact.DetectedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            idempotencyKey,
+            impact.WorkOrderId,
+            impact.OrganizationId,
+            impact.EnvironmentId,
+            "system:mes",
+            idempotencyKey,
+            new WorkOrderEngineeringChangeImpactDetectedPayload(
+                impact.WorkOrderId,
+                impact.SkuId,
+                impact.ChangeNumber,
+                impact.ArchivedProductionVersionId,
+                impact.SupersededByProductionVersionId,
+                impact.Status,
+                impact.EffectiveDate));
+    }
+}
+
 public sealed class WorkOrderCancelledIntegrationEventConverter
     : IIntegrationEventConverter<WorkOrderCancelledDomainEvent, InventoryReservationReleaseRequestedIntegrationEvent>
 {

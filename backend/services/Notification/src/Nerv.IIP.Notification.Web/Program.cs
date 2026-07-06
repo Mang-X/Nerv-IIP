@@ -124,6 +124,7 @@ builder.Services.AddScoped<ApprovalStepResolvedIntegrationEventHandlerForNotific
 builder.Services.AddScoped<ApprovalActionRecordedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
