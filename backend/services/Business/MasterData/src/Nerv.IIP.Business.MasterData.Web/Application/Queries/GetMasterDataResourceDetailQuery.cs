@@ -7,6 +7,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
 public sealed record WorkCalendarWorkingTimeDetail(DayOfWeek DayOfWeek);
 public sealed record WorkCalendarHolidayDetail(DateOnly Date, string Name);
 public sealed record WorkCalendarExceptionDetail(DateOnly Date, bool IsWorkingDay, TimeOnly? StartsAt, TimeOnly? EndsAt, string? Reason);
+public sealed record DeviceAssetComponentDetail(string ComponentCode, string ComponentName, decimal Quantity, bool Critical);
 
 public sealed record MasterDataResourceDetail(
     string ResourceType,
@@ -57,6 +58,16 @@ public sealed record MasterDataResourceDetail(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    bool? Retired = null,
+    IReadOnlyCollection<DeviceAssetComponentDetail>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -171,7 +182,7 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 await dbContext.WorkCenters.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "device-asset" => UpdateMasterDataResourceCommandHandler.Detail(
-                await dbContext.DeviceAssets.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                await dbContext.DeviceAssets.AsNoTracking().Include(x => x.Components).SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "reference-data" => UpdateMasterDataResourceCommandHandler.Detail(
                 await FindReferenceDataCodeAsync(request, cancellationToken)

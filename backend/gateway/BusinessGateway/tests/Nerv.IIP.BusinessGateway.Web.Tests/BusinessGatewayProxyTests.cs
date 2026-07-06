@@ -5178,8 +5178,25 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
         string code,
         string? codeSet,
         bool active,
-        string? displayName = null) =>
-        new(
+        string? displayName = null)
+    {
+        if (string.Equals(resourceType, "device-asset", StringComparison.OrdinalIgnoreCase))
+        {
+            return new BusinessConsoleMasterDataResourceDetail(
+                resourceType,
+                code,
+                displayName ?? code,
+                active,
+                "v1",
+                "org-001",
+                "env-dev",
+                displayName ?? code,
+                WarrantyExpiresOn: new DateOnly(2027, 1, 14),
+                SupplierPartnerCode: "SUP-ACME",
+                Status: active ? "active" : "disabled");
+        }
+
+        return new(
             resourceType,
             code,
             displayName ?? code,
@@ -5190,6 +5207,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             displayName ?? code,
             CodeSet: codeSet,
             Status: active ? "active" : "disabled");
+    }
 }
 
 internal sealed class RecordingInventoryClient : IBusinessInventoryClient

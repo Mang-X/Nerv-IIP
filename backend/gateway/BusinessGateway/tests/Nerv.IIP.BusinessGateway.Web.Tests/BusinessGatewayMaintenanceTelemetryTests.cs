@@ -24,6 +24,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -42,6 +44,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("DEV-PRESS-01", item.GetProperty("deviceAssetId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("sourceAlarmId").GetString());
         Assert.Equal("alarm-001", item.GetProperty("relatedAlarmId").GetString());
+        Assert.Equal("in-warranty", item.GetProperty("warrantyStatus").GetString());
+        Assert.Equal("2027-01-14", item.GetProperty("warrantyExpiresOn").GetString());
+        Assert.Equal("SUP-ACME", item.GetProperty("supplierPartnerCode").GetString());
         Assert.Equal(5, document.RootElement.GetProperty("data").GetProperty("skip").GetInt32());
         Assert.Equal(10, document.RootElement.GetProperty("data").GetProperty("take").GetInt32());
         Assert.Equal(1, document.RootElement.GetProperty("data").GetProperty("total").GetInt32());
@@ -55,6 +60,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         {
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });

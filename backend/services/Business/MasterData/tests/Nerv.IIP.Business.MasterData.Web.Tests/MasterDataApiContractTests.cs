@@ -514,7 +514,10 @@ public sealed class MasterDataApiContractTests
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
-        dbContext.DeviceAssets.Add(Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>()));
+        dbContext.DeviceAssets.Add(
+            Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>())
+                .WithLedger(new DateOnly(2024, 1, 15), 125000m, "CNY", new DateOnly(2027, 1, 14), "SUP-001", "SITE-001", "WS-001", "LINE-001", "ST-001", "DEV-PARENT-01", null)
+                .ReplaceComponents([new Domain.AggregatesModel.DeviceAssetAggregate.DeviceAssetComponentDraft("MOTOR", "Drive motor", 1m, true)]));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ROOT", "Manufacturing", null));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-ALT", "Quality", null));
         dbContext.Departments.Add(Domain.AggregatesModel.DepartmentAggregate.Department.Create("org-001", "env-dev", "DEPT-SUB", "Line Ops", "DEPT-ROOT"));
@@ -556,7 +559,22 @@ public sealed class MasterDataApiContractTests
         Assert.Equal("LINE-001", device.LineCode);
         Assert.Equal("WC-001", device.WorkCenterCode);
         Assert.False(string.IsNullOrWhiteSpace(device.DeviceAssetId));
+        Assert.Equal("SITE-001", device.SiteCode);
+        Assert.Equal("WS-001", device.WorkshopCode);
+        Assert.Equal(new DateOnly(2027, 1, 14), device.WarrantyExpiresOn);
+        Assert.Equal("SUP-001", device.SupplierPartnerCode);
         Assert.Equal("active", device.Status);
+
+        var detail = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", "DEV-001"),
+            CancellationToken.None);
+        Assert.Equal(new DateOnly(2024, 1, 15), detail.PurchaseDate);
+        Assert.Equal(125000m, detail.PurchaseCost);
+        Assert.Equal("CNY", detail.PurchaseCurrencyCode);
+        Assert.Equal("ST-001", detail.StationCode);
+        Assert.Equal("DEV-PARENT-01", detail.ParentDeviceId);
+        Assert.Single(detail.Components!);
+        Assert.Equal("MOTOR", detail.Components!.Single().ComponentCode);
 
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
         Assert.Equal("DEPT-SUB", childDepartment.Code);

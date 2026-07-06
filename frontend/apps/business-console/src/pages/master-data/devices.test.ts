@@ -17,8 +17,18 @@ const actionStub = vi.hoisted(() => ({
     manufacturer: 'KUKA',
     serialNo: 'SN-9001',
     assetClassCode: 'ROBOT',
+    siteCode: 'PLANT-A',
+    workshopCode: 'WS-A',
     lineCode: 'LINE-A',
     workCenterCode: 'WC-A',
+    stationCode: 'ST-01',
+    purchaseDate: '2025-01-15',
+    purchaseCost: 125000,
+    purchaseCurrencyCode: 'CNY',
+    warrantyExpiresOn: '2027-01-14',
+    supplierPartnerCode: 'SUP-ACME',
+    parentDeviceId: 'EQ-PARENT',
+    components: [{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: true }],
     criticality: 'high',
     maintainable: true,
   }),
@@ -26,11 +36,30 @@ const actionStub = vi.hoisted(() => ({
 
 function stubResource(resourceType: string) {
   const rows = resourceType === 'device-asset'
-    ? [{ resourceType: 'device-asset', code: 'EQ-01', displayName: '焊接机器人', active: true, snapshotVersion: '1' }]
+    ? [{
+        resourceType: 'device-asset',
+        code: 'EQ-01',
+        displayName: '焊接机器人',
+        active: true,
+        siteCode: 'PLANT-A',
+        workshopCode: 'WS-A',
+        lineCode: 'LINE-A',
+        workCenterCode: 'WC-A',
+        stationCode: 'ST-01',
+        purchaseDate: '2025-01-15',
+        purchaseCost: 125000,
+        purchaseCurrencyCode: 'CNY',
+        warrantyExpiresOn: '2027-01-14',
+        supplierPartnerCode: 'SUP-ACME',
+        parentDeviceId: 'EQ-PARENT',
+        snapshotVersion: '1',
+      }]
+    : resourceType === 'site'
+      ? [{ resourceType: 'site', code: 'PLANT-A', displayName: '宁波工厂', active: true, snapshotVersion: '1' }]
     : resourceType === 'production-line'
-      ? [{ resourceType: 'production-line', code: 'LINE-A', displayName: '前桥线', active: true, snapshotVersion: '1' }]
+      ? [{ resourceType: 'production-line', code: 'LINE-A', displayName: '前桥线', active: true, siteCode: 'PLANT-A', workshopCode: 'WS-A', snapshotVersion: '1' }]
       : resourceType === 'work-center'
-        ? [{ resourceType: 'work-center', code: 'WC-A', displayName: '焊接中心', active: true, snapshotVersion: '1' }]
+        ? [{ resourceType: 'work-center', code: 'WC-A', displayName: '焊接中心', active: true, lineCode: 'LINE-A', snapshotVersion: '1' }]
         : []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
@@ -58,9 +87,25 @@ function stubActions() {
   }
 }
 
+function stubWorkshops() {
+  const rows = [{ resourceType: 'workshop', code: 'WS-A', displayName: '总装车间', active: true, siteCode: 'PLANT-A' }]
+  return {
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
+    workshops: computed(() => rows),
+    workshopsTotal: computed(() => rows.length),
+    workshopsError: shallowRef(undefined),
+    workshopsPending: shallowRef(false),
+    refreshWorkshops: vi.fn(),
+    createWorkshop: vi.fn(),
+    createWorkshopError: shallowRef(undefined),
+    createWorkshopPending: shallowRef(false),
+  }
+}
+
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useMasterDataResourceActions: () => stubActions(),
+  useBusinessWorkshops: () => stubWorkshops(),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -127,10 +172,22 @@ async function openAndFillValid(wrapper: ReturnType<typeof mount>) {
   await wrapper.find('#dev-maker').setValue('KUKA')
   await wrapper.find('#dev-serial').setValue('SN-9001')
   await wrapper.find('#dev-class').setValue('ROBOT')
+  const siteSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('宁波工厂')))
+  await siteSelect!.setValue('PLANT-A')
+  const workshopSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('总装车间')))
+  await workshopSelect!.setValue('WS-A')
   const lineSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('前桥线')))
   await lineSelect!.setValue('LINE-A')
   const wcSelect = wrapper.findAll('select').find((s) => s.findAll('option').some((o) => o.text().includes('焊接中心')))
   await wcSelect!.setValue('WC-A')
+  await wrapper.find('#dev-station').setValue('ST-01')
+  await wrapper.find('#dev-purchase-date').setValue('2025-01-15')
+  await wrapper.find('#dev-purchase-cost').setValue('125000')
+  await wrapper.find('#dev-warranty').setValue('2027-01-14')
+  await wrapper.find('#dev-supplier').setValue('SUP-ACME')
+  await wrapper.find('#dev-parent').setValue('EQ-PARENT')
+  await wrapper.find('#dev-component-code-0').setValue('MOTOR')
+  await wrapper.find('#dev-component-name-0').setValue('伺服电机')
   await flushPromises()
 }
 
@@ -203,11 +260,34 @@ describe('master-data devices page', () => {
     await flushPromises()
 
     expect(stub.create).toHaveBeenCalledTimes(1)
-    const body = stub.create.mock.calls[0]![0] as { code?: string, model: string, lineCode: string, workCenterCode: string }
+    const body = stub.create.mock.calls[0]![0] as {
+      code?: string
+      model: string
+      siteCode: string
+      workshopCode: string
+      lineCode: string
+      workCenterCode: string
+      stationCode: string
+      purchaseDate?: string
+      purchaseCost?: number
+      warrantyExpiresOn?: string
+      supplierPartnerCode?: string
+      parentDeviceId?: string
+      components?: Array<{ componentCode?: string, componentName?: string, quantity?: number }>
+    }
     expect(body.code).toBeUndefined()
     expect(body.model).toBe('KR-210')
+    expect(body.siteCode).toBe('PLANT-A')
+    expect(body.workshopCode).toBe('WS-A')
     expect(body.lineCode).toBe('LINE-A')
     expect(body.workCenterCode).toBe('WC-A')
+    expect(body.stationCode).toBe('ST-01')
+    expect(body.purchaseDate).toBe('2025-01-15')
+    expect(body.purchaseCost).toBe(125000)
+    expect(body.warrantyExpiresOn).toBe('2027-01-14')
+    expect(body.supplierPartnerCode).toBe('SUP-ACME')
+    expect(body.parentDeviceId).toBe('EQ-PARENT')
+    expect(body.components).toEqual([{ componentCode: 'MOTOR', componentName: '伺服电机', quantity: 1, critical: false }])
     expect(stub.toastSuccess).toHaveBeenCalled()
     expect(stub.toastError).not.toHaveBeenCalled()
   })

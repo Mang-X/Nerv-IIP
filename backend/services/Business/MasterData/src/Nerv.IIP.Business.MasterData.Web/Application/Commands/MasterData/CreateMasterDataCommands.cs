@@ -945,7 +945,18 @@ public sealed record RegisterDeviceAssetCommand(
     bool Maintainable,
     bool TelemetryEnabled,
     IReadOnlyDictionary<string, string> ExternalReferences,
-    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+    string? IdempotencyKey = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? SiteCode = null,
+    string? WorkshopCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDraft>? Components = null) : ICommand<MasterDataResourceResult>;
 
 public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository repository, MasterDataCodingService? codingService = null)
     : ICommandHandler<RegisterDeviceAssetCommand, MasterDataResourceResult>
@@ -972,7 +983,18 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
                 request.Criticality,
                 request.Maintainable,
                 request.TelemetryEnabled,
-                request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}")),
+                request.ExternalReferences.Select(x => $"{x.Key}:{x.Value}"),
+                request.PurchaseDate,
+                request.PurchaseCost,
+                request.PurchaseCurrencyCode,
+                request.WarrantyExpiresOn,
+                request.SupplierPartnerCode,
+                request.SiteCode,
+                request.WorkshopCode,
+                request.StationCode,
+                request.ParentDeviceId,
+                request.RetiredOn,
+                request.Components?.Select(x => $"{x.ComponentCode}:{x.Quantity}:{x.Critical}") ?? []),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -1001,7 +1023,20 @@ public sealed class RegisterDeviceAssetCommandHandler(IDeviceAssetRepository rep
             request.Criticality,
             request.Maintainable,
             request.TelemetryEnabled,
-            request.ExternalReferences);
+            request.ExternalReferences)
+            .WithLedger(
+                request.PurchaseDate,
+                request.PurchaseCost,
+                request.PurchaseCurrencyCode ?? string.Empty,
+                request.WarrantyExpiresOn,
+                request.SupplierPartnerCode ?? string.Empty,
+                request.SiteCode ?? string.Empty,
+                request.WorkshopCode ?? string.Empty,
+                request.LineCode,
+                request.StationCode ?? string.Empty,
+                request.ParentDeviceId,
+                request.RetiredOn)
+            .ReplaceComponents(request.Components ?? []);
         await repository.AddAsync(asset, cancellationToken);
         return new MasterDataResourceResult("device-asset", asset.Code, asset.Model);
     }

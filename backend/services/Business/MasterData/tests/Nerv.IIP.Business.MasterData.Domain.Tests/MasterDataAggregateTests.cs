@@ -592,6 +592,69 @@ public sealed class MasterDataAggregateTests
     }
 
     [Fact]
+    public void Device_asset_captures_ledger_hierarchy_warranty_and_component_structure()
+    {
+        var asset = DeviceAsset.RegisterCapability(
+            "org-001",
+            "env-dev",
+            "DEV-MIX-01",
+            "Mixing Vessel",
+            "LINE-MIX-01",
+            "WC-MIX-01",
+            "vessel",
+            "Acme",
+            "SN-001",
+            500m,
+            2000m,
+            "L",
+            "high",
+            true,
+            true,
+            new Dictionary<string, string>())
+            .WithLedger(
+                new DateOnly(2024, 1, 15),
+                125000m,
+                "CNY",
+                new DateOnly(2027, 1, 14),
+                "SUP-ACME",
+                "SITE-001",
+                "WS-MIX",
+                "LINE-MIX-01",
+                "ST-MIX-01",
+                parentDeviceId: null,
+                retiredOn: null)
+            .ReplaceComponents([
+                new DeviceAssetComponentDraft("SEAL-KIT", "Mechanical seal kit", 2m, true),
+                new DeviceAssetComponentDraft("MOTOR", "Drive motor", 1m, true),
+            ]);
+
+        Assert.Equal(new DateOnly(2024, 1, 15), asset.PurchaseDate);
+        Assert.Equal(125000m, asset.PurchaseCost);
+        Assert.Equal("CNY", asset.PurchaseCurrencyCode);
+        Assert.Equal(new DateOnly(2027, 1, 14), asset.WarrantyExpiresOn);
+        Assert.Equal("SUP-ACME", asset.SupplierPartnerCode);
+        Assert.Equal("SITE-001", asset.SiteCode);
+        Assert.Equal("WS-MIX", asset.WorkshopCode);
+        Assert.Equal("ST-MIX-01", asset.StationCode);
+        Assert.False(asset.Retired);
+        Assert.Equal(2, asset.Components.Count);
+        Assert.Contains(asset.Components, x => x.ComponentCode == "MOTOR" && x.Quantity == 1m);
+    }
+
+    [Fact]
+    public void Device_asset_rejects_duplicate_component_codes()
+    {
+        var asset = DeviceAsset.Register("org-001", "env-dev", "DEV-CNC-01", "CNC", "LINE-1", "WC-1");
+
+        var exception = Assert.Throws<ArgumentException>(() => asset.ReplaceComponents([
+            new DeviceAssetComponentDraft("MOTOR", "Main motor", 1m, true),
+            new DeviceAssetComponentDraft("MOTOR", "Backup motor", 1m, false),
+        ]));
+
+        Assert.Contains("duplicate component", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Work_center_validates_capacity_factors_and_can_clear_cost_center()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => WorkCenter.CreateResource("org-001", "env-dev", "WC-UTIL", "Bad Utilization", 480, "work-center", "PLANT", "LINE", workshopCode: null, "CAL", "minute", true, utilizationRate: 1.1m));

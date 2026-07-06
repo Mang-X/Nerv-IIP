@@ -29253,6 +29253,42 @@
             "type": "string",
             "nullable": true
           },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
           "creditLimit": {
             "type": "number",
             "format": "decimal",
@@ -29956,6 +29992,10 @@
             "type": "string",
             "nullable": true
           },
+          "workshopCode": {
+            "type": "string",
+            "nullable": true
+          },
           "capacityMinutesPerDay": {
             "type": "integer",
             "format": "int32",
@@ -29996,6 +30036,53 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "retired": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           },
           "minimumCapacity": {
             "type": "number",
@@ -30117,6 +30204,25 @@
           "creditCurrencyCode": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "componentCode": {
+            "type": "string"
+          },
+          "componentName": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "critical": {
+            "type": "boolean"
           }
         }
       },
@@ -30386,6 +30492,49 @@
           "serialNo": {
             "type": "string",
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           },
           "minimumCapacity": {
             "type": "number",
@@ -31165,6 +31314,70 @@
             "maxLength": 150,
             "minLength": 0,
             "nullable": true
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "purchaseCost": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "purchaseCurrencyCode": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 0,
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "siteCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "workshopCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "stationCode": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "parentDeviceId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": true
+          },
+          "retiredOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "components": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent"
+            }
           }
         }
       },
@@ -32440,6 +32653,19 @@
             "nullable": true
           },
           "costCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "warrantyExpiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "supplierPartnerCode": {
             "type": "string",
             "nullable": true
           }

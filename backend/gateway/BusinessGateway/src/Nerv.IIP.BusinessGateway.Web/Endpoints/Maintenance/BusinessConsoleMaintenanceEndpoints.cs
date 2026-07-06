@@ -76,6 +76,7 @@ public sealed class CompleteBusinessConsoleMaintenanceWorkOrderEndpoint(
 public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceListRequest, BusinessConsoleMaintenanceWorkOrderListResponse>(
         auth,
@@ -85,11 +86,21 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMaintenanceListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderListResponse> ForwardAsync(
         BusinessConsoleMaintenanceListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await maintenance.ListWorkOrdersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        var items = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
+            response.Items,
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+        return response with { Items = items };
+    }
 }
 
 [Tags("Business Console Maintenance")]
@@ -98,6 +109,7 @@ public sealed class ListBusinessConsoleMaintenanceWorkOrdersEndpoint(
 public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMaintenanceContextRequest, BusinessConsoleMaintenanceWorkOrderItem>(
         auth,
@@ -111,11 +123,88 @@ public sealed class GetBusinessConsoleMaintenanceWorkOrderEndpoint(
 
     protected override string? ResourceId(BusinessConsoleMaintenanceContextRequest request) => Route<string>("workOrderId");
 
-    protected override Task<BusinessConsoleMaintenanceWorkOrderItem> ForwardAsync(
+    protected override async Task<BusinessConsoleMaintenanceWorkOrderItem> ForwardAsync(
         BusinessConsoleMaintenanceContextRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, Route<string>("workOrderId")!, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await maintenance.GetWorkOrderAsync(tokenProvider.BearerToken, Route<string>("workOrderId")!, request, cancellationToken);
+        var enriched = await MaintenanceDeviceAssetWarrantyEnricher.EnrichAsync(
+            [workOrder],
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+        return enriched.Single();
+    }
+}
+
+internal static class MaintenanceDeviceAssetWarrantyEnricher
+{
+    public static async Task<IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem>> EnrichAsync(
+        IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderItem> items,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var cache = new Dictionary<string, BusinessConsoleMasterDataResourceDetail?>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<BusinessConsoleMaintenanceWorkOrderItem>(items.Count);
+        foreach (var item in items)
+        {
+            var detail = await GetDeviceAssetDetailAsync(item.DeviceAssetId, cache, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
+            results.Add(item with
+            {
+                WarrantyStatus = WarrantyStatus(detail?.WarrantyExpiresOn),
+                WarrantyExpiresOn = detail?.WarrantyExpiresOn,
+                SupplierPartnerCode = detail?.SupplierPartnerCode,
+            });
+        }
+
+        return results;
+    }
+
+    private static async Task<BusinessConsoleMasterDataResourceDetail?> GetDeviceAssetDetailAsync(
+        string deviceAssetId,
+        Dictionary<string, BusinessConsoleMasterDataResourceDetail?> cache,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(deviceAssetId, out var cached))
+        {
+            return cached;
+        }
+
+        try
+        {
+            cached = await masterData.GetResourceDetailAsync(
+                internalBearerToken,
+                new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException)
+        {
+            cached = null;
+        }
+
+        cache[deviceAssetId] = cached;
+        return cached;
+    }
+
+    private static string WarrantyStatus(DateOnly? warrantyExpiresOn)
+    {
+        if (warrantyExpiresOn is null)
+        {
+            return "unknown";
+        }
+
+        return warrantyExpiresOn.Value >= DateOnly.FromDateTime(DateTime.UtcNow) ? "in-warranty" : "out-of-warranty";
+    }
 }
 
 [Tags("Business Console Maintenance")]

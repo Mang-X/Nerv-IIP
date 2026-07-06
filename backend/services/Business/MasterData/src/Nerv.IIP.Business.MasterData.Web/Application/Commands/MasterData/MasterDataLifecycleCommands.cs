@@ -62,6 +62,15 @@ public sealed record UpdateMasterDataResourceCommand(
     string? Model = null,
     string? Manufacturer = null,
     string? SerialNo = null,
+    DateOnly? PurchaseDate = null,
+    decimal? PurchaseCost = null,
+    string? PurchaseCurrencyCode = null,
+    DateOnly? WarrantyExpiresOn = null,
+    string? SupplierPartnerCode = null,
+    string? StationCode = null,
+    string? ParentDeviceId = null,
+    DateOnly? RetiredOn = null,
+    IReadOnlyCollection<DeviceAssetComponentDetail>? Components = null,
     decimal? MinimumCapacity = null,
     decimal? MaximumCapacity = null,
     string? CapacityUomCode = null,
@@ -347,6 +356,22 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
                     request.Criticality ?? device.Criticality,
                     request.Maintainable ?? device.Maintainable,
                     request.TelemetryEnabled ?? device.TelemetryEnabled);
+                device.UpdateLedger(
+                    request.PurchaseDate ?? device.PurchaseDate,
+                    request.PurchaseCost ?? device.PurchaseCost,
+                    request.PurchaseCurrencyCode ?? device.PurchaseCurrencyCode,
+                    request.WarrantyExpiresOn ?? device.WarrantyExpiresOn,
+                    request.SupplierPartnerCode ?? device.SupplierPartnerCode,
+                    request.SiteCode ?? device.SiteCode,
+                    request.WorkshopCode ?? device.WorkshopCode,
+                    request.LineCode ?? device.LineCode,
+                    request.StationCode ?? device.StationCode,
+                    request.ParentDeviceId ?? device.ParentDeviceId,
+                    request.RetiredOn ?? device.RetiredOn);
+                if (request.Components is not null)
+                {
+                    device.ReplaceComponents(request.Components.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)));
+                }
                 return Detail(device);
             case "reference-data":
                 var referenceData = await FindReferenceDataCodeAsync(request, cancellationToken);
@@ -427,7 +452,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<DeviceAsset> FindDeviceAssetAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
-        await dbContext.DeviceAssets.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        await dbContext.DeviceAssets.Include(x => x.Components).SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<ReferenceDataCode> FindReferenceDataCodeAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken)
@@ -589,7 +614,39 @@ public sealed class UpdateMasterDataResourceCommandHandler(ApplicationDbContext 
         new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active", UtilizationRate: x.UtilizationRate, EfficiencyRate: x.EfficiencyRate, NumberOfCapacities: x.NumberOfCapacities, EffectiveCapacityMinutesPerDay: x.EffectiveCapacityMinutesPerDay, CostCenterCode: x.CostCenterCode, Bottleneck: x.Bottleneck);
 
     internal static MasterDataResourceDetail Detail(DeviceAsset x) =>
-        new("device-asset", x.Code, x.Model, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, Model: x.Model, LineCode: x.LineCode, WorkCenterCode: x.WorkCenterCode, AssetClassCode: x.AssetClassCode, Manufacturer: x.Manufacturer, SerialNo: x.SerialNo, MinimumCapacity: x.MinimumCapacity, MaximumCapacity: x.MaximumCapacity, CapacityUomCode: x.CapacityUomCode, Criticality: x.Criticality, Maintainable: x.Maintainable, TelemetryEnabled: x.TelemetryEnabled, Status: x.Disabled ? "disabled" : "active");
+        new(
+            "device-asset",
+            x.Code,
+            x.Model,
+            !x.Disabled,
+            x.UpdatedAtUtc.ToString("O"),
+            x.OrganizationId,
+            x.EnvironmentId,
+            Model: x.Model,
+            SiteCode: x.SiteCode,
+            WorkshopCode: x.WorkshopCode,
+            LineCode: x.LineCode,
+            WorkCenterCode: x.WorkCenterCode,
+            AssetClassCode: x.AssetClassCode,
+            Manufacturer: x.Manufacturer,
+            SerialNo: x.SerialNo,
+            PurchaseDate: x.PurchaseDate,
+            PurchaseCost: x.PurchaseCost,
+            PurchaseCurrencyCode: x.PurchaseCurrencyCode,
+            WarrantyExpiresOn: x.WarrantyExpiresOn,
+            SupplierPartnerCode: x.SupplierPartnerCode,
+            StationCode: x.StationCode,
+            ParentDeviceId: x.ParentDeviceId,
+            RetiredOn: x.RetiredOn,
+            Retired: x.Retired,
+            Components: x.Components.Select(y => new DeviceAssetComponentDetail(y.ComponentCode, y.ComponentName, y.Quantity, y.Critical)).ToArray(),
+            MinimumCapacity: x.MinimumCapacity,
+            MaximumCapacity: x.MaximumCapacity,
+            CapacityUomCode: x.CapacityUomCode,
+            Criticality: x.Criticality,
+            Maintainable: x.Maintainable,
+            TelemetryEnabled: x.TelemetryEnabled,
+            Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(ReferenceDataCode x) =>
         new("reference-data", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, CodeSet: x.CodeSet, Status: x.Disabled ? "disabled" : "active");

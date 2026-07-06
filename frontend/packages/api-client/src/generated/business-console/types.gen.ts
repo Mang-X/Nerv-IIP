@@ -2756,6 +2756,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     precision?: number | null;
     roundingMode?: string | null;
     deviceAssetId?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
 };
@@ -2939,6 +2947,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     paidMinutes?: number | null;
     plantCode?: string | null;
     lineCode?: string | null;
+    workshopCode?: string | null;
     capacityMinutesPerDay?: number | null;
     resourceKind?: string | null;
     defaultCalendarCode?: string | null;
@@ -2949,6 +2958,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     model?: string | null;
     manufacturer?: string | null;
     serialNo?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    retired?: boolean | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
     minimumCapacity?: number | null;
     maximumCapacity?: number | null;
     capacityUomCode?: string | null;
@@ -2975,6 +2994,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skillLevel?: string | null;
     creditLimit?: number | null;
     creditCurrencyCode?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent = {
+    componentCode?: string;
+    componentName?: string;
+    quantity?: number;
+    critical?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkCalendarWorkingTime = {
@@ -3038,6 +3064,15 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleU
     model?: string | null;
     manufacturer?: string | null;
     serialNo?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
     minimumCapacity?: number | null;
     maximumCapacity?: number | null;
     capacityUomCode?: string | null;
@@ -3198,6 +3233,17 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
         [key: string]: string;
     } | null;
     idempotencyKey?: string | null;
+    purchaseDate?: string | null;
+    purchaseCost?: number | null;
+    purchaseCurrencyCode?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
+    siteCode?: string | null;
+    workshopCode?: string | null;
+    stationCode?: string | null;
+    parentDeviceId?: string | null;
+    retiredOn?: string | null;
+    components?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeviceAssetComponent> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftRequest = {
@@ -3506,6 +3552,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    warrantyStatus?: string | null;
+    warrantyExpiresOn?: string | null;
+    supplierPartnerCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceListRequest = {

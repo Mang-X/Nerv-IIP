@@ -115,6 +115,9 @@ type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
 const columns: DataTableProColumn<WorkOrderRow>[] = [
   { key: 'workOrderNo', header: '工单号', cellClass: 'font-medium', accessor: (r) => workOrderNo(r) },
   { key: 'deviceAssetId', header: '设备', accessor: (r) => r.deviceAssetId ?? '—' },
+  { key: 'warrantyStatus', header: '保修', width: 'w-24' },
+  { key: 'warrantyExpiresOn', header: '保修到期', width: 'w-28', accessor: (r) => formatDate(r.warrantyExpiresOn) },
+  { key: 'supplierPartnerCode', header: '供应商', width: 'w-28', accessor: (r) => r.supplierPartnerCode ?? '—' },
   { key: 'priority', header: '优先级', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatDateTime(r.openedAtUtc) },
@@ -128,6 +131,13 @@ function workOrderNo(row: WorkOrderRow) {
 }
 function priorityLabel(value?: string | null) {
   return priorityOptions.find((o) => o.value === (value ?? '').toLowerCase())?.label ?? value ?? '—'
+}
+function warrantyStatusLabel(value?: string | null) {
+  switch ((value ?? '').toLowerCase()) {
+    case 'in-warranty': return '在保'
+    case 'out-of-warranty': return '出保'
+    default: return '未维护'
+  }
 }
 function rowKey(row: WorkOrderRow) {
   return row.workOrderId ?? '维护工单'
@@ -212,6 +222,11 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
+function formatDate(value?: string | null) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : error ? '请求失败，请稍后重试。' : ''
 }
@@ -267,6 +282,7 @@ watch(
       :column-settings="false"
       empty-message="暂无维护工单。设备报警或巡检发现异常时在此开单。"
     >
+      <template #cell-warrantyStatus="{ row }"><StatusBadgePro :value="warrantyStatusLabel(row.warrantyStatus)" /></template>
       <template #cell-priority="{ row }"><StatusBadgePro :value="priorityLabel(row.priority)" /></template>
       <template #cell-status="{ row }"><StatusBadgePro :value="row.status" /></template>
       <template #cell-actions="{ row }">
