@@ -382,6 +382,10 @@
 - Notification 边界同步更正：当前代码只证明站内消息/任务、in-app delivery attempt、若干事件消费者和 persistent DLQ；#728 尚未交付前，偏好/订阅、短信/邮件/企业 IM/Webhook provider、通道限流和模板映射不能在 README 或 readiness 中宣称为已具备能力。
 - 主平台控制面仍不承载行业规则。现场能力的代码归属应保持在 Connector Host、BusinessIndustrialTelemetry、BusinessMaintenance、BusinessScheduling、BusinessMES、BusinessGateway 等业务/接入边界内；PlatformGateway、IAM、AppHub 和 Ops 只提供通用治理、身份、任务、审批、审计和运维骨架。
 
+### 2026-07-05 可观测性告警闭环记录（MAN-417 / #735）
+
+首版 Observability 阈值告警闭环已按 ADR 0018 选择内置轻量扫描器，而不是立即引入 vmalert。Notification 进程承载扫描器宿主，但规则命名与事件类型属于 Observability；扫描器只提交 Notification intent，不直接改写 Notification 领域事实。AppHost 和 Compose baseline 已带 `Observability:Alerts` 规则：AppHub health、Notification CAP/DLQ backlog、Connector Host heartbeat stale、PostgreSQL connection watermark 和 PostgreSQL database-size watermark。告警产生 `observability.AlertFiring` task intent，恢复产生 `observability.AlertResolved` message intent；去重、静默窗口、外部通道投递和站内消息继续复用 Notification 现有能力。完整 VictoriaMetrics metrics backend + vmalert 仍是后续触发条件，不属于本切片。
+
 ### 可以并行但不阻塞开工的事项
 
 1. Ops 持久化 outbox、复杂失败重试、审批 Console 管理入口和生产级调度策略。

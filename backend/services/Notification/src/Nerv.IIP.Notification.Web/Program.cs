@@ -3,6 +3,7 @@ using FastEndpoints;
 using FastEndpoints.Swagger;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Notification.Domain.ObservabilityAlerts;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application;
 using Nerv.IIP.Notification.Web.Application.DeadLetters;
@@ -10,6 +11,7 @@ using Nerv.IIP.Notification.Web.Application.Health;
 using Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Notification.Web.Application.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Notifications;
+using Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
@@ -74,7 +76,12 @@ builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(
     builder.Configuration.GetSection(NotificationDeadLetterAlertOptions.SectionName));
-builder.Services.AddHttpClient();
+builder.Services.Configure<ObservabilityAlertOptions>(
+    builder.Configuration.GetSection(ObservabilityAlertOptions.SectionName));
+builder.Services.AddHttpClient(ServiceHealthAlertProbe.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 builder.Services.AddScoped<INotificationDeliveryProvider, WeComDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, DingTalkDeliveryProvider>();
 builder.Services.AddScoped<INotificationDeliveryProvider, SmtpEmailDeliveryProvider>();
@@ -100,6 +107,13 @@ builder.Services.AddScoped<IntegrationEventDeadLetterReplayExecutor>();
 builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, NotificationDeadLetterReplayHandler>();
 builder.Services.AddScoped<NotificationDeadLetterAlertMonitor>();
 builder.Services.AddHostedService<NotificationDeadLetterAlertWorker>();
+builder.Services.AddSingleton<IDatabaseWatermarkReader, PostgreSqlDatabaseWatermarkReader>();
+builder.Services.AddScoped<IObservabilityAlertProbe, ServiceHealthAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, NotificationDeadLetterBacklogAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, AppHubConnectorHeartbeatAlertProbe>();
+builder.Services.AddScoped<IObservabilityAlertProbe, PostgreSqlWatermarkAlertProbe>();
+builder.Services.AddSingleton<ObservabilityAlertMonitor>();
+builder.Services.AddHostedService<ObservabilityAlertWorker>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<OperationApprovalRequestedIntegrationEventHandlerForNotification>();

@@ -167,6 +167,18 @@ Nerv-IIP 默认提供一个不依赖第三方日志平台的内置持久化 prof
 2. Docker Compose 和安装脚本可以不启用 Aspire Dashboard，但必须保留 Collector/OTLP 或滚动文件路径，保证现场可诊断。
 3. 若客户环境已有日志平台，PlatformGateway 只通过 adapter 接入其查询能力；前端契约和日志 DTO 不随部署目标变化。
 
+## 告警部署配置
+
+AppHost 和 Compose baseline 为 Notification 注入 `Observability:Alerts` 配置，用于首版指标阈值告警闭环。默认规则覆盖 AppHub health、Notification CAP/DLQ backlog、Connector Host heartbeat stale、PostgreSQL connection watermark 和 PostgreSQL database-size watermark。部署时必须按现场调整：
+
+1. `Observability__Alerts__Enabled`：是否启用内置轻量扫描器。
+2. `Observability__Alerts__OrganizationId` / `EnvironmentId`：告警 intent 所属租户环境。
+3. `Observability__Alerts__RecipientRefs__0`：默认运维收件人，可映射到 Notification 外部通道订阅。
+4. `Observability__Alerts__AppHubBaseUrl` 与 `InternalServiceBearerToken`：用于 Connector Host heartbeat 查询。
+5. PostgreSQL `WatermarkPercent` 与 database-size `CapacityMegabytes`：现场容量水位。
+
+该配置是单机私有化友好的默认闭环，不替代后续 VictoriaMetrics metrics backend + vmalert 方案。
+
 ## 控制台日志查询
 
 1. 控制台前端不得直接访问 Aspire Dashboard、第三方观测后端或客户侧日志平台，也不得在浏览器中暴露后端地址、凭据、租户 header 或查询语言。
