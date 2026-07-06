@@ -63,7 +63,7 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(AlarmEvent.AlarmCode),
                 nameof(AlarmEvent.ExternalAlarmId),
             ],
-            "status = 'raised'");
+            "status <> 'cleared'");
         AssertUniqueIndex<AlarmEvent>(
             fixture,
             [
@@ -73,7 +73,7 @@ public sealed class IndustrialTelemetrySchemaConventionTests
                 nameof(AlarmEvent.TagKey),
                 nameof(AlarmEvent.ExternalAlarmId),
             ],
-            "status = 'raised' AND tag_key IS NOT NULL");
+            "status <> 'cleared' AND tag_key IS NOT NULL");
         AssertUniqueIndex<DeviceStateSnapshot>(
             fixture,
             [

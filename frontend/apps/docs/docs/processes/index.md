@@ -148,7 +148,7 @@ flowchart LR
 flowchart LR
   subgraph Telemetry["设备监控"]
     T0["角色: 设备工程师<br/>前置: 设备台账, 采集标签, 报警规则<br/>入口: /equipment/telemetry/tags, /equipment/telemetry/alarm-rules<br/>对象/状态: Tag/AlarmRule Active<br/>缺口: 独立大屏后续深化"]
-    T1["角色: 设备工程师<br/>入口: /equipment/alarms<br/>对象/状态: Alarm Raised -> Cleared<br/>缺口: 报警处置闭环后续深化"]
+    T1["角色: 设备工程师<br/>入口: /equipment/alarms<br/>对象/状态: Alarm Raised/Acknowledged/Shelved/Escalated -> Cleared<br/>缺口: 独立大屏后续深化"]
   end
   subgraph Maintenance["维护保养"]
     M0["角色: 维修主管<br/>入口: /maintenance/work-orders<br/>对象/状态: MaintenanceWorkOrder Open -> Completed<br/>缺口: 完整 CMMS 工作台后续深化"]
@@ -164,7 +164,7 @@ flowchart LR
 | 节点 | Business Console 页面 | BusinessGateway facade | 当前事实或缺口 |
 | --- | --- | --- | --- |
 | 设备台账 / 标签 / 报警规则 | `/master-data/devices`, `/equipment/telemetry/tags`, `/equipment/telemetry/alarm-rules` | `/api/business-console/v1/master-data/device-assets`, `/api/business-console/v1/telemetry/tags`, `/api/business-console/v1/telemetry/alarm-rules` | 已有设备资产、采集标签和报警规则入口。 |
-| 设备报警 | `/equipment/alarms` | `/api/business-console/v1/equipment/alarms` | IndustrialTelemetry alarm 事实已暴露；报警处置闭环仍后续深化。 |
+| 设备报警 | `/equipment/alarms` | `/api/business-console/v1/equipment/alarms`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve`, `/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve` | IndustrialTelemetry 暴露 raise/ack/shelve/escalation/clear 生命周期；Notification 只负责 escalation 通知投递。 |
 | 维修工单 | `/maintenance/work-orders` | `/api/business-console/v1/maintenance/work-orders` | Maintenance 可消费报警 raised/cleared 并形成工单上下文。 |
 | 备件需求 | `/maintenance/spare-parts` | `/api/business-console/v1/maintenance/spare-parts` | 完工备件出库请求事件已存在；备件库存策略体验仍需深化。 |
 | 恢复与可靠性 | `/maintenance/reliability`, `/maintenance/availability` | `/api/business-console/v1/maintenance/assets/{deviceAssetId}/reliability`, `/api/business-console/v1/maintenance/availability-windows`, `/api/business-console/v1/equipment/availability`, `/api/business-console/v1/telemetry/runtime-availability` | MTBF/MTTR 无样本返回空值，不伪造指标。 |
