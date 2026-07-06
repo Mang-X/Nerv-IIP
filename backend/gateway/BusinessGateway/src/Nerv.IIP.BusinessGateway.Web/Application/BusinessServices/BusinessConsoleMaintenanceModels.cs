@@ -192,7 +192,6 @@ public sealed record BusinessConsoleMaintenanceReliabilitySummaryItem(
     string? AssignedTechnicianUserId,
     string? CostCurrencyCode,
     int WorkOrderCount,
-    int CompletedWorkOrderCount,
     int EstimatedLaborMinutes,
     int ActualLaborMinutes,
     decimal SparePartCostAmount,

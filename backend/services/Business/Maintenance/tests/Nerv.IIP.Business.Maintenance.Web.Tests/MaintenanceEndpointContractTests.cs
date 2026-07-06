@@ -999,7 +999,6 @@ public sealed class MaintenanceEndpointContractTests
         Assert.Equal("DEV-CNC-01", item.DeviceAssetId);
         Assert.Equal("worker-001", item.AssignedTechnicianUserId);
         Assert.Equal(2, item.WorkOrderCount);
-        Assert.Equal(2, item.CompletedWorkOrderCount);
         Assert.Equal(120, item.EstimatedLaborMinutes);
         Assert.Equal(95, item.ActualLaborMinutes);
         Assert.Equal(130m, item.SparePartCostAmount);

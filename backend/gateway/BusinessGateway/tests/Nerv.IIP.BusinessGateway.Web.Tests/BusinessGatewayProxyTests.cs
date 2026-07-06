@@ -2169,7 +2169,6 @@ public sealed class BusinessGatewayProxyTests
                             assignedTechnicianUserId = "worker-001",
                             costCurrencyCode = "CNY",
                             workOrderCount = 2,
-                            completedWorkOrderCount = 2,
                             estimatedLaborMinutes = 120,
                             actualLaborMinutes = 95,
                             sparePartCostAmount = 130m,

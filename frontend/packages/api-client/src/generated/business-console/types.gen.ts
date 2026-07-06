@@ -3724,7 +3724,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     assignedTechnicianUserId?: string | null;
     costCurrencyCode?: string | null;
     workOrderCount?: number;
-    completedWorkOrderCount?: number;
     estimatedLaborMinutes?: number;
     actualLaborMinutes?: number;
     sparePartCostAmount?: number;

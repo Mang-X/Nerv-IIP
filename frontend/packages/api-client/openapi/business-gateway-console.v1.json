@@ -33132,10 +33132,6 @@
             "type": "integer",
             "format": "int32"
           },
-          "completedWorkOrderCount": {
-            "type": "integer",
-            "format": "int32"
-          },
           "estimatedLaborMinutes": {
             "type": "integer",
             "format": "int32"

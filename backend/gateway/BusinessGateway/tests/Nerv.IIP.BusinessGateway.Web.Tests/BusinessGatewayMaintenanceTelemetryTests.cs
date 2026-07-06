@@ -692,7 +692,6 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
                     "worker-001",
                     "CNY",
                     2,
-                    2,
                     120,
                     95,
                     130m,
