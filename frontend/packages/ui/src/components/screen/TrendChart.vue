@@ -10,6 +10,8 @@ import ScreenPanel from './ScreenPanel.vue'
  * are computed from `actual` / `plan`; the y-scale derives from the data (rounded
  * up) so callers pass raw numbers.
  */
+const range = defineModel<string | number>('range')
+
 const props = withDefaults(
   defineProps<{
     /** Actual output per x-tick — the cyan line. */
@@ -30,6 +32,8 @@ const props = withDefaults(
     planLabel?: string
     /** 右上时间范围假 tabs 为演示装饰 —— 生产使用传 false 隐藏 */
     tabs?: boolean
+    /** 真实时间范围切换（提供即渲染可点 tabs，经 v-model:range 切换；覆盖 tabs 装饰） */
+    ranges?: { label: string; value: string | number }[]
   }>(),
   {
     title: '产量趋势（件）',
@@ -37,6 +41,7 @@ const props = withDefaults(
     actualLabel: '实际产量',
     planLabel: '计划产量',
     tabs: true,
+    ranges: undefined,
     actual: () => [120, 360, 640, 760, 980, 880, 1086, 760, 940, 910, 930, 910],
     plan: () => [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380],
     yLabels: () => ['1,500', '1,200', '900', '600', '300', '0'],
@@ -150,7 +155,21 @@ const uid = Math.random().toString(36).slice(2, 8)
     <template #title-extra>
       <em class="sb-tc-key">— {{ actualLabel }}　--- {{ planLabel }}</em>
     </template>
-    <template v-if="tabs" #extra>
+    <template v-if="ranges?.length" #extra>
+      <div class="sb-tc-tabs">
+        <button
+          v-for="r in ranges"
+          :key="String(r.value)"
+          type="button"
+          class="sb-tc-tab"
+          :class="{ on: r.value === range }"
+          @click="range = r.value"
+        >
+          {{ r.label }}
+        </button>
+      </div>
+    </template>
+    <template v-else-if="tabs" #extra>
       <div class="sb-tc-tabs">
         <span class="on">今日</span><span>近7天</span><span>近30天</span>
       </div>
@@ -179,9 +198,11 @@ const uid = Math.random().toString(36).slice(2, 8)
           <line v-for="(gy, i) in gridYs" :key="i" :x1="left" :y1="gy" :x2="right" :y2="gy" />
         </g>
 
-        <path class="sb-tc-area" :d="areaPath" :fill="`url(#sbTc-${uid})`" />
-        <path class="sb-tc-plan" :d="planPath" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
-        <path class="sb-tc-act" :d="actualPath" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" />
+        <!-- d 同时走 attribute（兜底）与 style —— Chromium 对 CSS d 做 transition：
+             轮询同点数更新时曲线平滑变形（切换范围点数不同则直接切换） -->
+        <path class="sb-tc-area" :d="areaPath" :style="{ d: `path('${areaPath}')` }" :fill="`url(#sbTc-${uid})`" />
+        <path class="sb-tc-plan" :d="planPath" :style="{ d: `path('${planPath}')` }" fill="none" stroke-width="1.5" stroke-dasharray="5 5" />
+        <path class="sb-tc-act" :d="actualPath" :style="{ d: `path('${actualPath}')` }" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" />
 
         <!-- transparent capture layer so hover fires over empty plot area too -->
         <rect :x="left" :y="top" :width="right - left" :height="bottom - top" fill="transparent" />
@@ -233,11 +254,29 @@ const uid = Math.random().toString(36).slice(2, 8)
   overflow: hidden;
   font-size: 12px;
 }
-.sb-tc-tabs span {
+.sb-tc-tabs span,
+.sb-tc-tab {
   padding: 5px 14px;
   color: var(--sb-muted);
 }
-.sb-tc-tabs span.on {
+/* 真实可切换 tab（button 语义） */
+.sb-tc-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  transition: color 0.18s var(--sb-ease);
+}
+.sb-tc-tab:hover:not(.on) {
+  color: var(--sb-text-2);
+}
+.sb-tc-tab:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--sb-cyan-dim);
+}
+.sb-tc-tabs span.on,
+.sb-tc-tab.on {
   background: rgba(0, 229, 255, 0.13);
   color: var(--sb-cyan);
 }
@@ -283,6 +322,20 @@ const uid = Math.random().toString(36).slice(2, 8)
 .sb-tc-act {
   stroke: var(--sb-cyan);
   filter: drop-shadow(0 0 3px var(--sb-cyan-dim));
+}
+/* 数据增长动效：轮询更新时三条路径平滑变形（emphasized 减速，无回弹） */
+.sb-tc-act,
+.sb-tc-plan,
+.sb-tc-area {
+  transition: d 0.6s var(--sb-ease-emphasized);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-tc-act,
+  .sb-tc-plan,
+  .sb-tc-area,
+  .sb-tc-tab {
+    transition: none;
+  }
 }
 .sb-tc-rule {
   stroke: var(--sb-cyan);

@@ -202,6 +202,24 @@ export function buildLineBoard(
   const hourly = hourlyOf(m.profile.taktSec, state)
   const planPerHour = Math.round(3600 / m.profile.taktSec)
 
+  // 近 30 天日产量（两班 20h 产能为基准；周日排产低谷 —— 真实工厂节奏）🟡
+  const daily30 = (() => {
+    const dayCap = planPerHour * 20
+    const output: number[] = []
+    const plan: number[] = []
+    const labels: string[] = []
+    const today = new Date()
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i)
+      labels.push(`${d.getMonth() + 1}/${d.getDate()}`)
+      const sunday = d.getDay() === 0
+      const dayPlan = Math.round(sunday ? dayCap * 0.3 : dayCap)
+      plan.push(dayPlan)
+      output.push(Math.max(0, Math.round(dayPlan * (0.86 + Math.random() * 0.12))))
+    }
+    return { output, plan, labels }
+  })()
+
   // 一次合格率 FPY：良品 / 完工（勾稽口径）
   const total = m.good + m.scrap + m.rework
   const fpy = total > 0 ? Math.round((m.good / total) * 1000) / 10 : 100
@@ -279,6 +297,7 @@ export function buildLineBoard(
     hourly,
     hourLabels: hourLabelsNow(),
     planPerHour,
+    daily30,
     wo,
     andon,
     devices: devices.map((d) => ({

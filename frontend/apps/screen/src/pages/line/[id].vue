@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RingGauge, ScreenPanel, Sparkline, StatusTag, TrendChart } from '@nerv-iip/ui'
-import { ChevronDown, CircleCheck, Gauge, OctagonAlert, Timer, UserRound, Users } from 'lucide-vue-next'
+import { ChevronDown, CircleCheck, OctagonAlert, UserRound, Users } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
@@ -36,25 +36,50 @@ function fmtMin(min: number): string {
 }
 const nf = new Intl.NumberFormat('en-US')
 
-// —— 趋势图（实际 vs 节拍产能）：y 轴刻度随数据生成、x 轴抽稀、悬停按整点取值 ——
-const planSeries = computed(() => Array.from({ length: 12 }, () => board.value?.planPerHour ?? 0))
-const trendY = computed(() => {
+// —— 趋势图（实际 vs 节拍产能）：今日 12h / 近 30 天 tab 切换；
+//    y 轴刻度随数据生成、x 轴抽稀、悬停按点取值 ——
+const trendRange = ref<string | number>('12h')
+const TREND_RANGES = [
+  { label: '今日 12h', value: '12h' },
+  { label: '近 30 天', value: '30d' },
+]
+const trendData = computed(() => {
   const b = board.value
-  if (!b) return []
-  const peak = Math.max(1, ...b.hourly, b.planPerHour)
+  if (!b) return null
+  if (trendRange.value === '30d') {
+    return {
+      actual: b.daily30.output,
+      plan: b.daily30.plan,
+      hoverLabels: b.daily30.labels,
+      xLabels: b.daily30.labels.filter((_, i) => i % 5 === 0),
+      planLabel: '日计划',
+    }
+  }
+  return {
+    actual: b.hourly,
+    plan: Array.from({ length: 12 }, () => b.planPerHour),
+    hoverLabels: b.hourLabels,
+    xLabels: b.hourLabels.filter((_, i) => i % 2 === 0),
+    planLabel: '节拍产能',
+  }
+})
+const trendY = computed(() => {
+  const t = trendData.value
+  if (!t) return []
+  const peak = Math.max(1, ...t.actual, ...t.plan)
   const mag = 10 ** Math.floor(Math.log10(peak))
   const top = Math.ceil(peak / mag) * mag
   return Array.from({ length: 6 }, (_, i) => nf.format(Math.round((top * (5 - i)) / 5)))
 })
-const trendX = computed(() => board.value?.hourLabels.filter((_, i) => i % 2 === 0) ?? [])
 const trendPin = computed(() => {
-  const b = board.value
-  if (!b) return undefined
+  const t = trendData.value
+  if (!t) return undefined
+  const last = t.actual.length - 1
   return {
-    x: 11,
-    label: b.hourLabels[11] ?? '',
-    actual: nf.format(b.hourly[11] ?? 0),
-    plan: nf.format(b.planPerHour),
+    x: last,
+    label: t.hoverLabels[last] ?? '',
+    actual: nf.format(t.actual[last] ?? 0),
+    plan: nf.format(t.plan[last] ?? 0),
   }
 })
 
@@ -195,8 +220,8 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
             <ScreenPanel title="节拍达成" class="lb-takt">
               <div class="lb-takt-in">
                 <div class="lb-takt-v" :class="{ late: board.takt.deviationPct > 0 }">
-                  <Timer :size="21" :stroke-width="1.6" class="lb-ic-chip" />
                   <span class="lb-num">{{ board.takt.deviationPct > 0 ? '+' : '' }}{{ board.takt.deviationPct }}<small>%</small></span>
+                  <i class="lb-score-line" aria-hidden="true" />
                 </div>
                 <p class="lb-takt-sub">
                   标准 {{ board.takt.standardSec }}s · 实际
@@ -212,8 +237,8 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
               </template>
               <div class="lb-oee-in">
                 <div class="lb-oee-big" :class="{ warn: board.oee.overall < 75, bad: board.oee.overall < 55 }">
-                  <Gauge :size="21" :stroke-width="1.6" class="lb-ic-chip" />
                   <span class="lb-num">{{ board.oee.overall }}<small>%</small></span>
+                  <i class="lb-score-line" aria-hidden="true" />
                 </div>
                 <dl class="lb-oee-rates">
                   <div>
@@ -234,17 +259,19 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
           </div>
 
           <TrendChart
+            v-if="trendData"
+            v-model:range="trendRange"
             class="lb-trend"
-            title="小时产量 · 近 12h"
-            :actual="board.hourly"
-            :plan="planSeries"
-            :hover-labels="board.hourLabels"
-            :x-labels="trendX"
+            title="产量趋势"
+            :actual="trendData.actual"
+            :plan="trendData.plan"
+            :hover-labels="trendData.hoverLabels"
+            :x-labels="trendData.xLabels"
             :y-labels="trendY"
             :tooltip="trendPin"
             actual-label="实际产量"
-            plan-label="节拍产能"
-            :tabs="false"
+            :plan-label="trendData.planLabel"
+            :ranges="TREND_RANGES"
           />
 
           <div class="lb-row3">
@@ -632,8 +659,8 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 }
 .lb-takt-v {
   display: inline-flex;
-  align-items: center;
-  gap: 11px;
+  flex-direction: column;
+  align-items: flex-start;
   font-size: 42px;
   font-weight: 800;
   line-height: 1;
@@ -733,8 +760,8 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
 }
 .lb-oee-big {
   display: inline-flex;
-  align-items: center;
-  gap: 11px;
+  flex-direction: column;
+  align-items: flex-start;
   font-size: 44px;
   font-weight: 800;
   line-height: 1;
@@ -743,13 +770,6 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   flex: none;
 }
 
-/* 图标：发丝级去饱和线性符号（无填充块、无边框、静态不发光 —— 遵循 screen
-   哲学「辉光只给活数据」）。数字才是主角，图标克制陪衬。 */
-.lb-ic-chip {
-  flex: none;
-  display: inline-flex;
-  color: var(--sb-faint);
-}
 /* 大数字 + 单位下标（% 沉右下，与「秒」同款底对齐） */
 .lb-num {
   display: inline-flex;
@@ -761,6 +781,15 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
   font-weight: 600;
   margin-left: 2px;
   padding-bottom: 0.14em;
+}
+/* 数据强调线：数字下语义色渐隐短线（TitleBar 下划线的同源语言，替代图标块） */
+.lb-score-line {
+  width: 46px;
+  height: 2px;
+  margin-top: 10px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, currentColor, transparent);
+  opacity: 0.75;
 }
 .lb-oee-big.warn {
   color: var(--sb-amber);

@@ -114,6 +114,12 @@ describe('buildLineBoard（单线大屏）', () => {
     expect(b!.hourLabels).toHaveLength(12)
     for (const l of b!.hourLabels) expect(l).toMatch(/^\d{2}:00$/)
     expect(b!.planPerHour).toBeGreaterThan(0)
+    // 近 30 天：三列等长、产量不超计划上浮区间、周日排产低谷存在
+    expect(b!.daily30.output).toHaveLength(30)
+    expect(b!.daily30.plan).toHaveLength(30)
+    expect(b!.daily30.labels).toHaveLength(30)
+    const peakPlan = Math.max(...b!.daily30.plan)
+    expect(b!.daily30.plan.some((p) => p < peakPlan * 0.5)).toBe(true)
     expect(b!.crew.leader).toBeTruthy()
     // 设备带带首个关键参数（非断线设备）+ 折叠详情 4 参数带趋势
     expect(b!.devices.some((d) => d.param)).toBe(true)

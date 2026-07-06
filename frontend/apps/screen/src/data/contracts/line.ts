@@ -91,6 +91,8 @@ export interface LineBoard {
   hourly: number[]
   hourLabels: string[]
   planPerHour: number
+  /** 近 30 天日产量趋势（含周末排产低谷）🟡 */
+  daily30: { output: number[]; plan: number[]; labels: string[] }
   wo?: CurrentWo
   /** 安灯呼叫记录（正常线为空 —— 异常是例外）；闭环 待 MAN-322 */
   andon: AndonCall[]
