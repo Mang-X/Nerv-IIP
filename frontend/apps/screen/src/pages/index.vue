@@ -1,158 +1,140 @@
 <script setup lang="ts">
-import { OeeHero, RingGauge, ScreenPanel, StatusCard } from '@nerv-iip/ui'
-import { computed } from 'vue'
-import ScreenLayout from '@/layouts/ScreenLayout.vue'
-import { createFactoryOverview, type FactoryOverview, fetchFactoryOverviewMock } from '@/mock/factory'
-import { ScrollBoard, useScreenData } from '@/screen-kit'
+import * as icons from 'lucide-vue-next'
+import { ScreenPanel } from '@nerv-iip/ui'
+import { type Component, computed } from 'vue'
+import { RouterLink } from 'vue-router'
+import { useAccessScope } from '@/access/useAccessScope'
+import { SCREENS } from '@/data/screens'
 
-const { data, isStale } = useScreenData<FactoryOverview>(fetchFactoryOverviewMock, {
-  intervalMs: 4000,
-  initialData: createFactoryOverview(),
-})
-
-const ov = computed(() => data.value ?? createFactoryOverview())
-const kpiAccents = ['cyan', 'green', 'amber', 'indigo'] as const
+const scope = useAccessScope()
+const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
+// lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
+const iconMap = icons as unknown as Record<string, Component>
+function iconOf(name: string): Component {
+  return iconMap[name] ?? iconMap.SquareDashed
+}
 </script>
 
 <template>
-  <ScreenLayout title="Nerv-IIP 工厂运营大屏" screen="指挥中心大屏 01">
-    <div class="grid">
-      <section class="kpis">
-        <ScreenPanel
-          v-for="(k, i) in ov.kpis"
-          :key="k.label"
-          :accent="kpiAccents[i % kpiAccents.length]"
-        >
-          <OeeHero :label="k.label" :value="k.value" :unit="k.unit" :delta="k.delta" :spark="k.spark" />
-        </ScreenPanel>
-      </section>
-
-      <ScreenPanel class="matrix" title="车间运行状态">
-        <div class="matrix-grid">
-          <StatusCard v-for="w in ov.workshops" :key="w.name" v-bind="w" />
-        </div>
-      </ScreenPanel>
-
-      <div class="side">
-        <ScreenPanel title="综合效率 OEE" accent="cyan">
-          <div class="rings">
-            <RingGauge v-for="o in ov.oee" :key="o.label" :value="o.value" :label="o.label" />
-          </div>
-        </ScreenPanel>
-        <ScreenPanel title="实时告警" accent="red" class="alarms">
-          <template #extra>
-            <span :class="['feed', { stale: isStale }]">{{ isStale ? '数据滞留' : '实时' }}</span>
-          </template>
-          <div class="alarm-scroll">
-            <ScrollBoard :items="ov.alarms" :row-key="(a) => a.id" :speed="22">
-              <template #row="{ item }">
-                <div class="alarm-row" :class="item.level">
-                  <span class="dot" />
-                  <span class="txt">{{ item.text }}</span>
-                  <span class="time">{{ item.time }}</span>
-                </div>
-              </template>
-            </ScrollBoard>
-          </div>
-        </ScreenPanel>
+  <div class="launcher">
+    <header class="launcher__top">
+      <div class="brand">
+        <span class="brand__title">Nerv-IIP 工业数据大屏</span>
+        <span class="brand__sub">生产指挥中心</span>
       </div>
-    </div>
-  </ScreenLayout>
+      <div v-if="scope.factories.length > 1" class="factory-switch">
+        <button
+          v-for="f in scope.factories"
+          :key="f.id"
+          type="button"
+          :class="['factory-switch__btn', { active: f.id === scope.currentFactoryId }]"
+          @click="scope.switchFactory(f.id)"
+        >
+          {{ f.name }}
+        </button>
+      </div>
+    </header>
+
+    <main class="launcher__grid">
+      <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="card-link">
+        <ScreenPanel :accent="s.accent" class="card">
+          <component :is="iconOf(s.icon)" class="card__icon" :size="46" :stroke-width="1.4" />
+          <div class="card__title">{{ s.title }}</div>
+          <div class="card__desc">{{ s.desc }}</div>
+        </ScreenPanel>
+      </RouterLink>
+      <p v-if="cards.length === 0" class="empty">当前账号无可见大屏</p>
+    </main>
+  </div>
 </template>
 
 <style scoped>
-.grid {
-  height: 100%;
-  display: grid;
-  grid-template-columns: 1.55fr 0.95fr;
-  grid-template-rows: auto 1fr;
-  gap: 16px;
-}
-.kpis {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-.matrix {
-  grid-column: 1;
-  grid-row: 2;
-  height: 100%;
+.launcher {
+  min-height: 100vh;
+  background: var(--sb-bg);
+  color: var(--sb-text);
+  padding: 48px 64px;
   display: flex;
   flex-direction: column;
+  gap: 40px;
 }
-.matrix-grid {
+.launcher__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand__title {
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.brand__sub {
+  margin-left: 14px;
+  color: var(--sb-muted);
+}
+.factory-switch {
+  display: flex;
+  gap: 8px;
+}
+.factory-switch__btn {
+  padding: 8px 18px;
+  border: 1px solid var(--sb-line-2);
+  border-radius: var(--sb-radius);
+  background: transparent;
+  color: var(--sb-muted);
+  cursor: pointer;
+  transition: color 0.18s var(--sb-ease), border-color 0.18s var(--sb-ease);
+}
+.factory-switch__btn.active {
+  color: var(--sb-cyan);
+  border-color: var(--sb-cyan-dim);
+}
+.factory-switch__btn:active {
+  transform: scale(0.985);
+}
+.launcher__grid {
   flex: 1;
-  min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(2, 1fr);
-  gap: 14px;
+  gap: 28px;
+  align-content: start;
 }
-.side {
-  grid-column: 2;
-  grid-row: 2;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 16px;
-  min-height: 0;
+.card-link {
+  text-decoration: none;
 }
-.rings {
-  display: flex;
-  justify-content: space-around;
-  align-items: center;
-  padding: 10px 0 4px;
-}
-.alarms {
-  height: 100%;
+.card {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding: 40px 32px;
+  min-height: 220px;
+  cursor: pointer;
+  transition: transform 0.2s var(--sb-ease-emphasized);
 }
-.alarm-scroll {
-  flex: 1;
-  min-height: 0;
+.card-link:hover .card {
+  transform: translateY(-4px);
 }
-.feed {
-  font-size: 12px;
-  color: var(--sb-green);
+.card__icon {
+  color: var(--sb-cyan);
 }
-.feed.stale {
-  color: var(--sb-amber);
+.card__title {
+  font-size: 24px;
+  font-weight: 600;
 }
-.alarm-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 2px;
-  border-bottom: 1px solid var(--sb-divider);
+.card__desc {
+  color: var(--sb-muted);
   font-size: 15px;
 }
-.alarm-row .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
-}
-.alarm-row.critical .dot {
-  background: var(--sb-red);
-  box-shadow: 0 0 8px var(--sb-red);
-}
-.alarm-row.warning .dot {
-  background: var(--sb-amber);
-  box-shadow: 0 0 8px var(--sb-amber);
-}
-.alarm-row .txt {
-  flex: 1;
-  color: var(--sb-text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.alarm-row.critical .txt {
-  color: #fff;
-}
-.alarm-row .time {
+.empty {
   color: var(--sb-faint);
-  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .factory-switch__btn {
+    transition: none;
+  }
+  .card-link:hover .card {
+    transform: none;
+  }
 }
 </style>
