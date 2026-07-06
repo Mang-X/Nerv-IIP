@@ -23,13 +23,19 @@ public sealed record AppHubHeartbeatTimeoutScanCommand(
     TimeSpan HeartbeatTimeout,
     int Take) : ICommand<AppHubHeartbeatTimeoutScanResult>;
 
-public sealed class AppHubHeartbeatTimeoutScanCommandHandler(AppHubHeartbeatTimeoutScanner scanner)
+public sealed class AppHubHeartbeatTimeoutScanCommandHandler(IServiceProvider services)
     : ICommandHandler<AppHubHeartbeatTimeoutScanCommand, AppHubHeartbeatTimeoutScanResult>
 {
     public Task<AppHubHeartbeatTimeoutScanResult> Handle(
         AppHubHeartbeatTimeoutScanCommand request,
         CancellationToken cancellationToken)
     {
+        if (services.GetService<ApplicationDbContext>() is null)
+        {
+            return Task.FromResult(new AppHubHeartbeatTimeoutScanResult(0));
+        }
+
+        var scanner = services.GetRequiredService<AppHubHeartbeatTimeoutScanner>();
         return scanner.ScanAsync(request.Now, request.HeartbeatTimeout, request.Take, cancellationToken);
     }
 }
