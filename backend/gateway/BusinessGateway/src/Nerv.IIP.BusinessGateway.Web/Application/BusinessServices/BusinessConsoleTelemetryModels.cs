@@ -86,7 +86,16 @@ public sealed record BusinessConsoleTelemetryAlarmEventItem(
     string Status,
     DateTimeOffset RaisedAtUtc,
     DateTimeOffset? ClearedAtUtc,
-    string ExternalAlarmId);
+    string ExternalAlarmId,
+    DateTimeOffset? AcknowledgedAtUtc = null,
+    string? AcknowledgedBy = null,
+    DateTimeOffset? ShelvedAtUtc = null,
+    DateTimeOffset? ShelvedUntilUtc = null,
+    string? ShelvedBy = null,
+    string? ShelveReason = null,
+    DateTimeOffset? EscalatedAtUtc = null,
+    string? EscalationReason = null,
+    IReadOnlyCollection<string>? EscalationRecipientRefs = null);
 
 public sealed record BusinessConsoleEquipmentAlarmListRequest(
     string OrganizationId,
@@ -97,8 +106,29 @@ public sealed record BusinessConsoleEquipmentAlarmListRequest(
     int Take = 100);
 
 public sealed record BusinessConsoleEquipmentAlarmListPageResponse(
-    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items,
+    IReadOnlyCollection<BusinessConsoleTelemetryAlarmEventItem> Items,
     int Total = 0);
+
+public sealed record BusinessConsoleAcknowledgeAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AcknowledgedAtUtc,
+    string AcknowledgedBy);
+
+public sealed record BusinessConsoleShelveAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset ShelvedAtUtc,
+    int DurationMinutes,
+    string ShelvedBy,
+    string? Reason);
+
+public sealed record BusinessConsoleUnshelveAlarmRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset? UnshelvedAtUtc);
+
+public sealed record BusinessConsoleAlarmLifecycleResponse(string AlarmEventId);
 
 public sealed record BusinessConsoleTelemetryHistoryRequest(
     string OrganizationId,

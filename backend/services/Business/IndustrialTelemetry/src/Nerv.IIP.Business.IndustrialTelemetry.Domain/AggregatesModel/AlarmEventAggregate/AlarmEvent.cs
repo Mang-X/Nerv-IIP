@@ -59,6 +59,17 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
     public DateTimeOffset? ClearedAtUtc { get; private set; }
     public string? ClearedBy { get; private set; }
     public string? ClearReason { get; private set; }
+    public DateTimeOffset? AcknowledgedAtUtc { get; private set; }
+    public string? AcknowledgedBy { get; private set; }
+    public DateTimeOffset? ShelvedAtUtc { get; private set; }
+    public DateTimeOffset? ShelvedUntilUtc { get; private set; }
+    public string? ShelvedBy { get; private set; }
+    public string? ShelveReason { get; private set; }
+    public DateTimeOffset? EscalatedAtUtc { get; private set; }
+    public string? EscalationReason { get; private set; }
+    public string? EscalationRecipientRefsText { get; private set; }
+    public IReadOnlyCollection<string> EscalationRecipientRefs =>
+        SplitRecipientRefs(EscalationRecipientRefsText);
 
     public static AlarmEvent Raise(
         string organizationId,
@@ -101,6 +112,158 @@ public sealed class AlarmEvent : Entity<AlarmEventId>, IAggregateRoot
         ClearedBy = normalizedClearedBy;
         ClearReason = normalizedReason;
         this.AddDomainEvent(new AlarmClearedDomainEvent(this));
+    }
+
+    public void Acknowledge(DateTimeOffset acknowledgedAtUtc, string acknowledgedBy)
+    {
+        EnsureActive("cleared alarms cannot be acknowledged.");
+        if (acknowledgedAtUtc < RaisedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(acknowledgedAtUtc), "Alarm cannot be acknowledged before it was raised.");
+        }
+
+        var normalizedAcknowledgedBy = IndustrialTelemetryText.Required(acknowledgedBy, nameof(acknowledgedBy));
+        if (AcknowledgedAtUtc is not null)
+        {
+            return;
+        }
+
+        AcknowledgedAtUtc = acknowledgedAtUtc;
+        AcknowledgedBy = normalizedAcknowledgedBy;
+        if (Status != "shelved")
+        {
+            Status = "acknowledged";
+        }
+
+        this.AddDomainEvent(new AlarmAcknowledgedDomainEvent(this));
+    }
+
+    public void Shelve(DateTimeOffset shelvedAtUtc, DateTimeOffset shelvedUntilUtc, string shelvedBy, string? shelveReason = null)
+    {
+        EnsureActive("cleared alarms cannot be shelved.");
+        if (shelvedAtUtc < RaisedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shelvedAtUtc), "Alarm cannot be shelved before it was raised.");
+        }
+
+        if (shelvedUntilUtc <= shelvedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shelvedUntilUtc), "Alarm shelving must have a future expiry.");
+        }
+
+        if (IsShelvedAt(shelvedAtUtc))
+        {
+            return;
+        }
+
+        ShelvedAtUtc = shelvedAtUtc;
+        ShelvedUntilUtc = shelvedUntilUtc;
+        ShelvedBy = IndustrialTelemetryText.Required(shelvedBy, nameof(shelvedBy));
+        ShelveReason = IndustrialTelemetryText.Optional(shelveReason);
+        Status = "shelved";
+        this.AddDomainEvent(new AlarmShelvedDomainEvent(this));
+    }
+
+    public bool ExpireShelving(DateTimeOffset asOfUtc)
+    {
+        if (Status != "shelved" || ShelvedUntilUtc is null || ShelvedUntilUtc > asOfUtc)
+        {
+            return false;
+        }
+
+        return Unshelve(asOfUtc);
+    }
+
+    public bool Unshelve(DateTimeOffset unshelvedAtUtc)
+    {
+        if (Status != "shelved")
+        {
+            return false;
+        }
+
+        if (ShelvedAtUtc is not null && unshelvedAtUtc < ShelvedAtUtc)
+        {
+            throw new ArgumentOutOfRangeException(nameof(unshelvedAtUtc), "Alarm cannot be unshelved before it was shelved.");
+        }
+
+        Status = AcknowledgedAtUtc is null ? "raised" : "acknowledged";
+        this.AddDomainEvent(new AlarmUnshelvedDomainEvent(this));
+        return true;
+    }
+
+    public bool IsShelvedAt(DateTimeOffset asOfUtc)
+    {
+        return Status == "shelved"
+            && ShelvedAtUtc is not null
+            && ShelvedUntilUtc is not null
+            && ShelvedAtUtc <= asOfUtc
+            && asOfUtc < ShelvedUntilUtc;
+    }
+
+    public bool ShouldEscalateAt(DateTimeOffset asOfUtc, TimeSpan unacknowledgedTimeout, IReadOnlyCollection<string> severityEscalationLevels)
+    {
+        if (Status == "cleared" || EscalatedAtUtc is not null || IsShelvedAt(asOfUtc))
+        {
+            return false;
+        }
+
+        var severityMatches = severityEscalationLevels.Any(level =>
+            string.Equals(level.Trim(), Severity, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(level.Trim(), Priority, StringComparison.OrdinalIgnoreCase));
+        if (severityMatches)
+        {
+            return true;
+        }
+
+        return AcknowledgedAtUtc is null
+            && unacknowledgedTimeout > TimeSpan.Zero
+            && asOfUtc >= RaisedAtUtc.Add(unacknowledgedTimeout);
+    }
+
+    public void Escalate(DateTimeOffset escalatedAtUtc, string escalationReason, IReadOnlyCollection<string> recipientRefs)
+    {
+        EnsureActive("cleared alarms cannot be escalated.");
+        if (EscalatedAtUtc is not null)
+        {
+            return;
+        }
+
+        EscalatedAtUtc = escalatedAtUtc;
+        EscalationReason = IndustrialTelemetryText.Required(escalationReason, nameof(escalationReason));
+        EscalationRecipientRefsText = JoinRecipientRefs(recipientRefs);
+        this.AddDomainEvent(new AlarmEscalatedDomainEvent(this));
+    }
+
+    private void EnsureActive(string message)
+    {
+        if (Status == "cleared")
+        {
+            throw new InvalidOperationException(message);
+        }
+    }
+
+    private static string JoinRecipientRefs(IReadOnlyCollection<string> recipientRefs)
+    {
+        var normalized = recipientRefs
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalized.Length == 0)
+        {
+            throw new ArgumentException("At least one escalation recipient is required.", nameof(recipientRefs));
+        }
+
+        return string.Join(";", normalized);
+    }
+
+    private static IReadOnlyCollection<string> SplitRecipientRefs(string? value)
+    {
+        return value?
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray() ?? [];
     }
 
     public bool IsSameExternalAlarm(AlarmEvent other)

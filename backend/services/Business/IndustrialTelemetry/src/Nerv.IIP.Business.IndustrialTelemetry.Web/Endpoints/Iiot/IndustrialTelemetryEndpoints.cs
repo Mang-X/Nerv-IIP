@@ -91,6 +91,18 @@ public sealed record PostAlarmEventRequest(
     decimal? ThresholdValue = null,
     string? UnitCode = null);
 public sealed record PostAlarmEventResponse(AlarmEventId AlarmEventId);
+public sealed record AcknowledgeAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset AcknowledgedAtUtc, string AcknowledgedBy);
+public sealed record ShelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset ShelvedAtUtc, int DurationMinutes, string ShelvedBy, string? Reason);
+public sealed record UnshelveAlarmRequest(string OrganizationId, string EnvironmentId, DateTimeOffset? UnshelvedAtUtc);
+public sealed record RunAlarmEscalationsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset AsOfUtc,
+    int UnacknowledgedTimeoutMinutes,
+    IReadOnlyCollection<string> SeverityLevels,
+    IReadOnlyCollection<string> RecipientRefs);
+public sealed record AlarmLifecycleResponse(AlarmEventId AlarmEventId);
+public sealed record RunAlarmEscalationsResponse(int EscalatedCount, IReadOnlyCollection<AlarmEventId> AlarmEventIds);
 public sealed record ListAlarmEventsRequest(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, string? Status, int Skip = 0, int Take = 100);
 public sealed record QueryDeviceTimelineRequest(string DeviceAssetId, string? OrganizationId, string? EnvironmentId, DateTimeOffset? FromUtc, DateTimeOffset? ToUtc);
 public sealed record QueryOeeRequest(string OrganizationId, string EnvironmentId, string DeviceAssetId, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
@@ -180,6 +192,50 @@ public sealed class PostAlarmEventEndpoint(ISender sender) : IndustrialTelemetry
             ? await sender.Send(new RaiseAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.Severity, req.RaisedAtUtc, req.ExternalAlarmId, req.Priority, req.TagKey, req.ObservedValue, req.ThresholdValue, req.UnitCode), ct)
             : await sender.Send(new ClearAlarmCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.AlarmCode, req.ExternalAlarmId, req.ClearedAtUtc.Value, req.ClearedBy ?? string.Empty, req.ClearReason), ct);
         await Send.OkAsync(new PostAlarmEventResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class AcknowledgeAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<AcknowledgeAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<AcknowledgeAlarmEndpoint>());
+
+    public override async Task HandleAsync(AcknowledgeAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new AcknowledgeAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.AcknowledgedAtUtc, req.AcknowledgedBy), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ShelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<ShelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<ShelveAlarmEndpoint>());
+
+    public override async Task HandleAsync(ShelveAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new ShelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.ShelvedAtUtc, req.DurationMinutes, req.ShelvedBy, req.Reason), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class UnshelveAlarmEndpoint(ISender sender) : IndustrialTelemetryEndpoint<UnshelveAlarmRequest, ResponseData<AlarmLifecycleResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<UnshelveAlarmEndpoint>());
+
+    public override async Task HandleAsync(UnshelveAlarmRequest req, CancellationToken ct)
+    {
+        var id = await sender.Send(new UnshelveAlarmCommand(AlarmEventRouteIds.Parse(Route<string>("alarmEventId")), req.OrganizationId, req.EnvironmentId, req.UnshelvedAtUtc ?? DateTimeOffset.UtcNow), ct);
+        await Send.OkAsync(new AlarmLifecycleResponse(id).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class RunAlarmEscalationsEndpoint(ISender sender) : IndustrialTelemetryEndpoint<RunAlarmEscalationsRequest, ResponseData<RunAlarmEscalationsResponse>>
+{
+    public override void Configure() => ConfigureIndustrialTelemetryContract(IndustrialTelemetryEndpointContracts.Get<RunAlarmEscalationsEndpoint>());
+
+    public override async Task HandleAsync(RunAlarmEscalationsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new RunAlarmEscalationsCommand(req.OrganizationId, req.EnvironmentId, req.AsOfUtc, req.UnacknowledgedTimeoutMinutes, req.SeverityLevels, req.RecipientRefs), ct);
+        await Send.OkAsync(new RunAlarmEscalationsResponse(result.EscalatedCount, result.AlarmEventIds).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -306,6 +362,10 @@ public static class IndustrialTelemetryEndpointContracts
         new(typeof(RecordTelemetrySampleEndpoint), "POST", "/api/business/v1/iiot/samples", IndustrialTelemetryPermissionCodes.TelemetryWrite, InternalServiceAuthorizationPolicy.Name, "recordBusinessIiotTelemetrySample"),
         new(typeof(PostAlarmEventEndpoint), "POST", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "raiseBusinessIiotAlarm"),
         new(typeof(ListAlarmEventsEndpoint), "GET", "/api/business/v1/iiot/alarms", IndustrialTelemetryPermissionCodes.AlarmsRead, InternalServiceAuthorizationPolicy.Name, "listBusinessIiotAlarms"),
+        new(typeof(AcknowledgeAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "acknowledgeBusinessIiotAlarm"),
+        new(typeof(ShelveAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/shelve", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "shelveBusinessIiotAlarm"),
+        new(typeof(UnshelveAlarmEndpoint), "POST", "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "unshelveBusinessIiotAlarm"),
+        new(typeof(RunAlarmEscalationsEndpoint), "POST", "/api/business/v1/iiot/alarms/escalations/run", IndustrialTelemetryPermissionCodes.AlarmsWrite, InternalServiceAuthorizationPolicy.Name, "runBusinessIiotAlarmEscalations"),
         new(typeof(QueryDeviceTimelineEndpoint), "GET", "/api/business/v1/iiot/devices/{deviceAssetId}/timeline", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotDeviceTimeline"),
         new(typeof(QueryOeeEndpoint), "GET", "/api/business/v1/iiot/oee", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotOee"),
         new(typeof(QueryRuntimeHoursEndpoint), "GET", "/api/business/v1/iiot/runtime-hours", IndustrialTelemetryPermissionCodes.TelemetryRead, InternalServiceAuthorizationPolicy.Name, "queryBusinessIiotRuntimeHours"),
@@ -320,5 +380,18 @@ public static class IndustrialTelemetryEndpointContracts
     {
         contract = All.SingleOrDefault(x => x.EndpointType == endpointType);
         return contract is not null;
+    }
+}
+
+internal static class AlarmEventRouteIds
+{
+    public static AlarmEventId Parse(string? value)
+    {
+        if (!Guid.TryParse(value, out var id))
+        {
+            throw new KnownException("Alarm event id is invalid.");
+        }
+
+        return new AlarmEventId(id);
     }
 }

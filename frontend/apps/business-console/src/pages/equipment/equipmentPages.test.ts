@@ -75,10 +75,13 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
   }),
   equipmentStatusTone: () => 'success',
   useBusinessEquipmentAlarms: () => ({
+    acknowledgeAlarm: vi.fn(),
     alarms: computed(() => []),
     alarmsError: shallowRef(),
     alarmsPending: shallowRef(false),
     refreshAlarms: vi.fn(),
+    shelveAlarm: vi.fn(),
+    unshelveAlarm: vi.fn(),
   }),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
@@ -104,6 +107,15 @@ vi.mock('@/composables/useBusinessEquipment', () => ({
     overviewError: shallowRef(),
     overviewPending: shallowRef(false),
     refreshOverview: vi.fn(),
+  }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      loginName: 'operator-a',
+      permissionCodes: ['business.iiot.alarms.read', 'business.iiot.alarms.write'],
+    },
   }),
 }))
 

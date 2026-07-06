@@ -6997,14 +6997,48 @@ internal sealed class RecordingIndustrialTelemetryClient : IBusinessIndustrialTe
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEquipmentAlarmListPageResponse(
         [
-            new EquipmentRuntimeAlarmSummary(
+            new BusinessConsoleTelemetryAlarmEventItem(
                 "alarm-001",
+                request.OrganizationId,
+                request.EnvironmentId,
                 "DEV-OIL-01",
                 "TEMP_HIGH",
                 "critical",
+                "raised",
                 DateTimeOffset.Parse("2026-06-01T08:20:00Z", CultureInfo.InvariantCulture),
+                null,
                 "EXT-ALARM-001"),
         ], 1));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> AcknowledgeAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> ShelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleShelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
+    }
+
+    public Task<BusinessConsoleAlarmLifecycleResponse> UnshelveAlarmAsync(
+        string internalBearerToken,
+        string alarmEventId,
+        BusinessConsoleUnshelveAlarmRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleAlarmLifecycleResponse(alarmEventId));
     }
 }
 

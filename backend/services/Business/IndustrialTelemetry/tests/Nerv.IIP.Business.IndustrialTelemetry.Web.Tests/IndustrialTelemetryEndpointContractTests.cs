@@ -33,7 +33,7 @@ public sealed class IndustrialTelemetryEndpointContractTests
     {
         var contracts = IndustrialTelemetryEndpointContracts.All.ToArray();
 
-        Assert.Equal(13, contracts.Length);
+        Assert.Equal(17, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TagsManage && x.OperationId == "createBusinessIiotTelemetryTag");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/tags" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "listBusinessIiotTelemetryTags");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarm-rules" && x.PermissionCode == "business.iiot.alarm-rules.manage" && x.OperationId == "createOrUpdateBusinessIiotAlarmRule");
@@ -41,6 +41,10 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/samples" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryWrite && x.OperationId == "recordBusinessIiotTelemetrySample");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "raiseBusinessIiotAlarm");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/alarms" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsRead && x.OperationId == "listBusinessIiotAlarms");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/acknowledge" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "acknowledgeBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/shelve" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "shelveBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/{alarmEventId}/unshelve" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "unshelveBusinessIiotAlarm");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/iiot/alarms/escalations/run" && x.PermissionCode == IndustrialTelemetryPermissionCodes.AlarmsWrite && x.OperationId == "runBusinessIiotAlarmEscalations");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/devices/{deviceAssetId}/timeline" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotDeviceTimeline");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/oee" && x.PermissionCode == "business.iiot.telemetry.read" && x.OperationId == "queryBusinessIiotOee");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/iiot/runtime-hours" && x.PermissionCode == IndustrialTelemetryPermissionCodes.TelemetryRead && x.OperationId == "queryBusinessIiotRuntimeHours");
@@ -211,6 +215,79 @@ public sealed class IndustrialTelemetryEndpointContractTests
         AssertPagedResponse(await tagsResponse.Content.ReadAsStringAsync(), expectedTotal: 2, expectedItems: 1);
         AssertPagedResponse(await rulesResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
         AssertPagedResponse(await alarmsResponse.Content.ReadAsStringAsync(), expectedTotal: 1, expectedItems: 1);
+    }
+
+    [Fact]
+    public async Task Alarm_lifecycle_endpoints_ack_shelve_expire_and_publish_escalation_once()
+    {
+        await using var factory = new IndustrialTelemetryLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        var alarmId = await PostAlarmAndReadIdAsync(
+            client,
+            "DEV-LIFE-01",
+            "TEMP_HIGH",
+            "critical",
+            new DateTimeOffset(2026, 7, 6, 8, 0, 0, TimeSpan.Zero),
+            "life-alarm-001");
+
+        await PostLifecycleAsync(client, $"/api/business/v1/iiot/alarms/{alarmId}/acknowledge", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            acknowledgedAtUtc = "2026-07-06T08:05:00Z",
+            acknowledgedBy = "operator-001",
+        });
+        await PostLifecycleAsync(client, $"/api/business/v1/iiot/alarms/{alarmId}/shelve", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            shelvedAtUtc = "2026-07-06T08:06:00Z",
+            durationMinutes = 20,
+            shelvedBy = "operator-001",
+            reason = "maintenance check",
+        });
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:10:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+
+        Assert.Empty(factory.PublishedEvents.OfType<AlarmEscalatedIntegrationEvent>());
+
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:40:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+        await PostLifecycleAsync(client, "/api/business/v1/iiot/alarms/escalations/run", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            asOfUtc = "2026-07-06T08:45:00Z",
+            unacknowledgedTimeoutMinutes = 5,
+            severityLevels = new[] { "critical" },
+            recipientRefs = new[] { "role:maintenance-manager" },
+        });
+
+        var escalated = Assert.Single(factory.PublishedEvents.OfType<AlarmEscalatedIntegrationEvent>());
+        Assert.Equal("role:maintenance-manager", Assert.Single(escalated.Payload.RecipientRefs));
+
+        using var response = await client.GetAsync("/api/business/v1/iiot/alarms?organizationId=org-001&environmentId=env-dev&deviceAssetId=DEV-LIFE-01");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("data").GetProperty("items").EnumerateArray());
+        Assert.Equal("acknowledged", item.GetProperty("status").GetString());
+        Assert.Equal("operator-001", item.GetProperty("acknowledgedBy").GetString());
+        Assert.Equal("role:maintenance-manager", item.GetProperty("escalationRecipientRefs")[0].GetString());
     }
 
     [Fact]
@@ -815,6 +892,38 @@ public sealed class IndustrialTelemetryEndpointContractTests
         });
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+    }
+
+    private static async Task<string> PostAlarmAndReadIdAsync(
+        HttpClient client,
+        string deviceAssetId,
+        string alarmCode,
+        string severity,
+        DateTimeOffset raisedAtUtc,
+        string externalAlarmId)
+    {
+        using var response = await client.PostAsJsonAsync("/api/business/v1/iiot/alarms", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId,
+            alarmCode,
+            severity,
+            raisedAtUtc,
+            externalAlarmId,
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected alarm post to succeed, got {(int)response.StatusCode}: {body}");
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("data").GetProperty("alarmEventId").GetString()
+            ?? throw new InvalidOperationException("Alarm response did not contain alarmEventId.");
+    }
+
+    private static async Task PostLifecycleAsync(HttpClient client, string route, object request)
+    {
+        using var response = await client.PostAsJsonAsync(route, request);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.True(response.IsSuccessStatusCode, $"Expected lifecycle post to succeed, got {(int)response.StatusCode}: {body}");
     }
 
     private static async Task PostTagAsync(HttpClient client, string deviceAssetId, string tagKey)

@@ -222,6 +222,72 @@ public sealed class ListBusinessConsoleEquipmentAlarmsEndpoint(
         industrialTelemetry.ListActiveAlarmsAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+[Tags("Business Console Equipment")]
+[HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/acknowledge")]
+[BusinessGatewayOperationId("acknowledgeBusinessConsoleEquipmentAlarm")]
+public sealed class AcknowledgeBusinessConsoleEquipmentAlarmEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleAcknowledgeAlarmRequest, BusinessConsoleAlarmLifecycleResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotAlarmsWrite)
+{
+    protected override string OrganizationId(BusinessConsoleAcknowledgeAlarmRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleAcknowledgeAlarmRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAlarmLifecycleResponse> ForwardAsync(
+        BusinessConsoleAcknowledgeAlarmRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        industrialTelemetry.AcknowledgeAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Equipment")]
+[HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/shelve")]
+[BusinessGatewayOperationId("shelveBusinessConsoleEquipmentAlarm")]
+public sealed class ShelveBusinessConsoleEquipmentAlarmEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleShelveAlarmRequest, BusinessConsoleAlarmLifecycleResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotAlarmsWrite)
+{
+    protected override string OrganizationId(BusinessConsoleShelveAlarmRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleShelveAlarmRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAlarmLifecycleResponse> ForwardAsync(
+        BusinessConsoleShelveAlarmRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        industrialTelemetry.ShelveAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, request, cancellationToken);
+}
+
+[Tags("Business Console Equipment")]
+[HttpPost("/api/business-console/v1/equipment/alarms/{alarmEventId}/unshelve")]
+[BusinessGatewayOperationId("unshelveBusinessConsoleEquipmentAlarm")]
+public sealed class UnshelveBusinessConsoleEquipmentAlarmEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient industrialTelemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleUnshelveAlarmRequest, BusinessConsoleAlarmLifecycleResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotAlarmsWrite)
+{
+    protected override string OrganizationId(BusinessConsoleUnshelveAlarmRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleUnshelveAlarmRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAlarmLifecycleResponse> ForwardAsync(
+        BusinessConsoleUnshelveAlarmRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        industrialTelemetry.UnshelveAlarmAsync(tokenProvider.BearerToken, Route<string>("alarmEventId")!, request, cancellationToken);
+}
+
 public sealed class BusinessConsoleEquipmentAlarmListRequestValidator : Validator<BusinessConsoleEquipmentAlarmListRequest>
 {
     public BusinessConsoleEquipmentAlarmListRequestValidator()
@@ -232,6 +298,37 @@ public sealed class BusinessConsoleEquipmentAlarmListRequestValidator : Validato
         RuleFor(x => x.Status).MaximumLength(50);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleAcknowledgeAlarmRequestValidator : Validator<BusinessConsoleAcknowledgeAlarmRequest>
+{
+    public BusinessConsoleAcknowledgeAlarmRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AcknowledgedBy).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleShelveAlarmRequestValidator : Validator<BusinessConsoleShelveAlarmRequest>
+{
+    public BusinessConsoleShelveAlarmRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DurationMinutes).InclusiveBetween(1, 24 * 60);
+        RuleFor(x => x.ShelvedBy).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Reason).MaximumLength(300);
+    }
+}
+
+public sealed class BusinessConsoleUnshelveAlarmRequestValidator : Validator<BusinessConsoleUnshelveAlarmRequest>
+{
+    public BusinessConsoleUnshelveAlarmRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
     }
 }
 

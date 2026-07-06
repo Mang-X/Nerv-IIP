@@ -49,7 +49,7 @@ Notification 不拥有以下事实：
 3. 对强交互场景，例如审批、人工确认、任务失败处理，发布方可以提交明确 NotificationIntent，但仍不得直接调用外部通道 provider。
 4. 外部通道投递采用异步最终一致性；投递失败不能回滚原业务事务。
 5. Notification 必须按 `sourceService`、`sourceEventType`、`sourceEventId`、`organizationId`、`environmentId` 和 `dedupeKey` 处理幂等，避免 CAP 重试造成重复消息。
-6. IndustrialTelemetry `AlarmRaised` 会转成站内待办通知，摘要携带设备、点位、观测值、阈值和单位上下文；`AlarmCleared` 在当前 Notification 消息模型下生成同一报警资源的恢复通知，后续 ack/shelve/escalation 或任务关闭状态由独立报警处置切片推进。
+6. IndustrialTelemetry `AlarmRaised` 会转成站内待办通知，摘要携带设备、点位、观测值、阈值和单位上下文；`AlarmCleared` 在当前 Notification 消息模型下生成同一报警资源的恢复通知；`AlarmEscalated` 由 IndustrialTelemetry 判定后携带明确 recipient refs，Notification 只负责生成 critical 待办/消息和外部通道投递，不拥有 ack、shelve 或升级状态机。
 
 ## 接收人与权限
 
