@@ -58,7 +58,7 @@
 - [x] 覆盖 EngineeringDocument、EngineeringItem、EBOM、MBOM、Routing、StandardOperation、ProductionVersion、ECO/ECN。
 - [x] StandardOperation、ProductionVersion、release/归档/校验链路已有 Web/API contract 和测试事实。
 - [x] BusinessGateway 暴露 documents、items、EBOM、MBOM、routing、standard operations、production versions、ECO facade。
-- [ ] 还缺工程对象详情深度、版本 diff、ECO future effective 切换、文档预览/签审和 FileStorage 深度产品化。
+- [ ] 还缺工程对象详情深度、版本 diff、ECO 生效计划可视化/影响分析、文档预览/签审和 FileStorage 深度产品化；后端已支持 future effective ECO scheduled release、取消和改期。
 
 ### DemandPlanning
 
@@ -246,7 +246,7 @@
 - [ ] 建立业务大屏应用或等价入口，先从只读生产/OEE/WMS/APS/质量大屏开始。
 - [ ] ERP 深化：税务、银行、月结、报表、RMA/退货、多币种深度。
 - [ ] Maintenance 深化：资产 CMMS、备件成本、维修绩效、点检日历。
-- [ ] ProductEngineering 深化：版本 diff、ECO 生效计划、文档预览/签审、工程影响分析。
+- [ ] ProductEngineering 深化：版本 diff、ECO 生效计划前端可视化、文档预览/签审、工程影响分析。
 - [ ] 全局对象搜索：Cmd/Ctrl+K 面板、权限过滤、对象详情穿透、近期/星标。
 
 ## 当前判断

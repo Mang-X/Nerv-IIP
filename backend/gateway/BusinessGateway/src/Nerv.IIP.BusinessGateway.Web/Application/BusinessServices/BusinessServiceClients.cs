@@ -451,6 +451,16 @@ public interface IBusinessProductEngineeringClient
         BusinessConsoleReleaseEngineeringChangeRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(
         string internalBearerToken,
         BusinessConsoleEngineeringChangeImpactPreviewRequest request,
@@ -2931,6 +2941,28 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/engineering/engineering-changes/release",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/cancel-scheduled",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleEngineeringEntityResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            "/api/business/v1/engineering/engineering-changes/reschedule",
             request,
             cancellationToken);
 

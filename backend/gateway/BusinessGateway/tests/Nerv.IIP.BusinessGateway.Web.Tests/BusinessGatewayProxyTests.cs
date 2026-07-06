@@ -3119,6 +3119,14 @@ public sealed class BusinessGatewayProxyTests
             "internal-token-001",
             new BusinessConsoleReleaseEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Initial", "approval-001", new DateOnly(2026, 6, 1), [new BusinessConsoleAffectedVersionRequest("mbom", "MBOM-001:A", "MBOM-001:B")]),
             CancellationToken.None);
+        await client.CancelScheduledEngineeringChangeAsync(
+            "internal-token-001",
+            new BusinessConsoleCancelScheduledEngineeringChangeRequest("org-001", "env-dev", "ECO-001", "Operator cancel"),
+            CancellationToken.None);
+        await client.RescheduleEngineeringChangeAsync(
+            "internal-token-001",
+            new BusinessConsoleRescheduleEngineeringChangeRequest("org-001", "env-dev", "ECO-001", new DateOnly(2026, 6, 8), "Supplier delay"),
+            CancellationToken.None);
         await client.CreateProductionVersionAsync(
             "internal-token-001",
             new BusinessConsoleCreateProductionVersionRequest("org-001", "env-dev", "SKU-001", "MBOM-001:A", "RTG-001:A", new DateOnly(2026, 6, 1), null, 1, 100, 10, true),
@@ -3159,6 +3167,8 @@ public sealed class BusinessGatewayProxyTests
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes?organizationId=org-001&environmentId=env-dev&status=Published&skip=7&take=40"),
             request => AssertRequest(request, HttpMethod.Get, "/api/business/v1/engineering/engineering-changes/ECO-001?organizationId=org-001&environmentId=env-dev"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/release"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/cancel-scheduled"),
+            request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/engineering-changes/reschedule"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions"),
             request => AssertRequest(request, HttpMethod.Put, "/api/business/v1/engineering/production-versions/pv-001"),
             request => AssertRequest(request, HttpMethod.Post, "/api/business/v1/engineering/production-versions/pv-001/archive"));
@@ -3206,6 +3216,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains("ListEngineeringChangesAsync", methodNames);
         Assert.Contains("GetEngineeringChangeAsync", methodNames);
         Assert.Contains("ReleaseEngineeringChangeAsync", methodNames);
+        Assert.Contains("CancelScheduledEngineeringChangeAsync", methodNames);
+        Assert.Contains("RescheduleEngineeringChangeAsync", methodNames);
         Assert.Contains("CreateProductionVersionAsync", methodNames);
         Assert.Contains("UpdateProductionVersionAsync", methodNames);
         Assert.Contains("ArchiveProductionVersionAsync", methodNames);
@@ -5603,6 +5615,26 @@ internal sealed class RecordingProductEngineeringClient : IBusinessProductEngine
         WriteCallCount++;
         LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber ?? "ECO-001"));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> CancelScheduledEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleCancelScheduledEngineeringChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber));
+    }
+
+    public Task<BusinessConsoleEngineeringEntityResponse> RescheduleEngineeringChangeAsync(
+        string internalBearerToken,
+        BusinessConsoleRescheduleEngineeringChangeRequest request,
+        CancellationToken cancellationToken)
+    {
+        WriteCallCount++;
+        LastInternalToken = internalBearerToken;
+        return Task.FromResult(new BusinessConsoleEngineeringEntityResponse(request.ChangeNumber));
     }
 
     public Task<BusinessConsoleEngineeringChangeImpactPreviewResponse> PreviewEngineeringChangeImpactAsync(

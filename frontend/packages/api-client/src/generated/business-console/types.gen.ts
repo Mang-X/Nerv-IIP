@@ -1622,6 +1622,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     supersededByVersionId?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelScheduledEngineeringChangeRequest = {
+    organizationId: string;
+    environmentId: string;
+    changeNumber: string;
+    reason: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRescheduleEngineeringChangeRequest = {
+    organizationId: string;
+    environmentId: string;
+    changeNumber: string;
+    effectiveDate?: string;
+    reason: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeImpactPreviewResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewResponse | null;
 };
@@ -7589,6 +7604,72 @@ export type ReleaseBusinessConsoleEngineeringChangeResponses = {
 };
 
 export type ReleaseBusinessConsoleEngineeringChangeResponse = ReleaseBusinessConsoleEngineeringChangeResponses[keyof ReleaseBusinessConsoleEngineeringChangeResponses];
+
+export type CancelScheduledBusinessConsoleEngineeringChangeData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelScheduledEngineeringChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/engineering/engineering-changes/cancel-scheduled';
+};
+
+export type CancelScheduledBusinessConsoleEngineeringChangeErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CancelScheduledBusinessConsoleEngineeringChangeError = CancelScheduledBusinessConsoleEngineeringChangeErrors[keyof CancelScheduledBusinessConsoleEngineeringChangeErrors];
+
+export type CancelScheduledBusinessConsoleEngineeringChangeResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse;
+};
+
+export type CancelScheduledBusinessConsoleEngineeringChangeResponse = CancelScheduledBusinessConsoleEngineeringChangeResponses[keyof CancelScheduledBusinessConsoleEngineeringChangeResponses];
+
+export type RescheduleBusinessConsoleEngineeringChangeData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRescheduleEngineeringChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/engineering/engineering-changes/reschedule';
+};
+
+export type RescheduleBusinessConsoleEngineeringChangeErrors = {
+    /**
+     * Bad Request
+     */
+    400: FastEndpointsErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RescheduleBusinessConsoleEngineeringChangeError = RescheduleBusinessConsoleEngineeringChangeErrors[keyof RescheduleBusinessConsoleEngineeringChangeErrors];
+
+export type RescheduleBusinessConsoleEngineeringChangeResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse;
+};
+
+export type RescheduleBusinessConsoleEngineeringChangeResponse = RescheduleBusinessConsoleEngineeringChangeResponses[keyof RescheduleBusinessConsoleEngineeringChangeResponses];
 
 export type PreviewBusinessConsoleEngineeringChangeImpactData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringChangeImpactPreviewRequest;

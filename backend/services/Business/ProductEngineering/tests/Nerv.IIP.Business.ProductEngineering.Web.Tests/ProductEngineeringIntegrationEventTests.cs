@@ -104,7 +104,12 @@ public sealed class ProductEngineeringIntegrationEventTests
         Assert.Equal(ProductEngineeringIntegrationEventTypes.EngineeringChangeReleased, integrationEvent.EventType);
         Assert.Equal("ECO-0001", integrationEvent.Payload.ChangeNumber);
         Assert.Equal("mbom-001", integrationEvent.Payload.AffectedVersionIds.Single());
-        AssertJsonUsesCamelCase(integrationEvent, "eventType", "changeNumber", "affectedVersionIds");
+        var affectedVersion = Assert.Single(integrationEvent.Payload.AffectedVersions);
+        Assert.Equal("manufacturing-bom", affectedVersion.VersionKind);
+        Assert.Equal("mbom-001", affectedVersion.VersionId);
+        Assert.Null(affectedVersion.SupersededByVersionId);
+        Assert.Equal(new DateOnly(2026, 6, 1), integrationEvent.Payload.EffectiveDate);
+        AssertJsonUsesCamelCase(integrationEvent, "eventType", "changeNumber", "affectedVersionIds", "affectedVersions", "effectiveDate");
     }
 
     private static void AssertJsonUsesCamelCase<T>(T value, params string[] expectedPropertyNames)
