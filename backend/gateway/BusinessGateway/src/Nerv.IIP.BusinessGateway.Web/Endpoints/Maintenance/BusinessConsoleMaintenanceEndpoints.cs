@@ -150,50 +150,77 @@ internal static class MaintenanceDeviceAssetWarrantyEnricher
         string environmentId,
         CancellationToken cancellationToken)
     {
-        var cache = new Dictionary<string, BusinessConsoleMasterDataResourceDetail?>(StringComparer.OrdinalIgnoreCase);
-        var results = new List<BusinessConsoleMaintenanceWorkOrderItem>(items.Count);
-        foreach (var item in items)
-        {
-            var detail = await GetDeviceAssetDetailAsync(item.DeviceAssetId, cache, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
-            results.Add(item with
-            {
-                WarrantyStatus = WarrantyStatus(detail?.WarrantyExpiresOn),
-                WarrantyExpiresOn = detail?.WarrantyExpiresOn,
-                SupplierPartnerCode = detail?.SupplierPartnerCode,
-            });
-        }
+        var details = await LoadDeviceAssetDetailsAsync(
+            items.Select(x => x.DeviceAssetId),
+            masterData,
+            internalBearerToken,
+            organizationId,
+            environmentId,
+            cancellationToken);
 
-        return results;
+        return items
+            .Select(item =>
+            {
+                details.TryGetValue(item.DeviceAssetId, out var detail);
+                return item with
+                {
+                    WarrantyStatus = WarrantyStatus(detail?.WarrantyExpiresOn),
+                    WarrantyExpiresOn = detail?.WarrantyExpiresOn,
+                    SupplierPartnerCode = detail?.SupplierPartnerCode,
+                };
+            })
+            .ToArray();
     }
 
-    private static async Task<BusinessConsoleMasterDataResourceDetail?> GetDeviceAssetDetailAsync(
-        string deviceAssetId,
-        Dictionary<string, BusinessConsoleMasterDataResourceDetail?> cache,
+    private static async Task<Dictionary<string, BusinessConsoleMasterDataResourceDetail?>> LoadDeviceAssetDetailsAsync(
+        IEnumerable<string> deviceAssetIds,
         IBusinessMasterDataClient masterData,
         string internalBearerToken,
         string organizationId,
         string environmentId,
         CancellationToken cancellationToken)
     {
-        if (cache.TryGetValue(deviceAssetId, out var cached))
+        var distinctIds = deviceAssetIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        using var throttle = new SemaphoreSlim(8);
+        var tasks = distinctIds.Select(async deviceAssetId =>
         {
-            return cached;
-        }
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                var detail = await GetDeviceAssetDetailAsync(deviceAssetId, masterData, internalBearerToken, organizationId, environmentId, cancellationToken);
+                return (DeviceAssetId: deviceAssetId, Detail: detail);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+        var results = await Task.WhenAll(tasks);
+        return results.ToDictionary(x => x.DeviceAssetId, x => x.Detail, StringComparer.OrdinalIgnoreCase);
+    }
 
+    private static async Task<BusinessConsoleMasterDataResourceDetail?> GetDeviceAssetDetailAsync(
+        string deviceAssetId,
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            cached = await masterData.GetResourceDetailAsync(
+            return await masterData.GetResourceDetailAsync(
                 internalBearerToken,
                 new BusinessConsoleMasterDataResourceRequest(organizationId, environmentId, "device-asset", deviceAssetId),
                 cancellationToken);
         }
         catch (BusinessServiceProxyException)
         {
-            cached = null;
+            return null;
         }
-
-        cache[deviceAssetId] = cached;
-        return cached;
     }
 
     private static string WarrantyStatus(DateOnly? warrantyExpiresOn)

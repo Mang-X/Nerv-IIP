@@ -136,7 +136,7 @@ function warrantyStatusLabel(value?: string | null) {
   switch ((value ?? '').toLowerCase()) {
     case 'in-warranty': return '在保'
     case 'out-of-warranty': return '出保'
-    default: return '未维护'
+    default: return '未知'
   }
 }
 function rowKey(row: WorkOrderRow) {

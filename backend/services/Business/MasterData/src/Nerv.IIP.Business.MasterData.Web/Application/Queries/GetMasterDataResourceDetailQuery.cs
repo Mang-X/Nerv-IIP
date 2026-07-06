@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 
@@ -182,13 +183,31 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
                 await dbContext.WorkCenters.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "device-asset" => UpdateMasterDataResourceCommandHandler.Detail(
-                await dbContext.DeviceAssets.AsNoTracking().Include(x => x.Components).SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                await FindDeviceAssetAsync(request, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             "reference-data" => UpdateMasterDataResourceCommandHandler.Detail(
                 await FindReferenceDataCodeAsync(request, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
             _ => throw new KnownException($"Unsupported master data resource type '{request.ResourceType}'."),
         };
+    }
+
+    private async Task<Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset?> FindDeviceAssetAsync(
+        GetMasterDataResourceDetailQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.DeviceAssets
+            .AsNoTracking()
+            .Include(x => x.Components)
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+
+        if (Guid.TryParse(request.Code, out var parsedId))
+        {
+            var deviceAssetId = new DeviceAssetId(parsedId);
+            return await query.SingleOrDefaultAsync(x => x.Id == deviceAssetId || x.Code == request.Code, cancellationToken);
+        }
+
+        return await query.SingleOrDefaultAsync(x => x.Code == request.Code, cancellationToken);
     }
 
     private async Task<Domain.AggregatesModel.UomConversionAggregate.UomConversion?> FindUomConversionAsync(

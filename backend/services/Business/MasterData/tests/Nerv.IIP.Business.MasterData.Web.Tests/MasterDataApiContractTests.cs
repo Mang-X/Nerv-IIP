@@ -576,6 +576,12 @@ public sealed class MasterDataApiContractTests
         Assert.Single(detail.Components!);
         Assert.Equal("MOTOR", detail.Components!.Single().ComponentCode);
 
+        var detailByPublicId = await new GetMasterDataResourceDetailQueryHandler(dbContext).Handle(
+            new GetMasterDataResourceDetailQuery("org-001", "env-dev", "device-asset", device.DeviceAssetId!),
+            CancellationToken.None);
+        Assert.Equal("DEV-001", detailByPublicId.Code);
+        Assert.Equal(new DateOnly(2027, 1, 14), detailByPublicId.WarrantyExpiresOn);
+
         var childDepartment = Assert.Single((await handler.Handle(new ListMasterDataResourcesQuery("org-001", "env-dev", "department", ParentCode: "DEPT-ROOT"), CancellationToken.None)).Resources);
         Assert.Equal("DEPT-SUB", childDepartment.Code);
         Assert.Equal("DEPT-ROOT", childDepartment.ParentDepartmentCode);

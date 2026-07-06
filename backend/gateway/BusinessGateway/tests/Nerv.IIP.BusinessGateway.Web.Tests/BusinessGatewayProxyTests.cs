@@ -4704,6 +4704,8 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
 
     public BusinessConsoleMasterDataResourceRequest? LastDetailRequest { get; private set; }
 
+    public List<BusinessConsoleMasterDataResourceRequest> DetailRequests { get; } = [];
+
     public BusinessConsoleUpdateMasterDataResourceRequest? LastUpdateRequest { get; private set; }
 
     public BusinessConsoleSetMasterDataResourceEnabledRequest? LastSetEnabledRequest { get; private set; }
@@ -4796,6 +4798,7 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
     {
         LastInternalToken = internalBearerToken;
         LastDetailRequest = request;
+        DetailRequests.Add(request);
         return Task.FromResult(ResourceDetail(request.ResourceType, request.Code, request.CodeSet, true));
     }
 
