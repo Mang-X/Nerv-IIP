@@ -85,7 +85,7 @@ public sealed class IamSeedService(
         }
         else if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
-            user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword));
+            user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword), now, now.AddDays(90), false, 5);
         }
 
         var membership = await dbContext.Memberships

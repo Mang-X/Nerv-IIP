@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
@@ -34,6 +35,22 @@ public abstract class InventoryEndpoint<TRequest, TResponse> : Endpoint<TRequest
         Tags("Business Inventory");
         Policies(contract.AuthorizationPolicy);
     }
+
+    protected bool HasInventoryPermission(
+        string permissionCode,
+        string organizationId,
+        string environmentId,
+        string requestKey)
+    {
+        return InventoryPermissionContext.HasPermission(
+            User,
+            HttpContext.Request.Headers,
+            permissionCode,
+            organizationId,
+            environmentId,
+            requestKey,
+            Resolve<IOptions<InventoryForwardedPermissionOptions>>().Value);
+    }
 }
 
 public sealed record CreateOrUpdateStockLocationRequest(
@@ -66,7 +83,13 @@ public sealed record PostStockMovementRequest(
     string? OwnerId,
     decimal Quantity,
     decimal? UnitCost,
-    StockReservationId? ReservationId);
+    StockReservationId? ReservationId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    int? ShelfLifeDays = null,
+    DateOnly? AsOfDate = null,
+    bool AllowExpiredStock = false,
+    bool ExpiryOverridePermissionGranted = false);
 
 /// <summary>
 /// Posted movement result. For an idempotency replay whose movement exists but whose ledger row is absent, quantities are returned as zero and no empty ledger is created.
@@ -129,9 +152,49 @@ public sealed record ReserveStockRequest(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    DateOnly? AsOfDate = null,
+    bool AllowExpiredStock = false,
+    bool ExpiryOverridePermissionGranted = false);
 
-public sealed record ReserveStockResponse(string ReservationId, decimal ReservedQuantity, decimal AvailableQuantity);
+public sealed record ReserveStockResponse(
+    string ReservationId,
+    decimal ReservedQuantity,
+    decimal AvailableQuantity,
+    string? LotNo,
+    DateOnly? ProductionDate,
+    DateOnly? ExpiryDate);
+
+public sealed record ReserveFefoStockRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceService,
+    string SourceDocumentId,
+    string? SourceDocumentLineId,
+    string IdempotencyKey,
+    string SkuCode,
+    string UomCode,
+    string SiteCode,
+    string QualityStatus,
+    string OwnerType,
+    string? OwnerId,
+    decimal Quantity,
+    string? LocationCode = null,
+    DateOnly? AsOfDate = null,
+    bool AllowExpiredStock = false,
+    bool ExpiryOverridePermissionGranted = false);
+
+public sealed record StockExpiryAlertsRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string SiteCode,
+    string? SkuCode = null,
+    string? LocationCode = null,
+    DateOnly? AsOfDate = null,
+    int? NearExpiryThresholdDays = null,
+    bool IncludeZeroAvailable = false);
 
 public sealed record ReleaseStockReservationRequest(StockReservationId ReservationId, decimal Quantity);
 
@@ -154,7 +217,9 @@ public sealed record PostStockStatusTransferRequest(
     string? SerialNo,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record PostStockStatusTransferResponse(string OutboundMovementId, string InboundMovementId, decimal SourceOnHandQuantity, decimal TargetOnHandQuantity);
 
@@ -209,7 +274,17 @@ public sealed class PostStockMovementEndpoint(ISender sender)
             req.OwnerId,
             req.Quantity,
             req.UnitCost,
-            req.ReservationId), ct);
+            req.ReservationId,
+            req.ProductionDate,
+            req.ExpiryDate,
+            req.ShelfLifeDays,
+            req.AsOfDate,
+            req.AllowExpiredStock,
+            HasInventoryPermission(
+                InventoryPermissionCodes.ExpiredStockOverride,
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.IdempotencyKey)), ct);
         await Send.OkAsync(new PostStockMovementResponse(result.MovementId.ToString(), result.OnHandQuantity, result.AvailableQuantity).AsResponseData(), cancellation: ct);
     }
 }
@@ -266,8 +341,76 @@ public sealed class ReserveStockEndpoint(ISender sender)
             req.QualityStatus,
             req.OwnerType,
             req.OwnerId,
-            req.Quantity), ct);
-        await Send.OkAsync(new ReserveStockResponse(result.ReservationId.ToString(), result.ReservedQuantity, result.AvailableQuantity).AsResponseData(), cancellation: ct);
+            req.Quantity,
+            req.ProductionDate,
+            req.ExpiryDate,
+            req.AsOfDate,
+            req.AllowExpiredStock,
+            HasInventoryPermission(
+                InventoryPermissionCodes.ExpiredStockOverride,
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.IdempotencyKey)), ct);
+        await Send.OkAsync(new ReserveStockResponse(result.ReservationId.ToString(), result.ReservedQuantity, result.AvailableQuantity, result.LotNo, result.ProductionDate, result.ExpiryDate).AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ReserveFefoStockEndpoint(ISender sender)
+    : InventoryEndpoint<ReserveFefoStockRequest, ResponseData<ReserveFefoStockResult>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ReserveFefoStockEndpoint>());
+    }
+
+    public override async Task HandleAsync(ReserveFefoStockRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ReserveFefoStockCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SourceService,
+            req.SourceDocumentId,
+            req.SourceDocumentLineId,
+            req.IdempotencyKey,
+            req.SkuCode,
+            req.UomCode,
+            req.SiteCode,
+            req.QualityStatus,
+            req.OwnerType,
+            req.OwnerId,
+            req.Quantity,
+            req.LocationCode,
+            req.AsOfDate,
+            req.AllowExpiredStock,
+            HasInventoryPermission(
+                InventoryPermissionCodes.ExpiredStockOverride,
+                req.OrganizationId,
+                req.EnvironmentId,
+                req.IdempotencyKey)), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListStockExpiryAlertsEndpoint(ISender sender)
+    : InventoryEndpoint<StockExpiryAlertsRequest, ResponseData<StockExpiryAlertsResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureInventoryContract(InventoryEndpointContracts.Get<ListStockExpiryAlertsEndpoint>());
+    }
+
+    public override async Task HandleAsync(StockExpiryAlertsRequest req, CancellationToken ct)
+    {
+        var result = await sender.Send(new ListStockExpiryAlertsQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SiteCode,
+            req.SkuCode,
+            req.LocationCode,
+            req.AsOfDate,
+            req.NearExpiryThresholdDays,
+            req.IncludeZeroAvailable), ct);
+        await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }
 
@@ -313,7 +456,9 @@ public sealed class PostStockStatusTransferEndpoint(ISender sender)
             req.SerialNo,
             req.OwnerType,
             req.OwnerId,
-            req.Quantity), ct);
+            req.Quantity,
+            req.ProductionDate,
+            req.ExpiryDate), ct);
         await Send.OkAsync(new PostStockStatusTransferResponse(result.OutboundMovementId.ToString(), result.InboundMovementId.ToString(), result.SourceOnHandQuantity, result.TargetOnHandQuantity).AsResponseData(), cancellation: ct);
     }
 }
@@ -397,7 +542,9 @@ public static class InventoryEndpointContracts
         new(typeof(ConfirmStockCountAdjustmentEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/adjustments", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "confirmInventoryCountAdjustment"),
         new(typeof(CancelStockCountTaskEndpoint), "POST", "/api/inventory/v1/count-tasks/{countTaskId}/cancel", InventoryPermissionCodes.CountsManage, InternalServiceAuthorizationPolicy.Name, "cancelInventoryCountTask"),
         new(typeof(ReserveStockEndpoint), "POST", "/api/inventory/v1/reservations", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "reserveInventoryStock"),
+        new(typeof(ReserveFefoStockEndpoint), "POST", "/api/inventory/v1/reservations/fefo", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "reserveInventoryStockByFefo"),
         new(typeof(ReleaseStockReservationEndpoint), "POST", "/api/inventory/v1/reservations/{reservationId}/release", InventoryPermissionCodes.ReservationsManage, InternalServiceAuthorizationPolicy.Name, "releaseInventoryReservation"),
+        new(typeof(ListStockExpiryAlertsEndpoint), "GET", "/api/inventory/v1/expiry-alerts", InventoryPermissionCodes.LedgerRead, InternalServiceAuthorizationPolicy.Name, "listInventoryExpiryAlerts"),
         new(typeof(PostStockStatusTransferEndpoint), "POST", "/api/inventory/v1/status-transfers", InventoryPermissionCodes.MovementsCreate, InternalServiceAuthorizationPolicy.Name, "postInventoryStatusTransfer"),
     ];
 

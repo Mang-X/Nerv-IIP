@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.ProductEngineering.Web.Application.Commands;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
@@ -89,6 +91,18 @@ public sealed class ProductEngineeringStartupGovernanceTests
         await using var factory = CreateFactory();
 
         Assert.Empty(factory.Services.GetServices<ICapPublisher>());
+    }
+
+    [Fact]
+    public async Task Scheduled_engineering_change_promotion_command_lock_is_registered()
+    {
+        await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+
+        var commandLocks = scope.ServiceProvider
+            .GetServices<ICommandLock<PromoteScheduledEngineeringChangeCommand>>();
+
+        Assert.Contains(commandLocks, commandLock => commandLock is PromoteScheduledEngineeringChangeCommandLock);
     }
 
     private static WebApplicationFactory<Program> CreateFactory(

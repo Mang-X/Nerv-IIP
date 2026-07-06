@@ -452,7 +452,9 @@ public sealed record CreateFinishedGoodsReceiptRequestCommand(
     decimal? UnitCost,
     string? IdempotencyKey = null,
     string? ProducedLotNo = null,
-    string? SerialNo = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
+    string? SerialNo = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null) : ICommand<FinishedGoodsReceiptRequestCommandResult>;
 
 public sealed record RetryFinishedGoodsReceiptInventoryPostingCommand(
     string OrganizationId,
@@ -486,7 +488,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -554,7 +556,9 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(ApplicationD
             request.RequestedAtUtc,
             request.ProducedLotNo,
             request.SerialNo,
-            request.UnitCost);
+            request.UnitCost,
+            request.ProductionDate,
+            request.ExpiryDate);
         dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);
         await Task.CompletedTask;
         return new FinishedGoodsReceiptRequestCommandResult(receiptRequest.Id, receiptRequest.RequestNo);

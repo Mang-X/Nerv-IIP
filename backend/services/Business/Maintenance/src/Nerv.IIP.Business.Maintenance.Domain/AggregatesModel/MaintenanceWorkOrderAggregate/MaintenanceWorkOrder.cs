@@ -47,7 +47,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string? sourceReferenceId = null,
         string? diagnosticDescription = null,
         string? failureModeCode = null,
-        string? failureCauseCode = null)
+        string? failureCauseCode = null,
+        string? assignedTechnicianUserId = null,
+        int? estimatedLaborMinutes = null)
     {
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
@@ -61,6 +63,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         DiagnosticDescription = MaintenanceText.Optional(diagnosticDescription);
         FailureModeCode = MaintenanceText.Optional(failureModeCode);
         FailureCauseCode = MaintenanceText.Optional(failureCauseCode);
+        AssignedTechnicianUserId = MaintenanceText.Optional(assignedTechnicianUserId);
+        EstimatedLaborMinutes = estimatedLaborMinutes is null ? null : MaintenanceText.Positive(estimatedLaborMinutes.Value, nameof(estimatedLaborMinutes));
         OpenedBy = MaintenanceText.Required(openedBy, nameof(openedBy));
         Status = MaintenanceWorkOrderStatus.Open;
         OpenedAtUtc = DateTimeOffset.UtcNow;
@@ -78,6 +82,8 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? DiagnosticDescription { get; private set; }
     public string? FailureModeCode { get; private set; }
     public string? FailureCauseCode { get; private set; }
+    public string? AssignedTechnicianUserId { get; private set; }
+    public int? EstimatedLaborMinutes { get; private set; }
     public string OpenedBy { get; private set; } = string.Empty;
     public MaintenanceWorkOrderStatus Status { get; private set; }
     public DateTimeOffset OpenedAtUtc { get; private set; }
@@ -89,6 +95,10 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public string? CompletionResult { get; private set; }
     public string? DowntimeReasonCode { get; private set; }
     public int? DowntimeMinutes { get; private set; }
+    public int? ActualLaborMinutes { get; private set; }
+    public decimal? SparePartCostAmount { get; private set; }
+    public decimal? ExternalServiceCostAmount { get; private set; }
+    public string? CostCurrencyCode { get; private set; }
     public DateTimeOffset? RepairStartedAtUtc { get; private set; }
     public DateTimeOffset? CompletedAtUtc { get; private set; }
     public IReadOnlyCollection<SparePartLine> SparePartLines => sparePartLines;
@@ -98,9 +108,19 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string environmentId,
         string deviceAssetId,
         string priority,
-        string openedBy)
+        string openedBy,
+        string? assignedTechnicianUserId = null,
+        int? estimatedLaborMinutes = null)
     {
-        return new MaintenanceWorkOrder(organizationId, environmentId, deviceAssetId, priority, null, openedBy);
+        return new MaintenanceWorkOrder(
+            organizationId,
+            environmentId,
+            deviceAssetId,
+            priority,
+            null,
+            openedBy,
+            assignedTechnicianUserId: assignedTechnicianUserId,
+            estimatedLaborMinutes: estimatedLaborMinutes);
     }
 
     public static MaintenanceWorkOrder OpenFromPlan(
@@ -133,7 +153,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string openedBy = "industrialTelemetry",
         string? diagnosticDescription = null,
         string? failureModeCode = null,
-        string? failureCauseCode = null)
+        string? failureCauseCode = null,
+        string? assignedTechnicianUserId = null,
+        int? estimatedLaborMinutes = null)
     {
         var normalizedAlarmId = MaintenanceText.Required(sourceAlarmId, nameof(sourceAlarmId));
         return new MaintenanceWorkOrder(
@@ -147,7 +169,9 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             sourceReferenceId: normalizedAlarmId,
             diagnosticDescription: diagnosticDescription,
             failureModeCode: failureModeCode,
-            failureCauseCode: failureCauseCode);
+            failureCauseCode: failureCauseCode,
+            assignedTechnicianUserId: assignedTechnicianUserId,
+            estimatedLaborMinutes: estimatedLaborMinutes);
     }
 
     public static MaintenanceWorkOrder OpenFromInspection(
@@ -221,12 +245,24 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc));
     }
 
-    public void Complete(string result, string downtimeReasonCode, int downtimeMinutes, IEnumerable<SparePartLineDraft> spareParts)
+    public void Complete(
+        string result,
+        string downtimeReasonCode,
+        int downtimeMinutes,
+        IEnumerable<SparePartLineDraft> spareParts,
+        int? actualLaborMinutes = null,
+        decimal? sparePartCostAmount = null,
+        decimal? externalServiceCostAmount = null,
+        string? costCurrencyCode = null)
     {
         EnsureOpen();
         CompletionResult = MaintenanceText.Required(result, nameof(result));
         DowntimeReasonCode = MaintenanceText.Required(downtimeReasonCode, nameof(downtimeReasonCode));
         DowntimeMinutes = MaintenanceText.Positive(downtimeMinutes, nameof(downtimeMinutes));
+        ActualLaborMinutes = actualLaborMinutes is null ? null : MaintenanceText.Positive(actualLaborMinutes.Value, nameof(actualLaborMinutes));
+        SparePartCostAmount = NonNegative(sparePartCostAmount, nameof(sparePartCostAmount));
+        ExternalServiceCostAmount = NonNegative(externalServiceCostAmount, nameof(externalServiceCostAmount));
+        CostCurrencyCode = MaintenanceText.Optional(costCurrencyCode);
         sparePartLines.Clear();
         foreach (var part in spareParts)
         {
@@ -259,6 +295,16 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         {
             throw new InvalidOperationException("Completed maintenance work orders are immutable.");
         }
+    }
+
+    private static decimal? NonNegative(decimal? value, string parameterName)
+    {
+        if (value is < 0m)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, value, $"{parameterName} cannot be negative.");
+        }
+
+        return value;
     }
 }
 

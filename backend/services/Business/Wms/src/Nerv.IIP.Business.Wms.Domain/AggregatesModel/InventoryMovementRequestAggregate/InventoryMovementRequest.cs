@@ -34,7 +34,9 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string ownerType,
         string? ownerId,
         decimal quantity,
-        string? inventoryReservationId)
+        string? inventoryReservationId,
+        DateOnly? productionDate,
+        DateOnly? expiryDate)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -53,6 +55,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         OwnerId = WmsText.Optional(ownerId);
         Quantity = WmsText.NonZero(quantity, nameof(quantity));
         InventoryReservationId = WmsText.Optional(inventoryReservationId);
+        ProductionDate = productionDate;
+        ExpiryDate = expiryDate;
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
         this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
@@ -74,6 +78,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
     public string? InventoryReservationId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     /// <summary>
     /// Signed movement quantity sent to Inventory. Inbound increases stock, outbound decreases stock,
     /// and count-adjustment uses the counted-minus-expected variance.
@@ -103,7 +109,9 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string ownerType,
         string? ownerId,
         decimal quantity,
-        string? inventoryReservationId = null)
+        string? inventoryReservationId = null,
+        DateOnly? ProductionDate = null,
+        DateOnly? ExpiryDate = null)
     {
         return new InventoryMovementRequest(
             organizationId,
@@ -122,7 +130,9 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             ownerType,
             ownerId,
             quantity,
-            inventoryReservationId);
+            inventoryReservationId,
+            ProductionDate,
+            ExpiryDate);
     }
 
     public void MarkPosted(string inventoryMovementId)

@@ -87,7 +87,10 @@ public sealed record InventoryMovementRequestedPayload(
     DateTimeOffset RequestedAtUtc,
     string? InventoryReservationId = null,
     decimal? UnitCost = null,
-    string? TargetQualityStatus = null);
+    string? TargetQualityStatus = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    int? ShelfLifeDays = null);
 
 public sealed record InventoryReservationReleaseRequestedIntegrationEvent(
     string EventId,
@@ -149,7 +152,9 @@ public sealed record StockMovementPostedPayload(
     decimal Quantity,
     DateTimeOffset PostedAtUtc,
     decimal? UnitCost,
-    decimal? MovementAmount);
+    decimal? MovementAmount,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record StockMovementPostingFailedIntegrationEvent(
     string EventId,
@@ -186,7 +191,9 @@ public sealed record StockMovementPostingFailedPayload(
     decimal Quantity,
     string FailureCode,
     string FailureMessage,
-    DateTimeOffset FailedAtUtc);
+    DateTimeOffset FailedAtUtc,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record StockCountVarianceConfirmedIntegrationEvent(
     string EventId,
@@ -248,4 +255,6 @@ public sealed record StockAvailabilityChangedPayload(
     long LedgerVersion,
     DateTimeOffset ChangedAtUtc,
     decimal MovingAverageUnitCost,
-    decimal InventoryValue);
+    decimal InventoryValue,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);

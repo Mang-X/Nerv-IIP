@@ -105,7 +105,7 @@ public sealed class GatewayConsoleIamAdminTests
         await using var factory = CreateFactory(auth, iam, admin);
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
-        var request = new ConsoleCreateIamUserRequest("operator", "operator@nerv.local", "P@ssw0rd!");
+        var request = new ConsoleCreateIamUserRequest("operator", "operator@nerv.local", "P@ssw0rd!", null);
 
         var response = await client.PostAsJsonAsync("/api/console/v1/iam/users", request);
         var body = await ReadResponseDataAsync<ConsoleIamUserResponse>(response);
@@ -341,7 +341,7 @@ public sealed class GatewayConsoleIamAdminTests
                 request.PageIndex ?? 1,
                 request.PageSize ?? 20,
                 1,
-                [new ConsoleIamUserResponse("user-001", "admin", "admin@nerv.local", true)]));
+                [new ConsoleIamUserResponse("user-001", "admin", "admin@nerv.local", true, null, false, null, null)]));
         }
 
         public Task<ConsoleIamUserResponse> CreateUserAsync(
@@ -351,7 +351,15 @@ public sealed class GatewayConsoleIamAdminTests
         {
             LastBearerToken = bearerToken;
             LastCreateUserRequest = request;
-            return Task.FromResult(new ConsoleIamUserResponse("user-created", request.LoginName, request.Email, true));
+            return Task.FromResult(new ConsoleIamUserResponse(
+                "user-created",
+                request.LoginName,
+                request.Email,
+                true,
+                request.AccountExpiresAtUtc,
+                true,
+                null,
+                null));
         }
 
         public Task<ConsoleIamUserResponse> UpdateUserAsync(
@@ -362,6 +370,9 @@ public sealed class GatewayConsoleIamAdminTests
             throw new NotSupportedException();
 
         public Task DisableUserAsync(string bearerToken, string userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task EnableUserAsync(string bearerToken, string userId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task ResetUserPasswordAsync(

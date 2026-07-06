@@ -814,7 +814,8 @@ public sealed record BusinessConsolePostStockMovementRequest(
     string QualityStatus,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    bool AllowExpiredStock = false);
 
 public sealed record BusinessConsolePostStockMovementResponse(
     string MovementId,
@@ -1429,6 +1430,19 @@ public sealed record BusinessConsoleAffectedVersionRequest(
     string VersionKind,
     string VersionId,
     string? SupersededByVersionId = null);
+
+public sealed record BusinessConsoleCancelScheduledEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason);
+
+public sealed record BusinessConsoleRescheduleEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason);
 
 public sealed record BusinessConsoleEngineeringChangeImpactPreviewRequest(
     string OrganizationId,

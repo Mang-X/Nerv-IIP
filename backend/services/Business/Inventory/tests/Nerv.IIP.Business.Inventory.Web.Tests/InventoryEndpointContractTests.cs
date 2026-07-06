@@ -33,7 +33,7 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(9, contracts.Length);
+        Assert.Equal(11, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/locations"
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage
@@ -70,10 +70,20 @@ public sealed class InventoryEndpointContractTests
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "reserveInventoryStock");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/inventory/v1/reservations/fefo"
+            && x.PermissionCode == InventoryPermissionCodes.ReservationsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "reserveInventoryStockByFefo");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/reservations/{reservationId}/release"
             && x.PermissionCode == InventoryPermissionCodes.ReservationsManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "releaseInventoryReservation");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/expiry-alerts"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryExpiryAlerts");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/status-transfers"
             && x.PermissionCode == InventoryPermissionCodes.MovementsCreate
@@ -89,7 +99,9 @@ public sealed class InventoryEndpointContractTests
     [InlineData(typeof(ConfirmStockCountAdjustmentEndpoint))]
     [InlineData(typeof(CancelStockCountTaskEndpoint))]
     [InlineData(typeof(ReserveStockEndpoint))]
+    [InlineData(typeof(ReserveFefoStockEndpoint))]
     [InlineData(typeof(ReleaseStockReservationEndpoint))]
+    [InlineData(typeof(ListStockExpiryAlertsEndpoint))]
     [InlineData(typeof(PostStockStatusTransferEndpoint))]
     public void Inventory_endpoints_route_through_mediator(Type endpointType)
     {

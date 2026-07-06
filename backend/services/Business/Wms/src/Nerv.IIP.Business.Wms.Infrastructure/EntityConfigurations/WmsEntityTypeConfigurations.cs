@@ -45,6 +45,8 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property<InboundOrderId>("InboundOrderId").HasColumnName("inbound_order_id").IsRequired().HasComment("Owning inbound order id.");
         AddLineColumns(builder, "received_quantity", "Inbound received quantity.");
         builder.Property(x => x.StagingLocationCode).HasColumnName("staging_location_code").IsRequired().HasMaxLength(100).HasComment("Staging location for received stock.");
+        builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional received batch production date captured by WMS.");
+        builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional received batch expiry date captured by WMS.");
     }
 
     internal static void AddLineColumns<T>(EntityTypeBuilder<T> builder, string quantityColumn, string quantityComment)
@@ -200,6 +202,8 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.OwnerType).HasColumnName("owner_type").IsRequired().HasMaxLength(50).HasComment("Owner type dimension.");
         builder.Property(x => x.OwnerId).HasColumnName("owner_id").HasMaxLength(100).HasComment("Optional owner id.");
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Optional Inventory reservation id used to allocate outbound stock.");
+        builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional production date carried to Inventory for inbound postings.");
+        builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional expiry date carried to Inventory for FEFO-managed batches.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");
         builder.Property(x => x.InventoryMovementId).HasColumnName("inventory_movement_id").HasMaxLength(150).HasComment("Public Inventory movement id returned after posting.");

@@ -5536,6 +5536,116 @@
         ]
       }
     },
+    "/api/business-console/v1/engineering/engineering-changes/cancel-scheduled": {
+      "post": {
+        "tags": [
+          "Business Console Product Engineering",
+          "Api"
+        ],
+        "operationId": "cancelScheduledBusinessConsoleEngineeringChange",
+        "requestBody": {
+          "x-name": "BusinessConsoleCancelScheduledEngineeringChangeRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelScheduledEngineeringChangeRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/engineering/engineering-changes/reschedule": {
+      "post": {
+        "tags": [
+          "Business Console Product Engineering",
+          "Api"
+        ],
+        "operationId": "rescheduleBusinessConsoleEngineeringChange",
+        "requestBody": {
+          "x-name": "BusinessConsoleRescheduleEngineeringChangeRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRescheduleEngineeringChangeRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/engineering/engineering-changes/impact-preview": {
       "post": {
         "tags": [
@@ -14443,6 +14553,100 @@
         ]
       }
     },
+    "/api/business-console/v1/maintenance/inspection-measurements/trends": {
+      "get": {
+        "tags": [
+          "Business Console Maintenance",
+          "Api"
+        ],
+        "operationId": "queryBusinessConsoleMaintenanceInspectionMeasurementTrend",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "characteristicCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "windowStartUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "windowEndUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/business-console/v1/maintenance/spare-parts": {
       "get": {
         "tags": [
@@ -14634,6 +14838,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FastEndpointsErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/business-console/v1/maintenance/reliability/summary": {
+      "get": {
+        "tags": [
+          "Business Console Maintenance",
+          "Api"
+        ],
+        "operationId": "queryBusinessConsoleMaintenanceReliabilitySummary",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environmentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "windowStartUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "windowEndUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "deviceAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "technicianUserId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceReliabilitySummaryResponse"
                 }
               }
             }
@@ -24653,6 +24951,82 @@
           }
         }
       },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCancelScheduledEngineeringChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "changeNumber",
+          "reason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "changeNumber": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRescheduleEngineeringChangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId",
+          "changeNumber",
+          "reason"
+        ],
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "environmentId": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "changeNumber": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 0,
+            "nullable": false
+          },
+          "effectiveDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 0,
+            "nullable": false
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringChangeImpactPreviewResponse": {
         "allOf": [
           {
@@ -31833,6 +32207,19 @@
             "maxLength": 200,
             "minLength": 0,
             "nullable": true
+          },
+          "assignedTechnicianUserId": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 0,
+            "nullable": true
+          },
+          "estimatedLaborMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
           }
         }
       },
@@ -31910,6 +32297,31 @@
             "items": {
               "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceSparePartInput"
             }
+          },
+          "actualLaborMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0.0,
+            "nullable": true,
+            "exclusiveMinimum": true
+          },
+          "sparePartCostAmount": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "externalServiceCostAmount": {
+            "type": "number",
+            "format": "decimal",
+            "minimum": 0.0,
+            "nullable": true
+          },
+          "costCurrencyCode": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 0,
+            "nullable": true
           }
         }
       },
@@ -32002,6 +32414,34 @@
           "openedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "assignedTechnicianUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimatedLaborMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "actualLaborMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "sparePartCostAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "externalServiceCostAmount": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "costCurrencyCode": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -32349,6 +32789,39 @@
           "inspectedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "measurements": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementInput"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "characteristicCode": {
+            "type": "string"
+          },
+          "measuredValue": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "lowerSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "upperSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
           }
         }
       },
@@ -32421,8 +32894,142 @@
           "inspectedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "measurements": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementItem"
+            }
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "characteristicCode": {
+            "type": "string"
+          },
+          "measuredValue": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "lowerSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "upperSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "isWithinSpec": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceInspectionMeasurementTrendResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementTrendResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementTrendResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "characteristicCode": {
+            "type": "string"
+          },
+          "windowStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementTrendItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceInspectionMeasurementTrendItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "inspectionId": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string",
+            "nullable": true
+          },
+          "workOrderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "inspectedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "measuredValue": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "lowerSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "upperSpecLimit": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "isWithinSpec": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceInspectionMeasurementTrendRequest": {
+        "type": "object",
+        "additionalProperties": false
       },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceSparePartListResponse": {
         "allOf": [
@@ -32645,6 +33252,98 @@
         "type": "object",
         "additionalProperties": false
       },
+      "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceReliabilitySummaryResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceReliabilitySummaryResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceReliabilitySummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "windowStartUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowEndUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceReliabilitySummaryItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceReliabilitySummaryItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "deviceAssetId": {
+            "type": "string"
+          },
+          "assignedTechnicianUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "costCurrencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "workOrderCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedLaborMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "actualLaborMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sparePartCostAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "externalServiceCostAmount": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "totalCostAmount": {
+            "type": "number",
+            "format": "decimal"
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQueryMaintenanceReliabilitySummaryRequest": {
+        "type": "object",
+        "additionalProperties": false
+      },
       "NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryAvailabilityResponse": {
         "allOf": [
           {
@@ -32830,6 +33529,9 @@
           "quantity": {
             "type": "number",
             "format": "decimal"
+          },
+          "allowExpiredStock": {
+            "type": "boolean"
           }
         }
       },

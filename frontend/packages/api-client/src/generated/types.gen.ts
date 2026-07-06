@@ -382,6 +382,10 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserResponse =
     loginName?: string;
     email?: string;
     enabled?: boolean;
+    accountExpiresAtUtc?: string | null;
+    passwordChangeRequired?: boolean;
+    passwordExpiresAtUtc?: string | null;
+    lockoutUntilUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamListRequest = {
@@ -396,12 +400,14 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleCreateIamUserRequ
     loginName?: string;
     email?: string;
     password?: string;
+    accountExpiresAtUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleUpdateIamUserRequest = {
     loginName?: string;
     email?: string;
     enabled?: boolean;
+    accountExpiresAtUtc?: string | null;
 };
 
 export type NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest = {
@@ -595,6 +601,7 @@ export type NervIipPlatformGatewayWebApplicationAuthConsoleAuthResponse = {
     refreshToken?: string;
     sessionId?: string;
     expiresAtUtc?: string;
+    passwordChangeRequired?: boolean;
     principal?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse;
 };
 
@@ -1211,6 +1218,35 @@ export type DisableConsoleIamUserResponses = {
 };
 
 export type DisableConsoleIamUserResponse = DisableConsoleIamUserResponses[keyof DisableConsoleIamUserResponses];
+
+export type EnableConsoleIamUserData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/enable';
+};
+
+export type EnableConsoleIamUserErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type EnableConsoleIamUserResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type EnableConsoleIamUserResponse = EnableConsoleIamUserResponses[keyof EnableConsoleIamUserResponses];
 
 export type ResetConsoleIamUserPasswordData = {
     body: NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPasswordRequest;

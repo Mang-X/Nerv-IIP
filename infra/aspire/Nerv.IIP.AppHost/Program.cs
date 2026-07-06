@@ -29,7 +29,7 @@ var connectorHostEnvironmentId = builder.Configuration["ConnectorHost:Environmen
 var gatewayCorsAllowedOrigins = builder.Configuration["Security:Cors:AllowedOrigins"];
 if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 {
-    gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125";
+    gatewayCorsAllowedOrigins = "http://localhost:5105,http://localhost:5125,http://localhost:5128";
 }
 
 var postgres = builder.AddPostgres("postgres")
@@ -608,6 +608,18 @@ builder.AddViteApp("console", "../../../frontend/apps/console")
 
 builder.AddViteApp("business-console", "../../../frontend/apps/business-console")
     .WithHttpEndpoint(port: 5125, name: "http", isProxied: false)
+    .WithPnpm()
+    .WithEnvironment("NERV_IIP_PLATFORM_GATEWAY_URL", gateway.GetEndpoint("http"))
+    .WithEnvironment("NERV_IIP_BUSINESS_GATEWAY_URL", businessGateway.GetEndpoint("http"))
+    .WithReference(gateway)
+    .WithReference(businessGateway)
+    .WaitFor(gateway)
+    .WaitFor(businessGateway);
+
+// 工业数据大屏（公共展示 / 指挥中心，独立 app）。消费 BusinessGateway 业务数据，
+// 鉴权走 PlatformGateway。生产静态站待两后端路由模型定稿，同 business-console 暂不加 PublishAsStaticWebsite。
+builder.AddViteApp("screen", "../../../frontend/apps/screen")
+    .WithHttpEndpoint(port: 5128, name: "http", isProxied: false)
     .WithPnpm()
     .WithEnvironment("NERV_IIP_PLATFORM_GATEWAY_URL", gateway.GetEndpoint("http"))
     .WithEnvironment("NERV_IIP_BUSINESS_GATEWAY_URL", businessGateway.GetEndpoint("http"))

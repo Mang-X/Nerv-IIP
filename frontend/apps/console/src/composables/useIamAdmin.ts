@@ -2,6 +2,7 @@ import {
   createConsoleIamRoleMutationOptions,
   createConsoleIamUserMutationOptions,
   disableConsoleIamUserMutationOptions,
+  enableConsoleIamUserMutationOptions,
   listConsoleIamPermissionsQueryOptions,
   listConsoleIamRolesQueryOptions,
   listConsoleIamSessionsQueryOptions,
@@ -130,6 +131,12 @@ export function useIamUsers() {
       void invalidateIamList(queryCache, 'listConsoleIamUsers').catch(ignoreBackgroundError)
     },
   })
+  const enableUserMutation = useMutation({
+    ...enableConsoleIamUserMutationOptions(),
+    onSuccess() {
+      void invalidateIamList(queryCache, 'listConsoleIamUsers').catch(ignoreBackgroundError)
+    },
+  })
   const resetUserPasswordMutation = useMutation({
     ...resetConsoleIamUserPasswordMutationOptions(),
     onSuccess() {
@@ -144,6 +151,9 @@ export function useIamUsers() {
     disableUser: disableUserMutation.mutateAsync,
     disableUserError: computed(() => toOptionalConsoleIamError(disableUserMutation.error.value)),
     disableUserPending: disableUserMutation.isLoading,
+    enableUser: enableUserMutation.mutateAsync,
+    enableUserError: computed(() => toOptionalConsoleIamError(enableUserMutation.error.value)),
+    enableUserPending: enableUserMutation.isLoading,
     filters,
     refreshUsers: listQuery.refetch,
     resetUserPassword: resetUserPasswordMutation.mutateAsync,

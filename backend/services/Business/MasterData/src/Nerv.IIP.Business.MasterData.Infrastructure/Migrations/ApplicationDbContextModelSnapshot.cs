@@ -1265,6 +1265,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnName("name")
                         .HasComment("SKU display name.");
 
+                    b.Property<int?>("NearExpiryThresholdDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("near_expiry_threshold_days")
+                        .HasComment("Optional SKU near-expiry threshold in calendar days used by Inventory expiry alerts.");
+
                     b.Property<string>("OrganizationId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1335,6 +1340,11 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("serial_tracking_policy")
                         .HasComment("Policy that states whether serial number tracking is required.");
+
+                    b.Property<int?>("ShelfLifeDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("shelf_life_days")
+                        .HasComment("Optional SKU default shelf life in calendar days used to derive batch expiry dates.");
 
                     b.Property<string>("ShelfLifePolicyCode")
                         .IsRequired()

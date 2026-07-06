@@ -21,6 +21,7 @@ public sealed record ConsoleAuthResponse(
     string RefreshToken,
     string SessionId,
     DateTimeOffset ExpiresAtUtc,
+    bool PasswordChangeRequired,
     ConsolePrincipalResponse Principal);
 
 public interface IGatewayIamAuthClient

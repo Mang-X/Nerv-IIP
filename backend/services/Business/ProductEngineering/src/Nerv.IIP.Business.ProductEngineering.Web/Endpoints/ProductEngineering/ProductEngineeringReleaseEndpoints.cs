@@ -206,6 +206,49 @@ public sealed class ReleaseEngineeringChangeEndpoint(ISender sender)
     }
 }
 
+public sealed record CancelScheduledEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    string Reason);
+
+public sealed class CancelScheduledEngineeringChangeEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<CancelScheduledEngineeringChangeRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<CancelScheduledEngineeringChangeEndpoint>());
+    }
+
+    public override async Task HandleAsync(CancelScheduledEngineeringChangeRequest req, CancellationToken ct)
+    {
+        await sender.Send(new CancelScheduledEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.Reason), ct);
+        await Send.OkAsync(new EntityResponse(req.ChangeNumber).AsResponseData(), ct);
+    }
+}
+
+public sealed record RescheduleEngineeringChangeRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ChangeNumber,
+    DateOnly EffectiveDate,
+    string Reason);
+
+public sealed class RescheduleEngineeringChangeEndpoint(ISender sender)
+    : ProductEngineeringEndpoint<RescheduleEngineeringChangeRequest, ResponseData<EntityResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureProductEngineeringContract(ProductEngineeringEndpointContracts.Get<RescheduleEngineeringChangeEndpoint>());
+    }
+
+    public override async Task HandleAsync(RescheduleEngineeringChangeRequest req, CancellationToken ct)
+    {
+        await sender.Send(new RescheduleEngineeringChangeCommand(req.OrganizationId, req.EnvironmentId, req.ChangeNumber, req.EffectiveDate, req.Reason), ct);
+        await Send.OkAsync(new EntityResponse(req.ChangeNumber).AsResponseData(), ct);
+    }
+}
+
 public sealed record GetEngineeringChangeImpactPreviewRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -595,6 +638,8 @@ public static class ProductEngineeringEndpointContracts
         new(typeof(ReleaseRoutingEndpoint), "POST", "/api/business/v1/engineering/routings/release", EngineeringPermissionCodes.RoutingsManage, "releaseBusinessRouting"),
         new(typeof(GetRoutingEndpoint), "GET", "/api/business/v1/engineering/routings/{routingCode}/{revision}", EngineeringPermissionCodes.RoutingsRead, "getBusinessRouting"),
         new(typeof(ReleaseEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/release", EngineeringPermissionCodes.ChangesManage, "releaseBusinessEngineeringChange"),
+        new(typeof(CancelScheduledEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/cancel-scheduled", EngineeringPermissionCodes.ChangesManage, "cancelScheduledBusinessEngineeringChange"),
+        new(typeof(RescheduleEngineeringChangeEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/reschedule", EngineeringPermissionCodes.ChangesManage, "rescheduleBusinessEngineeringChange"),
         new(typeof(GetEngineeringChangeImpactPreviewEndpoint), "POST", "/api/business/v1/engineering/engineering-changes/impact-preview", EngineeringPermissionCodes.ChangesRead, "previewBusinessEngineeringChangeImpact"),
         new(typeof(ListEngineeringChangesEndpoint), "GET", "/api/business/v1/engineering/engineering-changes", EngineeringPermissionCodes.ChangesRead, "listBusinessEngineeringChanges"),
         new(typeof(GetEngineeringChangeEndpoint), "GET", "/api/business/v1/engineering/engineering-changes/{changeNumber}", EngineeringPermissionCodes.ChangesRead, "getBusinessEngineeringChange"),

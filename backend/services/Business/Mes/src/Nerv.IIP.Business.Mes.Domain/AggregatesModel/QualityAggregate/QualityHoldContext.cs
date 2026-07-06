@@ -20,7 +20,8 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         string result,
         string eventType,
         string? dispositionReason,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        string actor)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -35,6 +36,10 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         DispositionReason = string.IsNullOrWhiteSpace(dispositionReason) ? null : dispositionReason.Trim();
         RecordedAtUtc = recordedAtUtc;
         Active = IsBlockingResult(result, eventType);
+        if (Active)
+        {
+            RecordHoldAudit(inspectionRecordId, DispositionReason, recordedAtUtc, actor);
+        }
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -50,6 +55,15 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
     public string? DispositionReason { get; private set; }
     public DateTimeOffset RecordedAtUtc { get; private set; }
     public bool Active { get; private set; }
+    public string? HeldInspectionRecordId { get; private set; }
+    public string? HoldReason { get; private set; }
+    public DateTimeOffset? HeldAtUtc { get; private set; }
+    public string? HeldBy { get; private set; }
+    public string? ReleaseInspectionRecordId { get; private set; }
+    public string? ReleaseReason { get; private set; }
+    public DateTimeOffset? ReleasedAtUtc { get; private set; }
+    public string? ReleasedBy { get; private set; }
+    public string? ReleaseSource { get; private set; }
 
     public static QualityHoldContext Capture(
         string organizationId,
@@ -63,7 +77,8 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         string result,
         string eventType,
         string? dispositionReason,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        string actor = "quality")
     {
         return new QualityHoldContext(
             organizationId,
@@ -77,7 +92,8 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
             result,
             eventType,
             dispositionReason,
-            recordedAtUtc);
+            recordedAtUtc,
+            actor);
     }
 
     public void ApplyInspectionResult(
@@ -86,13 +102,15 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         string result,
         string eventType,
         string? dispositionReason,
-        DateTimeOffset recordedAtUtc)
+        DateTimeOffset recordedAtUtc,
+        string actor = "quality")
     {
         if (recordedAtUtc < RecordedAtUtc)
         {
             return;
         }
 
+        var wasActive = Active;
         InspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
         InspectionPlanId = string.IsNullOrWhiteSpace(inspectionPlanId) ? null : inspectionPlanId.Trim();
         Result = DomainGuard.Required(result, nameof(result));
@@ -100,11 +118,59 @@ public sealed class QualityHoldContext : Entity<QualityHoldContextId>, IAggregat
         DispositionReason = string.IsNullOrWhiteSpace(dispositionReason) ? null : dispositionReason.Trim();
         RecordedAtUtc = recordedAtUtc;
         Active = IsBlockingResult(result, eventType);
+        if (Active)
+        {
+            RecordHoldAudit(inspectionRecordId, DispositionReason, recordedAtUtc, actor);
+            return;
+        }
+
+        if (wasActive)
+        {
+            RecordReleaseAudit(inspectionRecordId, DispositionReason ?? "Quality inspection released the hold.", recordedAtUtc, actor, eventType);
+        }
+    }
+
+    public void ForceRelease(string reason, string actor, DateTimeOffset releasedAtUtc)
+    {
+        if (!Active)
+        {
+            return;
+        }
+
+        Active = false;
+        RecordReleaseAudit(null, reason, releasedAtUtc, actor, "manual-force-release");
     }
 
     private static bool IsBlockingResult(string result, string eventType)
     {
         return string.Equals(eventType, "quality.InspectionRejected", StringComparison.Ordinal) ||
             string.Equals(result, "rejected", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RecordHoldAudit(string inspectionRecordId, string? reason, DateTimeOffset heldAtUtc, string actor)
+    {
+        HeldInspectionRecordId = DomainGuard.Required(inspectionRecordId, nameof(inspectionRecordId));
+        HoldReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        HeldAtUtc = heldAtUtc;
+        HeldBy = DomainGuard.Required(actor, nameof(actor));
+        ReleaseInspectionRecordId = null;
+        ReleaseReason = null;
+        ReleasedAtUtc = null;
+        ReleasedBy = null;
+        ReleaseSource = null;
+    }
+
+    private void RecordReleaseAudit(
+        string? inspectionRecordId,
+        string reason,
+        DateTimeOffset releasedAtUtc,
+        string actor,
+        string releaseSource)
+    {
+        ReleaseInspectionRecordId = string.IsNullOrWhiteSpace(inspectionRecordId) ? null : inspectionRecordId.Trim();
+        ReleaseReason = DomainGuard.Required(reason, nameof(reason));
+        ReleasedAtUtc = releasedAtUtc;
+        ReleasedBy = DomainGuard.Required(actor, nameof(actor));
+        ReleaseSource = DomainGuard.Required(releaseSource, nameof(releaseSource));
     }
 }

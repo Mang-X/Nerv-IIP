@@ -292,7 +292,9 @@ internal static class InventoryMovementRequestEventMapping
             request.OwnerId,
             quantity,
             requestedAtUtc,
-            request.InventoryReservationId);
+            request.InventoryReservationId,
+            ProductionDate: request.ProductionDate,
+            ExpiryDate: request.ExpiryDate);
     }
 }
 

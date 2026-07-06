@@ -1016,6 +1016,41 @@
         ]
       }
     },
+    "/api/console/v1/iam/users/{userId}/enable": {
+      "post": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "enableConsoleIamUser",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/iam/users/{userId}/reset-password": {
       "post": {
         "tags": [
@@ -3333,6 +3368,24 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "accountExpiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "passwordChangeRequired": {
+            "type": "boolean"
+          },
+          "passwordExpiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lockoutUntilUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -3373,6 +3426,11 @@
           },
           "password": {
             "type": "string"
+          },
+          "accountExpiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -3388,6 +3446,11 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "accountExpiresAtUtc": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -4031,6 +4094,9 @@
           "expiresAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "passwordChangeRequired": {
+            "type": "boolean"
           },
           "principal": {
             "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsolePrincipalResponse"

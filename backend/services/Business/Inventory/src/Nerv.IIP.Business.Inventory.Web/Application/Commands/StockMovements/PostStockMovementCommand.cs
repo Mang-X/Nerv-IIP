@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
+using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
@@ -25,7 +26,13 @@ public sealed record PostStockMovementCommand(
     string? OwnerId,
     decimal Quantity,
     decimal? UnitCost = null,
-    StockReservationId? ReservationId = null) : ICommand<PostStockMovementResult>;
+    StockReservationId? ReservationId = null,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null,
+    int? ShelfLifeDays = null,
+    DateOnly? AsOfDate = null,
+    bool AllowExpiredStock = false,
+    bool ExpiryOverridePermissionGranted = false) : ICommand<PostStockMovementResult>;
 
 public sealed record PostStockMovementResult(StockMovementId MovementId, decimal OnHandQuantity, decimal AvailableQuantity);
 
@@ -51,10 +58,14 @@ public sealed class PostStockMovementCommandValidator : AbstractValidator<PostSt
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).NotEqual(0);
         RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0).When(x => x.UnitCost is not null);
+        RuleFor(x => x.ShelfLifeDays).GreaterThan(0).LessThanOrEqualTo(3660).When(x => x.ShelfLifeDays is not null);
+        RuleFor(x => x.ExpiryDate).GreaterThanOrEqualTo(x => x.ProductionDate!.Value).When(x => x.ProductionDate is not null && x.ExpiryDate is not null);
     }
 }
 
-public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbContext)
+public sealed class PostStockMovementCommandHandler(
+    ApplicationDbContext dbContext,
+    IInventorySkuExpiryPolicyProvider? skuExpiryPolicyProvider = null)
     : ICommandHandler<PostStockMovementCommand, PostStockMovementResult>
 {
     private static readonly HashSet<string> ExternalMovementTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -67,6 +78,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
 
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
+        request = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
         var movement = CreateMovementOrReject(request);
         var existingMovement = await dbContext.StockMovements.SingleOrDefaultAsync(
             x => x.OrganizationId == movement.OrganizationId
@@ -92,6 +104,13 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         }
 
         var ledger = await GetOrCreateLedgerAsync(movement, cancellationToken);
+        if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                "Expired stock cannot be posted by regular outbound movement without expiry override permission.");
+        }
+
         if (request.ReservationId is not null)
         {
             if (request.Quantity > 0)
@@ -133,9 +152,31 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
         return new PostStockMovementResult(applied.Id, ledger.OnHandQuantity, ledger.AvailableQuantity);
     }
 
+    private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
+        PostStockMovementCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (request.ProductionDate is null
+            || request.ExpiryDate is not null
+            || request.ShelfLifeDays is not null
+            || skuExpiryPolicyProvider is null)
+        {
+            return request;
+        }
+
+        var policy = await skuExpiryPolicyProvider.GetAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SkuCode,
+            cancellationToken);
+        return policy?.ShelfLifeDays is > 0
+            ? request with { ShelfLifeDays = policy.ShelfLifeDays }
+            : request;
+    }
+
     private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
     {
-        return dbContext.StockLedgers.SingleOrDefaultAsync(
+        var query = dbContext.StockLedgers.Where(
             x => x.OrganizationId == movement.OrganizationId
                 && x.EnvironmentId == movement.EnvironmentId
                 && x.SkuCode == movement.SkuCode
@@ -146,8 +187,18 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 && x.SerialNo == movement.SerialNo
                 && x.QualityStatus == movement.QualityStatus
                 && x.OwnerType == movement.OwnerType
-                && x.OwnerId == movement.OwnerId,
-            cancellationToken);
+                && x.OwnerId == movement.OwnerId);
+        if (movement.ProductionDate is not null)
+        {
+            query = query.Where(x => x.ProductionDate == movement.ProductionDate);
+        }
+
+        if (movement.ExpiryDate is not null)
+        {
+            query = query.Where(x => x.ExpiryDate == movement.ExpiryDate);
+        }
+
+        return query.SingleOrDefaultAsync(cancellationToken);
     }
 
     private async Task<StockLedger> GetOrCreateLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
@@ -169,7 +220,9 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
             movement.SerialNo,
             movement.QualityStatus,
             movement.OwnerType,
-            movement.OwnerId);
+            movement.OwnerId,
+            movement.ProductionDate,
+            movement.ExpiryDate);
         dbContext.StockLedgers.Add(ledger);
         return ledger;
     }
@@ -178,6 +231,7 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
     {
         var movementType = NormalizeExternalMovementTypeOrReject(request.MovementType);
         var ownerType = NormalizeOwnerTypeOrReject(request.OwnerType);
+        var expiryDate = request.ExpiryDate ?? DeriveExpiryDate(request.ProductionDate, request.ShelfLifeDays);
         try
         {
             return StockMovement.Post(
@@ -198,7 +252,9 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 ownerType,
                 request.OwnerId,
                 request.Quantity,
-                request.UnitCost);
+                request.UnitCost,
+                request.ProductionDate,
+                expiryDate);
         }
         catch (ArgumentException exception) when (IsUnsupportedMovementOrQuality(exception))
         {
@@ -207,6 +263,36 @@ public sealed class PostStockMovementCommandHandler(ApplicationDbContext dbConte
                 exception.Message,
                 exception);
         }
+    }
+
+    private static DateOnly? DeriveExpiryDate(DateOnly? productionDate, int? shelfLifeDays)
+    {
+        if (productionDate is null || shelfLifeDays is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return productionDate.Value.AddDays(shelfLifeDays.Value);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new InventoryPostingRejectedException(
+                InventoryPostingFailureCodes.PostingRejected,
+                "Shelf life days cannot derive an expiry date within the supported date range.",
+                exception);
+        }
+    }
+
+    private static DateOnly GetBusinessDate(PostStockMovementCommand request)
+    {
+        return request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
+    }
+
+    private static bool HasExpiredStockOverride(bool allowExpiredStock, bool expiryOverridePermissionGranted)
+    {
+        return allowExpiredStock && expiryOverridePermissionGranted;
     }
 
     private static string NormalizeExternalMovementTypeOrReject(string movementType)
