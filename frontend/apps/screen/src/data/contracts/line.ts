@@ -19,6 +19,12 @@ export interface LineSummaryCard {
   achievement: number
   /** 节拍偏差 %（正=落后，负=超前）🟡 */
   taktDeviationPct: number
+  /** 当班产量（良品/计划）🟡 */
+  output: { good: number; plan: number }
+  /** 该线设备状态点排（与设备屏同源） */
+  deviceDots: DeviceState[]
+  /** 小时产量迷你趋势（近 12h）🟡 */
+  hourly: number[]
   /** 当前工单号（无在制为 undefined） */
   currentWo?: string
   /** 异常一句话（有事才有，红/黄字） */
@@ -46,6 +52,15 @@ export interface CurrentWo {
   kitting: 'ok' | 'short'
 }
 
+/** 安灯呼叫记录（一期演示形态；呼叫-响应闭环 待 MAN-322） */
+export interface AndonCall {
+  time: string
+  station: string
+  type: string
+  response: string
+  state: '响应中' | '已关闭'
+}
+
 /** /line/[id] 单线大屏 */
 export interface LineBoard {
   lineId: string
@@ -58,13 +73,23 @@ export interface LineBoard {
   banner?: { level: 'alarm' | 'downtime'; text: string; since: string }
   /** 班次：当班剩余按真实时钟推算 🟡 */
   shift: { name: string; range: string; remainingMin: number; elapsedMin: number }
+  /** 当班班组（线长 + 在岗人数）🟡 */
+  crew: { leader: string; operators: number }
   /** 当班产量：按标准节拍反推计划、达成率勾稽 🟡 */
   output: { good: number; scrap: number; rework: number; plan: number; achievement: number }
+  /** 一次合格率 FPY 0–100（良品/完工）🟡 */
+  fpy: number
+  /** 当班停机统计 🟡 */
+  downtime: { count: number; totalMin: number }
   /** 节拍：标准 vs 实际（落后红）🟡 */
   takt: { standardSec: number; actualSec: number; deviationPct: number }
-  /** 小时产量趋势（近 12 小时）🟡 */
+  /** 小时产量趋势（近 12 小时）+ 每点时刻标签 + 节拍产能参考 🟡 */
   hourly: number[]
+  hourLabels: string[]
+  planPerHour: number
   wo?: CurrentWo
-  /** 该线设备带（与设备屏同源画像） */
-  devices: { id: string; name: string; state: DeviceState; stateLabel: string }[]
+  /** 安灯呼叫记录（正常线为空 —— 异常是例外）；闭环 待 MAN-322 */
+  andon: AndonCall[]
+  /** 该线设备带（与设备屏同源画像；param 为首个关键参数） */
+  devices: { id: string; name: string; state: DeviceState; stateLabel: string; param?: string }[]
 }

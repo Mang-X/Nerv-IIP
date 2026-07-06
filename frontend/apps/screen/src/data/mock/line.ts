@@ -5,10 +5,13 @@
 // ③ 班次剩余按真实时钟推算；④ 横幅只在有事时存在（异常是例外）。
 // 🟠 产量/节拍/达成待 #570 真实端点，接入后由 fetchers/line.ts 单点切换。
 import type { DeviceCell } from '@/data/contracts/equipment'
-import type { CurrentWo, LineBoard, LineState, LineSummaryCard } from '@/data/contracts/line'
+import type { AndonCall, CurrentWo, LineBoard, LineState, LineSummaryCard } from '@/data/contracts/line'
 import { buildEquipmentOverview } from './equipment'
 import { clock, jitter, seq } from './fixtures'
 import { LINES, WORKSHOPS } from './masterdata'
+
+// 线长名池（按产线序稳定取名） 🟡
+const LINE_LEADERS = ['王强', '李敏', '周斌', '刘洋', '陈静', '赵磊', '杨帆', '徐娜', '孙鹏', '高翔', '马丽']
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n))
@@ -94,6 +97,21 @@ function lineMetrics(lineId: string, state: LineState, elapsedMin: number) {
   return { profile: p, achievement, deviationPct, actualSec, plan, good, scrap, rework }
 }
 
+/** 小时产量趋势（近 12h）：围绕节拍产能波动，报警线尾部明显走低（卡与单线屏共用口径）。 */
+function hourlyOf(taktSec: number, state: LineState): number[] {
+  const perHour = Math.round(3600 / taktSec)
+  return Array.from({ length: 12 }, (_, i) => {
+    const base = state === 'alarm' && i >= 10 ? perHour * 0.4 : perHour
+    return Math.max(0, Math.round(base + ((Math.random() - 0.5) * perHour) / 4))
+  })
+}
+
+/** 近 12 小时的整点标签（趋势图悬停用） */
+function hourLabelsNow(now = new Date()): string[] {
+  const h = now.getHours()
+  return Array.from({ length: 12 }, (_, i) => `${String((h - 11 + i + 24) % 24).padStart(2, '0')}:00`)
+}
+
 /** 该线一句话异常（卡片用；有事才有） */
 function lineAlert(devices: DeviceCell[]): string | undefined {
   const alarm = devices.find((d) => d.state === 'alarm')
@@ -133,6 +151,9 @@ export function buildLineCards(
       offlineDevices: devices.filter((d) => d.state === 'offline').length,
       achievement: m.achievement,
       taktDeviationPct: m.deviationPct,
+      output: { good: m.good, plan: m.plan },
+      deviceDots: devices.map((d) => d.state),
+      hourly: hourlyOf(m.profile.taktSec, state),
       currentWo: seq('WO', 1940 + LINES.indexOf(line)),
       alert: lineAlert(devices),
     })
@@ -167,12 +188,34 @@ export function buildLineBoard(
       ? { level: 'downtime' as const, text: `${downDev.name} ${downDev.block ?? '停机'}`, since: clock(jitter(48, 8)) }
       : undefined
 
-  // 小时产量趋势（近 12h）：围绕节拍产能波动，报警线尾部明显走低
-  const perHour = Math.round(3600 / m.profile.taktSec)
-  const hourly = Array.from({ length: 12 }, (_, i) => {
-    const base = state === 'alarm' && i >= 10 ? perHour * 0.4 : perHour
-    return Math.max(0, Math.round(base + ((Math.random() - 0.5) * perHour) / 4))
-  })
+  const hourly = hourlyOf(m.profile.taktSec, state)
+  const planPerHour = Math.round(3600 / m.profile.taktSec)
+
+  // 一次合格率 FPY：良品 / 完工（勾稽口径）
+  const total = m.good + m.scrap + m.rework
+  const fpy = total > 0 ? Math.round((m.good / total) * 1000) / 10 : 100
+
+  // 当班停机统计：报警线多、关注线少、正常线偶发（异常是例外）
+  const downtime =
+    state === 'alarm'
+      ? { count: clamp(jitter(2, 1), 1, 3), totalMin: clamp(jitter(32, 10), 18, 55) }
+      : state === 'attention'
+        ? { count: 1, totalMin: clamp(jitter(14, 6), 6, 25) }
+        : { count: 0, totalMin: 0 }
+
+  // 当班班组：线长（名池稳定取）+ 在岗人数
+  const crew = {
+    leader: LINE_LEADERS[LINES.indexOf(line) % LINE_LEADERS.length],
+    operators: clamp(jitter(devices.length + 2, 3), 4, 14),
+  }
+
+  // 安灯呼叫：报警/停机线才有记录（闭环 待 MAN-322）
+  const doingStation = `${m.profile.steps[m.profile.doingIdx]}工位`
+  const andon: AndonCall[] = alarmDev
+    ? [{ time: clock(jitter(26, 6)), station: doingStation, type: '设备类', response: '张建国', state: '响应中' }]
+    : downDev
+      ? [{ time: clock(jitter(48, 8)), station: doingStation, type: '维修类', response: '刘志远', state: '响应中' }]
+      : []
 
   const wo: CurrentWo = {
     code: seq('WO', 1940 + LINES.indexOf(line)),
@@ -197,10 +240,22 @@ export function buildLineBoard(
     offlineDevices: devices.filter((d) => d.state === 'offline').length,
     banner,
     shift,
+    crew,
     output: { good: m.good, scrap: m.scrap, rework: m.rework, plan: m.plan, achievement: m.achievement },
+    fpy,
+    downtime,
     takt: { standardSec: m.profile.taktSec, actualSec: m.actualSec, deviationPct: m.deviationPct },
     hourly,
+    hourLabels: hourLabelsNow(),
+    planPerHour,
     wo,
-    devices: devices.map((d) => ({ id: d.id, name: d.name, state: d.state, stateLabel: d.stateLabel })),
+    andon,
+    devices: devices.map((d) => ({
+      id: d.id,
+      name: d.name,
+      state: d.state,
+      stateLabel: d.stateLabel,
+      param: d.params[0] ? `${d.params[0].label} ${d.params[0].value}` : undefined,
+    })),
   }
 }

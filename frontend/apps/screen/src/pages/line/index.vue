@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { StatusLight } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { KpiBar, Sparkline, StatusLight } from '@nerv-iip/ui'
+import { Activity, AlertTriangle, PackageCheck, Workflow } from 'lucide-vue-next'
+import { type Component, computed, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import type { LineSummaryCard } from '@/data/contracts/line'
@@ -28,11 +29,44 @@ const factoryName = computed(
 
 const toneOf = (s: LineSummaryCard['state']) =>
   s === 'alarm' ? ('alarm' as const) : s === 'attention' ? ('idle' as const) : ('run' as const)
+
+const stateColor = (s: LineSummaryCard['state']) =>
+  s === 'alarm' ? 'var(--sb-red)' : s === 'attention' ? 'var(--sb-amber)' : 'var(--sb-cyan)'
+
+// —— 顶部产线汇总带（卡片数据 rollup）——
+interface KpiCell {
+  icon?: Component
+  value: string
+  label: string
+  tone?: 'cyan' | 'amber' | 'green'
+  ring?: number
+}
+const nf = new Intl.NumberFormat('en-US')
+const kpiItems = computed<KpiCell[]>(() => {
+  const list = cards.value
+  if (!list?.length) return []
+  const alarm = list.filter((c) => c.state === 'alarm').length
+  const attention = list.filter((c) => c.state === 'attention').length
+  const good = list.reduce((n, c) => n + c.output.good, 0)
+  const plan = list.reduce((n, c) => n + c.output.plan, 0)
+  const avg = plan > 0 ? Math.round((good / plan) * 100) : 0
+  return [
+    { icon: Workflow, value: `${list.length - alarm - attention}/${list.length}`, label: '正常作业产线' },
+    { icon: AlertTriangle, value: String(alarm), label: '报警产线', tone: alarm > 0 ? 'amber' : undefined },
+    { icon: Activity, value: String(attention), label: '需关注产线', tone: attention > 0 ? 'amber' : undefined },
+    { icon: PackageCheck, value: nf.format(good), label: '当班总产量（件）' },
+    { value: `${avg}%`, label: '当班平均达成', tone: 'cyan', ring: avg },
+  ]
+})
 </script>
 
 <template>
   <ScreenLayout title="Nerv-IIP 产线监控大屏" :line="factoryName" screen="指挥中心大屏 03">
     <div v-if="cards" class="ls">
+      <div class="ls-kpi">
+        <KpiBar v-if="kpiItems.length" :items="kpiItems" />
+      </div>
+
       <div class="sec-h">
         <i class="sec-glyph" aria-hidden="true" />
         <span class="sec-t">产线状态总览</span>
@@ -60,6 +94,19 @@ const toneOf = (s: LineSummaryCard['state']) =>
                   {{ c.taktDeviationPct > 0 ? '+' : '' }}{{ c.taktDeviationPct }}<small>%</small>
                 </dd>
               </div>
+              <div>
+                <dt>当班产量</dt>
+                <dd class="ls-out">
+                  {{ nf.format(c.output.good) }}<small>/ {{ nf.format(c.output.plan) }}</small>
+                </dd>
+              </div>
+            </div>
+            <div class="ls-spark">
+              <Sparkline :data="c.hourly" area :color="stateColor(c.state)" />
+            </div>
+            <div class="ls-dots" :aria-label="`设备 ${c.deviceDots.length} 台`">
+              <i v-for="(d, i) in c.deviceDots" :key="i" class="ls-dot" :class="d" />
+              <span class="ls-dots-n">{{ c.deviceDots.length }} 台</span>
             </div>
             <p class="ls-alert" :class="c.state">{{ c.alert ?? '作业平稳' }}</p>
           </article>
@@ -206,11 +253,55 @@ const toneOf = (s: LineSummaryCard['state']) =>
   color: var(--sb-muted);
   font-variant-numeric: tabular-nums;
 }
+.ls-kpi {
+  flex: none;
+  margin-bottom: 14px;
+}
 .ls-nums {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1.3fr;
   gap: 10px;
   margin: 12px 0 0;
+}
+.ls-out small {
+  color: var(--sb-muted);
+}
+.ls-spark {
+  height: 34px;
+  margin: 10px 0 6px;
+}
+.ls-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.ls-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sb-faint);
+}
+.ls-dot.run {
+  background: var(--sb-green);
+  box-shadow: 0 0 6px var(--sb-green);
+}
+.ls-dot.idle {
+  background: var(--sb-amber);
+  box-shadow: 0 0 6px var(--sb-amber);
+}
+.ls-dot.alarm {
+  background: var(--sb-red);
+  box-shadow: 0 0 6px var(--sb-red);
+}
+.ls-dot.down {
+  background: var(--sb-muted);
+}
+.ls-dots-n {
+  margin-left: 4px;
+  font-size: 11.5px;
+  color: var(--sb-faint);
+  font-variant-numeric: tabular-nums;
 }
 .ls-nums dt {
   font-size: 12px;

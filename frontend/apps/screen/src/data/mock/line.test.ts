@@ -51,6 +51,17 @@ describe('buildLineCards（选择器 · 与设备屏同源）', () => {
     const cards = buildLineCards('F01', ['WS-BATTERY'])
     expect(cards.map((c) => c.name).sort()).toEqual(['PACK 线', '电芯线'])
   })
+
+  it('卡片信息密度：设备点排与设备数一致、产量/迷你趋势齐备', () => {
+    const cards = buildLineCards('F01')
+    for (const c of cards) {
+      expect(c.deviceDots.length).toBeGreaterThan(0)
+      expect(c.output.plan).toBeGreaterThan(0)
+      expect(c.output.good).toBeLessThanOrEqual(c.output.plan)
+      expect(c.hourly).toHaveLength(12)
+    }
+    expect(cards.find((c) => c.name === '电芯线')?.deviceDots).toHaveLength(6)
+  })
 })
 
 describe('buildLineBoard（单线大屏）', () => {
@@ -78,13 +89,28 @@ describe('buildLineBoard（单线大屏）', () => {
     }
     expect(b!.wo!.dueInMin).toBeGreaterThan(0)
     expect(b!.shift.remainingMin).toBeGreaterThan(0)
+    // FPY 勾稽 = 良品/完工；报警线停机统计 ≥1 次；安灯有响应中记录
+    expect(b!.fpy).toBe(Math.round((b!.output.good / total) * 1000) / 10)
+    expect(b!.downtime.count).toBeGreaterThanOrEqual(1)
+    expect(b!.downtime.totalMin).toBeGreaterThan(0)
+    expect(b!.andon.length).toBeGreaterThanOrEqual(1)
+    expect(b!.andon[0].state).toBe('响应中')
+    // 趋势标签/节拍产能参考
+    expect(b!.hourLabels).toHaveLength(12)
+    for (const l of b!.hourLabels) expect(l).toMatch(/^\d{2}:00$/)
+    expect(b!.planPerHour).toBeGreaterThan(0)
+    expect(b!.crew.leader).toBeTruthy()
+    // 设备带带首个关键参数（非断线设备）
+    expect(b!.devices.some((d) => d.param)).toBe(true)
   })
 
-  it('正常线（冲压一线）：绿灯、无横幅（异常是例外）', () => {
+  it('正常线（冲压一线）：绿灯、无横幅、无安灯记录、无停机（异常是例外）', () => {
     const b = buildLineBoard('LN-STAMP-1')
     expect(b!.state).toBe('run')
     expect(b!.banner).toBeUndefined()
     expect(b!.takt.deviationPct).toBeLessThanOrEqual(6)
+    expect(b!.andon).toHaveLength(0)
+    expect(b!.downtime.count).toBe(0)
   })
 
   it('scope 外的线返回 null（越权防护）；未知线 null', () => {

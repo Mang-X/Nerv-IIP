@@ -23,9 +23,20 @@ const props = withDefaults(
     /** Resting crosshair pin when not hovering. `x` is the data index. */
     tooltip?: { x: number, label: string, actual: string, plan: string }
     title?: string
+    /** 每个数据点的悬停标签（与 actual 等长）；缺省按 24h 均匀推算（2026-07 生产化） */
+    hoverLabels?: string[]
+    /** 两条序列的图例/悬停名（默认 实际产量/计划产量） */
+    actualLabel?: string
+    planLabel?: string
+    /** 右上时间范围假 tabs 为演示装饰 —— 生产使用传 false 隐藏 */
+    tabs?: boolean
   }>(),
   {
     title: '产量趋势（件）',
+    hoverLabels: undefined,
+    actualLabel: '实际产量',
+    planLabel: '计划产量',
+    tabs: true,
     actual: () => [120, 360, 640, 760, 980, 880, 1086, 760, 940, 910, 930, 910],
     plan: () => [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380],
     yLabels: () => ['1,500', '1,200', '900', '600', '300', '0'],
@@ -106,8 +117,12 @@ const cross = computed(() => {
   let pVal = ''
   if (hover.value != null) {
     i = hover.value
-    const hr = Math.round((i / Math.max(1, len - 1)) * 24)
-    label = `${String(hr).padStart(2, '0')}:00`
+    if (props.hoverLabels?.length) {
+      label = props.hoverLabels[Math.min(i, props.hoverLabels.length - 1)]
+    } else {
+      const hr = Math.round((i / Math.max(1, len - 1)) * 24)
+      label = `${String(hr).padStart(2, '0')}:00`
+    }
     aVal = fmt(props.actual[i] ?? 0)
     pVal = fmt(props.plan[i] ?? 0)
   } else if (props.tooltip) {
@@ -133,9 +148,9 @@ const uid = Math.random().toString(36).slice(2, 8)
 <template>
   <ScreenPanel :title="title" class="sb-tc">
     <template #title-extra>
-      <em class="sb-tc-key">— 实际产量　--- 计划产量</em>
+      <em class="sb-tc-key">— {{ actualLabel }}　--- {{ planLabel }}</em>
     </template>
-    <template #extra>
+    <template v-if="tabs" #extra>
       <div class="sb-tc-tabs">
         <span class="on">今日</span><span>近7天</span><span>近30天</span>
       </div>
@@ -185,8 +200,8 @@ const uid = Math.random().toString(36).slice(2, 8)
           <g :transform="`translate(${cross.cardX},${cross.cardY})`">
             <rect class="sb-tc-card" :width="cross.cardW" :height="cross.cardH" rx="6" />
             <text class="sb-tc-c-t" x="14" y="23" font-size="12">{{ cross.label }}</text>
-            <text class="sb-tc-c-a" x="14" y="43" font-size="13">● 实际产量　{{ cross.aVal }}</text>
-            <text class="sb-tc-c-p" x="14" y="59" font-size="13">┄ 计划产量　{{ cross.pVal }}</text>
+            <text class="sb-tc-c-a" x="14" y="43" font-size="13">● {{ actualLabel }}　{{ cross.aVal }}</text>
+            <text class="sb-tc-c-p" x="14" y="59" font-size="13">┄ {{ planLabel }}　{{ cross.pVal }}</text>
           </g>
         </g>
       </svg>

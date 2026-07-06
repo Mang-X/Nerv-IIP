@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RingGauge, ScreenPanel, Sparkline, StatusTag } from '@nerv-iip/ui'
+import { RingGauge, ScreenPanel, StatusTag, TrendChart } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
@@ -33,6 +33,28 @@ function fmtMin(min: number): string {
   return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
 }
 const nf = new Intl.NumberFormat('en-US')
+
+// —— 趋势图（实际 vs 节拍产能）：y 轴刻度随数据生成、x 轴抽稀、悬停按整点取值 ——
+const planSeries = computed(() => Array.from({ length: 12 }, () => board.value?.planPerHour ?? 0))
+const trendY = computed(() => {
+  const b = board.value
+  if (!b) return []
+  const peak = Math.max(1, ...b.hourly, b.planPerHour)
+  const mag = 10 ** Math.floor(Math.log10(peak))
+  const top = Math.ceil(peak / mag) * mag
+  return Array.from({ length: 6 }, (_, i) => nf.format(Math.round((top * (5 - i)) / 5)))
+})
+const trendX = computed(() => board.value?.hourLabels.filter((_, i) => i % 2 === 0) ?? [])
+const trendPin = computed(() => {
+  const b = board.value
+  if (!b) return undefined
+  return {
+    x: 11,
+    label: b.hourLabels[11] ?? '',
+    actual: nf.format(b.hourly[11] ?? 0),
+    plan: nf.format(b.planPerHour),
+  }
+})
 </script>
 
 <template>
@@ -58,11 +80,35 @@ const nf = new Intl.NumberFormat('en-US')
             :state-label="board.stateLabel"
             :offline-devices="board.offlineDevices"
           />
+
+          <!-- 当班四格：一次合格率 / 停机 / 线长 / 在岗 -->
+          <dl class="lb-stats">
+            <div>
+              <dt>一次合格率</dt>
+              <dd :class="{ warn: board.fpy < 98 }">{{ board.fpy }}<small>%</small></dd>
+            </div>
+            <div>
+              <dt>当班停机</dt>
+              <dd :class="{ bad: board.downtime.count > 0 }">
+                {{ board.downtime.count }}<small> 次 · {{ board.downtime.totalMin }} min</small>
+              </dd>
+            </div>
+            <div>
+              <dt>线长</dt>
+              <dd class="lb-stat-txt">{{ board.crew.leader }}</dd>
+            </div>
+            <div>
+              <dt>在岗</dt>
+              <dd>{{ board.crew.operators }}<small> 人</small></dd>
+            </div>
+          </dl>
+
           <div class="lb-devs">
             <h5 class="lb-devs-t">线上设备 · {{ board.devices.length }} 台</h5>
             <div v-for="d in board.devices" :key="d.id" class="lb-dev" :class="d.state">
               <i class="dot" :class="d.state" />
               <span class="lb-dev-name">{{ d.name }}</span>
+              <span v-if="d.param" class="lb-dev-param">{{ d.param }}</span>
               <span class="lb-dev-state" :class="d.state">{{ d.stateLabel }}</span>
             </div>
           </div>
@@ -102,13 +148,22 @@ const nf = new Intl.NumberFormat('en-US')
             </ScreenPanel>
           </div>
 
-          <ScreenPanel title="小时产量趋势 · 近 12h" class="lb-trend">
-            <div class="lb-trend-chart">
-              <Sparkline :data="board.hourly" area />
-            </div>
-          </ScreenPanel>
+          <TrendChart
+            class="lb-trend"
+            title="小时产量 · 近 12h"
+            :actual="board.hourly"
+            :plan="planSeries"
+            :hover-labels="board.hourLabels"
+            :x-labels="trendX"
+            :y-labels="trendY"
+            :tooltip="trendPin"
+            actual-label="实际产量"
+            plan-label="节拍产能"
+            :tabs="false"
+          />
 
-          <ScreenPanel v-if="board.wo" title="当前工单" class="lb-wo">
+          <div class="lb-row3">
+            <ScreenPanel v-if="board.wo" title="当前工单" class="lb-wo">
             <template #extra>
               <StatusTag v-if="board.wo.kitting === 'short'" tone="amber" label="线边缺料" />
               <span v-else class="lb-kitting">线边齐套</span>
@@ -139,13 +194,32 @@ const nf = new Intl.NumberFormat('en-US')
                 <dd :class="{ warn: board.wo.dueInMin < 120 }">{{ fmtMin(board.wo.dueInMin) }}</dd>
               </div>
             </div>
-          </ScreenPanel>
+            </ScreenPanel>
+
+            <!-- 安灯呼叫-响应区：一期只读展示，闭环 待 MAN-322（显式标注） -->
+            <ScreenPanel title="安灯呼叫" class="lb-andon">
+              <template #extra>
+                <StatusTag tone="amber" label="响应闭环 · 待 MAN-322" />
+              </template>
+              <div v-if="board.andon.length" class="lb-andon-list">
+                <div v-for="a in board.andon" :key="a.time + a.station" class="lb-andon-row">
+                  <span class="lb-andon-time">{{ a.time }}</span>
+                  <span class="lb-andon-txt">{{ a.station }} · {{ a.type }}</span>
+                  <span class="lb-andon-resp">{{ a.response }}</span>
+                  <b class="lb-andon-state" :class="{ open: a.state === '响应中' }">{{ a.state }}</b>
+                </div>
+              </div>
+              <div v-else class="lb-andon-empty">
+                <i class="lb-andon-ok" />当班无安灯呼叫
+              </div>
+            </ScreenPanel>
+          </div>
         </div>
       </div>
 
       <footer class="lb-foot">
         <RouterLink to="/line" class="lb-back">‹ 返回产线总览</RouterLink>
-        <span>安灯呼叫-响应闭环 · 待 MAN-322 ｜ 产量/节拍为演示推算 · 待 #570</span>
+        <span>产量 / 节拍 / 合格率为演示推算 · 待 #570</span>
       </footer>
     </div>
 
@@ -309,6 +383,16 @@ const nf = new Intl.NumberFormat('en-US')
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.lb-dev-param {
+  flex: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
 .lb-dev-state {
   flex: none;
   font-size: 12.5px;
@@ -422,13 +506,113 @@ const nf = new Intl.NumberFormat('en-US')
 }
 
 .lb-trend {
+  min-height: 0;
+}
+.lb-row3 {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 当班四格 */
+.lb-stats {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin: 0;
+}
+.lb-stats > div {
+  border: 1px solid var(--sb-line);
+  border-radius: var(--sb-radius);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 9px 12px;
+}
+.lb-stats dt {
+  font-size: 12px;
+  color: var(--sb-muted);
+}
+.lb-stats dd {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--sb-text);
+  font-variant-numeric: tabular-nums;
+}
+.lb-stats dd small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sb-muted);
+}
+.lb-stats dd.warn {
+  color: var(--sb-amber);
+}
+.lb-stats dd.bad {
+  color: var(--sb-red);
+}
+.lb-stat-txt {
+  letter-spacing: 0.04em;
+}
+
+/* 安灯区 */
+.lb-andon {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.lb-trend-chart {
+.lb-andon-list {
   flex: 1;
   min-height: 0;
+}
+.lb-andon-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--sb-divider);
+  font-size: 13px;
+}
+.lb-andon-time {
+  flex: none;
+  color: var(--sb-muted);
+  font-variant-numeric: tabular-nums;
+}
+.lb-andon-txt {
+  flex: 1;
+  min-width: 0;
+  color: var(--sb-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lb-andon-resp {
+  flex: none;
+  color: var(--sb-muted);
+}
+.lb-andon-state {
+  flex: none;
+  color: var(--sb-green);
+}
+.lb-andon-state.open {
+  color: var(--sb-red);
+}
+.lb-andon-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--sb-muted);
+  font-size: 13.5px;
+}
+.lb-andon-ok {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sb-green);
+  box-shadow: 0 0 8px var(--sb-green);
 }
 
 .lb-wo-in {
