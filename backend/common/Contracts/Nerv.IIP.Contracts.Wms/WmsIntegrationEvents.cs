@@ -40,14 +40,6 @@ public static class WmsReceivingQualityStatuses
     public const string Unrestricted = "unrestricted";
     public const string Qualified = "qualified";
 
-    public static readonly IReadOnlyCollection<string> ExplicitInspectionRequiredStatuses =
-    [
-        Quality,
-        InspectionRequired,
-        QualityInspectionRequired,
-        PendingQualityCheck,
-    ];
-
     public static readonly IReadOnlyCollection<string> InspectionSkippedStatuses =
     [
         Exempt,
