@@ -131,7 +131,9 @@ public sealed class InventoryMovementRequestedIntegrationEventHandlerForPostingM
                 payload.SerialNo,
                 payload.OwnerType,
                 payload.OwnerId,
-                Math.Abs(payload.Quantity)),
+                Math.Abs(payload.Quantity),
+                payload.ProductionDate,
+                payload.ExpiryDate),
             cancellationToken);
     }
 

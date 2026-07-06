@@ -37,6 +37,7 @@ try
     builder.Services.AddHttpClient<IInventorySkuExpiryPolicyProvider, HttpInventorySkuExpiryPolicyProvider>(client =>
     {
         client.BaseAddress = masterDataBaseAddress;
+        client.Timeout = TimeSpan.FromSeconds(2);
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();

@@ -37,12 +37,7 @@ public abstract class InventoryEndpoint<TRequest, TResponse> : Endpoint<TRequest
 
     protected bool HasInventoryPermission(string permissionCode)
     {
-        return User.Claims.Any(claim =>
-            (claim.Type == "permission"
-                || claim.Type == "permissions"
-                || claim.Type == "permissionCodes")
-            && claim.Value.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Contains(permissionCode, StringComparer.Ordinal));
+        return InventoryPermissionContext.HasPermission(User, HttpContext.Request.Headers, permissionCode);
     }
 }
 
@@ -210,7 +205,9 @@ public sealed record PostStockStatusTransferRequest(
     string? SerialNo,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity);
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed record PostStockStatusTransferResponse(string OutboundMovementId, string InboundMovementId, decimal SourceOnHandQuantity, decimal TargetOnHandQuantity);
 
@@ -435,7 +432,9 @@ public sealed class PostStockStatusTransferEndpoint(ISender sender)
             req.SerialNo,
             req.OwnerType,
             req.OwnerId,
-            req.Quantity), ct);
+            req.Quantity,
+            req.ProductionDate,
+            req.ExpiryDate), ct);
         await Send.OkAsync(new PostStockStatusTransferResponse(result.OutboundMovementId.ToString(), result.InboundMovementId.ToString(), result.SourceOnHandQuantity, result.TargetOnHandQuantity).AsResponseData(), cancellation: ct);
     }
 }

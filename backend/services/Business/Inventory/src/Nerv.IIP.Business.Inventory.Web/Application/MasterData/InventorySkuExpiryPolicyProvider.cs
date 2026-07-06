@@ -34,8 +34,13 @@ public sealed class HttpInventorySkuExpiryPolicyProvider(
             + Uri.EscapeDataString(environmentId);
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
-        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var response = await SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        if ((int)response.StatusCode >= 500)
         {
             return null;
         }
@@ -45,6 +50,22 @@ public sealed class HttpInventorySkuExpiryPolicyProvider(
         return envelope?.Data is null
             ? null
             : new InventorySkuExpiryPolicy(envelope.Data.ShelfLifeDays, envelope.Data.NearExpiryThresholdDays);
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await httpClient.SendAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        }
+        catch (HttpRequestException)
+        {
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        }
     }
 
     private sealed record MasterDataSkuDetail(int? ShelfLifeDays, int? NearExpiryThresholdDays);

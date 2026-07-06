@@ -22,7 +22,9 @@ public sealed record PostStockStatusTransferCommand(
     string? SerialNo,
     string OwnerType,
     string? OwnerId,
-    decimal Quantity) : ICommand<PostStockStatusTransferResult>;
+    decimal Quantity,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null) : ICommand<PostStockStatusTransferResult>;
 
 public sealed record PostStockStatusTransferResult(
     StockMovementId OutboundMovementId,
@@ -51,6 +53,7 @@ public sealed class PostStockStatusTransferCommandValidator : AbstractValidator<
         RuleFor(x => x.OwnerType).RequiredInventoryCode(50);
         RuleFor(x => x.OwnerId).OptionalInventoryCode(100);
         RuleFor(x => x.Quantity).GreaterThan(0);
+        RuleFor(x => x.ExpiryDate).GreaterThanOrEqualTo(x => x.ProductionDate!.Value).When(x => x.ProductionDate is not null && x.ExpiryDate is not null);
     }
 }
 
@@ -103,11 +106,13 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.SiteCode,
             request.LocationCode,
             request.LotNo,
-                request.SerialNo,
-                sourceStatus,
-                ownerType,
-                request.OwnerId,
-                -request.Quantity);
+            request.SerialNo,
+            sourceStatus,
+            ownerType,
+            request.OwnerId,
+            -request.Quantity,
+            ProductionDate: request.ProductionDate,
+            ExpiryDate: request.ExpiryDate);
         try
         {
             source.ApplyMovement(outbound);
@@ -133,7 +138,9 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 request.SerialNo,
                 targetStatus,
                 ownerType,
-                request.OwnerId);
+                request.OwnerId,
+                request.ProductionDate,
+                request.ExpiryDate);
             dbContext.StockLedgers.Add(target);
         }
 
@@ -155,7 +162,9 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             ownerType,
             request.OwnerId,
             request.Quantity,
-            transferUnitCost);
+            transferUnitCost,
+            request.ProductionDate,
+            request.ExpiryDate);
         try
         {
             target.ApplyMovement(inbound);
@@ -193,6 +202,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 && x.LocationCode == request.LocationCode
                 && x.LotNo == request.LotNo
                 && x.SerialNo == request.SerialNo
+                && x.ProductionDate == request.ProductionDate
+                && x.ExpiryDate == request.ExpiryDate
                 && x.QualityStatus == qualityStatus
                 && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId,

@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using MediatR;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
-using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
-using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 
@@ -19,7 +19,8 @@ public sealed class ExpiredStockBlockingOptions
 
 public sealed class ExpiredStockBlockingService(
     ApplicationDbContext dbContext,
-    IOptions<ExpiredStockBlockingOptions> options)
+    IOptions<ExpiredStockBlockingOptions> options,
+    ISender sender)
 {
     public async Task<int> BlockExpiredAvailableStockAsync(DateOnly asOfDate, CancellationToken cancellationToken)
     {
@@ -48,7 +49,7 @@ public sealed class ExpiredStockBlockingService(
 
             var sourceDocumentId = $"{source.Id}:{asOfDate:yyyyMMdd}";
             var outboundKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}:out";
-            var inboundKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}:in";
+            var idempotencyKey = $"expiry-block:{source.Id}:{asOfDate:yyyyMMdd}";
             if (await dbContext.StockMovements.AnyAsync(x =>
                     x.OrganizationId == source.OrganizationId
                     && x.EnvironmentId == source.EnvironmentId
@@ -60,99 +61,29 @@ public sealed class ExpiredStockBlockingService(
                 continue;
             }
 
-            var outbound = StockMovement.Post(
+            await sender.Send(new PostStockStatusTransferCommand(
                 source.OrganizationId,
                 source.EnvironmentId,
-                "status-transfer-out",
-                "inventory-expiry",
-                sourceDocumentId,
-                null,
-                outboundKey,
-                source.SkuCode,
-                source.UomCode,
-                source.SiteCode,
-                source.LocationCode,
-                source.LotNo,
-                source.SerialNo,
                 source.QualityStatus,
-                source.OwnerType,
-                source.OwnerId,
-                -quantity,
-                ProductionDate: source.ProductionDate,
-                ExpiryDate: source.ExpiryDate);
-            source.ApplyMovement(outbound);
-            dbContext.StockMovements.Add(outbound);
-
-            var target = await FindTargetLedgerAsync(source, targetStatus, cancellationToken);
-            if (target is null)
-            {
-                target = StockLedger.Create(
-                    source.OrganizationId,
-                    source.EnvironmentId,
-                    source.SkuCode,
-                    source.UomCode,
-                    source.SiteCode,
-                    source.LocationCode,
-                    source.LotNo,
-                    source.SerialNo,
-                    targetStatus,
-                    source.OwnerType,
-                    source.OwnerId,
-                    source.ProductionDate,
-                    source.ExpiryDate);
-                dbContext.StockLedgers.Add(target);
-            }
-
-            var inbound = StockMovement.Post(
-                source.OrganizationId,
-                source.EnvironmentId,
-                "status-transfer-in",
+                targetStatus,
                 "inventory-expiry",
                 sourceDocumentId,
                 null,
-                inboundKey,
+                idempotencyKey,
                 source.SkuCode,
                 source.UomCode,
                 source.SiteCode,
                 source.LocationCode,
                 source.LotNo,
                 source.SerialNo,
-                targetStatus,
                 source.OwnerType,
                 source.OwnerId,
                 quantity,
-                source.MovingAverageUnitCost,
                 source.ProductionDate,
-                source.ExpiryDate);
-            target.ApplyMovement(inbound);
-            dbContext.StockMovements.Add(inbound);
+                source.ExpiryDate), cancellationToken);
             blockedCount++;
         }
 
-        if (blockedCount > 0)
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
         return blockedCount;
-    }
-
-    private Task<StockLedger?> FindTargetLedgerAsync(StockLedger source, string targetStatus, CancellationToken cancellationToken)
-    {
-        return dbContext.StockLedgers.SingleOrDefaultAsync(
-            x => x.OrganizationId == source.OrganizationId
-                && x.EnvironmentId == source.EnvironmentId
-                && x.SkuCode == source.SkuCode
-                && x.UomCode == source.UomCode
-                && x.SiteCode == source.SiteCode
-                && x.LocationCode == source.LocationCode
-                && x.LotNo == source.LotNo
-                && x.SerialNo == source.SerialNo
-                && x.ProductionDate == source.ProductionDate
-                && x.ExpiryDate == source.ExpiryDate
-                && x.QualityStatus == targetStatus
-                && x.OwnerType == source.OwnerType
-                && x.OwnerId == source.OwnerId,
-            cancellationToken);
     }
 }

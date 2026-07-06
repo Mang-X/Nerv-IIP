@@ -9,6 +9,7 @@ using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using NetCorePal.Extensions.Primitives;
@@ -256,7 +257,8 @@ public sealed class InventoryBatchExpiryFefoTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var service = new ExpiredStockBlockingService(
             dbContext,
-            Options.Create(new ExpiredStockBlockingOptions { Enabled = true }));
+            Options.Create(new ExpiredStockBlockingOptions { Enabled = true }),
+            new ImmediateStatusTransferSender(dbContext));
 
         var count = await service.BlockExpiredAvailableStockAsync(Today, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -467,6 +469,42 @@ public sealed class InventoryBatchExpiryFefoTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult<InventorySkuExpiryPolicy?>(policy);
+        }
+    }
+
+    private sealed class ImmediateStatusTransferSender(ApplicationDbContext dbContext) : ISender
+    {
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            if (request is PostStockStatusTransferCommand command && typeof(TResponse) == typeof(PostStockStatusTransferResult))
+            {
+                return new PostStockStatusTransferCommandHandler(dbContext)
+                    .Handle(command, cancellationToken)
+                    .ContinueWith(task => (TResponse)(object)task.Result, cancellationToken);
+            }
+
+            throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");
+        }
+
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
+            where TRequest : IRequest
+        {
+            throw new NotSupportedException($"Unsupported request type {typeof(TRequest).Name}.");
+        }
+
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.");
+        }
+
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
+        }
+
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("This test sender does not support streams.");
         }
     }
 }
