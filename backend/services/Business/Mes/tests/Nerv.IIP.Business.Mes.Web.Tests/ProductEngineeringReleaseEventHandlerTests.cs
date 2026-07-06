@@ -2,6 +2,9 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
@@ -306,6 +309,35 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
             started.MarkReleased();
             started.Start(DateTimeOffset.Parse("2026-07-06T08:00:00Z"));
             dbContext.WorkOrders.Add(started);
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-ECO-ABORT",
+                "WO-ABORT",
+                "OP-ECO-10",
+                "MAT-001",
+                "PCS",
+                2m,
+                DateTimeOffset.Parse("2026-07-06T07:00:00Z")));
+            dbContext.FinishedGoodsReceiptRequests.Add(FinishedGoodsReceiptRequest.Create(
+                "org-001",
+                "env-dev",
+                "FGR-ECO-ABORT",
+                "WO-ABORT",
+                "SKU-FG-1000",
+                10m,
+                "PCS",
+                DateTimeOffset.Parse("2026-07-06T16:00:00Z")));
+            dbContext.OperationTasks.Add(OperationTask.Queue(
+                "org-001",
+                "env-dev",
+                "WO-ABORT",
+                "OP-ECO-10",
+                10,
+                "WC-10",
+                [],
+                DateTimeOffset.Parse("2026-07-06T08:00:00Z"),
+                TimeSpan.FromMinutes(30)));
             dbContext.EngineeringChangeWorkOrderImpacts.Add(MesEngineeringChangeWorkOrderImpact.BlockedForManualConfirmation(
                 "org-001",
                 "env-dev",
@@ -360,10 +392,16 @@ public sealed class ProductEngineeringReleaseEventHandlerTests
         await using var assertionDbContext = CreateDbContext(options);
         var continued = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-BLOCKED");
         var aborted = await assertionDbContext.WorkOrders.SingleAsync(x => x.WorkOrderIdValue == "WO-ABORT");
+        var cancelledMaterialIssue = await assertionDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-ECO-ABORT");
+        var cancelledReceipt = await assertionDbContext.FinishedGoodsReceiptRequests.SingleAsync(x => x.RequestNo == "FGR-ECO-ABORT");
+        var cancelledOperationTask = await assertionDbContext.OperationTasks.SingleAsync(x => x.OperationTaskIdValue == "OP-ECO-10");
         Assert.Equal(WorkOrder.ReleasedStatus, continued.Status);
         Assert.Null(continued.HoldReason);
         Assert.Equal(WorkOrder.CancelledStatus, aborted.Status);
         Assert.Contains("ECO-721", aborted.CancelReason, StringComparison.Ordinal);
+        Assert.Equal(MaterialIssueRequest.CancelledStatus, cancelledMaterialIssue.Status);
+        Assert.Equal(FinishedGoodsReceiptRequest.CancelledStatus, cancelledReceipt.Status);
+        Assert.Equal(OperationTaskLifecycleStatus.Cancelled, cancelledOperationTask.Status);
     }
 
     private static ProductionVersionCreatedIntegrationEvent CreateProductionVersionCreatedEvent()

@@ -254,32 +254,54 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 {
     public async Task<MesAcceptedResponse> Handle(CancelWorkOrderCommand request, CancellationToken cancellationToken)
     {
-        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+        return await WorkOrderCancellationOrchestrator.CancelAsync(
             dbContext,
             request.OrganizationId,
             request.EnvironmentId,
             request.WorkOrderId,
+            request.Reason,
+            request.CancelledAtUtc,
+            cancellationToken);
+    }
+}
+
+internal static class WorkOrderCancellationOrchestrator
+{
+    public static async Task<MesAcceptedResponse> CancelAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string reason,
+        DateTimeOffset cancelledAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var workOrder = await WorkOrderLifecycleCommandGuards.GetWorkOrderAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderId,
             cancellationToken);
 
         var materialIssueRequests = await dbContext.MaterialIssueRequests
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
         var finishedGoodsReceiptRequests = await dbContext.FinishedGoodsReceiptRequests
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
         var operationTasks = await dbContext.OperationTasks
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.WorkOrderId == request.WorkOrderId)
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
+                && x.WorkOrderId == workOrderId)
             .ToListAsync(cancellationToken);
 
         WorkOrderLifecycleCommandGuards.ApplyTransition(workOrder, x => x.Cancel(
-            request.Reason,
-            request.CancelledAtUtc,
+            reason,
+            cancelledAtUtc,
             materialIssueRequests.Select(materialIssueRequest => materialIssueRequest.RequestNo).ToArray()));
 
         foreach (var materialIssueRequest in materialIssueRequests)
@@ -295,7 +317,7 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
                         x.MaterialId == materialIssueRequest.MaterialId &&
                         x.MaterialLotId == materialIssueRequest.MaterialLotId)
                     .SumAsync(x => x.ConsumedQuantity, cancellationToken);
-                materialIssueRequest.CancelForWorkOrderCancellation(request.CancelledAtUtc, consumedQuantity);
+                materialIssueRequest.CancelForWorkOrderCancellation(cancelledAtUtc, consumedQuantity);
             }
             catch (InvalidOperationException exception)
             {
@@ -314,10 +336,10 @@ public sealed class CancelWorkOrderCommandHandler(ApplicationDbContext dbContext
 
         foreach (var operationTask in operationTasks)
         {
-            operationTask.Cancel(request.CancelledAtUtc);
+            operationTask.Cancel(cancelledAtUtc);
         }
 
-        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, request.CancelledAtUtc);
+        return new MesAcceptedResponse("Accepted", workOrder.WorkOrderId, cancelledAtUtc);
     }
 }
 

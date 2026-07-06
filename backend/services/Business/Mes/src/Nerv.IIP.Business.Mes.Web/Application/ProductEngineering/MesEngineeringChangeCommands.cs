@@ -2,6 +2,7 @@ using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
@@ -58,10 +59,14 @@ public sealed class RecordEngineeringChangeDecisionCommandHandler(ApplicationDbC
 
             if (request.Decision == MesEngineeringChangeDecisions.AbortWorkOrder)
             {
-                workOrder.Cancel(
+                await WorkOrderCancellationOrchestrator.CancelAsync(
+                    dbContext,
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    request.WorkOrderId,
                     $"Engineering change {request.ChangeNumber}: {request.Reason}",
                     decidedAtUtc,
-                    []);
+                    cancellationToken);
             }
             else if (request.Decision == MesEngineeringChangeDecisions.ContinueWithArchivedVersion)
             {
