@@ -93,6 +93,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         }
 
         var transferUnitCost = source.MovingAverageUnitCost;
+        var productionDate = request.ProductionDate ?? source.ProductionDate;
+        var expiryDate = request.ExpiryDate ?? source.ExpiryDate;
         var outbound = StockMovement.Post(
             request.OrganizationId,
             request.EnvironmentId,
@@ -111,8 +113,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             ownerType,
             request.OwnerId,
             -request.Quantity,
-            ProductionDate: request.ProductionDate,
-            ExpiryDate: request.ExpiryDate);
+            ProductionDate: productionDate,
+            ExpiryDate: expiryDate);
         try
         {
             source.ApplyMovement(outbound);
@@ -124,7 +126,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 
         dbContext.StockMovements.Add(outbound);
 
-        var target = await FindLedgerAsync(request, targetStatus, cancellationToken);
+        var target = await FindLedgerAsync(request, targetStatus, productionDate, expiryDate, cancellationToken);
         if (target is null)
         {
             target = StockLedger.Create(
@@ -139,8 +141,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 targetStatus,
                 ownerType,
                 request.OwnerId,
-                request.ProductionDate,
-                request.ExpiryDate);
+                productionDate,
+                expiryDate);
             dbContext.StockLedgers.Add(target);
         }
 
@@ -163,8 +165,8 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             request.OwnerId,
             request.Quantity,
             transferUnitCost,
-            request.ProductionDate,
-            request.ExpiryDate);
+            productionDate,
+            expiryDate);
         try
         {
             target.ApplyMovement(inbound);
@@ -193,7 +195,18 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
     private Task<StockLedger?> FindLedgerAsync(PostStockStatusTransferCommand request, string qualityStatus, CancellationToken cancellationToken)
     {
         var ownerType = StockOwnerType.Normalize(request.OwnerType);
-        return dbContext.StockLedgers.SingleOrDefaultAsync(
+        return FindLedgerAsync(request, qualityStatus, request.ProductionDate, request.ExpiryDate, cancellationToken);
+    }
+
+    private Task<StockLedger?> FindLedgerAsync(
+        PostStockStatusTransferCommand request,
+        string qualityStatus,
+        DateOnly? productionDate,
+        DateOnly? expiryDate,
+        CancellationToken cancellationToken)
+    {
+        var ownerType = StockOwnerType.Normalize(request.OwnerType);
+        var query = dbContext.StockLedgers.Where(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SkuCode == request.SkuCode
@@ -202,11 +215,19 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
                 && x.LocationCode == request.LocationCode
                 && x.LotNo == request.LotNo
                 && x.SerialNo == request.SerialNo
-                && x.ProductionDate == request.ProductionDate
-                && x.ExpiryDate == request.ExpiryDate
                 && x.QualityStatus == qualityStatus
                 && x.OwnerType == ownerType
-                && x.OwnerId == request.OwnerId,
-            cancellationToken);
+                && x.OwnerId == request.OwnerId);
+        if (productionDate is not null)
+        {
+            query = query.Where(x => x.ProductionDate == productionDate);
+        }
+
+        if (expiryDate is not null)
+        {
+            query = query.Where(x => x.ExpiryDate == expiryDate);
+        }
+
+        return query.SingleOrDefaultAsync(cancellationToken);
     }
 }

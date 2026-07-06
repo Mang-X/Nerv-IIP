@@ -4,7 +4,9 @@ using System.Net.Http.Json;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Scheduling;
 
@@ -223,7 +225,8 @@ public interface IBusinessInventoryClient
     Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null);
 
     Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -2084,7 +2087,16 @@ public sealed class HttpBusinessIamDirectoryClient(HttpClient httpClient)
             cancellationToken);
 }
 
-public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
+public sealed class BusinessGatewayInventoryForwardedPermissionOptions
+{
+    public string Issuer { get; set; } = "business-gateway";
+
+    public string? SigningKey { get; set; }
+}
+
+public sealed class HttpBusinessInventoryClient(
+    HttpClient httpClient,
+    IOptions<BusinessGatewayInventoryForwardedPermissionOptions> forwardedPermissionOptions)
     : BusinessServiceHttpClient(httpClient), IBusinessInventoryClient
 {
     public Task<BusinessConsoleInventoryAvailabilityResponse> GetAvailabilityAsync(
@@ -2112,13 +2124,15 @@ public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
     public Task<BusinessConsolePostStockMovementResponse> PostMovementAsync(
         string internalBearerToken,
         BusinessConsolePostStockMovementRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? forwardedPermissions = null) =>
         SendAsync<BusinessConsolePostStockMovementResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/inventory/v1/movements",
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: httpRequest => AddForwardedPermissions(httpRequest, forwardedPermissions));
 
     public Task<BusinessConsoleCreateStockCountTaskResponse> CreateCountTaskAsync(
         string internalBearerToken,
@@ -2150,6 +2164,26 @@ public sealed class HttpBusinessInventoryClient(HttpClient httpClient)
         string CountTaskId,
         decimal CountedQuantity,
         string IdempotencyKey);
+
+    private void AddForwardedPermissions(HttpRequestMessage request, IReadOnlyCollection<string>? forwardedPermissions)
+    {
+        if (forwardedPermissions is null || forwardedPermissions.Count == 0)
+        {
+            return;
+        }
+
+        var options = forwardedPermissionOptions.Value;
+        if (string.IsNullOrWhiteSpace(options.SigningKey))
+        {
+            return;
+        }
+
+        var permissions = string.Join(' ', forwardedPermissions.Order(StringComparer.Ordinal));
+        var signature = InventoryForwardedPermissionHeaders.CreateSignature(options.SigningKey, options.Issuer, permissions);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.PermissionsHeaderName, permissions);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.IssuerHeaderName, options.Issuer);
+        request.Headers.TryAddWithoutValidation(InventoryForwardedPermissionHeaders.SignatureHeaderName, signature);
+    }
 }
 
 public sealed class HttpBusinessQualityClient(HttpClient httpClient)

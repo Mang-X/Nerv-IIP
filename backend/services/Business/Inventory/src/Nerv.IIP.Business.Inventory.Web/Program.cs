@@ -57,6 +57,7 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<ExpiredStockBlockingOptions>(builder.Configuration.GetSection("Inventory:ExpiredStockBlocking"));
+    builder.Services.Configure<InventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
     builder.Services.AddScoped<ExpiredStockBlockingService>();
     builder.Services.AddHostedService<ExpiredStockBlockingHostedService>();
 

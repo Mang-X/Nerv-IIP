@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using FastEndpoints;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
@@ -37,7 +38,11 @@ public abstract class InventoryEndpoint<TRequest, TResponse> : Endpoint<TRequest
 
     protected bool HasInventoryPermission(string permissionCode)
     {
-        return InventoryPermissionContext.HasPermission(User, HttpContext.Request.Headers, permissionCode);
+        return InventoryPermissionContext.HasPermission(
+            User,
+            HttpContext.Request.Headers,
+            permissionCode,
+            Resolve<IOptions<InventoryForwardedPermissionOptions>>().Value);
     }
 }
 

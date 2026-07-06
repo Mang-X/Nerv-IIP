@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
@@ -24,7 +25,7 @@ public sealed class InventoryReviewFollowUpTests
     private static readonly DateOnly Today = new(2026, 7, 5);
 
     [Fact]
-    public void Inventory_permission_context_allows_forwarded_internal_permission_header()
+    public void Inventory_permission_context_allows_only_signed_forwarded_permission_header()
     {
         var internalPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
         [
@@ -32,19 +33,36 @@ public sealed class InventoryReviewFollowUpTests
             new Claim(ClaimTypes.Name, "internal-service"),
             new Claim("token_type", "internal_service")
         ], "InternalService"));
-        var headers = new HeaderDictionary
+        var signingKey = "test-forwarded-permissions-key";
+        var issuer = "business-gateway";
+        var permissions = InventoryPermissionCodes.ExpiredStockOverride;
+        var unsignedHeaders = new HeaderDictionary
         {
-            [InventoryPermissionContext.ForwardedPermissionHeaderName] = InventoryPermissionCodes.ExpiredStockOverride
+            [InventoryForwardedPermissionHeaders.PermissionsHeaderName] = permissions
         };
+        var signedHeaders = new HeaderDictionary
+        {
+            [InventoryForwardedPermissionHeaders.PermissionsHeaderName] = permissions,
+            [InventoryForwardedPermissionHeaders.IssuerHeaderName] = issuer,
+            [InventoryForwardedPermissionHeaders.SignatureHeaderName] = InventoryForwardedPermissionHeaders.CreateSignature(signingKey, issuer, permissions)
+        };
+        var options = new InventoryForwardedPermissionOptions { SigningKey = signingKey, TrustedIssuer = issuer };
 
         Assert.False(InventoryPermissionContext.HasPermission(
             internalPrincipal,
             new HeaderDictionary(),
-            InventoryPermissionCodes.ExpiredStockOverride));
+            InventoryPermissionCodes.ExpiredStockOverride,
+            options));
+        Assert.False(InventoryPermissionContext.HasPermission(
+            internalPrincipal,
+            unsignedHeaders,
+            InventoryPermissionCodes.ExpiredStockOverride,
+            options));
         Assert.True(InventoryPermissionContext.HasPermission(
             internalPrincipal,
-            headers,
-            InventoryPermissionCodes.ExpiredStockOverride));
+            signedHeaders,
+            InventoryPermissionCodes.ExpiredStockOverride,
+            options));
     }
 
     [Fact]
@@ -68,6 +86,46 @@ public sealed class InventoryReviewFollowUpTests
         Assert.Equal("blocked", command.TargetQualityStatus);
         Assert.Equal(new DateOnly(2026, 6, 1), command.ProductionDate);
         Assert.Equal(new DateOnly(2026, 7, 1), command.ExpiryDate);
+    }
+
+    [Fact]
+    public async Task Status_transfer_without_request_dates_preserves_source_batch_dates()
+    {
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-QUALITY", new DateOnly(2026, 8, 1), 5m);
+        var handler = new PostStockStatusTransferCommandHandler(dbContext);
+
+        await handler.Handle(new PostStockStatusTransferCommand(
+            "org-001",
+            "env-dev",
+            "qualified",
+            "blocked",
+            "quality",
+            "QI-BATCH",
+            "LINE-001",
+            "quality-batch-transfer",
+            "SKU-FEFO",
+            "kg",
+            "SITE-01",
+            "LOC-A-01",
+            "LOT-QUALITY",
+            null,
+            "company",
+            "owner-001",
+            2m), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var source = Assert.Single(dbContext.StockLedgers, x => x.QualityStatus == "unrestricted");
+        var target = Assert.Single(dbContext.StockLedgers, x => x.QualityStatus == "blocked");
+        Assert.Equal(new DateOnly(2026, 7, 2), target.ProductionDate);
+        Assert.Equal(new DateOnly(2026, 8, 1), target.ExpiryDate);
+        Assert.Equal(3m, source.OnHandQuantity);
+        Assert.Equal(2m, target.OnHandQuantity);
+        Assert.All(dbContext.StockMovements.Where(x => x.SourceDocumentId == "QI-BATCH"), movement =>
+        {
+            Assert.Equal(new DateOnly(2026, 7, 2), movement.ProductionDate);
+            Assert.Equal(new DateOnly(2026, 8, 1), movement.ExpiryDate);
+        });
     }
 
     [Fact]
